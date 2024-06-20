@@ -1,11 +1,6 @@
 package flusher
 
 import (
-	"context"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
 	"github.com/segmentio/go-hll"
 )
 
@@ -13,7 +8,7 @@ type TrackedUsersFlusher struct {
 	*Flusher
 }
 
-func NewTrackedUsersFlusher(ctx context.Context, db db.Database, log logger.Logger, stats stats.Stats, tableName string, migrationTableName string) *TrackedUsersFlusher {
+func NewTrackedUsersFlusher() *TrackedUsersFlusher {
 	trackedUsersFlusher := &TrackedUsersFlusher{}
 	trackedUsersFlusher.Flusher = NewFlusher(trackedUsersFlusher)
 	return trackedUsersFlusher
