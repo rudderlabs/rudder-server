@@ -28,6 +28,7 @@ type Flusher interface {
 	// Step 2. Get the reports in batches and aggregate them in the app
 	getReportsInBatchesAndAggregateInApp(ctx context.Context, minReportedAt, maxReportedAt time.Time) map[string]interface{}
 
+	// This function will be overidden by actual Flusher. TrackedUserFlusher will do the merging HLLs here. MetricsFlusher will do add the counts here.
 	addReportToAggregate(aggregatedReports map[string]interface{}, report map[string]interface{}) error
 
 	getLabelKeyForAggregation(report map[string]interface{}) string
