@@ -8,8 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
-type NoopDataCollector struct {
-}
+type NoopDataCollector struct{}
 
 func NewNoopDataCollector() *NoopDataCollector {
 	return &NoopDataCollector{}
