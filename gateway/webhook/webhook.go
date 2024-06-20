@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -276,8 +277,16 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 		body = []byte("{}") // If body is empty, set it to an empty JSON object
 	}
 
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("\"%s\" is not a valid json", body)
+	}
+
 	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
 		queryParams := req.URL.Query()
+		headerBytes, headerMarshalError := json.Marshal(req.Header)
+		if headerMarshalError != nil {
+			return nil, errors.New(response.ErrorInMarshallingReqHeader)
+		}
 		paramsBytes, err := json.Marshal(queryParams)
 		if err != nil {
 			return nil, errors.New(response.ErrorInMarshal)
@@ -286,6 +295,15 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 		body, err = sjson.SetRawBytes(body, "query_parameters", paramsBytes)
 		if err != nil {
 			return nil, errors.New(response.InvalidJSON)
+		}
+
+		body, err = sjson.SetRawBytes(body, "httpRequest.headers", headerBytes)
+		if err != nil {
+			return nil, fmt.Errorf("setting headers into source transform req body:%w", err)
+		}
+		body, err = sjson.SetRawBytes(body, "httpRequest.method", []byte(req.Method))
+		if err != nil {
+			return nil, fmt.Errorf("setting method into source transform req body:%w", err)
 		}
 	}
 	return body, nil
@@ -322,10 +340,6 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
-				continue
-			}
-			if !json.Valid(body) {
-				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
 				continue
 			}
 
