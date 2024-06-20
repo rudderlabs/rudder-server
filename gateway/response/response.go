@@ -47,7 +47,7 @@ const (
 	// NonIdentifiableRequest - Request neither has anonymousId nor userId
 	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
 	// ErrorInMarshal - Error while marshalling
-	ErrorInMarshal = "Error while marshalling"
+	ErrorInMarshal              = "Error while marshalling"
 	ErrorInMarshallingReqHeader = "error while marshalling request headers"
 	// ErrorInParseForm - Error during parsing form
 	ErrorInParseForm = "Error during parsing form"
