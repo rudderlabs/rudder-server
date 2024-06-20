@@ -13,8 +13,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -73,12 +74,12 @@ func TestUniqueUsersCollector(t *testing.T) {
 	}
 
 	type trackedUsersEntry struct {
-		WorkspaceID string `json:"workspace_id"`
-		SourceID    string `json:"source_id"`
-		InstanceID  string `json:"instance_id"`
-		userIDHll   string `json:"userid_hll"`
-		annIDHll    string `json:"anonymousid_hll"`
-		combHll     string `json:"identified_anonymousid_hll"`
+		WorkspaceID string
+		SourceID    string
+		InstanceID  string
+		userIDHll   string
+		annIDHll    string
+		combHll     string
 	}
 	t.Run("CollectData", func(t *testing.T) {
 		testCases := []struct {
@@ -149,6 +150,7 @@ func TestUniqueUsersCollector(t *testing.T) {
 
 				rows, err := postgresContainer.DB.Query("SELECT workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll FROM tracked_users_reports")
 				require.NoError(t, err)
+				require.NoError(t, rows.Err())
 				defer func() { _ = rows.Close() }()
 				var entry trackedUsersEntry
 				entries := make([]trackedUsersEntry, 0)

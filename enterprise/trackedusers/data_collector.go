@@ -23,9 +23,10 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"github.com/segmentio/go-hll"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	txn "github.com/rudderlabs/rudder-server/utils/tx"
-	"github.com/segmentio/go-hll"
 )
 
 const (
@@ -171,11 +172,11 @@ func hllToString(hll *hll.Hll) string {
 	return "\\x"
 }
 
-func combineUserIDAnonymousID(userID string, anonymousID string) string {
+func combineUserIDAnonymousID(userID, anonymousID string) string {
 	return userID + ":" + anonymousID
 }
 
-func (u *UniqueUsersCollector) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier string, identifierType string) map[string]*hll.Hll {
+func (u *UniqueUsersCollector) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
 	if idTypeHllMap == nil {
 		idTypeHllMap = make(map[string]*hll.Hll)
 	}
