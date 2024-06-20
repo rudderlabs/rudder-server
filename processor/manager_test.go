@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
@@ -234,6 +236,7 @@ func TestProcessorManager(t *testing.T) {
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
+		trackedusers.NewNoopDataCollector(),
 		WithStats(statsStore),
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
