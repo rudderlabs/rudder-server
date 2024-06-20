@@ -447,6 +447,28 @@ func TestPrepareRequestBody(t *testing.T) {
 		return r
 	}
 
+	type reqWithHeadersInput struct {
+		method string
+		target string
+		body io.Reader
+		params map[string]string
+		headers map[string]string
+	}
+
+
+	createReqWithHeaders := func(input reqWithHeadersInput) *http.Request {
+		r := httptest.NewRequest(input.method, input.target, input.body)
+		for k,v := range input.headers {
+			r.Header.Add(k,v)
+		}
+		q := r.URL.Query()
+		for k, v := range input.params {
+			q.Add(k, v)
+		}
+		r.URL.RawQuery = q.Encode()
+		return r
+	}
+
 	testCases := []struct {
 		name               string
 		req                *http.Request
@@ -477,7 +499,7 @@ func TestPrepareRequestBody(t *testing.T) {
 			name:             "Empty request body with query parameters for shopify",
 			req:              createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key": "value"}),
 			sourceType:       "shopify",
-			expectedResponse: []byte(`{"query_parameters":{"key":["value"]}}`),
+			expectedResponse: []byte(`{"query_parameters":{"key":["value"]},"httpRequest":{"headers":{},"method":"POST"}}`),
 		},
 		{
 			name:             "Error reading request body for Shopify",
@@ -490,19 +512,33 @@ func TestPrepareRequestBody(t *testing.T) {
 			name:             "Some payload with no query parameters for shopify",
 			req:              createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`), nil),
 			sourceType:       "shopify",
-			expectedResponse: []byte(`{"key":"value","query_parameters":{}}`),
+			expectedResponse: []byte(`{"key":"value","query_parameters":{},"httpRequest":{"headers":{},"method":"POST"}}`),
 		},
 		{
 			name:             "Some payload with query parameters for Adjust",
 			req:              createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key1":"value1"}`), map[string]string{"key2": "value2"}),
 			sourceType:       "Adjust",
-			expectedResponse: []byte(`{"key1":"value1","query_parameters":{"key2":["value2"]}}`),
+			expectedResponse: []byte(`{"key1":"value1","query_parameters":{"key2":["value2"]},"httpRequest":{"headers":{},"method":"POST"}}`),
 		},
 		{
 			name:             "No payload with query parameters for Adjust",
 			req:              createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key2": "value2"}),
 			sourceType:       "adjust",
-			expectedResponse: []byte(`{"query_parameters":{"key2":["value2"]}}`),
+			expectedResponse: []byte(`{"query_parameters":{"key2":["value2"]},"httpRequest":{"headers":{},"method":"POST"}}`),
+		},
+		{
+			name:             "No payload with query parameters & headers for Adjust",
+			req:              createReqWithHeaders(reqWithHeadersInput{
+				method: http.MethodPost,
+				target: "http://example.com",
+				body: nil,
+				params: map[string]string{"key2": "value2"},
+				headers: map[string]string{
+					"X-Some-Value-1": "1",
+				},
+			}),
+			sourceType:       "adjust",
+			expectedResponse: []byte(`{"query_parameters":{"key2":["value2"]},"httpRequest":{"headers":{"X-Some-Value-1":["1"]},"method":"POST"}}`),
 		},
 	}
 

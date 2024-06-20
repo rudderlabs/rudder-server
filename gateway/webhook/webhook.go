@@ -301,7 +301,7 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 		if err != nil {
 			return nil, fmt.Errorf("setting headers into source transform req body:%w", err)
 		}
-		body, err = sjson.SetRawBytes(body, "httpRequest.method", []byte(req.Method))
+		body, err = sjson.SetBytes(body, "httpRequest.method", []byte(req.Method))
 		if err != nil {
 			return nil, fmt.Errorf("setting method into source transform req body:%w", err)
 		}
