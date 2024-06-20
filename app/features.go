@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/replay"
@@ -53,4 +55,9 @@ type Features struct {
 	ConfigEnv    ConfigEnvFeature
 	Reporting    ReportingFeature
 	Replay       ReplayFeature
+	TrackedUsers TrackedUsersFeature
+}
+
+type TrackedUsersFeature interface {
+	Setup(dbConn string) (trackedusers.DataCollector, error)
 }
