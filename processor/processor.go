@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
@@ -157,7 +159,9 @@ type Handle struct {
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
-	sourceObservers []sourceObserver
+	sourceObservers               []sourceObserver
+	trackedUsersDataCollector     trackedusers.DataCollector
+	trackedUsersCollectionEnabled bool
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -368,11 +372,13 @@ func (proc *Handle) Setup(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
+	trackedUsersDataCollector trackedusers.DataCollector,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	proc.trackedUsersCollectionEnabled = config.GetBool("TrackedUsers.enabled", false)
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -402,6 +408,8 @@ func (proc *Handle) Setup(
 
 	proc.namespace = config.GetKubeNamespace()
 	proc.instanceID = misc.GetInstanceID()
+
+	proc.trackedUsersDataCollector = trackedUsersDataCollector
 
 	// Stats
 	if proc.statsFactory == nil {
@@ -2212,7 +2220,7 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
-func (proc *Handle) Store(partition string, in *storeMessage) {
+func (proc *Handle) Store(partition string, in *storeMessage, rawJobs []*jobsdb.JobT) {
 	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {
@@ -2357,6 +2365,13 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 			if proc.isReportingEnabled() {
 				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
+				}
+			}
+
+			if proc.isTrackedUsersCollectionEnabled() {
+				err = proc.trackedUsersDataCollector.CollectData(ctx, rawJobs, tx.Tx())
+				if err != nil {
+					return fmt.Errorf("storing tracked users: %w", err)
 				}
 			}
 
@@ -3068,6 +3083,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 				rsourcesStats: rsourcesStats,
 			}),
 		),
+		unprocessedList.Jobs,
 	)
 	proc.stats.statLoopTime(partition).Since(s)
 
@@ -3117,6 +3133,10 @@ func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket str
 
 func (proc *Handle) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
+}
+
+func (proc *Handle) isTrackedUsersCollectionEnabled() bool {
+	return proc.trackedUsersDataCollector != nil && proc.trackedUsersCollectionEnabled
 }
 
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
