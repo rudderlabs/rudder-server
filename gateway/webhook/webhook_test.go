@@ -448,18 +448,17 @@ func TestPrepareRequestBody(t *testing.T) {
 	}
 
 	type reqWithHeadersInput struct {
-		method string
-		target string
-		body io.Reader
-		params map[string]string
+		method  string
+		target  string
+		body    io.Reader
+		params  map[string]string
 		headers map[string]string
 	}
 
-
 	createReqWithHeaders := func(input reqWithHeadersInput) *http.Request {
 		r := httptest.NewRequest(input.method, input.target, input.body)
-		for k,v := range input.headers {
-			r.Header.Add(k,v)
+		for k, v := range input.headers {
+			r.Header.Add(k, v)
 		}
 		q := r.URL.Query()
 		for k, v := range input.params {
@@ -527,11 +526,11 @@ func TestPrepareRequestBody(t *testing.T) {
 			expectedResponse: []byte(`{"query_parameters":{"key2":["value2"]},"httpRequest":{"headers":{},"method":"POST"}}`),
 		},
 		{
-			name:             "No payload with query parameters & headers for Adjust",
-			req:              createReqWithHeaders(reqWithHeadersInput{
+			name: "No payload with query parameters & headers for Adjust",
+			req: createReqWithHeaders(reqWithHeadersInput{
 				method: http.MethodPost,
 				target: "http://example.com",
-				body: nil,
+				body:   nil,
 				params: map[string]string{"key2": "value2"},
 				headers: map[string]string{
 					"X-Some-Value-1": "1",
