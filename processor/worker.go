@@ -97,7 +97,7 @@ func (w *worker) start() {
 		for subJob := range w.channel.store {
 
 			if firstSubJob && !subJob.hasMore {
-				w.handle.Store(w.partition, subJob, nil)
+				w.handle.Store(w.partition, subJob)
 				continue
 			}
 
@@ -114,7 +114,7 @@ func (w *worker) start() {
 			mergedJob.merge(subJob)
 
 			if !subJob.hasMore {
-				w.handle.Store(w.partition, mergedJob, nil)
+				w.handle.Store(w.partition, mergedJob)
 				firstSubJob = true
 			}
 		}
