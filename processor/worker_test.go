@@ -204,7 +204,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		m.Store(partition, m.transformations(partition,
 			m.processJobsForDest(partition, subJob),
-		), nil)
+		))
 	}
 	return len(jobs.Jobs) > 0
 }
@@ -301,7 +301,7 @@ func (m *mockWorkerHandle) transformations(partition string, in *transformationM
 	}
 }
 
-func (m *mockWorkerHandle) Store(partition string, in *storeMessage, unprocessedJobs []*jobsdb.JobT) {
+func (m *mockWorkerHandle) Store(partition string, in *storeMessage) {
 	if m.limiters.store != nil {
 		defer m.limiters.store.Begin(partition)()
 	}
