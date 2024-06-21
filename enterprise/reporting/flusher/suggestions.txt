@@ -1,9 +1,0 @@
-// type Aggregatable interface {
-// 	AddToAggrate(aggregate interface{}) error
-// }
-
-// type Flusher[T Aggregatable] struct {
-
-// }
-
-// Add a aggregateFunction to the TrackedUsersReport - Use Generics
