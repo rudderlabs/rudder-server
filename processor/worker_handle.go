@@ -25,7 +25,7 @@ type workerHandle interface {
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	processJobsForDest(partition string, subJobs subJob) *transformationMessage
 	transformations(partition string, in *transformationMessage) *storeMessage
-	Store(partition string, in *storeMessage, rawJobs []*jobsdb.JobT)
+	Store(partition string, in *storeMessage)
 }
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers

@@ -2026,6 +2026,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
+		subJobs.subJobs,
 	}
 }
 
@@ -2046,6 +2047,7 @@ type transformationMessage struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+	gatewayJobs   []*jobsdb.JobT
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
@@ -2141,6 +2143,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
+		in.gatewayJobs,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2162,6 +2165,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
+	gatewayJobs   []*jobsdb.JobT
 	statusList    []*jobsdb.JobStatusT
 	destJobs      []*jobsdb.JobT
 	batchDestJobs []*jobsdb.JobT
@@ -2220,7 +2224,7 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
-func (proc *Handle) Store(partition string, in *storeMessage, rawJobs []*jobsdb.JobT) {
+func (proc *Handle) Store(partition string, in *storeMessage) {
 	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {
@@ -2369,7 +2373,7 @@ func (proc *Handle) Store(partition string, in *storeMessage, rawJobs []*jobsdb.
 			}
 
 			if proc.isTrackedUsersCollectionEnabled() {
-				err = proc.trackedUsersDataCollector.CollectData(ctx, rawJobs, tx.Tx())
+				err = proc.trackedUsersDataCollector.CollectData(ctx, in.gatewayJobs, tx.Tx())
 				if err != nil {
 					return fmt.Errorf("storing tracked users: %w", err)
 				}
@@ -3083,7 +3087,6 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 				rsourcesStats: rsourcesStats,
 			}),
 		),
-		unprocessedList.Jobs,
 	)
 	proc.stats.statLoopTime(partition).Since(s)
 
