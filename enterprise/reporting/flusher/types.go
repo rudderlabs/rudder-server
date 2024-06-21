@@ -1,5 +1,6 @@
 package flusher
 
-type InAppAggregator interface {
-	AddReportToAggregate(aggregatedReports map[string]interface{}, report map[string]interface{}) error
+type Handler interface {
+	Decode(report map[string]interface{}) (interface{}, error)
+	Aggregate(aggReport interface{}, report interface{}) error
 }
