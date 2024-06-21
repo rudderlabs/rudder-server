@@ -85,3 +85,9 @@ func (b *SourceBuilder) WithSourceType(sourceType string) *SourceBuilder {
 	b.v.SourceDefinition.Name = sourceType
 	return b
 }
+
+// WithSourceType sets the source type
+func (b *SourceBuilder) WithWorkspaceID(workspaceID string) *SourceBuilder {
+	b.v.WorkspaceID = workspaceID
+	return b
+}
