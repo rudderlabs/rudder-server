@@ -1,0 +1,16 @@
+{
+    "name": "shopify",
+    "description": "Topic not found",
+    "input": {
+        "request": {
+            "query": "signature=rudderstack&topic"
+        }
+    },
+    "output": {
+        "response": {
+            "status": 400,
+            "contentType": "text/plain",
+            "body": "Invalid topic in query_parameters\n"     
+        }
+    }
+}

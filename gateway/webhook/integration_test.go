@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -65,15 +66,16 @@ type testCaseInput struct {
 	Request testCaseRequest
 }
 type testCaseRequest struct {
-	Body    json.RawMessage
-	Method  string
-	Headers map[string]string
+	Method   string
+	RawQuery string `json:"query"`
+	Headers  map[string]string
+	Body     json.RawMessage
 }
 
 type testCaseOutput struct {
 	Response testCaseResponse
 	Queue    []json.RawMessage
-	ErrQueue []json.RawMessage
+	ErrQueue []json.RawMessage `json:"err_queue"`
 }
 
 type testCaseResponse struct {
@@ -222,7 +224,12 @@ func TestIntegrationWebhook(t *testing.T) {
 
 			t.Log("Request Body:", string(tc.Input.Request.Body))
 
-			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?writeKey=%s", gwURL, writeKey), bytes.NewBuffer(tc.Input.Request.Body))
+			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
+			require.NoError(t, err)
+			query.Set("writeKey", writeKey)
+
+			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
+			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
 
 			req.Header.Set("X-Forwarded-For", testSetup.context.RequestIP)
@@ -253,7 +260,7 @@ func TestIntegrationWebhook(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			assert.Len(t, r.Jobs, len(tc.Output.Queue))
+			assert.Len(t, r.Jobs, len(tc.Output.Queue), "enqueued items mismatch")
 			for i, p := range tc.Output.Queue {
 				var batch struct {
 					Batch []json.RawMessage `json:"batch"`
@@ -272,7 +279,6 @@ func TestIntegrationWebhook(t *testing.T) {
 				}
 
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
-
 			}
 
 			r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
@@ -286,7 +292,18 @@ func TestIntegrationWebhook(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
-				assert.JSONEq(t, string(p), string(r.Jobs[i].EventPayload))
+				errPayload, err := json.Marshal(struct {
+					Event  json.RawMessage       `json:"event"`
+					Source backendconfig.SourceT `json:"source"`
+				}{
+					Source: tc.config,
+					Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(tc.config.WriteKey)),
+				})
+				require.NoError(t, err)
+				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
+				require.NoError(t, err)
+
+				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
 		})
 
