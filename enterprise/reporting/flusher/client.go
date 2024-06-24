@@ -46,11 +46,23 @@ func (c *Client) initStats() {
 	c.reqCount = c.stats.NewTaggedStat(StatReportingHttpReqCount, stats.CountType, c.tags)
 }
 
+func (c *Client) MakePOSTRequestBatch(ctx context.Context, reports []*interface{}) error {
+	payload, err := json.Marshal(reports)
+	if err != nil {
+		panic(err)
+	}
+	return c.makePOSTRequest(ctx, payload)
+}
+
 func (c *Client) MakePOSTRequest(ctx context.Context, report *interface{}) error {
 	payload, err := json.Marshal(report)
 	if err != nil {
 		panic(err)
 	}
+	return c.makePOSTRequest(ctx, payload)
+}
+
+func (c *Client) makePOSTRequest(ctx context.Context, payload []byte) error {
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(payload))
 		if err != nil {
@@ -75,7 +87,7 @@ func (c *Client) MakePOSTRequest(ctx context.Context, report *interface{}) error
 	}
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
+	err := backoff.RetryNotify(o, b, func(err error, t time.Duration) {
 		c.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {

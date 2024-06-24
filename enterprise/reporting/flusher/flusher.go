@@ -2,6 +2,8 @@ package flusher
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,25 +27,26 @@ type Flusher struct {
 	labels []string
 	values []string
 
-	mainLoopSleepInterval config.ValueLoader[time.Duration]
-	sleepInterval         config.ValueLoader[time.Duration]
-	aggWindowMins         config.ValueLoader[time.Duration]
-	batchSizeFromDB       config.ValueLoader[int]
-	reportingURL          string
-	maxConcurrentRequests config.ValueLoader[int]
+	mainLoopSleepInterval   config.ValueLoader[time.Duration]
+	aggWindowMins           config.ValueLoader[time.Duration]
+	batchSizeFromDB         config.ValueLoader[int]
+	reportingURL            string
+	maxConcurrentRequests   config.ValueLoader[int]
+	inAppAggregationEnabled bool
+	batchSizeToReporting    config.ValueLoader[int]
 
-	stats                  stats.Stats
-	minReportedAtQueryTime stats.Measurement
-	reportsQueryTime       stats.Measurement
-	reqLatency             stats.Measurement
-	mainLoopTimer          stats.Measurement
-	reportsTimer           stats.Measurement
-	reportsCount           stats.Measurement
-	aggReportsTimer        stats.Measurement
-	aggReportsCount        stats.Measurement
-	reportingLag           stats.Measurement
-	flushReportsTimer      stats.Measurement
-	deleteReportsTimer     stats.Measurement
+	stats                   stats.Stats
+	minReportedAtQueryTimer stats.Measurement
+	reportsQueryTimer       stats.Measurement
+	reqLatencyTimer         stats.Measurement
+	mainLoopTimer           stats.Measurement
+	reportsTimer            stats.Measurement
+	reportsCounter          stats.Measurement
+	aggReportsTimer         stats.Measurement
+	aggReportsCounter       stats.Measurement
+	reportingLag            stats.Measurement
+	sendReportsTimer        stats.Measurement
+	deleteReportsTimer      stats.Measurement
 
 	lastReportedAt atomic.Time
 	client         *Client
@@ -51,47 +54,48 @@ type Flusher struct {
 	commonTags     stats.Tags
 }
 
-func NewFlusher(ctx context.Context, db db.Database, log logger.Logger, stats stats.Stats, table string, labels []string, values []string, reportingServiceURL string, handler Handler) *Flusher {
+func NewFlusher(ctx context.Context, db db.Database, log logger.Logger, stats stats.Stats, table string, labels []string, values []string, reportingURL string, inAppAggregationEnabled bool, handler Handler) *Flusher {
 
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
-	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.aggregationWindowInMinutes")
 	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.batchSizeFromDB")
+	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.batchSizeToReporting")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
-	flusher := Flusher{
-		ctx:                   ctx,
-		cancel:                cancel,
-		g:                     g,
-		log:                   log,
-		reportingURL:          reportingServiceURL,
-		instanceId:            config.GetString("INSTANCE_ID", "1"),
-		sleepInterval:         sleepInterval,
-		mainLoopSleepInterval: mainLoopSleepInterval,
-		maxConcurrentRequests: maxConcReqs,
-		stats:                 stats,
-		aggWindowMins:         aggWindowMins,
-		labels:                labels,
-		values:                values,
-		batchSizeFromDB:       batchSizeFromDB,
-		table:                 table,
-		db:                    db,
-		handler:               handler,
+	f := Flusher{
+		ctx:                     ctx,
+		cancel:                  cancel,
+		g:                       g,
+		log:                     log,
+		reportingURL:            reportingURL,
+		instanceId:              config.GetString("INSTANCE_ID", "1"),
+		mainLoopSleepInterval:   mainLoopSleepInterval,
+		maxConcurrentRequests:   maxConcReqs,
+		stats:                   stats,
+		aggWindowMins:           aggWindowMins,
+		labels:                  labels,
+		values:                  values,
+		batchSizeFromDB:         batchSizeFromDB,
+		table:                   table,
+		db:                      db,
+		handler:                 handler,
+		inAppAggregationEnabled: inAppAggregationEnabled,
+		batchSizeToReporting:    batchSizeToReporting,
 	}
 
-	flusher.initCommonTags()
-	flusher.client = NewClient(reportingServiceURL, log, stats, flusher.commonTags)
-	return &flusher
+	f.initCommonTags()
+	f.client = NewClient(reportingURL, log, stats, f.commonTags)
+	return &f
 }
 
-func (f *Flusher) Start(ctx context.Context) {
+func (f *Flusher) Start() {
 	f.initStats(f.commonTags)
 
 	f.lastReportedAt.Store(time.Now())
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(f.ctx)
 
 	g.Go(func() error {
 		return f.emitLagMetricLoop(ctx)
@@ -108,8 +112,9 @@ func (f *Flusher) Start(ctx context.Context) {
 
 func (f *Flusher) initCommonTags() {
 	f.commonTags = stats.Tags{
-		"instanceId": f.instanceId,
-		"tableName":  f.table,
+		"instanceId":       f.instanceId,
+		"tableName":        f.table,
+		"inAppAggregation": strconv.FormatBool(f.inAppAggregationEnabled),
 	}
 }
 
@@ -120,7 +125,8 @@ func (f *Flusher) emitLagMetricLoop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Minute):
+		case <-time.After(2 * time.Minute): // TODO: Avoid time.Sleep especially for such durations of time, can cause issues with graceful shutdown and testing.
+
 		}
 	}
 }
@@ -133,19 +139,19 @@ func (f *Flusher) Stop() {
 func (f *Flusher) initStats(tags map[string]string) {
 	f.mainLoopTimer = f.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 
-	f.minReportedAtQueryTime = f.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
+	f.minReportedAtQueryTimer = f.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 
 	f.reportsTimer = f.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
-	f.reportsCount = f.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
+	f.reportsCounter = f.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 
-	f.reportsQueryTime = f.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
+	f.reportsQueryTimer = f.stats.NewTaggedStat(StatReportingGetReportsBatchQueryTime, stats.TimerType, tags)
 	f.aggReportsTimer = f.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
-	f.aggReportsCount = f.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	f.aggReportsCounter = f.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
 
-	f.flushReportsTimer = f.stats.NewTaggedStat(StatReportingFlushReportsTime, stats.TimerType, tags)
+	f.sendReportsTimer = f.stats.NewTaggedStat(StatReportingSendReportsTime, stats.TimerType, tags)
 	f.deleteReportsTimer = f.stats.NewTaggedStat(StatReportingDeleteReportsTime, stats.TimerType, tags)
 
-	f.reqLatency = f.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
+	f.reqLatencyTimer = f.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 	f.reportingLag = f.stats.NewTaggedStat(StatReportingMetricsLagInSeconds, stats.GaugeType, tags)
 
 }
@@ -154,7 +160,7 @@ func (f *Flusher) mainLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case <-time.After(f.mainLoopSleepInterval.Load()): // TODO: sleep less if there's lag
 			start := time.Now()
 			f.mainLoopOnce(ctx)
@@ -166,72 +172,85 @@ func (f *Flusher) mainLoop(ctx context.Context) error {
 // mainLoopOnce is the main logic for flushing data.
 func (f *Flusher) mainLoopOnce(ctx context.Context) error {
 	// 1. Get the time range to flush
-	start := time.Now()
-	min, max := f.getRange(ctx)
-	if min.IsZero() || max.IsZero() {
-		return nil
-	}
-	f.minReportedAtQueryTime.Since(start)
-
-	// 2. Get reports in batches and aggregate in app
-	start = time.Now()
-	aggReports, err := f.batchAndAggregateInApp(ctx, min, max)
+	s := time.Now()
+	start, end, err := f.getRange(ctx)
 	if err != nil {
 		return err
 	}
-	f.aggReportsTimer.Since(start)
-	f.aggReportsCount.Observe(float64(len(aggReports)))
+	f.minReportedAtQueryTimer.Since(s)
+
+	// 2. Aggregate reports. Get reports in batches and aggregate in app if inAppAggregationEnabled or aggregate in DB
+	s = time.Now()
+	f.aggReportsTimer.Since(s)
+	aggReports, err := f.aggregate(ctx, start, end)
+	if err != nil {
+		return err
+	}
+	f.aggReportsCounter.Observe(float64(len(aggReports)))
 
 	// 3. Flush aggregated reports
-	start = time.Now()
-	if err := f.flushAggReports(ctx, aggReports); err != nil {
-		return err
-	}
-	f.flushReportsTimer.Since(start)
+	s = time.Now()
+	f.send(ctx, aggReports)
+	f.sendReportsTimer.Since(s)
 
 	// 4. Delete reports
-	start = time.Now()
-	if err := f.deleteReports(ctx, min, max); err != nil {
+	s = time.Now()
+	if err := f.delete(ctx, start, end); err != nil {
 		return err
 	}
-	f.deleteReportsTimer.Since(start)
+	f.deleteReportsTimer.Since(s)
 
-	f.lastReportedAt.Store(max)
+	f.lastReportedAt.Store(end)
 	return nil
 }
 
-func (f *Flusher) getRange(ctx context.Context) (min, max time.Time) {
-	var err error
-	min, err = f.db.GetMinReportedAt(ctx, f.table)
+func (f *Flusher) getRange(ctx context.Context) (start, end time.Time, error error) {
+	start, err := f.db.GetStart(ctx, f.table)
 	if err != nil {
-		f.log.Errorw("Error getting min reported_at", "error", err)
-		return time.Time{}, time.Time{}
+		return time.Time{}, time.Time{}, err
 	}
 
-	max = f.calcMax(min)
-	return min, max
+	end = f.calcEnd(start)
+	return start, end, nil
 }
 
 // Since we have hourly/daily/monthly aggregates on Reporting Service, we want the window to be within same hour
-func (f *Flusher) calcMax(min time.Time) time.Time {
-	max := min.Add(f.aggWindowMins.Load())
-	if max.After(time.Now().Truncate(time.Hour).Add(time.Hour)) {
-		max = time.Now().Truncate(time.Hour).Add(time.Hour)
+func (f *Flusher) calcEnd(start time.Time) time.Time {
+	end := start.Add(f.aggWindowMins.Load())
+	if end.After(time.Now().Truncate(time.Hour).Add(time.Hour)) {
+		end = time.Now().Truncate(time.Hour).Add(time.Hour)
 	}
-	return max
+	return end
 }
 
-func (f *Flusher) batchAndAggregateInApp(ctx context.Context, minReportedAt, maxReportedAt time.Time) (map[string]interface{}, error) {
+func (f *Flusher) aggregate(ctx context.Context, start, end time.Time) ([]*interface{}, error) {
+	if f.inAppAggregationEnabled {
+		aggReports, err := f.aggregateInApp(ctx, start, end)
+		if err != nil {
+			return nil, err
+		}
+		return aggReports, nil
+	} else {
+		return nil, errors.New("aggregation in DB is not implemented")
+	}
+}
+
+func (f *Flusher) aggregateInApp(ctx context.Context, start, end time.Time) ([]*interface{}, error) {
 	var offset int
-	aggReports := make(map[string]interface{})
+	aggMap := make(map[string]interface{})
+	reportsCount := 0
 
 	for {
-		reports, err := f.db.FetchReports(ctx, f.table, minReportedAt, maxReportedAt, f.batchSizeFromDB.Load(), offset)
+		s := time.Now()
+		reports, err := f.db.FetchBatch(ctx, f.table, start, end, f.batchSizeFromDB.Load(), offset)
 		if err != nil {
 			f.log.Errorw("Error fetching reports", "error", err)
 			return nil, err
 		}
+		f.reportsQueryTimer.Since(s)
+		reportsCount = reportsCount + len(reports)
 
+		s = time.Now()
 		for _, r := range reports {
 			dr, err := f.handler.Decode(r)
 			if err != nil {
@@ -239,16 +258,20 @@ func (f *Flusher) batchAndAggregateInApp(ctx context.Context, minReportedAt, max
 				return nil, err
 			}
 
-			key := f.getAggKey(r)
+			k := f.getAggKey(r)
 
-			if agg, exists := aggReports[key]; exists {
+			if agg, exists := aggMap[k]; exists {
 				if err := f.handler.Aggregate(agg, dr); err != nil {
 					f.log.Errorw("Error adding report to aggregate", "error", err)
 					return nil, err
 				}
 			} else {
-				aggReports[key] = dr
+				aggMap[k] = dr
 			}
+		}
+
+		if len(reports) > 0 {
+			f.aggReportsTimer.Since(s)
 		}
 
 		if len(reports) < f.batchSizeFromDB.Load() {
@@ -258,6 +281,9 @@ func (f *Flusher) batchAndAggregateInApp(ctx context.Context, minReportedAt, max
 		offset += f.batchSizeFromDB.Load()
 	}
 
+	f.reportsCounter.Observe(float64(reportsCount))
+
+	aggReports := convertToSlice(aggMap)
 	return aggReports, nil
 }
 
@@ -271,12 +297,42 @@ func (f *Flusher) getAggKey(r map[string]interface{}) string {
 	return k
 }
 
-func (f *Flusher) flushAggReports(ctx context.Context, aggReports map[string]interface{}) error {
+func convertToSlice(r map[string]interface{}) []*interface{} {
+	s := make([]*interface{}, 0, len(r))
+	for _, v := range r {
+		s = append(s, &v)
+	}
+	return s
+}
+
+func (f *Flusher) send(ctx context.Context, aggReports []*interface{}) error {
+	if f.batchSizeToReporting.Load() > 1 {
+		if err := f.sendInBatches(ctx, aggReports, f.batchSizeFromDB.Load()); err != nil {
+			return err
+		}
+	} else {
+		if err := f.sendIndividually(ctx, aggReports); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*interface{}, batchSize int) error {
 	g, ctx := errgroup.WithContext(ctx)
-	for _, r := range aggReports {
-		r := r // avoid closure capture issue
+
+	for i := 0; i < len(aggReports); i += batchSize {
+		end := i + batchSize
+		if end > len(aggReports) {
+			end = len(aggReports)
+		}
+		batch := aggReports[i:end]
+
 		g.Go(func() error {
-			return f.client.MakePOSTRequest(ctx, &r)
+			if err := f.client.MakePOSTRequestBatch(ctx, batch); err != nil {
+				return err
+			}
+			return nil
 		})
 	}
 
@@ -288,8 +344,25 @@ func (f *Flusher) flushAggReports(ctx context.Context, aggReports map[string]int
 	return nil
 }
 
-func (f *Flusher) deleteReports(ctx context.Context, min, max time.Time) error {
-	if err := f.db.DeleteReports(ctx, f.table, min, max); err != nil {
+func (f *Flusher) sendIndividually(ctx context.Context, aggReports []*interface{}) error {
+	g, ctx := errgroup.WithContext(ctx)
+	for _, r := range aggReports {
+		r := r // avoid closure capture issue
+		g.Go(func() error {
+			return f.client.MakePOSTRequest(ctx, r)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		f.log.Errorw("Error sending data to Reporting Service", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (f *Flusher) delete(ctx context.Context, start, end time.Time) error {
+	if err := f.db.Delete(ctx, f.table, start, end); err != nil {
 		return err
 	}
 	return nil
