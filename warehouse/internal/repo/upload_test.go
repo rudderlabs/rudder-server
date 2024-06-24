@@ -2859,7 +2859,6 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 		require.Equal(t, uploads[1].DestinationID, "destination_with_last_upload_aborted")
 		require.Equal(t, uploads[1].LastEventAt.UTC(), now.Add(-2*time.Hour))
 		require.Equal(t, uploads[1].FirstEventAt.UTC(), now.Add(-3*time.Hour))
-
 	})
 
 	t.Run("query to get empty list of first aborted upload in series of continuous aborts", func(t *testing.T) {

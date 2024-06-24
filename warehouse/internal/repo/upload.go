@@ -1403,7 +1403,6 @@ func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, 
 			&firstEventAt,
 			&lastEventAt,
 		)
-
 		if err != nil {
 			return nil, fmt.Errorf("first aborted upload in series info: scanning row: %w", err)
 		}
