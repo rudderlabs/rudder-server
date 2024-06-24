@@ -12,11 +12,11 @@ const (
 	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
 	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
 
-	StatReportingHttpReqLatency = "reporting_client_http_request_latency"
-	StatReportingHttpReqCount   = "reporting_client_http_request_count"
-	StatReportingHttpReq        = "reporting_client_http_request"
+	StatReportingSendReportsTime    = "reporting_send_reports_time"
+	StatReportingHttpReqLatency     = "reporting_client_http_request_latency"
+	StatReportingHttpReqCount       = "reporting_client_http_request_count"
+	StatReportingConcurrentRequests = "reporting_client_concurrent_requests"
 
-	StatReportingSendReportsTime   = "reporting_send_reports_time"
 	StatReportingDeleteReportsTime = "reporting_delete_reports_time"
 
 	StatReportingMetricsLagInSeconds = "reporting_metrics_lag_seconds"
