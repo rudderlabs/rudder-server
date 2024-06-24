@@ -228,7 +228,10 @@ func getUploadFilePath(path string, metadata map[string]any) (string, error) {
 	}
 
 	// Get the current date and time
-	now := time.Now()
+	now, ok := metadata["timestamp"].(time.Time)
+	if !ok {
+		now = time.Now()
+	}
 	// Replace dynamic variables with their actual values
 	result := re.ReplaceAllStringFunc(path, func(match string) string {
 		switch match {
