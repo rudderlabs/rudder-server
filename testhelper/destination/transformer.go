@@ -13,6 +13,8 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 )
 
+const repo = "rudderstack/rudder-transformer"
+
 type TransformerResource struct {
 	TransformURL string
 	Port         string
@@ -23,14 +25,14 @@ func SetupTransformer(pool *dockertest.Pool, d Cleaner) (*TransformerResource, e
 	// pulls an image first to make sure we don't have an old cached version locally,
 	// then it creates a container based on it and runs it
 	err := pool.Client.PullImage(docker.PullImageOptions{
-		Repository: "rudderlabs/rudder-transformer",
+		Repository: repo,
 		Tag:        "latest",
 	}, docker.AuthConfiguration{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull image: %w", err)
 	}
 	transformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderlabs/rudder-transformer",
+		Repository:   repo,
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
