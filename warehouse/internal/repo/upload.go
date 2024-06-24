@@ -1359,7 +1359,7 @@ func (u *Uploads) update(
 }
 
 func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceId string) ([]model.FirstAbortedUploadResponse, error) {
-	outputColumns := fmt.Sprint(`id, source_id, destination_id, created_at, first_event_at, last_event_at`)
+	outputColumns := "id, source_id, destination_id, created_at, first_event_at, last_event_at"
 
 	stmt := fmt.Sprintf(`
 	WITH wh_uploads_with_last_successful_upload AS (
