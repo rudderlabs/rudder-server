@@ -727,6 +727,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				ch.logger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
 				ch.logger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
+				stmtCancel()
 			}, func() {
 				ch.logger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
 				stmtCancel()
