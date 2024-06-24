@@ -6,7 +6,7 @@ import (
 )
 
 type Database interface {
-	GetMinReportedAt(ctx context.Context, table string) (time.Time, error)
-	FetchReports(ctx context.Context, table string, min, max time.Time, limit, offset int) ([]map[string]interface{}, error)
-	DeleteReports(ctx context.Context, table string, min, max time.Time) error
+	GetStart(ctx context.Context, table string) (time.Time, error)
+	FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]map[string]interface{}, error)
+	Delete(ctx context.Context, table string, start, end time.Time) error
 }
