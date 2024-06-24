@@ -1634,8 +1634,8 @@ func TestGRPC(t *testing.T) {
 				require.Len(t, res.GetUploads(), 1)
 				require.Equal(t, res.GetUploads()[0].SourceId, sourceID)
 				require.Equal(t, res.GetUploads()[0].DestinationId, destinationID)
-				require.True(t, res.GetUploads()[0].LastEventAt.AsTime().UTC().Compare(now.Add(-7*time.Hour)) == 0)
-				require.True(t, res.GetUploads()[0].FirstEventAt.AsTime().UTC().Compare(now.Add(-8*time.Hour)) == 0)
+				require.Equal(t, res.GetUploads()[0].LastEventAt.AsTime().UTC(), now.Add(-7*time.Hour))
+				require.Equal(t, res.GetUploads()[0].FirstEventAt.AsTime().UTC(), now.Add(-8*time.Hour))
 			})
 		})
 

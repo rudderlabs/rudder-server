@@ -2851,14 +2851,14 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 		require.Equal(t, uploads[0].ID, int64(4))
 		require.Equal(t, uploads[0].SourceID, "source_with_no_successful_upload")
 		require.Equal(t, uploads[0].DestinationID, "destination_with_no_successful_upload")
-		require.True(t, uploads[0].LastEventAt.UTC().Compare(now.Add(-4*time.Hour)) == 0)
-		require.True(t, uploads[0].FirstEventAt.UTC().Compare(now.Add(-5*time.Hour)) == 0)
+		require.Equal(t, uploads[0].LastEventAt.UTC(), now.Add(-4*time.Hour))
+		require.Equal(t, uploads[0].FirstEventAt.UTC(), now.Add(-5*time.Hour))
 
 		require.Equal(t, uploads[1].ID, int64(10))
 		require.Equal(t, uploads[1].SourceID, "source_with_last_upload_aborted")
 		require.Equal(t, uploads[1].DestinationID, "destination_with_last_upload_aborted")
-		require.True(t, uploads[1].LastEventAt.UTC().Compare(now.Add(-2*time.Hour)) == 0)
-		require.True(t, uploads[1].FirstEventAt.UTC().Compare(now.Add(-3*time.Hour)) == 0)
+		require.Equal(t, uploads[1].LastEventAt.UTC(), now.Add(-2*time.Hour))
+		require.Equal(t, uploads[1].FirstEventAt.UTC(), now.Add(-3*time.Hour))
 	})
 
 	t.Run("query to get empty list of first aborted upload in series of continuous aborts", func(t *testing.T) {
