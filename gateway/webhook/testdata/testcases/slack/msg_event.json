@@ -77,69 +77,73 @@
             "body": "OK"
         },
         "queue": [
-            {
-                    "context": {
-                        "library": {
-                            "name": "unknown",
-                            "version": "unknown"
-                        },
-                        "integration": {
-                            "name": "SLACK"
-                        },
-                        "externalId": [
+        {
+            "context": {
+                "library": {
+                    "name": "unknown",
+                    "version": "unknown"
+                },
+                "integration": {
+                    "name": "SLACK"
+                },
+                "externalId": [
+                    {
+                        "type": "slackUserId",
+                        "id": "U04G7H550"
+                    }
+                ]
+            },
+            "integrations": {
+                "SLACK": false
+            },
+            "type": "track",
+            "event": "Message",
+            "anonymousId": "7509c04f547b05afb6838aa742f4910263d6",
+            "originalTimestamp": "2024-03-03T04:48:29.308Z",
+            "sentAt": "2024-03-03T04:48:29.000Z",
+            "properties": {
+                "user": "U04G7H550",
+                "type": "message",
+                "ts": "1709441309.308399",
+                "client_msg_id": "834r664e-ec75-445d-t5c6-b873a07y9c81",
+                "text": "What is the pricing of product X",
+                "team": "T0GFJL5J7",
+                "thread_ts": "1709407304.839329",
+                "parent_user_id": "U06P6LQTPV",
+                "blocks": [
+                    {
+                        "type": "rich_text",
+                        "block_id": "xGKJl",
+                        "elements": [
                             {
-                                "type": "slackUserId",
-                                "id": "U04G7H550"
-                            }
-                        ]
-                    },
-                    "integrations": {
-                        "SLACK": false
-                    },
-                    "type": "track",
-                    "event": "Message",
-                    "anonymousId": "7509c04f547b05afb6838aa742f4910263d6",
-                    "originalTimestamp": "2024-03-03T04:48:29.308Z",
-                    "sentAt": "2024-03-03T04:48:29.000Z",
-                    "properties": {
-                        "user": "U04G7H550",
-                        "type": "message",
-                        "ts": "1709441309.308399",
-                        "client_msg_id": "834r664e-ec75-445d-t5c6-b873a07y9c81",
-                        "text": "What is the pricing of product X",
-                        "team": "T0GFJL5J7",
-                        "thread_ts": "1709407304.839329",
-                        "parent_user_id": "U06P6LQTPV",
-                        "blocks": [
-                            {
-                                "type": "rich_text",
-                                "block_id": "xGKJl",
+                                "type": "rich_text_section",
                                 "elements": [
                                     {
-                                        "type": "rich_text_section",
-                                        "elements": [
-                                            {
-                                                "type": "text",
-                                                "text": "What is the pricing of product X"
-                                            },
-                                            {
-                                                "type": "channel",
-                                                "channel_id": "C03CDQTPI65"
-                                            },
-                                            {
-                                                "type": "text",
-                                                "text": " to do this"
-                                            }
-                                        ]
+                                        "type": "text",
+                                        "text": "What is the pricing of product X"
+                                    },
+                                    {
+                                        "type": "channel",
+                                        "channel_id": "C03CDQTPI65"
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": " to do this"
                                     }
                                 ]
                             }
-                        ],
-                        "channel": "C03CDQTPI65",
-                        "event_ts": "1709441309.308399",
-                        "channel_type": "channel"
+                        ]
                     }
-                }
+                ],
+                "channel": "C03CDQTPI65",
+                "event_ts": "1709441309.308399",
+                "channel_type": "channel"
+            },
+            "request_ip": "192.0.2.30",
+            "receivedAt": "2024-03-03T04:48:29.000Z",
+            "rudderId": "5540ba39-3df8-4970-8b50-b329182c9bd5",
+            "messageId":"00000000-0000-0000-0000-000000000000"
+        }
             
         ]
     }

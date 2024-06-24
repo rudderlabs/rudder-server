@@ -15,9 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -38,6 +41,16 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 )
+
+type testSetup struct {
+	context testContext
+	cases   []testCase
+}
+
+type testContext struct {
+	Now       time.Time
+	RequestIP string `json:"request_ip"`
+}
 
 type testCase struct {
 	Name        string
@@ -140,9 +153,9 @@ func TestIntegrationWebhook(t *testing.T) {
 
 	bcs := make(map[string]backendconfig.ConfigT)
 
-	tcs := loadTestCases(t)
+	testSetup := loadTestSetup(t)
 
-	for i, tc := range tcs {
+	for i, tc := range testSetup.cases {
 		sConfig := backendconfigtest.NewSourceBuilder().
 			WithSourceType(strings.ToUpper(tc.Name)).
 			WithSourceCategory("webhook").
@@ -159,7 +172,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		bc.Sources[0].WorkspaceID = bc.WorkspaceID
 		sConfig.WorkspaceID = bc.WorkspaceID
 		bcs[bc.WorkspaceID] = bc
-		tcs[i].config = sConfig
+		testSetup.cases[i].config = sConfig
 	}
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -172,7 +185,10 @@ func TestIntegrationWebhook(t *testing.T) {
 		backendconfigtest.NewStaticLibrary(bcs),
 		gatewayDB, errDB,
 		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
-		streamMsgValidator)
+		streamMsgValidator,
+		gateway.WithNow(func() time.Time {
+			return testSetup.context.Now
+		}))
 	require.NoError(t, err)
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
@@ -194,7 +210,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, time.Millisecond*500, time.Millisecond)
 
-	for _, tc := range tcs {
+	for _, tc := range testSetup.cases {
 		writeKey := tc.config.WriteKey
 		sourceID := tc.config.ID
 		workspaceID := tc.config.WorkspaceID
@@ -208,6 +224,11 @@ func TestIntegrationWebhook(t *testing.T) {
 
 			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?writeKey=%s", gwURL, writeKey), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
+
+			req.Header.Set("X-Forwarded-For", testSetup.context.RequestIP)
+			for k, v := range tc.Input.Request.Headers {
+				req.Header.Set(k, v)
+			}
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -240,7 +261,18 @@ func TestIntegrationWebhook(t *testing.T) {
 				err := json.Unmarshal(r.Jobs[i].EventPayload, &batch)
 				require.NoError(t, err)
 				assert.Len(t, batch.Batch, 1)
+
+				if gjson.GetBytes(p, "messageId").String() == uuid.Nil.String() {
+					rawMsgID := gjson.GetBytes(batch.Batch[0], "messageId").String()
+					msgID, err := uuid.Parse(rawMsgID)
+					assert.NoErrorf(t, err, "messageId (%q) is not a valid UUID", rawMsgID)
+
+					p, err = sjson.SetBytes(p, "messageId", msgID.String())
+					require.NoError(t, err)
+				}
+
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
+
 			}
 
 			r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
@@ -265,14 +297,21 @@ func TestIntegrationWebhook(t *testing.T) {
 	require.NoError(t, err)
 }
 
-//go:embed testdata/**/*.json
+//go:embed testdata/context.json
+var contextData []byte
+
+//go:embed testdata/testcases/**/*.json
 var testdata embed.FS
 
-func loadTestCases(t *testing.T) []testCase {
+func loadTestSetup(t *testing.T) testSetup {
 	t.Helper()
 
+	var tc testContext
+	err := json.Unmarshal(contextData, &tc)
+	require.NoError(t, err)
+
 	var tcs []testCase
-	err := fs.WalkDir(testdata, ".", func(path string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(testdata, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -298,5 +337,8 @@ func loadTestCases(t *testing.T) []testCase {
 	})
 	require.NoError(t, err)
 
-	return tcs
+	return testSetup{
+		context: tc,
+		cases:   tcs,
+	}
 }

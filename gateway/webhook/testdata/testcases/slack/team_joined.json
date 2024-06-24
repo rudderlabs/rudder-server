@@ -80,7 +80,11 @@
                         "name": "johnd",
                         "real_name": "John Doe"
                     }
-                }
+                },
+                "request_ip": "192.0.2.30",
+                "receivedAt": "2024-03-03T04:48:29.000Z",
+                "rudderId": "669b7c62-3e8b-475c-8f0a-356b2a9518e2",
+                "messageId":"00000000-0000-0000-0000-000000000000"    
             }
         ]
     }
