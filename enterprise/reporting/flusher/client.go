@@ -69,10 +69,13 @@ func (c *Client) makePOSTRequest(ctx context.Context, payload []byte) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		start := time.Now()
 		resp, err := c.netClient.Do(req)
 		if err != nil {
 			return err
 		}
+		c.reqLatency.Since(start)
+		c.reqCount.Count(1)
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -20,25 +21,33 @@ type TrackedUsersHandler struct {
 	labels []string
 }
 
+var (
+	trackedUsersHandlerInstance *TrackedUsersHandler
+	flusherInstance             *Flusher
+	once                        sync.Once
+)
+
 func CreateTrackedUsersFlusher(ctx context.Context, c types.SyncerConfig, log logger.Logger, stats stats.Stats, table string) *Flusher {
-	labels := []string{"workspace_id", "source_id", "instance_id"}
-	values := []string{"userid_hll", "anonymousid_hll", "identified_anonymousid_hll"}
+	once.Do(func() {
+		labels := []string{"workspace_id", "source_id", "instance_id"}
+		values := []string{"userid_hll", "anonymousid_hll", "identified_anonymousid_hll"}
 
-	reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
+		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
 
-	maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
-	db, err := db.NewPostgresDB(c.ConnInfo, maxOpenConns)
-	if err != nil {
-		log.Errorw("failed to create database", "error", err)
-		return nil
-	}
+		maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
+		db, err := db.NewPostgresDB(c.ConnInfo, maxOpenConns)
+		if err != nil {
+			panic(err)
+		}
 
-	tuHandler := &TrackedUsersHandler{
-		table:  table,
-		labels: labels,
-	}
-	flusher := NewFlusher(ctx, db, log, stats, table, labels, values, reportingURL, true, tuHandler)
-	return flusher
+		trackedUsersHandlerInstance = &TrackedUsersHandler{
+			table:  table,
+			labels: labels,
+		}
+		flusherInstance = NewFlusher(ctx, db, log, stats, table, labels, values, reportingURL, true, trackedUsersHandlerInstance)
+	})
+
+	return flusherInstance
 }
 
 func (t *TrackedUsersHandler) Aggregate(aggReport interface{}, report interface{}) error {
