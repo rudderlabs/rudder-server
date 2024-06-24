@@ -21,17 +21,18 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Warehouse_GetHealth_FullMethodName                        = "/proto.Warehouse/GetHealth"
-	Warehouse_GetWHUploads_FullMethodName                     = "/proto.Warehouse/GetWHUploads"
-	Warehouse_GetWHUpload_FullMethodName                      = "/proto.Warehouse/GetWHUpload"
-	Warehouse_TriggerWHUpload_FullMethodName                  = "/proto.Warehouse/TriggerWHUpload"
-	Warehouse_TriggerWHUploads_FullMethodName                 = "/proto.Warehouse/TriggerWHUploads"
-	Warehouse_Validate_FullMethodName                         = "/proto.Warehouse/Validate"
-	Warehouse_RetryWHUploads_FullMethodName                   = "/proto.Warehouse/RetryWHUploads"
-	Warehouse_CountWHUploadsToRetry_FullMethodName            = "/proto.Warehouse/CountWHUploadsToRetry"
-	Warehouse_ValidateObjectStorageDestination_FullMethodName = "/proto.Warehouse/ValidateObjectStorageDestination"
-	Warehouse_RetrieveFailedBatches_FullMethodName            = "/proto.Warehouse/RetrieveFailedBatches"
-	Warehouse_RetryFailedBatches_FullMethodName               = "/proto.Warehouse/RetryFailedBatches"
+	Warehouse_GetHealth_FullMethodName                                = "/proto.Warehouse/GetHealth"
+	Warehouse_GetWHUploads_FullMethodName                             = "/proto.Warehouse/GetWHUploads"
+	Warehouse_GetWHUpload_FullMethodName                              = "/proto.Warehouse/GetWHUpload"
+	Warehouse_TriggerWHUpload_FullMethodName                          = "/proto.Warehouse/TriggerWHUpload"
+	Warehouse_TriggerWHUploads_FullMethodName                         = "/proto.Warehouse/TriggerWHUploads"
+	Warehouse_Validate_FullMethodName                                 = "/proto.Warehouse/Validate"
+	Warehouse_RetryWHUploads_FullMethodName                           = "/proto.Warehouse/RetryWHUploads"
+	Warehouse_CountWHUploadsToRetry_FullMethodName                    = "/proto.Warehouse/CountWHUploadsToRetry"
+	Warehouse_ValidateObjectStorageDestination_FullMethodName         = "/proto.Warehouse/ValidateObjectStorageDestination"
+	Warehouse_RetrieveFailedBatches_FullMethodName                    = "/proto.Warehouse/RetrieveFailedBatches"
+	Warehouse_RetryFailedBatches_FullMethodName                       = "/proto.Warehouse/RetryFailedBatches"
+	Warehouse_GetFirstAbortedUploadsInContinuousAborts_FullMethodName = "/proto.Warehouse/GetFirstAbortedUploadsInContinuousAborts"
 )
 
 // WarehouseClient is the client API for Warehouse service.
@@ -49,6 +50,7 @@ type WarehouseClient interface {
 	ValidateObjectStorageDestination(ctx context.Context, in *ValidateObjectStorageRequest, opts ...grpc.CallOption) (*ValidateObjectStorageResponse, error)
 	RetrieveFailedBatches(ctx context.Context, in *RetrieveFailedBatchesRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error)
+	GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *GetFirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error)
 }
 
 type warehouseClient struct {
@@ -158,6 +160,15 @@ func (c *warehouseClient) RetryFailedBatches(ctx context.Context, in *RetryFaile
 	return out, nil
 }
 
+func (c *warehouseClient) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *GetFirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
+	out := new(GetFirstAbortedUploadsInContinuousAbortsResponse)
+	err := c.cc.Invoke(ctx, Warehouse_GetFirstAbortedUploadsInContinuousAborts_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WarehouseServer is the server API for Warehouse service.
 // All implementations must embed UnimplementedWarehouseServer
 // for forward compatibility
@@ -173,6 +184,7 @@ type WarehouseServer interface {
 	ValidateObjectStorageDestination(context.Context, *ValidateObjectStorageRequest) (*ValidateObjectStorageResponse, error)
 	RetrieveFailedBatches(context.Context, *RetrieveFailedBatchesRequest) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error)
+	GetFirstAbortedUploadsInContinuousAborts(context.Context, *GetFirstAbortedUploadsInContinuousAbortsRequest) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -212,6 +224,9 @@ func (UnimplementedWarehouseServer) RetrieveFailedBatches(context.Context, *Retr
 }
 func (UnimplementedWarehouseServer) RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RetryFailedBatches not implemented")
+}
+func (UnimplementedWarehouseServer) GetFirstAbortedUploadsInContinuousAborts(context.Context, *GetFirstAbortedUploadsInContinuousAbortsRequest) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFirstAbortedUploadsInContinuousAborts not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -424,6 +439,24 @@ func _Warehouse_RetryFailedBatches_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_GetFirstAbortedUploadsInContinuousAborts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFirstAbortedUploadsInContinuousAbortsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).GetFirstAbortedUploadsInContinuousAborts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Warehouse_GetFirstAbortedUploadsInContinuousAborts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).GetFirstAbortedUploadsInContinuousAborts(ctx, req.(*GetFirstAbortedUploadsInContinuousAbortsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -474,6 +507,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RetryFailedBatches",
 			Handler:    _Warehouse_RetryFailedBatches_Handler,
+		},
+		{
+			MethodName: "GetFirstAbortedUploadsInContinuousAborts",
+			Handler:    _Warehouse_GetFirstAbortedUploadsInContinuousAborts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

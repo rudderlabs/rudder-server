@@ -1357,3 +1357,69 @@ func (u *Uploads) update(
 	}
 	return nil
 }
+
+func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceId string) ([]model.FirstAbortedUploadResponse, error) {
+	outputColumns := fmt.Sprint(`id, source_id, destination_id, created_at, first_event_at, last_event_at`)
+
+	stmt := fmt.Sprintf(`
+	WITH wh_uploads_with_last_successful_upload AS (
+		SELECT 
+			%s,
+			status,
+        	MAX(CASE WHEN status = 'exported_data' THEN created_at ELSE NULL END) OVER (PARTITION BY destination_id) AS last_successful_upload
+		FROM 
+			`+uploadsTableName+`
+		WHERE workspace_id = $1
+		AND created_at >= NOW() - INTERVAL '30 day'
+	)
+	SELECT %s
+	FROM (
+		SELECT 
+			*,
+			ROW_NUMBER() OVER (PARTITION BY destination_id ORDER BY created_at) as row_number
+		FROM wh_uploads_with_last_successful_upload
+		WHERE status = 'aborted'
+		AND (last_successful_upload IS NULL OR created_at > last_successful_upload)
+	) AS q
+	WHERE q.row_number = 1 
+	`, outputColumns, outputColumns)
+
+	rows, err := u.db.QueryContext(ctx, stmt, workspaceId)
+	if err != nil {
+		return nil, fmt.Errorf("first aborted upload in series info: %w", err)
+	}
+
+	var uploadAbortInfos []model.FirstAbortedUploadResponse
+
+	for rows.Next() {
+		var uploadAbortInfo model.FirstAbortedUploadResponse
+		var firstEventAt, lastEventAt sql.NullTime
+
+		err := rows.Scan(
+			&uploadAbortInfo.ID,
+			&uploadAbortInfo.SourceID,
+			&uploadAbortInfo.DestinationID,
+			&uploadAbortInfo.CreatedAt,
+			&firstEventAt,
+			&lastEventAt,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("first aborted upload in series info: scanning row: %w", err)
+		}
+
+		if firstEventAt.Valid {
+			uploadAbortInfo.FirstEventAt = firstEventAt.Time
+		}
+		if lastEventAt.Valid {
+			uploadAbortInfo.LastEventAt = lastEventAt.Time
+		}
+
+		uploadAbortInfos = append(uploadAbortInfos, uploadAbortInfo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("first aborted upload in series info: iterating rows: %w", err)
+	}
+
+	return uploadAbortInfos, nil
+}

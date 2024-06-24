@@ -19,6 +19,7 @@ service Warehouse {
   rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
   rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
+  rpc GetFirstAbortedUploadsInContinuousAborts(GetFirstAbortedUploadsInContinuousAbortsRequest) returns (GetFirstAbortedUploadsInContinuousAbortsResponse);
 }
 
 message Pagination {
@@ -154,4 +155,21 @@ message RetryFailedBatchesRequest{
 
 message RetryFailedBatchesResponse{
   int64 retriedSyncsCount = 1;
+}
+
+message GetFirstAbortedUploadsInContinuousAbortsRequest {
+  string workspace_id = 1;
+}
+
+message FirstAbortedUploadResponse {
+  int64 id = 1;
+  string source_id = 2;
+  string destination_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp first_event_at = 5;
+  google.protobuf.Timestamp last_event_at = 6;
+}
+
+message GetFirstAbortedUploadsInContinuousAbortsResponse { 
+  repeated FirstAbortedUploadResponse uploads = 1;
 }

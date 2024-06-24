@@ -969,3 +969,32 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 		return res, err
 	}
 }
+
+func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
+	ctx context.Context,
+	request *proto.GetFirstAbortedUploadsInContinuousAbortsRequest,
+) (*proto.GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
+	g.logger.Infow(
+		"Getting warehouse uploads",
+		lf.WorkspaceID, request.WorkspaceId,
+	)
+
+	uploadAbortInfos, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId)
+	if err != nil {
+		return &proto.GetFirstAbortedUploadsInContinuousAbortsResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to first aborted upload in series info: %v", err)
+	}
+
+	uploads := lo.Map(uploadAbortInfos, func(item model.FirstAbortedUploadResponse, index int) *proto.FirstAbortedUploadResponse {
+		return &proto.FirstAbortedUploadResponse{
+			Id:            item.ID,
+			SourceId:      item.SourceID,
+			DestinationId: item.DestinationID,
+			CreatedAt:     timestamppb.New(item.CreatedAt),
+			FirstEventAt:  timestamppb.New(item.FirstEventAt),
+			LastEventAt:   timestamppb.New(item.LastEventAt),
+		}
+	})
+
+	return &proto.GetFirstAbortedUploadsInContinuousAbortsResponse{Uploads: uploads}, nil
+}
