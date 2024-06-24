@@ -975,17 +975,17 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 	request *proto.GetFirstAbortedUploadsInContinuousAbortsRequest,
 ) (*proto.GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
 	g.logger.Infow(
-		"Getting warehouse uploads",
+		"Getting first aborted uploads in a series of continuous aborts",
 		lf.WorkspaceID, request.WorkspaceId,
 	)
 
-	uploadAbortInfos, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId)
+	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId)
 	if err != nil {
 		return &proto.GetFirstAbortedUploadsInContinuousAbortsResponse{},
-			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to first aborted upload in series info: %v", err)
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to find first aborted uploads in a series of continuous aborts info: %v", err)
 	}
 
-	uploads := lo.Map(uploadAbortInfos, func(item model.FirstAbortedUploadResponse, index int) *proto.FirstAbortedUploadResponse {
+	uploads := lo.Map(abortedUploadsInfo, func(item model.FirstAbortedUploadResponse, index int) *proto.FirstAbortedUploadResponse {
 		return &proto.FirstAbortedUploadResponse{
 			Id:            item.ID,
 			SourceId:      item.SourceID,

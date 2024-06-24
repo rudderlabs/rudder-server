@@ -1386,39 +1386,39 @@ func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, 
 
 	rows, err := u.db.QueryContext(ctx, stmt, workspaceId)
 	if err != nil {
-		return nil, fmt.Errorf("first aborted upload in series info: %w", err)
+		return nil, fmt.Errorf("first aborted upload in a series of continues aborts info: %w", err)
 	}
 
-	var uploadAbortInfos []model.FirstAbortedUploadResponse
+	var abortedUploadsInfo []model.FirstAbortedUploadResponse
 
 	for rows.Next() {
-		var uploadAbortInfo model.FirstAbortedUploadResponse
+		var abortedUpload model.FirstAbortedUploadResponse
 		var firstEventAt, lastEventAt sql.NullTime
 
 		err := rows.Scan(
-			&uploadAbortInfo.ID,
-			&uploadAbortInfo.SourceID,
-			&uploadAbortInfo.DestinationID,
-			&uploadAbortInfo.CreatedAt,
+			&abortedUpload.ID,
+			&abortedUpload.SourceID,
+			&abortedUpload.DestinationID,
+			&abortedUpload.CreatedAt,
 			&firstEventAt,
 			&lastEventAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("first aborted upload in series info: scanning row: %w", err)
+			return nil, fmt.Errorf("first aborted upload in a series of continues aborts info: scanning row: %w", err)
 		}
 
 		if firstEventAt.Valid {
-			uploadAbortInfo.FirstEventAt = firstEventAt.Time
+			abortedUpload.FirstEventAt = firstEventAt.Time
 		}
 		if lastEventAt.Valid {
-			uploadAbortInfo.LastEventAt = lastEventAt.Time
+			abortedUpload.LastEventAt = lastEventAt.Time
 		}
 
-		uploadAbortInfos = append(uploadAbortInfos, uploadAbortInfo)
+		abortedUploadsInfo = append(abortedUploadsInfo, abortedUpload)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("first aborted upload in series info: iterating rows: %w", err)
 	}
 
-	return uploadAbortInfos, nil
+	return abortedUploadsInfo, nil
 }
