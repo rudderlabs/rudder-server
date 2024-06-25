@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -36,7 +37,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -93,21 +93,21 @@ func TestIntegrationWebhook(t *testing.T) {
 
 	var (
 		p                    *postgres.Resource
-		transformerContainer *destination.TransformerResource
+		transformerContainer *transformertest.Resource
 	)
 
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
 		p, err = postgres.Setup(pool, t)
 		if err != nil {
-			return fmt.Errorf("could not start postgres: %v", err)
+			return fmt.Errorf("starting postgres: %w", err)
 		}
 		return nil
 	})
 	g.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		if err != nil {
-			return fmt.Errorf("could not start transformer: %v", err)
+			return fmt.Errorf("starting transformer: %w", err)
 		}
 		return nil
 	})
@@ -146,10 +146,10 @@ func TestIntegrationWebhook(t *testing.T) {
 
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, conf, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           transformerContainer.TransformURL,
+		TransformerURL:           transformerContainer.TransformerURL,
 		FeaturesRetryMaxAttempts: 10,
 	})
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 	<-transformerFeaturesService.Wait()
 
