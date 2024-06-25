@@ -50,7 +50,7 @@ type WarehouseClient interface {
 	ValidateObjectStorageDestination(ctx context.Context, in *ValidateObjectStorageRequest, opts ...grpc.CallOption) (*ValidateObjectStorageResponse, error)
 	RetrieveFailedBatches(ctx context.Context, in *RetrieveFailedBatchesRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error)
-	GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *GetFirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error)
+	GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *FirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*FirstAbortedUploadsInContinuousAbortsResponse, error)
 }
 
 type warehouseClient struct {
@@ -160,8 +160,8 @@ func (c *warehouseClient) RetryFailedBatches(ctx context.Context, in *RetryFaile
 	return out, nil
 }
 
-func (c *warehouseClient) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *GetFirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
-	out := new(GetFirstAbortedUploadsInContinuousAbortsResponse)
+func (c *warehouseClient) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, in *FirstAbortedUploadsInContinuousAbortsRequest, opts ...grpc.CallOption) (*FirstAbortedUploadsInContinuousAbortsResponse, error) {
+	out := new(FirstAbortedUploadsInContinuousAbortsResponse)
 	err := c.cc.Invoke(ctx, Warehouse_GetFirstAbortedUploadsInContinuousAborts_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ type WarehouseServer interface {
 	ValidateObjectStorageDestination(context.Context, *ValidateObjectStorageRequest) (*ValidateObjectStorageResponse, error)
 	RetrieveFailedBatches(context.Context, *RetrieveFailedBatchesRequest) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error)
-	GetFirstAbortedUploadsInContinuousAborts(context.Context, *GetFirstAbortedUploadsInContinuousAbortsRequest) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error)
+	GetFirstAbortedUploadsInContinuousAborts(context.Context, *FirstAbortedUploadsInContinuousAbortsRequest) (*FirstAbortedUploadsInContinuousAbortsResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -225,7 +225,7 @@ func (UnimplementedWarehouseServer) RetrieveFailedBatches(context.Context, *Retr
 func (UnimplementedWarehouseServer) RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RetryFailedBatches not implemented")
 }
-func (UnimplementedWarehouseServer) GetFirstAbortedUploadsInContinuousAborts(context.Context, *GetFirstAbortedUploadsInContinuousAbortsRequest) (*GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
+func (UnimplementedWarehouseServer) GetFirstAbortedUploadsInContinuousAborts(context.Context, *FirstAbortedUploadsInContinuousAbortsRequest) (*FirstAbortedUploadsInContinuousAbortsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetFirstAbortedUploadsInContinuousAborts not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
@@ -440,7 +440,7 @@ func _Warehouse_RetryFailedBatches_Handler(srv interface{}, ctx context.Context,
 }
 
 func _Warehouse_GetFirstAbortedUploadsInContinuousAborts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetFirstAbortedUploadsInContinuousAbortsRequest)
+	in := new(FirstAbortedUploadsInContinuousAbortsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -452,7 +452,7 @@ func _Warehouse_GetFirstAbortedUploadsInContinuousAborts_Handler(srv interface{}
 		FullMethod: Warehouse_GetFirstAbortedUploadsInContinuousAborts_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).GetFirstAbortedUploadsInContinuousAborts(ctx, req.(*GetFirstAbortedUploadsInContinuousAbortsRequest))
+		return srv.(WarehouseServer).GetFirstAbortedUploadsInContinuousAborts(ctx, req.(*FirstAbortedUploadsInContinuousAbortsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

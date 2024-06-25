@@ -972,8 +972,8 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 
 func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 	ctx context.Context,
-	request *proto.GetFirstAbortedUploadsInContinuousAbortsRequest,
-) (*proto.GetFirstAbortedUploadsInContinuousAbortsResponse, error) {
+	request *proto.FirstAbortedUploadsInContinuousAbortsRequest,
+) (*proto.FirstAbortedUploadsInContinuousAbortsResponse, error) {
 	g.logger.Infow(
 		"Getting first aborted uploads in a series of continuous aborts",
 		lf.WorkspaceID, request.WorkspaceId,
@@ -981,7 +981,7 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 
 	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId)
 	if err != nil {
-		return &proto.GetFirstAbortedUploadsInContinuousAbortsResponse{},
+		return &proto.FirstAbortedUploadsInContinuousAbortsResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to find first aborted uploads in a series of continuous aborts info: %v", err)
 	}
 
@@ -996,5 +996,5 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 		}
 	})
 
-	return &proto.GetFirstAbortedUploadsInContinuousAbortsResponse{Uploads: uploads}, nil
+	return &proto.FirstAbortedUploadsInContinuousAbortsResponse{Uploads: uploads}, nil
 }
