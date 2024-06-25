@@ -604,7 +604,7 @@ var _ = Describe("Gateway", func() {
 			strippedPayload, _ = sjson.Delete(strippedPayload, "rudderId")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "type")
 			strippedPayload, _ = sjson.Delete(strippedPayload, "receivedAt")
-			strippedPayload, _ = sjson.Delete(strippedPayload, "requestIP")
+			strippedPayload, _ = sjson.Delete(strippedPayload, "request_ip")
 
 			return strippedPayload
 		}
@@ -1554,13 +1554,13 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
 
-		It("doesn't override if receivedAt or requestIP already exists in payload", func() {
+		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
 				done:           make(chan<- string),
 				userIDHeader:   userIDHeader,
-				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z", "requestIP": "dummyIPFromPayload"}]}`),
+				requestPayload: []byte(`{"batch": [{"type": "extract", "receivedAt": "2024-01-01T01:01:01.000000001Z", "request_ip": "dummyIPFromPayload"}]}`),
 			}
 			jobForm, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
@@ -1568,7 +1568,7 @@ var _ = Describe("Gateway", func() {
 			var job struct {
 				Batch []struct {
 					ReceivedAt string `json:"receivedAt"`
-					RequestIP  string `json:"requestIP"`
+					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
 			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
@@ -1577,7 +1577,7 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
 		})
 
-		It("adds receivedAt and requestIP in the request payload if it's not already present", func() {
+		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
 			req := &webRequestT{
 				reqType:        "batch",
 				authContext:    rCtxEnabled,
@@ -1592,7 +1592,7 @@ var _ = Describe("Gateway", func() {
 			var job struct {
 				Batch []struct {
 					ReceivedAt string `json:"receivedAt"`
-					RequestIP  string `json:"requestIP"`
+					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
 			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
@@ -1930,7 +1930,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("doesn't override if receivedAt or requestIP already exists in payload", func() {
+		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
 			properties := stream.MessageProperties{
 				MessageID:     "messageID",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -1942,7 +1942,7 @@ var _ = Describe("Gateway", func() {
 			}
 			msg := stream.Message{
 				Properties: properties,
-				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "requestIP": "dummyIPFromPayload"}`),
+				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "request_ip": "dummyIPFromPayload"}`),
 			}
 			messages := []stream.Message{msg}
 			payload, err := json.Marshal(messages)
@@ -1960,7 +1960,7 @@ var _ = Describe("Gateway", func() {
 			var job struct {
 				Batch []struct {
 					ReceivedAt string `json:"receivedAt"`
-					RequestIP  string `json:"requestIP"`
+					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
 			Expect(jobForm).To(HaveLen(1))
@@ -1971,7 +1971,7 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
 		})
 
-		It("adds receivedAt and requestIP in the request payload if it's not already present", func() {
+		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
 			properties := stream.MessageProperties{
 				MessageID:     "messageID",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -2000,7 +2000,7 @@ var _ = Describe("Gateway", func() {
 			var job struct {
 				Batch []struct {
 					ReceivedAt string `json:"receivedAt"`
-					RequestIP  string `json:"requestIP"`
+					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
 			Expect(jobForm).To(HaveLen(1))

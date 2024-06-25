@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 )
 
 type KVStoreManager interface {
@@ -16,7 +18,7 @@ type KVStoreManager interface {
 	HMGet(key string, fields ...string) (result []interface{}, err error)
 	HGetAll(key string) (result map[string]string, err error)
 
-	SendDataAsJSON(jsonData json.RawMessage) (interface{}, error)
+	SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error)
 	ShouldSendDataAsJSON(config map[string]interface{}) bool
 }
 
@@ -41,7 +43,7 @@ func New(provider string, config map[string]interface{}) (m KVStoreManager) {
 func newManager(settings SettingsT) (m KVStoreManager) {
 	switch settings.Provider {
 	case "REDIS":
-		m = NewRedisManager(settings.Config)
+		m = redis.NewRedisManager(settings.Config)
 	}
 	return m
 }
