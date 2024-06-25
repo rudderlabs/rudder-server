@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -24,6 +25,8 @@ type Mediator struct {
 	cancel    context.CancelFunc
 	reporters []types.Reporting
 	stats     stats.Stats
+
+	flushers []*flusher.Flusher
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -67,6 +70,9 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, eventStatsReporter)
 
+	trackedUsersFlusher := flusher.CreateTrackedUsersFlusher(rm.ctx, rm.log, rm.stats, "tracked_users_reports")
+	rm.flushers = append(rm.flushers, trackedUsersFlusher)
+
 	return rm
 }
 
@@ -95,6 +101,14 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 				return nil
 			})
 		}
+
+		for _, f := range rm.flushers {
+			rm.g.Go(func() error {
+				f.Start()
+				return nil
+			})
+		}
+
 		_ = rm.g.Wait()
 	}
 }
@@ -104,5 +118,9 @@ func (rm *Mediator) Stop() {
 	_ = rm.g.Wait()
 	for _, reporter := range rm.reporters {
 		reporter.Stop()
+	}
+
+	for _, f := range rm.flushers {
+		f.Stop()
 	}
 }
