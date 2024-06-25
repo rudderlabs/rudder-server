@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -19,7 +20,9 @@ type Flusher struct {
 	cancel context.CancelFunc
 	g      *errgroup.Group
 	log    logger.Logger
-	db     db.Database
+
+	db                 db.Database
+	maxOpenConnections int
 
 	instanceId string
 
@@ -29,10 +32,10 @@ type Flusher struct {
 
 	mainLoopSleepInterval config.ValueLoader[time.Duration]
 
-	inAppAggregationEnabled            bool
-	aggWindowMins                      config.ValueLoader[time.Duration]
-	batchSizeFromDB                    config.ValueLoader[int]
-	lagForConcurrencyIncreaseInMinutes config.ValueLoader[time.Duration]
+	inAppAggregationEnabled             bool
+	aggWindowMins                       config.ValueLoader[time.Duration]
+	batchSizeFromDB                     config.ValueLoader[int]
+	lagThresholdForAggresiveFlushInMins config.ValueLoader[time.Duration]
 
 	reportingURL          string
 	minConcurrentRequests config.ValueLoader[int]
@@ -57,41 +60,45 @@ type Flusher struct {
 	client         *Client
 	handler        Handler
 	commonTags     stats.Tags
+
+	startOnce sync.Once
 }
 
 func NewFlusher(ctx context.Context, db db.Database, log logger.Logger, stats stats.Stats, table string, labels []string, values []string, reportingURL string, inAppAggregationEnabled bool, handler Handler) *Flusher {
 
+	maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.minConcurrentRequests")
 	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.aggregationWindowInMinutes")
 	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.batchSizeFromDB")
 	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.batchSizeToReporting")
-	lagForConcurrencyIncreaseInMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.lagForConcurrencyIncreaseInMinutes")
+	lagThresholdForAggresiveFlushInMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.lagThresholdForAggresiveFlushInMins")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
 	f := Flusher{
-		ctx:                                ctx,
-		cancel:                             cancel,
-		g:                                  g,
-		log:                                log,
-		reportingURL:                       reportingURL,
-		instanceId:                         config.GetString("INSTANCE_ID", "1"),
-		mainLoopSleepInterval:              mainLoopSleepInterval,
-		minConcurrentRequests:              minConcReqs,
-		maxConcurrentRequests:              maxConcReqs,
-		stats:                              stats,
-		aggWindowMins:                      aggWindowMins,
-		lagForConcurrencyIncreaseInMinutes: lagForConcurrencyIncreaseInMins,
-		labels:                             labels,
-		values:                             values,
-		batchSizeFromDB:                    batchSizeFromDB,
-		table:                              table,
-		db:                                 db,
-		handler:                            handler,
-		inAppAggregationEnabled:            inAppAggregationEnabled,
-		batchSizeToReporting:               batchSizeToReporting,
+		ctx:                                 ctx,
+		cancel:                              cancel,
+		g:                                   g,
+		db:                                  db,
+		log:                                 log,
+		reportingURL:                        reportingURL,
+		instanceId:                          config.GetString("INSTANCE_ID", "1"),
+		mainLoopSleepInterval:               mainLoopSleepInterval,
+		minConcurrentRequests:               minConcReqs,
+		maxConcurrentRequests:               maxConcReqs,
+		stats:                               stats,
+		aggWindowMins:                       aggWindowMins,
+		labels:                              labels,
+		values:                              values,
+		batchSizeFromDB:                     batchSizeFromDB,
+		table:                               table,
+		handler:                             handler,
+		inAppAggregationEnabled:             inAppAggregationEnabled,
+		batchSizeToReporting:                batchSizeToReporting,
+		maxOpenConnections:                  maxOpenConns,
+		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
 	}
 
 	f.initCommonTags()
@@ -100,23 +107,36 @@ func NewFlusher(ctx context.Context, db db.Database, log logger.Logger, stats st
 }
 
 func (f *Flusher) Start() {
-	f.initStats(f.commonTags)
+	f.startOnce.Do(func() {
 
-	f.lastReportedAt.Store(time.Now())
+		err := f.db.InitDB()
+		if err != nil {
+			panic(err)
+		}
 
-	g, ctx := errgroup.WithContext(f.ctx)
+		f.initStats(f.commonTags)
 
-	g.Go(func() error {
-		return f.emitLagMetricLoop(ctx)
+		f.lastReportedAt.Store(time.Now())
+
+		g, ctx := errgroup.WithContext(f.ctx)
+
+		g.Go(func() error {
+			return f.emitLagMetricLoop(ctx)
+		})
+
+		g.Go(func() error {
+			return f.mainLoop(ctx)
+		})
+
+		if err := g.Wait(); err != nil {
+			f.log.Errorw("Error in flusher", "error", err)
+
+			// TODO: Should we panic here ?
+			if !errors.Is(err, context.Canceled) {
+				panic(err)
+			}
+		}
 	})
-
-	g.Go(func() error {
-		return f.mainLoop(ctx)
-	})
-
-	if err := g.Wait(); err != nil {
-		f.log.Errorw("Error running flusher", "error", err)
-	}
 }
 
 func (f *Flusher) initCommonTags() {
@@ -128,14 +148,16 @@ func (f *Flusher) initCommonTags() {
 }
 
 func (f *Flusher) emitLagMetricLoop(ctx context.Context) error {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
 	for {
-		lag := time.Since(f.lastReportedAt.Load())
-		f.reportingLag.Gauge(lag.Seconds())
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Minute): // TODO: Avoid time.Sleep especially for such durations of time, can cause issues with graceful shutdown and testing.
-
+		case <-ticker.C:
+			lag := time.Since(f.lastReportedAt.Load())
+			f.reportingLag.Gauge(lag.Seconds())
 		}
 	}
 }
@@ -143,6 +165,7 @@ func (f *Flusher) emitLagMetricLoop(ctx context.Context) error {
 func (f *Flusher) Stop() {
 	f.cancel()
 	_ = f.g.Wait()
+	f.db.CloseDB()
 }
 
 func (f *Flusher) initStats(tags map[string]string) {
@@ -167,16 +190,36 @@ func (f *Flusher) initStats(tags map[string]string) {
 }
 
 func (f *Flusher) mainLoop(ctx context.Context) error {
+	ticker := time.NewTicker(f.mainLoopSleepInterval.Load())
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(f.mainLoopSleepInterval.Load()): // TODO: sleep less if there's lag
+		default:
 			start := time.Now()
-			f.mainLoopOnce(ctx)
+			if err := f.mainLoopOnce(ctx); err != nil {
+				return err
+			}
 			f.mainLoopTimer.Since(start)
+			if !f.shouldIncreaseFlushing(f.lastReportedAt.Load()) {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-ticker.C:
+				}
+			}
 		}
 	}
+}
+
+func (f *Flusher) shouldIncreaseFlushing(lastReportedAt time.Time) bool {
+	reportingLagInMins := time.Since(lastReportedAt).Minutes()
+	if reportingLagInMins > f.lagThresholdForAggresiveFlushInMins.Load().Minutes() {
+		return false
+	}
+	return true
 }
 
 // mainLoopOnce is the main logic for flushing data.
@@ -313,7 +356,7 @@ func convertToSlice(r map[string]interface{}) []*interface{} {
 }
 
 func (f *Flusher) send(ctx context.Context, aggReports []*interface{}) error {
-	concurrency := f.getConcurrency()
+	concurrency := f.getConcurrency(f.lastReportedAt.Load())
 	if f.batchSizeToReporting.Load() > 1 {
 		if err := f.sendInBatches(ctx, aggReports, f.batchSizeFromDB.Load(), concurrency); err != nil {
 			return err
@@ -326,10 +369,8 @@ func (f *Flusher) send(ctx context.Context, aggReports []*interface{}) error {
 	return nil
 }
 
-func (f *Flusher) getConcurrency() int {
-	reportingLagInMins := time.Since(f.lastReportedAt.Load()).Minutes()
-
-	if reportingLagInMins > f.lagForConcurrencyIncreaseInMinutes.Load().Minutes() {
+func (f *Flusher) getConcurrency(lastReportedAt time.Time) int {
+	if f.shouldIncreaseFlushing(f.lastReportedAt.Load()) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()

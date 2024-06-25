@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/segmentio/go-hll"
 )
 
@@ -27,18 +27,16 @@ var (
 	once                        sync.Once
 )
 
-func CreateTrackedUsersFlusher(ctx context.Context, c types.SyncerConfig, log logger.Logger, stats stats.Stats, table string) *Flusher {
+func CreateTrackedUsersFlusher(ctx context.Context, log logger.Logger, stats stats.Stats, table string) *Flusher {
 	once.Do(func() {
 		labels := []string{"workspace_id", "source_id", "instance_id"}
 		values := []string{"userid_hll", "anonymousid_hll", "identified_anonymousid_hll"}
 
 		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
 
+		connStr := misc.GetConnectionString(config.Default, "reporting")
 		maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
-		db, err := db.NewPostgresDB(c.ConnInfo, maxOpenConns)
-		if err != nil {
-			panic(err)
-		}
+		db := db.NewPostgresDB(connStr, maxOpenConns)
 
 		trackedUsersHandlerInstance = &TrackedUsersHandler{
 			table:  table,

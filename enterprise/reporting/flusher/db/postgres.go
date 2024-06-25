@@ -10,16 +10,25 @@ import (
 )
 
 type PostgresDB struct {
-	db *sql.DB
+	db           *sql.DB
+	connStr      string
+	maxOpenConns int
 }
 
-func NewPostgresDB(connStr string, maxOpenConns int) (*PostgresDB, error) {
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return nil, err
+func NewPostgresDB(connStr string, maxOpenConns int) *PostgresDB {
+	return &PostgresDB{
+		connStr:      connStr,
+		maxOpenConns: maxOpenConns,
 	}
-	db.SetMaxOpenConns(maxOpenConns)
-	return &PostgresDB{db: db}, nil
+}
+
+func (p *PostgresDB) InitDB() error {
+	db, err := sql.Open("postgres", p.connStr)
+	if err != nil {
+		return err
+	}
+	db.SetMaxOpenConns(p.maxOpenConns)
+	return nil
 }
 
 func (p *PostgresDB) GetStart(ctx context.Context, table string) (time.Time, error) {
@@ -80,6 +89,6 @@ func (p *PostgresDB) Delete(ctx context.Context, tableName string, minReportedAt
 	return err
 }
 
-func (p *PostgresDB) Close() error {
+func (p *PostgresDB) CloseDB() error {
 	return p.db.Close()
 }
