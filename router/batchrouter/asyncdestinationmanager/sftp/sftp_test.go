@@ -216,7 +216,7 @@ var _ = Describe("SFTP test", func() {
 				return
 			}
 
-			tempFile, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+			tempFile, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 			if err != nil {
 				log.Fatalf("Failed to create temporary file: %v", err)
 			}
