@@ -1,7 +1,5 @@
 package trackedusers
 
-//go:generate mockgen -destination=./mocks/mock_data_collector.go -package=mockdatacollector github.com/rudderlabs/rudder-server/enterprise/trackedusers DataCollector
-
 import (
 	"context"
 	"database/sql"
@@ -9,24 +7,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	txn "github.com/rudderlabs/rudder-server/utils/tx"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/lib/pq"
-
-	"github.com/spaolacci/murmur3"
-
-	"github.com/tidwall/gjson"
-
+	"github.com/samber/lo"
 	"github.com/segmentio/go-hll"
-
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	txn "github.com/rudderlabs/rudder-server/utils/tx"
+	"github.com/spaolacci/murmur3"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -38,39 +31,35 @@ const (
 	murmurSeed = 123
 )
 
-// DataCollector is interface to collect data from jobs
-type DataCollector interface {
-	CollectData(ctx context.Context, jobs []*jobsdb.JobT, tx *txn.Tx) error
+type UsersReport struct {
+	WorkspaceID              string
+	SourceID                 string
+	UserIDHll                *hll.Hll
+	AnonymousIDHLL           *hll.Hll
+	IdentifiedAnonymousIDHLL *hll.Hll
 }
 
-type UniqueUsersCollector struct {
+//go:generate mockgen -destination=./mocks/mock_user_reporter.go -package=mockuserreporter github.com/rudderlabs/rudder-server/enterprise/trackedusers UsersReporter
+
+// UsersReporter is interface to report unique users from reports
+type UsersReporter interface {
+	ReportUsers(ctx context.Context, reports []*UsersReport, tx *txn.Tx) error
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*UsersReport
+	MigrateDatabase(dbConn string, conf *config.Config) error
+}
+
+type UniqueUsersReporter struct {
 	log         logger.Logger
 	hllSettings *hll.Settings
 	instanceID  string
 }
 
-func NewUniqueUsersCollector(log logger.Logger, dbConn string) (*UniqueUsersCollector, error) {
-	dbHandle, err := sql.Open("postgres", dbConn)
-	if err != nil {
-		panic(err)
-	}
-	dbHandle.SetMaxOpenConns(1)
-
-	m := &migrator.Migrator{
-		Handle:                     dbHandle,
-		MigrationsTable:            "tracked_users_reports_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
-	}
-	err = m.Migrate("tracked_users")
-	if err != nil {
-		return nil, fmt.Errorf("could not run tracked_users_reports migrations: %w", err)
-	}
-
-	return &UniqueUsersCollector{
+func NewUniqueUsersReporter(log logger.Logger, conf *config.Config) (*UniqueUsersReporter, error) {
+	return &UniqueUsersReporter{
 		log: log,
 		hllSettings: &hll.Settings{
-			Log2m:             config.GetInt("TrackedUsers.precision", 14),
-			Regwidth:          config.GetInt("TrackedUsers.registerWidth", 5),
+			Log2m:             conf.GetInt("TrackedUsers.precision", 14),
+			Regwidth:          conf.GetInt("TrackedUsers.registerWidth", 5),
 			ExplicitThreshold: hll.AutoExplicitThreshold,
 			SparseEnabled:     true,
 		},
@@ -78,12 +67,30 @@ func NewUniqueUsersCollector(log logger.Logger, dbConn string) (*UniqueUsersColl
 	}, nil
 }
 
-func (u *UniqueUsersCollector) CollectData(ctx context.Context, jobs []*jobsdb.JobT, tx *txn.Tx) error {
+func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config) error {
+	dbHandle, err := sql.Open("postgres", dbConn)
+	if err != nil {
+		return err
+	}
+	dbHandle.SetMaxOpenConns(1)
+
+	m := &migrator.Migrator{
+		Handle:                     dbHandle,
+		MigrationsTable:            "tracked_users_reports_migrations",
+		ShouldForceSetLowerVersion: conf.GetBool("SQLMigrator.forceSetLowerVersion", true),
+	}
+	err = m.Migrate("tracked_users")
+	if err != nil {
+		return fmt.Errorf("migrating `tracked_users_reports` table: %w", err)
+	}
+	return nil
+}
+
+func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*UsersReport {
 	if len(jobs) == 0 {
 		return nil
 	}
 	workspaceSourceUserIdTypeMap := make(map[string]map[string]map[string]*hll.Hll)
-	reportedAt := time.Now().UTC()
 	for _, job := range jobs {
 		if job.WorkspaceId == "" {
 			u.log.Warn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
@@ -128,6 +135,27 @@ func (u *UniqueUsersCollector) CollectData(ctx context.Context, jobs []*jobsdb.J
 		return nil
 	}
 
+	reports := make([]*UsersReport, 0)
+	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
+		sourceIDReports := make([]*UsersReport, 0, len(sourceUserMp))
+		sourceIDReports = append(sourceIDReports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
+			return &UsersReport{
+				WorkspaceID:              workspaceID,
+				SourceID:                 sourceID,
+				UserIDHll:                userIdTypeMap[idTypeUserID],
+				AnonymousIDHLL:           userIdTypeMap[idTypeAnonymousID],
+				IdentifiedAnonymousIDHLL: userIdTypeMap[idTypeUserIDAnonymousIDCombination],
+			}
+		})...)
+		reports = append(reports, sourceIDReports...)
+	}
+	return reports
+}
+
+func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersReport, tx *txn.Tx) error {
+	if len(reports) == 0 {
+		return nil
+	}
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("tracked_users_reports",
 		"workspace_id",
 		"instance_id",
@@ -142,21 +170,19 @@ func (u *UniqueUsersCollector) CollectData(ctx context.Context, jobs []*jobsdb.J
 	}
 	defer func() { _ = stmt.Close() }()
 
-	for workspaceID, sourceUserIdTypeMap := range workspaceSourceUserIdTypeMap {
-		for sourceID, userIdTypeMap := range sourceUserIdTypeMap {
-			_, err := stmt.Exec(workspaceID,
-				u.instanceID,
-				sourceID,
-				reportedAt,
-				hllToString(userIdTypeMap[idTypeUserID]),
-				hllToString(userIdTypeMap[idTypeAnonymousID]),
-				hllToString(userIdTypeMap[idTypeUserIDAnonymousIDCombination]),
-			)
-			if err != nil {
-				return fmt.Errorf("executing statement: %v", err)
-			}
-
+	for _, report := range reports {
+		_, err := stmt.Exec(report.WorkspaceID,
+			u.instanceID,
+			report.SourceID,
+			time.Now(),
+			hllToString(report.UserIDHll),
+			hllToString(report.AnonymousIDHLL),
+			hllToString(report.IdentifiedAnonymousIDHLL),
+		)
+		if err != nil {
+			return fmt.Errorf("executing statement: %v", err)
 		}
+
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
 		return fmt.Errorf("executing final statement: %v", err)
@@ -176,7 +202,7 @@ func combineUserIDAnonymousID(userID, anonymousID string) string {
 	return userID + ":" + anonymousID
 }
 
-func (u *UniqueUsersCollector) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
+func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
 	if idTypeHllMap == nil {
 		idTypeHllMap = make(map[string]*hll.Hll)
 	}
