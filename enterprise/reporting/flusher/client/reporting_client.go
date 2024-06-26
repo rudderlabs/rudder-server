@@ -1,4 +1,4 @@
-package flusher
+package client
 
 import (
 	"bytes"
@@ -16,7 +16,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
-type Client struct {
+const (
+	StatReportingHttpReqLatency = "reporting_client_http_request_latency"
+	StatReportingHttpReqCount   = "reporting_client_http_request_count"
+)
+
+type ReportingClient struct {
 	netClient  *http.Client
 	url        string
 	log        logger.Logger
@@ -26,11 +31,11 @@ type Client struct {
 	reqCount   stats.Counter
 }
 
-func NewClient(url string, log logger.Logger, stats stats.Stats, tags stats.Tags) *Client {
+func NewReportingClient(url string, log logger.Logger, stats stats.Stats, tags stats.Tags) *ReportingClient {
 	tr := &http.Transport{}
 	nc := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 
-	c := Client{
+	c := ReportingClient{
 		netClient: nc,
 		url:       url,
 		log:       log,
@@ -41,30 +46,18 @@ func NewClient(url string, log logger.Logger, stats stats.Stats, tags stats.Tags
 	return &c
 }
 
-func (c *Client) initStats() {
+func (c *ReportingClient) initStats() {
 	c.reqLatency = c.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, c.tags)
 	c.reqCount = c.stats.NewTaggedStat(StatReportingHttpReqCount, stats.CountType, c.tags)
 }
 
-func (c *Client) MakePOSTRequestBatch(ctx context.Context, reports []*interface{}) error {
-	payload, err := json.Marshal(reports)
+func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface{}) error {
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		panic(err)
 	}
-	return c.makePOSTRequest(ctx, payload)
-}
-
-func (c *Client) MakePOSTRequest(ctx context.Context, report *interface{}) error {
-	payload, err := json.Marshal(report)
-	if err != nil {
-		panic(err)
-	}
-	return c.makePOSTRequest(ctx, payload)
-}
-
-func (c *Client) makePOSTRequest(ctx context.Context, payload []byte) error {
 	o := func() error {
-		req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(payload))
+		req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(payloadBytes))
 		if err != nil {
 			return err
 		}
@@ -90,7 +83,7 @@ func (c *Client) makePOSTRequest(ctx context.Context, payload []byte) error {
 	}
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err := backoff.RetryNotify(o, b, func(err error, t time.Duration) {
+	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
 		c.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
@@ -99,7 +92,7 @@ func (c *Client) makePOSTRequest(ctx context.Context, payload []byte) error {
 	return err
 }
 
-func (c *Client) isHTTPRequestSuccessful(status int) bool {
+func (c *ReportingClient) isHTTPRequestSuccessful(status int) bool {
 	if status == 429 {
 		return false
 	}
