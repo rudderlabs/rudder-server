@@ -15,7 +15,7 @@ type PostgresDB struct {
 	maxOpenConns int
 }
 
-func NewPostgresDB(connStr string, maxOpenConns int) *PostgresDB {
+func NewPostgresDB(connStr string, maxOpenConns int) DB {
 	return &PostgresDB{
 		connStr:      connStr,
 		maxOpenConns: maxOpenConns,
@@ -28,6 +28,7 @@ func (p *PostgresDB) InitDB() error {
 		return err
 	}
 	db.SetMaxOpenConns(p.maxOpenConns)
+	p.db = db
 	return nil
 }
 
