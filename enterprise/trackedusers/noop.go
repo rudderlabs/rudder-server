@@ -20,7 +20,7 @@ func (n *NoopDataCollector) ReportUsers(context.Context, []*UsersReport, *txn.Tx
 	return nil
 }
 
-func (n *NoopDataCollector) GenerateReportsFromJobs([]*jobsdb.JobT) []*UsersReport {
+func (n *NoopDataCollector) GenerateReportsFromJobs([]*jobsdb.JobT, map[string]bool) []*UsersReport {
 	return nil
 }
 
