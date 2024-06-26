@@ -59,5 +59,5 @@ type Features struct {
 }
 
 type TrackedUsersFeature interface {
-	Setup(dbConn string) (trackedusers.DataCollector, error)
+	Setup(c *config.Config) (trackedusers.UsersReporter, error)
 }
