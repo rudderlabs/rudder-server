@@ -56,10 +56,11 @@ import (
 )
 
 const (
-	MetricKeyDelimiter = "!<<#>>!"
-	UserTransformation = "USER_TRANSFORMATION"
-	DestTransformation = "DEST_TRANSFORMATION"
-	EventFilter        = "EVENT_FILTER"
+	MetricKeyDelimiter    = "!<<#>>!"
+	UserTransformation    = "USER_TRANSFORMATION"
+	DestTransformation    = "DEST_TRANSFORMATION"
+	EventFilter           = "EVENT_FILTER"
+	sourceCategoryWebhook = "webhook"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -1589,6 +1590,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
+	nonEventStreamSourceIds := make(map[string]bool)
+
 	spans := make([]stats.TraceSpan, 0, len(jobList))
 	defer func() {
 		for _, span := range spans {
@@ -1660,6 +1663,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
 			}
 			continue
+		}
+
+		if source.SourceDefinition.Category != "" && source.SourceDefinition.Category != sourceCategoryWebhook {
+			nonEventStreamSourceIds[sourceID] = true
 		}
 
 		for _, enricher := range proc.enrichers {
@@ -2024,7 +2031,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
-		proc.trackedUsersReporter.GenerateReportsFromJobs(subJobs.subJobs),
+		proc.trackedUsersReporter.GenerateReportsFromJobs(subJobs.subJobs, nonEventStreamSourceIds),
 	}
 }
 
