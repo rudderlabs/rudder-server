@@ -44,7 +44,7 @@ type UsersReport struct {
 // UsersReporter is interface to report unique users from reports
 type UsersReporter interface {
 	ReportUsers(ctx context.Context, reports []*UsersReport, tx *txn.Tx) error
-	GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*UsersReport
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*UsersReport
 	MigrateDatabase(dbConn string, conf *config.Config) error
 }
 
@@ -86,7 +86,7 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 	return nil
 }
 
-func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*UsersReport {
+func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -101,6 +101,11 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT) []*Us
 		if sourceID == "" {
 			u.log.Warn("source_id not found in job parameters", obskit.WorkspaceID(job.WorkspaceId),
 				logger.NewIntField("jobId", job.JobID))
+			continue
+		}
+
+		if sourceIDtoFilter != nil && sourceIDtoFilter[sourceID] {
+			u.log.Debug("source to filter", obskit.SourceID(sourceID))
 			continue
 		}
 		userID := gjson.GetBytes(job.EventPayload, "batch.0.userId").String()
