@@ -264,7 +264,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			WriteKey: WriteKeyEnabledNoUT,
 			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Category: "eventStream",
+				Category: "webhook",
 			},
 			Destinations: []backendconfig.DestinationT{
 				{
@@ -1731,7 +1731,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			c.mockTrackedUsersReporter.EXPECT().GenerateReportsFromJobs(unprocessedJobsList).Return(trackerUsersReports).Times(1)
+			c.mockTrackedUsersReporter.EXPECT().GenerateReportsFromJobs(unprocessedJobsList, map[string]bool{}).Return(trackerUsersReports).Times(1)
 			c.mockTrackedUsersReporter.EXPECT().ReportUsers(gomock.Any(), trackerUsersReports, gomock.Any()).Times(1)
 			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
