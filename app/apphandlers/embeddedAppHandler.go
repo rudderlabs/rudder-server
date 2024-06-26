@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"golang.org/x/sync/errgroup"
@@ -55,12 +53,10 @@ type embeddedApp struct {
 		routerDSLimit      config.ValueLoader[int]
 		batchRouterDSLimit config.ValueLoader[int]
 		gatewayDSLimit     config.ValueLoader[int]
-		enableTrackedUsers bool
 	}
 }
 
 func (a *embeddedApp) Setup() error {
-	a.config.enableTrackedUsers = config.GetBool("TrackedUsers.enabled", false)
 	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -240,12 +236,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}
 	}()
 
-	var trackedUsersCollector trackedusers.DataCollector
-	if a.config.enableTrackedUsers {
-		trackedUsersCollector, err = a.app.Features().TrackedUsers.Setup(misc.GetConnectionString(config, "tracked_users"))
-		if err != nil {
-			return fmt.Errorf("could not setup tracked users: %w", err)
-		}
+	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup tracked users: %w", err)
+	}
+	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
+	if err != nil {
+		return fmt.Errorf("could not run tracked users database migration: %w", err)
 	}
 
 	proc := processor.New(
@@ -266,7 +263,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		destinationHandle,
 		transformationhandle,
 		enrichers,
-		trackedUsersCollector,
+		trackedUsersReporter,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.NewFactory(config, stats.Default)
