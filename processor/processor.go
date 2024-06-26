@@ -159,9 +159,8 @@ type Handle struct {
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
-	sourceObservers               []sourceObserver
-	trackedUsersDataCollector     trackedusers.DataCollector
-	trackedUsersCollectionEnabled bool
+	sourceObservers      []sourceObserver
+	trackedUsersReporter trackedusers.UsersReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -372,13 +371,12 @@ func (proc *Handle) Setup(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
-	trackedUsersDataCollector trackedusers.DataCollector,
+	trackedUsersReporter trackedusers.UsersReporter,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
-	proc.trackedUsersCollectionEnabled = config.GetBool("TrackedUsers.enabled", false)
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -409,7 +407,7 @@ func (proc *Handle) Setup(
 	proc.namespace = config.GetKubeNamespace()
 	proc.instanceID = misc.GetInstanceID()
 
-	proc.trackedUsersDataCollector = trackedUsersDataCollector
+	proc.trackedUsersReporter = trackedUsersReporter
 
 	// Stats
 	if proc.statsFactory == nil {
@@ -2026,7 +2024,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
-		subJobs.subJobs,
+		proc.trackedUsersReporter.GenerateReportsFromJobs(subJobs.subJobs),
 	}
 }
 
@@ -2045,9 +2043,9 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
-	gatewayJobs   []*jobsdb.JobT
+	hasMore             bool
+	rsourcesStats       rsources.StatsCollector
+	trackedUsersReports []*trackedusers.UsersReport
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
@@ -2143,7 +2141,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
-		in.gatewayJobs,
+		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2165,11 +2163,11 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
-	gatewayJobs   []*jobsdb.JobT
-	statusList    []*jobsdb.JobStatusT
-	destJobs      []*jobsdb.JobT
-	batchDestJobs []*jobsdb.JobT
-	droppedJobs   []*jobsdb.JobT
+	trackedUsersReports []*trackedusers.UsersReport
+	statusList          []*jobsdb.JobStatusT
+	destJobs            []*jobsdb.JobT
+	batchDestJobs       []*jobsdb.JobT
+	droppedJobs         []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
@@ -2372,11 +2370,9 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				}
 			}
 
-			if proc.isTrackedUsersCollectionEnabled() {
-				err = proc.trackedUsersDataCollector.CollectData(ctx, in.gatewayJobs, tx.Tx())
-				if err != nil {
-					return fmt.Errorf("storing tracked users: %w", err)
-				}
+			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing tracked users: %w", err)
 			}
 
 			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
@@ -3136,10 +3132,6 @@ func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket str
 
 func (proc *Handle) isReportingEnabled() bool {
 	return proc.reporting != nil && proc.reportingEnabled
-}
-
-func (proc *Handle) isTrackedUsersCollectionEnabled() bool {
-	return proc.trackedUsersDataCollector != nil && proc.trackedUsersCollectionEnabled
 }
 
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {

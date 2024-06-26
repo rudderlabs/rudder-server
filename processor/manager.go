@@ -45,7 +45,7 @@ type LifecycleManager struct {
 	destDebugger               destinationdebugger.DestinationDebugger
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
-	trackedUsersDataCollector  trackedusers.DataCollector
+	trackedUsersReporter       trackedusers.UsersReporter
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -73,7 +73,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.destDebugger,
 		proc.transDebugger,
 		proc.enrichers,
-		proc.trackedUsersDataCollector,
+		proc.trackedUsersReporter,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -114,7 +114,7 @@ func New(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
-	trackedUsersDataCollector trackedusers.DataCollector,
+	trackedUsersReporter trackedusers.UsersReporter,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -144,7 +144,7 @@ func New(
 		destDebugger:               destDebugger,
 		transDebugger:              transDebugger,
 		enrichers:                  enrichers,
-		trackedUsersDataCollector:  trackedUsersDataCollector,
+		trackedUsersReporter:       trackedUsersReporter,
 	}
 	for _, opt := range opts {
 		opt(proc)
