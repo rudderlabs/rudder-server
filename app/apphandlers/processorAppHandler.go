@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/go-chi/chi/v5"
 
 	"golang.org/x/sync/errgroup"
@@ -50,7 +48,6 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableTrackedUsers bool
 		processorDSLimit   config.ValueLoader[int]
 		routerDSLimit      config.ValueLoader[int]
 		batchRouterDSLimit config.ValueLoader[int]
@@ -67,7 +64,6 @@ type processorApp struct {
 }
 
 func (a *processorApp) Setup() error {
-	a.config.enableTrackedUsers = config.GetBool("TrackedUsers.enabled", false)
 	a.config.http.ReadTimeout = config.GetDurationVar(0, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
 	a.config.http.ReadHeaderTimeout = config.GetDurationVar(0, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
 	a.config.http.WriteTimeout = config.GetDurationVar(10, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
@@ -242,12 +238,13 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
-	var trackedUsersCollector trackedusers.DataCollector
-	if a.config.enableTrackedUsers {
-		trackedUsersCollector, err = a.app.Features().TrackedUsers.Setup(misc.GetConnectionString(config, "tracked_users"))
-		if err != nil {
-			return fmt.Errorf("could not setup tracked users: %w", err)
-		}
+	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup tracked users: %w", err)
+	}
+	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
+	if err != nil {
+		return fmt.Errorf("could not run tracked users database migration: %w", err)
 	}
 
 	p := proc.New(
@@ -268,7 +265,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		destinationHandle,
 		transformationhandle,
 		enrichers,
-		trackedUsersCollector,
+		trackedUsersReporter,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.NewFactory(config, stats.Default)

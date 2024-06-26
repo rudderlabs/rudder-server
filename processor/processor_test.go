@@ -71,20 +71,20 @@ func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events
 }
 
 type testContext struct {
-	mockCtrl                  *gomock.Controller
-	mockBackendConfig         *mocksBackendConfig.MockBackendConfig
-	mockGatewayJobsDB         *mocksJobsDB.MockJobsDB
-	mockRouterJobsDB          *mocksJobsDB.MockJobsDB
-	mockBatchRouterJobsDB     *mocksJobsDB.MockJobsDB
-	mockReadProcErrorsDB      *mocksJobsDB.MockJobsDB
-	mockWriteProcErrorsDB     *mocksJobsDB.MockJobsDB
-	mockEventSchemasDB        *mocksJobsDB.MockJobsDB
-	mockArchivalDB            *mocksJobsDB.MockJobsDB
-	MockReportingI            *mockReportingTypes.MockReporting
-	MockDedup                 *mockDedup.MockDedup
-	MockObserver              *mockObserver
-	MockRsourcesService       *rsources.MockJobService
-	mockTrackedUsersCollector *mockdatacollector.MockDataCollector
+	mockCtrl                 *gomock.Controller
+	mockBackendConfig        *mocksBackendConfig.MockBackendConfig
+	mockGatewayJobsDB        *mocksJobsDB.MockJobsDB
+	mockRouterJobsDB         *mocksJobsDB.MockJobsDB
+	mockBatchRouterJobsDB    *mocksJobsDB.MockJobsDB
+	mockReadProcErrorsDB     *mocksJobsDB.MockJobsDB
+	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
+	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
+	mockArchivalDB           *mocksJobsDB.MockJobsDB
+	MockReportingI           *mockReportingTypes.MockReporting
+	MockDedup                *mockDedup.MockDedup
+	MockObserver             *mockObserver
+	MockRsourcesService      *rsources.MockJobService
+	mockTrackedUsersReporter *mockdatacollector.MockUsersReporter
 }
 
 func (c *testContext) Setup() {
@@ -114,7 +114,7 @@ func (c *testContext) Setup() {
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
-	c.mockTrackedUsersCollector = mockdatacollector.NewMockDataCollector(c.mockCtrl)
+	c.mockTrackedUsersReporter = mockdatacollector.NewMockUsersReporter(c.mockCtrl)
 }
 
 func (c *testContext) Finish() {
@@ -1590,8 +1590,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
-			processor.trackedUsersCollectionEnabled = true
-			processor.trackedUsersDataCollector = c.mockTrackedUsersCollector
+			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
@@ -1715,10 +1714,27 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					}
 				})
 
-			c.mockTrackedUsersCollector.EXPECT().CollectData(gomock.Any(), unprocessedJobsList, gomock.Any()).Times(1)
-
+			trackerUsersReports := []*trackedusers.UsersReport{
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabledNoUT,
+				},
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabledNoUT,
+				},
+			}
+			c.mockTrackedUsersReporter.EXPECT().GenerateReportsFromJobs(unprocessedJobsList).Return(trackerUsersReports).Times(1)
+			c.mockTrackedUsersReporter.EXPECT().ReportUsers(gomock.Any(), trackerUsersReports, gomock.Any()).Times(1)
 			Setup(processor, c, false, false)
-			processor.trackedUsersCollectionEnabled = true
+			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -5020,7 +5036,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
-		c.mockTrackedUsersCollector,
+		trackedusers.NewNoopDataCollector(),
 	)
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
