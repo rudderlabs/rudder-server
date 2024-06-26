@@ -39,17 +39,17 @@ func (m *MockUsersReporter) EXPECT() *MockUsersReporterMockRecorder {
 }
 
 // GenerateReportsFromJobs mocks base method.
-func (m *MockUsersReporter) GenerateReportsFromJobs(arg0 []*jobsdb.JobT) []*trackedusers.UsersReport {
+func (m *MockUsersReporter) GenerateReportsFromJobs(arg0 []*jobsdb.JobT, arg1 map[string]bool) []*trackedusers.UsersReport {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateReportsFromJobs", arg0)
+	ret := m.ctrl.Call(m, "GenerateReportsFromJobs", arg0, arg1)
 	ret0, _ := ret[0].([]*trackedusers.UsersReport)
 	return ret0
 }
 
 // GenerateReportsFromJobs indicates an expected call of GenerateReportsFromJobs.
-func (mr *MockUsersReporterMockRecorder) GenerateReportsFromJobs(arg0 interface{}) *gomock.Call {
+func (mr *MockUsersReporterMockRecorder) GenerateReportsFromJobs(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateReportsFromJobs", reflect.TypeOf((*MockUsersReporter)(nil).GenerateReportsFromJobs), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateReportsFromJobs", reflect.TypeOf((*MockUsersReporter)(nil).GenerateReportsFromJobs), arg0, arg1)
 }
 
 // MigrateDatabase mocks base method.
