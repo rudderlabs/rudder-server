@@ -24,7 +24,7 @@ replace (
 
 require (
 	cloud.google.com/go/bigquery v1.61.0
-	cloud.google.com/go/pubsub v1.39.0
+	cloud.google.com/go/pubsub v1.40.0
 	cloud.google.com/go/storage v1.42.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -41,7 +41,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.5.7
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/docker/docker v27.0.0+incompatible
+	github.com/docker/docker v27.0.2+incompatible
 	github.com/go-chi/chi/v5 v5.0.14
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -106,7 +106,7 @@ require (
 	golang.org/x/exp v0.0.0-20240529005216-23cca8864a10
 	golang.org/x/oauth2 v0.21.0
 	golang.org/x/sync v0.7.0
-	google.golang.org/api v0.185.0
+	google.golang.org/api v0.186.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240617180043-68d350f18fd4
 	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.2
@@ -114,7 +114,7 @@ require (
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
-	cloud.google.com/go/auth v0.5.1 // indirect
+	cloud.google.com/go/auth v0.6.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.2 // indirect
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
@@ -208,7 +208,7 @@ require (
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.12.4 // indirect
+	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -311,7 +311,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gonum.org/v1/gonum v0.15.0 // indirect
 	google.golang.org/genproto v0.0.0-20240617180043-68d350f18fd4 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240610135401-a8a62080eff3 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
