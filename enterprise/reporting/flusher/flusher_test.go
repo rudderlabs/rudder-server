@@ -94,7 +94,6 @@ func TestStartAndStop(t *testing.T) {
 	f.db = &db.NOP{}
 
 	t.Run("start and stop flusher", func(t *testing.T) {
-
 		go f.Start()
 
 		require.Eventually(t, func() bool {
@@ -122,8 +121,11 @@ func TestStartFlushing(t *testing.T) {
 	f.db = &db.NOP{}
 
 	t.Run("start flushing loop", func(t *testing.T) {
-
-		go f.startFlushing(f.ctx)
+		go func() {
+			if err := f.startFlushing(f.ctx); err != nil {
+				t.Errorf("Error starting flushing: %v", err)
+			}
+		}()
 		f.cancel()
 
 		// Check that f.ctx is cancelled.
@@ -143,8 +145,13 @@ func TestStartLagCapture(t *testing.T) {
 	f.db = &db.NOP{}
 
 	t.Run("start flushing loop", func(t *testing.T) {
-		go f.startLagCapture(f.ctx)
+		go func() {
+			if err := f.startLagCapture(f.ctx); err != nil {
+				t.Errorf("Error starting lag capture: %v", err)
+			}
+		}()
 		f.cancel()
+
 		// Check that f.ctx is cancelled.
 		select {
 		case <-f.ctx.Done():
@@ -282,7 +289,6 @@ func TestAggregate(t *testing.T) {
 		_, err := f.aggregate(f.ctx, start, end, inAppAggregationEnabled, batchSize)
 		require.Error(t, err)
 	})
-
 }
 
 func TestSend(t *testing.T) {

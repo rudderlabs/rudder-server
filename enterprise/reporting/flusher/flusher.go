@@ -7,6 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -14,8 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/handler"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -73,7 +74,7 @@ type Flusher struct {
 	started   atomic.Bool
 }
 
-func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -88,17 +89,17 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 	return f
 }
 
-func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 
-	maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
-	flushInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.flushInterval")
-	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.minConcurrentRequests")
-	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
-	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.aggregationWindowInMinutes")
-	recentExclusionWindow := config.GetReloadableDurationVar(1, time.Minute, "Reporting.recentExclusionWindowInSeconds")
-	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.batchSizeFromDB")
-	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.batchSizeToReporting")
-	lagThresholdForAggresiveFlushInMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.lagThresholdForAggresiveFlushInMins")
+	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
+	flushInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.flushInterval")
+	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
+	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
+	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.aggregationWindowInMinutes")
+	recentExclusionWindow := config.GetReloadableDurationVar(1, time.Minute, "Reporting.flusher.recentExclusionWindowInSeconds")
+	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.flusher.batchSizeFromDB")
+	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
+	lagThresholdForAggresiveFlushInMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.lagThresholdForAggresiveFlushInMins")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -134,7 +135,6 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 
 func (f *Flusher) Start() {
 	f.startOnce.Do(func() {
-
 		err := f.db.InitDB()
 		if err != nil {
 			panic(err)
@@ -214,7 +214,6 @@ func (f *Flusher) initStats(tags map[string]string) {
 
 	f.concurrentRequests = f.stats.NewTaggedStat(StatReportingConcurrentRequests, stats.GaugeType, tags)
 	f.reportingLag = f.stats.NewTaggedStat(StatReportingMetricsLagInSeconds, stats.GaugeType, tags)
-
 }
 
 func (f *Flusher) startFlushing(ctx context.Context) error {

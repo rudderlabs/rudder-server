@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
@@ -82,6 +83,11 @@ func (p *PostgresDB) fetch(ctx context.Context, query string, args ...interface{
 		}
 		result = append(result, row)
 	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
