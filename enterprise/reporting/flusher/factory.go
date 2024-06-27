@@ -20,12 +20,11 @@ func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats s
 
 	if table == "tracked_users_reports" {
 		labels := []string{"workspace_id", "source_id", "instance_id"}
-		values := []string{"userid_hll", "anonymousid_hll", "identified_anonymousid_hll"}
 
 		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
 
 		tuHandler := handler.NewTrackedUsersHandler(table, labels)
-		f := NewFlusher(ctx, db, log, stats, table, labels, values, reportingURL, true, tuHandler)
+		f := NewFlusher(ctx, db, log, stats, table, labels, reportingURL, true, tuHandler)
 
 		return f
 	}
