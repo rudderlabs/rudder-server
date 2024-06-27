@@ -1358,13 +1358,13 @@ func (u *Uploads) update(
 	return nil
 }
 
-func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceId string) ([]model.FirstAbortedUploadResponse, error) {
+func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceID string) ([]model.FirstAbortedUploadResponse, error) {
 	outputColumns := "id, source_id, destination_id, created_at, first_event_at, last_event_at"
 
 	stmt := fmt.Sprintf(`
 	WITH wh_uploads_with_last_successful_upload AS (
 		SELECT 
-			%s,
+			%[1]s,
 			status,
         	MAX(CASE WHEN status = 'exported_data' THEN created_at ELSE NULL END) OVER (PARTITION BY destination_id) AS last_successful_upload
 		FROM 
@@ -1372,22 +1372,24 @@ func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, 
 		WHERE workspace_id = $1
 		AND created_at >= NOW() - INTERVAL '30 day'
 	)
-	SELECT %s
+	SELECT %[1]s
 	FROM (
 		SELECT 
 			*,
-			ROW_NUMBER() OVER (PARTITION BY destination_id ORDER BY created_at) as row_number
+			ROW_NUMBER() OVER (PARTITION BY destination_id ORDER BY created_at) AS row_number
 		FROM wh_uploads_with_last_successful_upload
 		WHERE status = 'aborted'
 		AND (last_successful_upload IS NULL OR created_at > last_successful_upload)
 	) AS q
-	WHERE q.row_number = 1 
-	`, outputColumns, outputColumns)
+	WHERE q.row_number = 1;
+	`, outputColumns)
 
-	rows, err := u.db.QueryContext(ctx, stmt, workspaceId)
+	rows, err := u.db.QueryContext(ctx, stmt, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("first aborted upload in a series of continues aborts info: %w", err)
 	}
+
+	defer func() { _ = rows.Close() }()
 
 	var abortedUploadsInfo []model.FirstAbortedUploadResponse
 
