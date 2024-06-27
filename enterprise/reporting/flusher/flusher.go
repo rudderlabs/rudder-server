@@ -45,6 +45,7 @@ type Flusher struct {
 	aggWindowMins                       config.ValueLoader[time.Duration]
 	recentExclusionWindow               config.ValueLoader[time.Duration]
 	batchSizeFromDB                     config.ValueLoader[int]
+	aggressiveFlushEnabled              config.ValueLoader[bool]
 	lagThresholdForAggresiveFlushInMins config.ValueLoader[time.Duration]
 
 	reportingURL          string
@@ -90,7 +91,6 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 }
 
 func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
-
 	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	flushInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.flushInterval")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
@@ -99,6 +99,7 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 	recentExclusionWindow := config.GetReloadableDurationVar(1, time.Minute, "Reporting.flusher.recentExclusionWindowInSeconds")
 	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.flusher.batchSizeFromDB")
 	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
+	aggressiveFlushEnabled := config.GetReloadableBoolVar(false, "Reporting.flusher.aggressiveFlushEnabled")
 	lagThresholdForAggresiveFlushInMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.lagThresholdForAggresiveFlushInMins")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -125,6 +126,7 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		inAppAggregationEnabled:             inAppAggregationEnabled,
 		batchSizeToReporting:                batchSizeToReporting,
 		maxOpenConnections:                  maxOpenConns,
+		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
 	}
 
@@ -230,7 +232,7 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 				return err
 			}
 			f.mainLoopTimer.Since(start)
-			if !f.shouldIncreaseFlushing(f.lastReportedAt.Load()) {
+			if !f.flushAggresively(f.lastReportedAt.Load()) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -241,7 +243,7 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 	}
 }
 
-func (f *Flusher) shouldIncreaseFlushing(lastReportedAt time.Time) bool {
+func (f *Flusher) flushAggresively(lastReportedAt time.Time) bool {
 	reportingLagInMins := time.Since(lastReportedAt).Minutes()
 	return reportingLagInMins <= f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
@@ -412,13 +414,13 @@ func (f *Flusher) send(ctx context.Context, aggReports []*report.DecodedReport, 
 }
 
 func (f *Flusher) getConcurrency(lastReportedAt time.Time) int {
-	if f.shouldIncreaseFlushing(lastReportedAt) {
+	if f.flushAggresively(lastReportedAt) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()
 }
 
-func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*report.DecodedReport, batchSize int, concurrency int) error {
+func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*report.DecodedReport, batchSize, concurrency int) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 

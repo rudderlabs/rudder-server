@@ -311,7 +311,6 @@ func TestSend(t *testing.T) {
 		err := f.send(f.ctx, aggReports, batchSize, concurrency)
 		require.NoError(t, err)
 	})
-
 }
 
 func TestSendInBatches(t *testing.T) {
