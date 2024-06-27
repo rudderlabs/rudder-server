@@ -144,7 +144,7 @@ func (f *Flusher) Start() {
 
 		f.initStats(f.commonTags)
 
-		f.lastReportedAt.Store(time.Now())
+		f.lastReportedAt.Store(time.Now().UTC())
 
 		g, ctx := errgroup.WithContext(f.ctx)
 
@@ -230,7 +230,7 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			start := time.Now()
+			start := time.Now().UTC()
 			if err := f.flush(ctx); err != nil {
 				return err
 			}
@@ -255,7 +255,7 @@ func (f *Flusher) flushAggresively(lastReportedAt time.Time) bool {
 // flush is the main logic for flushing data.
 func (f *Flusher) flush(ctx context.Context) error {
 	// 1. Get the time range to flush
-	s := time.Now()
+	s := time.Now().UTC()
 	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
 	if err != nil {
 		return err
@@ -263,7 +263,7 @@ func (f *Flusher) flush(ctx context.Context) error {
 	f.minReportedAtQueryTimer.Since(s)
 
 	// 2. Aggregate reports. Get reports in batches and aggregate in app if inAppAggregationEnabled or aggregate in DB
-	s = time.Now()
+	s = time.Now().UTC()
 	f.aggReportsTimer.Since(s)
 	aggReports, err := f.aggregate(ctx, start, end, f.inAppAggregationEnabled, f.batchSizeFromDB.Load())
 	if err != nil {
@@ -272,7 +272,7 @@ func (f *Flusher) flush(ctx context.Context) error {
 	f.aggReportsCounter.Observe(float64(len(aggReports)))
 
 	// 3. Flush aggregated reports
-	s = time.Now()
+	s = time.Now().UTC()
 	err = f.send(ctx, aggReports, f.batchSizeToReporting.Load(), f.getConcurrency(f.lastReportedAt.Load()))
 	if err != nil {
 		return err
@@ -280,7 +280,7 @@ func (f *Flusher) flush(ctx context.Context) error {
 	f.sendReportsTimer.Since(s)
 
 	// 4. Delete reports
-	s = time.Now()
+	s = time.Now().UTC()
 	if err := f.delete(ctx, start, end); err != nil {
 		return err
 	}
@@ -336,7 +336,7 @@ func (f *Flusher) aggregateInApp(ctx context.Context, start, end time.Time, batc
 	reportsCount := 0
 
 	for {
-		s := time.Now()
+		s := time.Now().UTC()
 		reports, err := f.db.FetchBatch(ctx, f.table, start, end, batchSize, offset)
 		if err != nil {
 			return nil, err
@@ -348,7 +348,7 @@ func (f *Flusher) aggregateInApp(ctx context.Context, start, end time.Time, batc
 		f.reportsQueryTimer.Since(s)
 		reportsCount = reportsCount + len(reports)
 
-		s = time.Now()
+		s = time.Now().UTC()
 		err = f.aggregateBatch(reports, aggReportsMap)
 		if err != nil {
 			return nil, err

@@ -27,7 +27,7 @@ func TestGetStart(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 
-	rows := sqlmock.NewRows([]string{"reported_at"}).AddRow(time.Now())
+	rows := sqlmock.NewRows([]string{"reported_at"}).AddRow(time.Now().UTC())
 
 	mock.ExpectQuery("SELECT MIN").WillReturnRows(rows)
 
@@ -52,7 +52,7 @@ func TestFetchBatch(t *testing.T) {
 		db: db,
 	}
 
-	result, err := p.FetchBatch(context.Background(), "test_table", time.Now(), time.Now(), 10, 0)
+	result, err := p.FetchBatch(context.Background(), "test_table", time.Now().UTC(), time.Now().UTC(), 10, 0)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 
@@ -79,7 +79,7 @@ func TestFetch(t *testing.T) {
 		db: db,
 	}
 
-	_, err = p.Fetch(context.Background(), "test_table", time.Now(), time.Now())
+	_, err = p.Fetch(context.Background(), "test_table", time.Now().UTC(), time.Now().UTC())
 	assert.NoError(t, err)
 }
 
@@ -93,7 +93,7 @@ func TestDelete(t *testing.T) {
 		db: db,
 	}
 
-	err = p.Delete(context.Background(), "test_table", time.Now(), time.Now())
+	err = p.Delete(context.Background(), "test_table", time.Now().UTC(), time.Now().UTC())
 	assert.NoError(t, err)
 }
 

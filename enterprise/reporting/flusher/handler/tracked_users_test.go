@@ -142,7 +142,7 @@ func TestDecode(t *testing.T) {
 	identifiedAnonymousIdCount := identifiedAnonymousIdHLL.Cardinality()
 
 	rawReport := report.RawReport{
-		"reported_at":                time.Now(),
+		"reported_at":                time.Now().UTC(),
 		"workspace_id":               "workspace1",
 		"source_id":                  "source1",
 		"instance_id":                "instance1",
