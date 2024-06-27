@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	StatReportingHttpReqLatency = "reporting_client_http_request_latency"
-	StatReportingHttpReqCount   = "reporting_client_http_request_count"
+	StatFlusherHttpReqLatency = "flusher_http_request_latency"
+	StatFlusherHttpReqCount   = "flusher_http_request_count"
 )
 
 type ReportingClient struct {
@@ -48,8 +48,8 @@ func NewReportingClient(url string, log logger.Logger, stats stats.Stats, tags s
 }
 
 func (c *ReportingClient) initStats() {
-	c.reqLatency = c.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, c.tags)
-	c.reqCount = c.stats.NewTaggedStat(StatReportingHttpReqCount, stats.CountType, c.tags)
+	c.reqLatency = c.stats.NewTaggedStat(StatFlusherHttpReqLatency, stats.TimerType, c.tags)
+	c.reqCount = c.stats.NewTaggedStat(StatFlusherHttpReqCount, stats.CountType, c.tags)
 }
 
 func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface{}) error {
