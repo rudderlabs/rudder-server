@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 	"github.com/segmentio/go-hll"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 func hllSettings() hll.Settings {
@@ -124,7 +125,6 @@ func TestDecodeHLL(t *testing.T) {
 		_, err := handler.decodeHLL("invalid_hex")
 		assert.Error(t, err)
 	})
-
 }
 
 func TestDecode(t *testing.T) {

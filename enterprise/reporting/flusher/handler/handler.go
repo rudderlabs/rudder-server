@@ -5,5 +5,5 @@ import "github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 
 type Handler interface {
 	Decode(r report.RawReport) (report.DecodedReport, error)
-	Aggregate(aggR report.DecodedReport, r report.DecodedReport) error
+	Aggregate(aggR, r report.DecodedReport) error
 }

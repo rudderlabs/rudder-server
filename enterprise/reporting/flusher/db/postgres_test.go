@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 func TestInitDB(t *testing.T) {

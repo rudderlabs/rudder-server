@@ -1,11 +1,18 @@
 package handler
 
+import (
+	"errors"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
+)
+
 type NOP struct{}
 
-func (n *NOP) Decode(report map[string]interface{}) (interface{}, error) {
-	return nil, nil
+func (n *NOP) Decode(report report.RawReport) (report.DecodedReport, error) {
+	var ErrInvalidValue = errors.New("invalid value")
+	return nil, ErrInvalidValue
 }
 
-func (n *NOP) Aggregate(aggReport interface{}, report interface{}) error {
+func (n *NOP) Aggregate(aggReport, report report.DecodedReport) error {
 	return nil
 }

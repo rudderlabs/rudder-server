@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 	"github.com/segmentio/go-hll"
+
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 type TrackedUsersReport struct {
