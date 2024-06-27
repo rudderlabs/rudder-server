@@ -124,9 +124,8 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return fmt.Errorf("failed to mark journal start: %w", err)
 				}
 
-				err = jd.addDSInTx(tx, destination)
-				if err != nil {
-					return fmt.Errorf("failed to add dataset: %w", err)
+				if err = jd.createDSTablesInTx(ctx, tx, destination); err != nil {
+					return fmt.Errorf("failed to create dataset tables: %w", err)
 				}
 
 				totalJobsMigrated := 0
@@ -138,6 +137,9 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 						return fmt.Errorf("failed to migrate jobs: %w", err)
 					}
 					totalJobsMigrated += noJobsMigrated
+				}
+				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
+					return fmt.Errorf("create %v indices: %w", destination, err)
 				}
 				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
 					return fmt.Errorf("failed to mark journal done: %w", err)
