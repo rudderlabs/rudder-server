@@ -10,6 +10,7 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
+	report "github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 // MockDB is a mock of DB interface.
@@ -64,10 +65,10 @@ func (mr *MockDBMockRecorder) Delete(ctx, table, start, end interface{}) *gomock
 }
 
 // FetchBatch mocks base method.
-func (m *MockDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]map[string]interface{}, error) {
+func (m *MockDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]report.RawReport, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FetchBatch", ctx, table, start, end, limit, offset)
-	ret0, _ := ret[0].([]map[string]interface{})
+	ret0, _ := ret[0].([]report.RawReport)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 type PostgresDB struct {
@@ -43,24 +44,24 @@ func (p *PostgresDB) GetStart(ctx context.Context, table string) (time.Time, err
 	return start.Time, nil
 }
 
-func (p *PostgresDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]map[string]interface{}, error) {
+func (p *PostgresDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]report.RawReport, error) {
 	query := fmt.Sprintf(`SELECT * FROM %s WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at LIMIT $3 OFFSET $4`, table)
 	return p.fetch(ctx, query, start, end, limit, offset)
 }
 
-func (p *PostgresDB) Fetch(ctx context.Context, table string, start, end time.Time) ([]map[string]interface{}, error) {
+func (p *PostgresDB) Fetch(ctx context.Context, table string, start, end time.Time) ([]report.RawReport, error) {
 	query := fmt.Sprintf(`SELECT * FROM %s WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`, table)
 	return p.fetch(ctx, query, start, end)
 }
 
-func (p *PostgresDB) fetch(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (p *PostgresDB) fetch(ctx context.Context, query string, args ...interface{}) ([]report.RawReport, error) {
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var result []map[string]interface{}
+	var result []report.RawReport
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -75,7 +76,7 @@ func (p *PostgresDB) fetch(ctx context.Context, query string, args ...interface{
 		if err := rows.Scan(valuePtrs...); err != nil {
 			return nil, err
 		}
-		row := make(map[string]interface{})
+		row := make(report.RawReport)
 		for i, col := range columns {
 			row[col] = values[i]
 		}

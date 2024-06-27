@@ -1,19 +1,11 @@
-package flusher
+package handler
 
 import (
-	"context"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 	"github.com/segmentio/go-hll"
 )
 
@@ -48,35 +40,14 @@ type TrackedUsersHandler struct {
 	labels []string
 }
 
-var (
-	trackedUsersHandlerInstance *TrackedUsersHandler
-	flusherInstance             *Flusher
-	once                        sync.Once
-)
-
-func CreateTrackedUsersFlusher(ctx context.Context, log logger.Logger, stats stats.Stats, table string) *Flusher {
-	once.Do(func() {
-		labels := []string{"workspace_id", "source_id", "instance_id"}
-		values := []string{"userid_hll", "anonymousid_hll", "identified_anonymousid_hll"}
-
-		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
-
-		connStr := misc.GetConnectionString(config.Default, "reporting")
-		maxOpenConns := config.GetIntVar(4, 1, "Reporting.maxOpenConnections")
-		db := db.NewPostgresDB(connStr, maxOpenConns)
-
-		trackedUsersHandlerInstance = &TrackedUsersHandler{
-			table:  table,
-			labels: labels,
-		}
-
-		flusherInstance = NewFlusher(ctx, db, log, stats, table, labels, values, reportingURL, true, trackedUsersHandlerInstance)
-	})
-
-	return flusherInstance
+func NewTrackedUsersHandler(table string, labels []string) *TrackedUsersHandler {
+	return &TrackedUsersHandler{
+		table:  table,
+		labels: labels,
+	}
 }
 
-func (t *TrackedUsersHandler) Aggregate(aggReport interface{}, report interface{}) error {
+func (t *TrackedUsersHandler) Aggregate(aggReport report.DecodedReport, report report.DecodedReport) error {
 	tuReport := report.(*TrackedUsersReport)
 	tuAggReport := aggReport.(*TrackedUsersReport)
 
@@ -99,7 +70,7 @@ func (t *TrackedUsersHandler) decodeHLL(encoded string) (*hll.Hll, error) {
 	return &hll, nil
 }
 
-func (t *TrackedUsersHandler) Decode(r map[string]interface{}) (interface{}, error) {
+func (t *TrackedUsersHandler) Decode(r report.RawReport) (report.DecodedReport, error) {
 	tuReport := &TrackedUsersReport{
 		ReportedAt:  r["reported_at"].(time.Time),
 		WorkspaceID: r["workspace_id"].(string),

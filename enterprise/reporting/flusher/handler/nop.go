@@ -1,4 +1,4 @@
-package flusher
+package handler
 
 type NOP struct{}
 
