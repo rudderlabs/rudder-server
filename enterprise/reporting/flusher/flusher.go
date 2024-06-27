@@ -56,8 +56,7 @@ type Flusher struct {
 	stats                   stats.Stats
 	minReportedAtQueryTimer stats.Measurement
 	reportsQueryTimer       stats.Measurement
-	mainLoopTimer           stats.Measurement
-	reportsTimer            stats.Measurement
+	flushTimer              stats.Measurement
 	reportsCounter          stats.Measurement
 	aggReportsTimer         stats.Measurement
 	aggReportsCounter       stats.Measurement
@@ -203,22 +202,21 @@ func (f *Flusher) startLagCapture(ctx context.Context) error {
 }
 
 func (f *Flusher) initStats(tags map[string]string) {
-	f.mainLoopTimer = f.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
+	f.flushTimer = f.stats.NewTaggedStat(StatFlushTime, stats.TimerType, tags)
 
-	f.minReportedAtQueryTimer = f.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
+	f.minReportedAtQueryTimer = f.stats.NewTaggedStat(StatFlusherGetMinReportedAtQueryTime, stats.TimerType, tags)
 
-	f.reportsTimer = f.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
-	f.reportsCounter = f.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
+	f.reportsCounter = f.stats.NewTaggedStat(StatFlusherGetReportsCount, stats.HistogramType, tags)
 
-	f.reportsQueryTimer = f.stats.NewTaggedStat(StatReportingGetReportsBatchQueryTime, stats.TimerType, tags)
-	f.aggReportsTimer = f.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
-	f.aggReportsCounter = f.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	f.reportsQueryTimer = f.stats.NewTaggedStat(StatFlusherGetReportsBatchQueryTime, stats.TimerType, tags)
+	f.aggReportsTimer = f.stats.NewTaggedStat(StatFlusherGetAggregatedReportsTime, stats.TimerType, tags)
+	f.aggReportsCounter = f.stats.NewTaggedStat(StatFluherGetAggregatedReportsCount, stats.HistogramType, tags)
 
-	f.sendReportsTimer = f.stats.NewTaggedStat(StatReportingSendReportsTime, stats.TimerType, tags)
-	f.deleteReportsTimer = f.stats.NewTaggedStat(StatReportingDeleteReportsTime, stats.TimerType, tags)
+	f.sendReportsTimer = f.stats.NewTaggedStat(StatFlusherSendReportsTime, stats.TimerType, tags)
+	f.deleteReportsTimer = f.stats.NewTaggedStat(StatFlusherDeleteReportsTime, stats.TimerType, tags)
 
-	f.concurrentRequests = f.stats.NewTaggedStat(StatReportingConcurrentRequests, stats.GaugeType, tags)
-	f.reportingLag = f.stats.NewTaggedStat(StatReportingMetricsLagInSeconds, stats.GaugeType, tags)
+	f.concurrentRequests = f.stats.NewTaggedStat(StatFlusherConcurrentRequests, stats.GaugeType, tags)
+	f.reportingLag = f.stats.NewTaggedStat(StatFlusherLagInSeconds, stats.GaugeType, tags)
 }
 
 func (f *Flusher) startFlushing(ctx context.Context) error {
@@ -234,7 +232,7 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 			if err := f.flush(ctx); err != nil {
 				return err
 			}
-			f.mainLoopTimer.Since(start)
+			f.flushTimer.Since(start)
 			if !f.flushAggresively(f.lastReportedAt.Load()) {
 				select {
 				case <-ctx.Done():

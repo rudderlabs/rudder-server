@@ -1,21 +1,19 @@
 package flusher
 
 const (
-	StatReportingMainLoopTime = "reporting_client_main_loop_time"
+	StatFlushTime = "flusher_flush_time"
 
-	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
-	StatReportingGetReportsBatchQueryTime  = "reporting_client_get_reports_batch_query_time"
+	StatFlusherGetMinReportedAtQueryTime = "flusher_get_min_reported_at_query_time"
 
-	StatReportingGetReportsTime  = "reporting_client_get_reports_time"
-	StatReportingGetReportsCount = "reporting_client_get_reports_count"
+	StatFlusherGetReportsBatchQueryTime = "flusher_get_reports_batch_query_time"
+	StatFlusherGetReportsCount          = "flusher_get_reports_count"
+	StatFluherGetAggregatedReportsCount = "flusher_get_aggregated_reports_count"
+	StatFlusherGetAggregatedReportsTime = "flusher_get_aggregated_reports_time"
 
-	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
-	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
+	StatFlusherSendReportsTime    = "flusher_send_reports_time"
+	StatFlusherConcurrentRequests = "flusher_concurrent_requests"
 
-	StatReportingSendReportsTime    = "reporting_send_reports_time"
-	StatReportingConcurrentRequests = "reporting_client_concurrent_requests"
+	StatFlusherDeleteReportsTime = "flusher_delete_reports_time"
 
-	StatReportingDeleteReportsTime = "reporting_delete_reports_time"
-
-	StatReportingMetricsLagInSeconds = "reporting_metrics_lag_seconds"
+	StatFlusherLagInSeconds = "flusher_lag_seconds"
 )
