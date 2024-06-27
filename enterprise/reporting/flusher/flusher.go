@@ -91,7 +91,7 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 
 func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
-	flushInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.flushInterval")
+	flushInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushInterval")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
 	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
 	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.aggregationWindowInMinutes")
@@ -220,7 +220,7 @@ func (f *Flusher) initStats(tags map[string]string) {
 }
 
 func (f *Flusher) startFlushing(ctx context.Context) error {
-	ticker := time.NewTicker(f.flushInterval.Load()) // TODO: User longer window for sleep
+	ticker := time.NewTicker(f.flushInterval.Load())
 	defer ticker.Stop()
 
 	for {
@@ -249,7 +249,6 @@ func (f *Flusher) flushAggresively(lastReportedAt time.Time) bool {
 	return reportingLagInMins <= f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
 
-// TODO: Ensure UTC time is used everywhere
 // flush is the main logic for flushing data.
 func (f *Flusher) flush(ctx context.Context) error {
 	// 1. Get the time range to flush
@@ -288,7 +287,6 @@ func (f *Flusher) flush(ctx context.Context) error {
 	return nil
 }
 
-// TODO: end should be 1 minute before current time ?
 func (f *Flusher) getRange(ctx context.Context, aggWindowMins, recentExclusionWindow time.Duration) (start, end time.Time, error error) {
 	start, err := f.db.GetStart(ctx, f.table)
 	if err != nil {
