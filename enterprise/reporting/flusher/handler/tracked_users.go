@@ -48,7 +48,7 @@ func NewTrackedUsersHandler(table string, labels []string) *TrackedUsersHandler 
 	}
 }
 
-func (t *TrackedUsersHandler) Aggregate(aggReport report.DecodedReport, report report.DecodedReport) error {
+func (t *TrackedUsersHandler) Aggregate(aggReport, report report.DecodedReport) error {
 	tuReport := report.(*TrackedUsersReport)
 	tuAggReport := aggReport.(*TrackedUsersReport)
 

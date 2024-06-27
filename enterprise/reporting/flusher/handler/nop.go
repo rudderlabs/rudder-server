@@ -9,7 +9,7 @@ import (
 type NOP struct{}
 
 func (n *NOP) Decode(report report.RawReport) (report.DecodedReport, error) {
-	var ErrInvalidValue = errors.New("invalid value")
+	ErrInvalidValue := errors.New("invalid value")
 	return nil, ErrInvalidValue
 }
 
