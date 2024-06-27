@@ -172,7 +172,10 @@ func (f *Flusher) Start() {
 func (f *Flusher) Stop() {
 	f.cancel()
 	_ = f.g.Wait()
-	f.db.CloseDB()
+	err := f.db.CloseDB()
+	if err != nil {
+		f.log.Errorw("Error closing DB", "error", err)
+	}
 	f.started.Store(false)
 }
 
@@ -270,7 +273,10 @@ func (f *Flusher) flush(ctx context.Context) error {
 
 	// 3. Flush aggregated reports
 	s = time.Now()
-	f.send(ctx, aggReports, f.batchSizeToReporting.Load(), f.getConcurrency(f.lastReportedAt.Load()))
+	err = f.send(ctx, aggReports, f.batchSizeToReporting.Load(), f.getConcurrency(f.lastReportedAt.Load()))
+	if err != nil {
+		return err
+	}
 	f.sendReportsTimer.Since(s)
 
 	// 4. Delete reports
