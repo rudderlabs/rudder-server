@@ -233,7 +233,7 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 				return err
 			}
 			f.flushTimer.Since(start)
-			if !f.flushAggresively(f.lastReportedAt.Load()) {
+			if !f.flushAggresively(f.lastReportedAt.Load(), f.aggressiveFlushEnabled.Load()) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -244,7 +244,10 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 	}
 }
 
-func (f *Flusher) flushAggresively(lastReportedAt time.Time) bool {
+func (f *Flusher) flushAggresively(lastReportedAt time.Time, aggresiveFlushEnabled bool) bool {
+	if !aggresiveFlushEnabled {
+		return false
+	}
 	reportingLagInMins := time.Since(lastReportedAt).Minutes()
 	return reportingLagInMins <= f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
