@@ -192,7 +192,8 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if !mode.IsDegraded(a.config.runningMode) {
-		if !a.notifier.CheckHealth(ctx) {
+		if err := a.notifier.CheckHealth(ctx); err != nil {
+			a.logger.Errorn("Cannot connect to notifierService", logger.NewErrorField(err))
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
@@ -200,7 +201,8 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if mode.IsMaster(a.mode) {
-		if !checkHealth(ctx, a.db.DB) {
+		if err := checkHealth(ctx, a.db.DB); err != nil {
+			a.logger.Errorn("Cannot connect to DB", logger.NewErrorField(err))
 			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
 			return
 		}
@@ -224,9 +226,9 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(healthVal))
 }
 
-func checkHealth(ctx context.Context, db *sql.DB) bool {
+func checkHealth(ctx context.Context, db *sql.DB) error {
 	if db == nil {
-		return false
+		return errors.New("db is nil")
 	}
 
 	healthCheckMsg := "Rudder Warehouse DB Health Check"
@@ -234,10 +236,14 @@ func checkHealth(ctx context.Context, db *sql.DB) bool {
 
 	err := db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
 	if err != nil {
-		return false
+		return err
 	}
 
-	return healthCheckMsg == msg
+	if healthCheckMsg != msg {
+		return fmt.Errorf("expected %q, got %q", healthCheckMsg, msg)
+	}
+
+	return nil
 }
 
 // pendingEventsHandler check whether there are any pending staging files or uploads for the given source id

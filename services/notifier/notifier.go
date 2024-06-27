@@ -321,18 +321,21 @@ func (n *Notifier) ClearJobs(ctx context.Context) error {
 	return nil
 }
 
-func (n *Notifier) CheckHealth(ctx context.Context) bool {
+func (n *Notifier) CheckHealth(ctx context.Context) error {
 	healthCheckMsg := "Rudder Warehouse DB Health Check"
 	msg := ""
 
 	err := n.db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
 	if err != nil {
-		return false
+		return err
 	}
 
-	return healthCheckMsg == msg
-}
+	if healthCheckMsg != msg {
+		return fmt.Errorf("expected %s, got %s", healthCheckMsg, msg)
+	}
 
+	return nil
+}
 // Publish inserts the payloads into the database and returns a channel of type PublishResponse
 func (n *Notifier) Publish(
 	ctx context.Context,
