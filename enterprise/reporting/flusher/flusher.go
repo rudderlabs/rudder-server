@@ -37,7 +37,6 @@ type Flusher struct {
 
 	table  string
 	labels []string
-	values []string
 
 	flushInterval config.ValueLoader[time.Duration]
 
@@ -74,7 +73,7 @@ type Flusher struct {
 	started   atomic.Bool
 }
 
-func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -82,14 +81,14 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 		return instance
 	}
 
-	f := createFlusher(ctx, db, log, stats, table, labels, values, reportingURL, inAppAggregationEnabled, handler)
+	f := createFlusher(ctx, db, log, stats, table, labels, reportingURL, inAppAggregationEnabled, handler)
 
 	flusherInstances[table] = f
 
 	return f
 }
 
-func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels, values []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	flushInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushInterval")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
@@ -118,7 +117,6 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		aggWindowMins:                       aggWindowMins,
 		recentExclusionWindow:               recentExclusionWindow,
 		labels:                              labels,
-		values:                              values,
 		batchSizeFromDB:                     batchSizeFromDB,
 		table:                               table,
 		handler:                             handler,
@@ -419,7 +417,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []*report.DecodedReport, 
 }
 
 func (f *Flusher) getConcurrency(lastReportedAt time.Time) int {
-	if f.flushAggresively(lastReportedAt) {
+	if f.flushAggresively(lastReportedAt, f.aggressiveFlushEnabled.Load()) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()
