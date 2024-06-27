@@ -17,6 +17,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+const (
+	TrackedUsersReportsTable = "tracked_users_reports"
+)
+
 type Mediator struct {
 	log logger.Logger
 
@@ -70,7 +74,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, eventStatsReporter)
 
-	trackedUsersFlusher := flusher.CreateTrackedUsersFlusher(rm.ctx, rm.log, rm.stats, "tracked_users_reports")
+	trackedUsersFlusher := flusher.CreateFlusher(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats)
 	rm.flushers = append(rm.flushers, trackedUsersFlusher)
 
 	return rm
