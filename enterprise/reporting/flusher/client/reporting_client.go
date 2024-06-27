@@ -63,7 +63,7 @@ func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		start := time.Now()
+		start := time.Now().UTC()
 		resp, err := c.netClient.Do(req)
 		if err != nil {
 			return err
