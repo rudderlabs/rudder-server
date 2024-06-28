@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -43,6 +45,7 @@ type LifecycleManager struct {
 	destDebugger               destinationdebugger.DestinationDebugger
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
+	trackedUsersReporter       trackedusers.UsersReporter
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -70,6 +73,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.destDebugger,
 		proc.transDebugger,
 		proc.enrichers,
+		proc.trackedUsersReporter,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -110,6 +114,7 @@ func New(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
+	trackedUsersReporter trackedusers.UsersReporter,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -139,6 +144,7 @@ func New(
 		destDebugger:               destDebugger,
 		transDebugger:              transDebugger,
 		enrichers:                  enrichers,
+		trackedUsersReporter:       trackedUsersReporter,
 	}
 	for _, opt := range opts {
 		opt(proc)

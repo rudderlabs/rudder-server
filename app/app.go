@@ -10,6 +10,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -91,6 +93,9 @@ func (a *app) initFeatures() {
 		ConfigEnv: &configenv.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
 			Log:             enterpriseLogger.Child("config-env"),
+		},
+		TrackedUsers: &trackedusers.Factory{
+			Log: enterpriseLogger.Child("tracked-users"),
 		},
 	}
 }

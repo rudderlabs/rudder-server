@@ -202,11 +202,9 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
-		m.Store(partition,
-			m.transformations(partition,
-				m.processJobsForDest(partition, subJob),
-			),
-		)
+		m.Store(partition, m.transformations(partition,
+			m.processJobsForDest(partition, subJob),
+		))
 	}
 	return len(jobs.Jobs) > 0
 }
