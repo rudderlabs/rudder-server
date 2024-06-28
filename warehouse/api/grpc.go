@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -975,12 +974,26 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 	ctx context.Context,
 	request *proto.FirstAbortedUploadsInContinuousAbortsRequest,
 ) (*proto.FirstAbortedUploadsInContinuousAbortsResponse, error) {
-	g.logger.Infon(
+	g.logger.Infow(
 		"Getting first aborted uploads in a series of continuous aborts",
-		obskit.WorkspaceID(request.WorkspaceId),
+		lf.WorkspaceID, request.WorkspaceId,
+		lf.StartTime, request.Start,
 	)
 
-	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId)
+	var startTime time.Time
+	var err error
+
+	if request.GetStart() != "" {
+		startTime, err = time.Parse(time.RFC3339, request.GetStart())
+		if err != nil {
+			return &proto.FirstAbortedUploadsInContinuousAbortsResponse{},
+				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
+		}
+	} else {
+		startTime = time.Now().AddDate(0, 0, -30)
+	}
+
+	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId, startTime)
 	if err != nil {
 		return &proto.FirstAbortedUploadsInContinuousAbortsResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to find first aborted uploads in a series of continuous aborts info: %v", err)

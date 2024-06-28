@@ -1358,7 +1358,7 @@ func (u *Uploads) update(
 	return nil
 }
 
-func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceID string) ([]model.FirstAbortedUploadResponse, error) {
+func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceID string, start time.Time) ([]model.FirstAbortedUploadResponse, error) {
 	outputColumns := "id, source_id, destination_id, created_at, first_event_at, last_event_at"
 
 	stmt := fmt.Sprintf(`
@@ -1370,7 +1370,7 @@ func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, 
 		FROM 
 			`+uploadsTableName+`
 		WHERE workspace_id = $1
-		AND created_at >= NOW() - INTERVAL '30 day'
+		AND created_at >= $2
 	)
 	SELECT %[1]s
 	FROM (
@@ -1384,7 +1384,7 @@ func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, 
 	WHERE q.row_number = 1;
 	`, outputColumns)
 
-	rows, err := u.db.QueryContext(ctx, stmt, workspaceID)
+	rows, err := u.db.QueryContext(ctx, stmt, workspaceID, start)
 	if err != nil {
 		return nil, fmt.Errorf("first aborted upload in a series of continues aborts info: %w", err)
 	}

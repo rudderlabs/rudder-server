@@ -159,6 +159,7 @@ message RetryFailedBatchesResponse{
 
 message FirstAbortedUploadsInContinuousAbortsRequest {
   string workspace_id = 1;
+  string start = 2;
 }
 
 message FirstAbortedUploadResponse {
