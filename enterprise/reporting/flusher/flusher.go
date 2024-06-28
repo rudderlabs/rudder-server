@@ -200,7 +200,7 @@ func (f *Flusher) startLagCapture(ctx context.Context) error {
 }
 
 func (f *Flusher) initStats(tags map[string]string) {
-	f.flushTimer = f.stats.NewTaggedStat(StatFlushTime, stats.TimerType, tags)
+	f.flushTimer = f.stats.NewTaggedStat(StatFlusherFlushTime, stats.TimerType, tags)
 
 	f.minReportedAtQueryTimer = f.stats.NewTaggedStat(StatFlusherGetMinReportedAtQueryTime, stats.TimerType, tags)
 
