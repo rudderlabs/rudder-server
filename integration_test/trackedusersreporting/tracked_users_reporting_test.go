@@ -116,17 +116,17 @@ func getCardinalityFromDB(t *testing.T, postgresResource *postgres.Resource) map
 		if result[e.WorkspaceID] == nil {
 			result[e.WorkspaceID] = make(map[string]int)
 		}
-		userHllBytes, err := hex.DecodeString(e.userIDHll[2:])
+		userHllBytes, err := hex.DecodeString(e.userIDHll)
 		require.NoError(t, err)
 		userHll, err := hll.FromBytes(userHllBytes)
 		require.NoError(t, err)
 		result[e.WorkspaceID][e.SourceID] += int(userHll.Cardinality())
-		annIDHllBytes, err := hex.DecodeString(e.annIDHll[2:])
+		annIDHllBytes, err := hex.DecodeString(e.annIDHll)
 		require.NoError(t, err)
 		annHll, err := hll.FromBytes(annIDHllBytes)
 		require.NoError(t, err)
 		result[e.WorkspaceID][e.SourceID] += int(annHll.Cardinality())
-		combineHllBytes, err := hex.DecodeString(e.combHll[2:])
+		combineHllBytes, err := hex.DecodeString(e.combHll)
 		require.NoError(t, err)
 		combHll, err := hll.FromBytes(combineHllBytes)
 		require.NoError(t, err)
@@ -170,6 +170,7 @@ func setup(t testing.TB) testConfig {
 					WithWorkspaceID(workspaceID).
 					WithID(sourceID).
 					WithWriteKey(writeKey).
+					WithSourceCategory("webhook").
 					WithConnection(
 						backendconfigtest.NewDestinationBuilder("WEBHOOK").
 							WithID("destination-1").
