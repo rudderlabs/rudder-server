@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	StatFlusherHttpReqLatency = "flusher_http_request_latency"
-	StatFlusherHttpReqCount   = "flusher_http_request_count"
+	StatFlusherHttpReqLatency = "flusher_http_request_duration_seconds"
+	StatFlusherHttpReqCount   = "flusher_http_requests_total"
 )
 
 type ReportingClient struct {
