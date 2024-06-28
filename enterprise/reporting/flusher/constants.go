@@ -6,7 +6,7 @@ const (
 	StatFlusherGetMinReportedAtQueryTime = "flusher_get_min_reported_at_query_duration_seconds"
 
 	StatFlusherGetReportsBatchQueryTime = "flusher_get_reports_batch_query_duration_seconds"
-	StatFlusherGetReportsCount          = "flusher_get_reports_total"
+	StatFlusherGetReportsCount          = "flusher_get_reports_count"
 	StatFluherGetAggregatedReportsCount = "flusher_get_aggregated_reports_count"
 	StatFlusherGetAggregatedReportsTime = "flusher_get_aggregated_reports_duration_seconds"
 
