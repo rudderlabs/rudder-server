@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -974,10 +975,10 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 	ctx context.Context,
 	request *proto.FirstAbortedUploadsInContinuousAbortsRequest,
 ) (*proto.FirstAbortedUploadsInContinuousAbortsResponse, error) {
-	g.logger.Infow(
+	g.logger.Infon(
 		"Getting first aborted uploads in a series of continuous aborts",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.StartTime, request.Start,
+		obskit.WorkspaceID(request.WorkspaceId),
+		logger.NewStringField("startTime", request.Start),
 	)
 
 	var startTime time.Time
