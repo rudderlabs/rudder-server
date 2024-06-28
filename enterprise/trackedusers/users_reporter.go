@@ -195,12 +195,12 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 	return nil
 }
 
-// convert hll to hexadecimal encoding compatible with Aggregate Knowledge HLL Storage Spec
+// convert hll to hexadecimal encoding
 func hllToString(hll *hll.Hll) string {
 	if hll != nil {
-		return "\\x" + hex.EncodeToString(hll.ToBytes())
+		return hex.EncodeToString(hll.ToBytes())
 	}
-	return "\\x"
+	return ""
 }
 
 func combineUserIDAnonymousID(userID, anonymousID string) string {
