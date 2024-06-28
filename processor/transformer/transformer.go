@@ -130,33 +130,6 @@ type Response struct {
 	FailedEvents []TransformerResponse
 }
 
-// GetVersion gets the transformer version by asking it on /transformerBuildVersion. if there is any error it returns empty string
-func GetVersion() string {
-	defaultBuildVersion := "Not an official release. Get the latest release from dockerhub."
-
-	transformURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090") + "/transformerBuildVersion"
-
-	resp, err := http.Get(transformURL)
-	if err != nil {
-		fmt.Printf("Unable to make a transformer build version call with error: %s", err.Error())
-		return defaultBuildVersion
-	}
-	if resp == nil {
-		return fmt.Sprintf("No response from transformer. %s", defaultBuildVersion)
-	}
-	defer func() { httputil.CloseResponse(resp) }()
-
-	if resp.StatusCode != http.StatusOK {
-		return defaultBuildVersion
-	}
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Unable to read response into bytes with error : ", err.Error())
-		return "Unable to read response from transformer."
-	}
-	return string(bodyBytes)
-}
-
 type Opt func(*handle)
 
 func WithClient(client *http.Client) Opt {
@@ -252,12 +225,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 // Transform function is used to invoke destination transformer API
 func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	if len(clientEvents) == 0 {
-		return Response{}
-	}
-	destType := clientEvents[0].Destination.DestinationDefinition.Name
-	transformURL := trans.destTransformURL(destType)
-	return trans.transform(ctx, clientEvents, transformURL, batchSize, destTransformerStage)
+	return trans.transform(ctx, clientEvents, trans.destTransformURL(clientEvents[0].Destination.DestinationDefinition.Name), batchSize, destTransformerStage)
 }
 
 // UserTransform function is used to invoke user transformer API
@@ -539,14 +507,15 @@ func (trans *handle) destTransformURL(destType string) string {
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
-		if destType == warehouseutils.RS {
+		switch destType {
+		case warehouseutils.RS:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
-		}
-		if destType == warehouseutils.CLICKHOUSE {
+		case warehouseutils.CLICKHOUSE:
 			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", trans.conf.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
+		default:
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		}
-		return destinationEndPoint + "?" + whSchemaVersionQueryParam
 	}
 	return destinationEndPoint
 }

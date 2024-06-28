@@ -800,23 +800,6 @@ func TestTransformer(t *testing.T) {
 			rsp := tr.Validate(context.TODO(), events, 10)
 			require.Equal(t, rsp, expectedResponse)
 		})
-
-		t.Run("version", func(t *testing.T) {
-			config.Reset()
-			defer config.Reset()
-
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Equal(t, r.URL.Path, "/transformerBuildVersion")
-
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("1.34.0"))
-			}))
-			defer srv.Close()
-
-			config.Set("DEST_TRANSFORM_URL", srv.URL)
-
-			require.Equal(t, GetVersion(), "1.34.0")
-		})
 	})
 }
 
