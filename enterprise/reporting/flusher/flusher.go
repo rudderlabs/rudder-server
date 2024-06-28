@@ -276,7 +276,8 @@ func (f *Flusher) flushAggressively(lastReportedAt time.Time, aggresiveFlushEnab
 // flush is the main logic for flushing data.
 func (f *Flusher) flush(ctx context.Context) error {
 	// 1. Get the time range to flush
-	s := time.Now().UTC()a	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
+	s := time.Now().UTC()
+	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
 	if err != nil {
 		return err
 	}
