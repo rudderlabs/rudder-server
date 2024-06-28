@@ -255,11 +255,14 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 
 func (f *Flusher) shouldFlush() (bool, error) {
 	currentTime := time.Now().UTC()
-	start, err := f.db.GetStart(f.ctx, f.table)
+	start, end, err := f.getRange(f.ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
 	if err != nil {
 		return false, err
 	}
 	if start.IsZero() || start.After(currentTime.Add(-f.flushInterval.Load())) {
+		return false, nil
+	}
+	if end.After(currentTime.Add(-f.recentExclusionWindow.Load())) {
 		return false, nil
 	}
 	return true, nil
