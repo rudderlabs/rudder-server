@@ -38,6 +38,7 @@ type Flusher struct {
 	table  string
 	labels []string
 
+	sleepInterval config.ValueLoader[time.Duration]
 	flushInterval config.ValueLoader[time.Duration]
 
 	inAppAggregationEnabled             bool
@@ -90,6 +91,7 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 
 func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
+	sleepInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.sleepInterval")
 	flushInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushInterval")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
 	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
@@ -110,6 +112,7 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		log:                                 log,
 		reportingURL:                        reportingURL,
 		instanceId:                          config.GetString("INSTANCE_ID", "1"),
+		sleepInterval:                       sleepInterval,
 		flushInterval:                       flushInterval,
 		minConcurrentRequests:               minConcReqs,
 		maxConcurrentRequests:               maxConcReqs,
@@ -218,7 +221,7 @@ func (f *Flusher) initStats(tags map[string]string) {
 }
 
 func (f *Flusher) startFlushing(ctx context.Context) error {
-	ticker := time.NewTicker(f.flushInterval.Load())
+	ticker := time.NewTicker(f.sleepInterval.Load())
 	defer ticker.Stop()
 
 	for {
@@ -226,12 +229,20 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			start := time.Now().UTC()
-			if err := f.flush(ctx); err != nil {
+			shouldFlush, err := f.shouldFlush()
+			if err != nil {
 				return err
 			}
-			f.flushTimer.Since(start)
-			if !f.flushAggresively(f.lastReportedAt.Load(), f.aggressiveFlushEnabled.Load()) {
+
+			if shouldFlush {
+				s := time.Now().UTC()
+				if err := f.flush(ctx); err != nil {
+					return err
+				}
+				f.flushTimer.Since(s)
+			}
+
+			if !f.flushAggressively(f.lastReportedAt.Load(), f.aggressiveFlushEnabled.Load()) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -242,7 +253,19 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 	}
 }
 
-func (f *Flusher) flushAggresively(lastReportedAt time.Time, aggresiveFlushEnabled bool) bool {
+func (f *Flusher) shouldFlush() (bool, error) {
+	currentTime := time.Now().UTC()
+	start, err := f.db.GetStart(f.ctx, f.table)
+	if err != nil {
+		return false, err
+	}
+	if start.IsZero() || start.After(currentTime.Add(-f.flushInterval.Load())) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (f *Flusher) flushAggressively(lastReportedAt time.Time, aggresiveFlushEnabled bool) bool {
 	if !aggresiveFlushEnabled {
 		return false
 	}
@@ -253,8 +276,7 @@ func (f *Flusher) flushAggresively(lastReportedAt time.Time, aggresiveFlushEnabl
 // flush is the main logic for flushing data.
 func (f *Flusher) flush(ctx context.Context) error {
 	// 1. Get the time range to flush
-	s := time.Now().UTC()
-	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
+	s := time.Now().UTC()a	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
 	if err != nil {
 		return err
 	}
@@ -417,7 +439,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []*report.DecodedReport, 
 }
 
 func (f *Flusher) getConcurrency(lastReportedAt time.Time) int {
-	if f.flushAggresively(lastReportedAt, f.aggressiveFlushEnabled.Load()) {
+	if f.flushAggressively(lastReportedAt, f.aggressiveFlushEnabled.Load()) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()
