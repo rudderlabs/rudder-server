@@ -271,17 +271,17 @@ func TestUniqueUsersReporter(t *testing.T) {
 					var userIDHllStr, annIDHllStr, combHllStr string
 					err = rows.Scan(&entry.WorkspaceID, &entry.SourceID, &userIDHllStr, &annIDHllStr, &combHllStr)
 					require.NoError(t, err)
-					userHllBytes, err := hex.DecodeString(userIDHllStr[2:])
+					userHllBytes, err := hex.DecodeString(userIDHllStr)
 					require.NoError(t, err)
 					userHll, err := hll.FromBytes(userHllBytes)
 					require.NoError(t, err)
 					entry.UserIDHll = &userHll
-					annIDHllBytes, err := hex.DecodeString(annIDHllStr[2:])
+					annIDHllBytes, err := hex.DecodeString(annIDHllStr)
 					require.NoError(t, err)
 					annHll, err := hll.FromBytes(annIDHllBytes)
 					require.NoError(t, err)
 					entry.AnonymousIDHLL = &annHll
-					combineHllBytes, err := hex.DecodeString(combHllStr[2:])
+					combineHllBytes, err := hex.DecodeString(combHllStr)
 					require.NoError(t, err)
 					combHll, err := hll.FromBytes(combineHllBytes)
 					require.NoError(t, err)
