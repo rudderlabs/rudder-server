@@ -103,6 +103,15 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
+	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup tracked users: %w", err)
+	}
+	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
+	if err != nil {
+		return fmt.Errorf("could not run tracked users database migration: %w", err)
+	}
+
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
@@ -237,15 +246,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	g.Go(misc.WithBugsnag(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
-
-	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
-	if err != nil {
-		return fmt.Errorf("could not setup tracked users: %w", err)
-	}
-	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
-	if err != nil {
-		return fmt.Errorf("could not run tracked users database migration: %w", err)
-	}
 
 	p := proc.New(
 		ctx,
