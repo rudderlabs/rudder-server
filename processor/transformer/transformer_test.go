@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/valyala/fasthttp"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -157,8 +156,6 @@ func TestTransformer(t *testing.T) {
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 		tr.config.timeoutDuration = 1 * time.Second
-		tr.config.useFasthttpClient = func() bool { return true }
-		tr.fasthttpClient = &fasthttp.Client{}
 		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
 		tr.config.failOnError = config.SingleValueLoader(true)
 
@@ -321,8 +318,6 @@ func TestTransformer(t *testing.T) {
 
 				tr := handle{}
 				tr.config.timeoutDuration = 1 * time.Millisecond
-				tr.config.useFasthttpClient = func() bool { return true }
-				tr.fasthttpClient = &fasthttp.Client{}
 				tr.stat = stats.Default
 				tr.logger = logger.NOP
 				tr.conf = config.Default
@@ -391,8 +386,6 @@ func TestTransformer(t *testing.T) {
 		tr.client = srv.Client()
 		tr.config.maxRetry = config.SingleValueLoader(1)
 		tr.config.timeoutDuration = 1 * time.Second
-		tr.config.useFasthttpClient = func() bool { return true }
-		tr.fasthttpClient = &fasthttp.Client{}
 		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
@@ -526,8 +519,6 @@ func TestTransformer(t *testing.T) {
 				tr.config.failOnError = config.SingleValueLoader(tc.failOnError)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 				tr.config.timeoutDuration = 1 * time.Second
-				tr.config.useFasthttpClient = func() bool { return true }
-				tr.fasthttpClient = &fasthttp.Client{}
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
@@ -628,8 +619,6 @@ func TestTransformer(t *testing.T) {
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 				tr.config.maxRetry = config.SingleValueLoader(1)
 				tr.config.timeoutDuration = 1 * time.Second
-				tr.config.useFasthttpClient = func() bool { return true }
-				tr.fasthttpClient = &fasthttp.Client{}
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
