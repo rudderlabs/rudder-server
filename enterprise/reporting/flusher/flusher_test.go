@@ -43,13 +43,12 @@ func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *client.MockClient, *h
 }
 
 func setupFlusher(f *Flusher) {
-	f.aggWindowMins = config.SingleValueLoader(1 * time.Minute)
 	f.batchSizeFromDB = config.SingleValueLoader(4)
 	f.batchSizeToReporting = config.SingleValueLoader(2)
 	f.minConcurrentRequests = config.SingleValueLoader(2)
 	f.maxConcurrentRequests = config.SingleValueLoader(5)
 	f.lagThresholdForAggresiveFlushInMins = config.SingleValueLoader(10 * time.Minute)
-	f.flushInterval = config.SingleValueLoader(1 * time.Second)
+	f.flushWindow = config.SingleValueLoader(1 * time.Minute)
 	f.maxOpenConnections = 2
 	f.recentExclusionWindow = config.SingleValueLoader(30 * time.Second)
 }
@@ -164,8 +163,8 @@ func TestFlush(t *testing.T) {
 	ctrl, mockDB, mockClient, mockHandler, f := setup(t)
 	defer ctrl.Finish()
 
-	currentTime := time.Now().UTC()
-	start := currentTime.Add(-5 * time.Minute)
+	midOfPrevHour := time.Now().UTC().Add(-time.Hour).Truncate(time.Hour).Add(30 * time.Minute)
+	start := midOfPrevHour.Add(-5 * time.Minute)
 	end := start.Add(1 * time.Minute)
 	reports := createReports(10)
 	setupFlusher(f)
@@ -197,39 +196,51 @@ func TestGetRange(t *testing.T) {
 	ctrl, mockDB, _, _, f := setup(t)
 	defer ctrl.Finish()
 
-	aggWindowMins := 2 * time.Minute
-	recentExclusionWindow := 60 * time.Second
+	recentExclusionWindow := 30 * time.Second
+	flushWindow := 2 * time.Minute
 	currentTime := time.Now().UTC()
+	startOfHour := currentTime.Truncate(time.Hour)
+	midOfHour := startOfHour.Add(30 * time.Minute)
 
-	t.Run("getRange", func(t *testing.T) {
-		startTime := currentTime.Add(-aggWindowMins - recentExclusionWindow - 1*time.Second)
-		expectedEnd := startTime.Add(aggWindowMins)
+	t.Run("getRange with valid range with full flush window", func(t *testing.T) {
+		startTime := midOfHour.Add(-flushWindow - recentExclusionWindow - 1*time.Second)
+		expectedEnd := startTime.Add(flushWindow)
 
 		mockDB.EXPECT().GetStart(f.ctx, f.table).Return(startTime, nil).Times(1)
 
-		start, end, err := f.getRange(f.ctx, aggWindowMins, recentExclusionWindow)
+		start, end, valid, err := f.getRange(f.ctx, midOfHour, flushWindow, recentExclusionWindow)
 		assert.NoError(t, err)
+		assert.True(t, valid)
 		assert.Equal(t, startTime, start)
 		assert.Equal(t, expectedEnd, end)
 	})
 
-	t.Run("getRange with recent window excluded", func(t *testing.T) {
-		startTime := currentTime.Add(-aggWindowMins + recentExclusionWindow)
-		expectedEnd := startTime.Add(aggWindowMins)
+	t.Run("getRange with valid range with partial flush window near end of hour", func(t *testing.T) {
+		startTime := startOfHour.Add(-flushWindow + 30*time.Second)
+		expectedEnd := startOfHour
 
 		mockDB.EXPECT().GetStart(f.ctx, f.table).Return(startTime, nil).Times(1)
 
-		start, end, err := f.getRange(f.ctx, aggWindowMins, recentExclusionWindow)
+		start, end, valid, err := f.getRange(f.ctx, startOfHour.Add(1*time.Minute), flushWindow, recentExclusionWindow)
 		assert.NoError(t, err)
+		assert.True(t, valid)
 		assert.Equal(t, startTime, start)
-		assert.True(t, end.Before(expectedEnd))
-		assert.True(t, end.Before(currentTime))
+		assert.Equal(t, expectedEnd, end)
+	})
+
+	t.Run("getRange with invalid range because entire flush window is not covered ", func(t *testing.T) {
+		startTime := midOfHour.Add(-flushWindow + recentExclusionWindow)
+		mockDB.EXPECT().GetStart(f.ctx, f.table).Return(startTime, nil).Times(1)
+
+		_, _, valid, err := f.getRange(f.ctx, midOfHour, flushWindow, recentExclusionWindow)
+		assert.NoError(t, err)
+		assert.False(t, valid)
 	})
 
 	t.Run("failed getRange", func(t *testing.T) {
 		mockDB.EXPECT().GetStart(f.ctx, f.table).Return(time.Time{}, errors.New("db error")).Times(1)
 
-		_, _, err := f.getRange(f.ctx, aggWindowMins, recentExclusionWindow)
+		_, _, _, err := f.getRange(f.ctx, currentTime, flushWindow, recentExclusionWindow)
 		assert.Error(t, err)
 	})
 }
