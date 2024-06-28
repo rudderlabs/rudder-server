@@ -1665,7 +1665,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			continue
 		}
 
-		if source.SourceDefinition.Category != "" && source.SourceDefinition.Category != sourceCategoryWebhook {
+		if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWebhook) {
 			nonEventStreamSourceIds[sourceID] = true
 		}
 
