@@ -39,10 +39,9 @@ type Flusher struct {
 	labels []string
 
 	sleepInterval config.ValueLoader[time.Duration]
-	flushInterval config.ValueLoader[time.Duration]
+	flushWindow   config.ValueLoader[time.Duration]
 
 	inAppAggregationEnabled             bool
-	aggWindowMins                       config.ValueLoader[time.Duration]
 	recentExclusionWindow               config.ValueLoader[time.Duration]
 	batchSizeFromDB                     config.ValueLoader[int]
 	aggressiveFlushEnabled              config.ValueLoader[bool]
@@ -92,10 +91,9 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.sleepInterval")
-	flushInterval := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushInterval")
+	flushWindow := config.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
 	minConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
 	maxConcReqs := config.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
-	aggWindowMins := config.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.aggregationWindowInMinutes")
 	recentExclusionWindow := config.GetReloadableDurationVar(1, time.Minute, "Reporting.flusher.recentExclusionWindowInSeconds")
 	batchSizeFromDB := config.GetReloadableIntVar(1000, 1, "Reporting.flusher.batchSizeFromDB")
 	batchSizeToReporting := config.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
@@ -113,11 +111,10 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		reportingURL:                        reportingURL,
 		instanceId:                          config.GetString("INSTANCE_ID", "1"),
 		sleepInterval:                       sleepInterval,
-		flushInterval:                       flushInterval,
+		flushWindow:                         flushWindow,
 		minConcurrentRequests:               minConcReqs,
 		maxConcurrentRequests:               maxConcReqs,
 		stats:                               stats,
-		aggWindowMins:                       aggWindowMins,
 		recentExclusionWindow:               recentExclusionWindow,
 		labels:                              labels,
 		batchSizeFromDB:                     batchSizeFromDB,
@@ -229,18 +226,11 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			shouldFlush, err := f.shouldFlush()
-			if err != nil {
+			s := time.Now().UTC()
+			if err := f.flush(ctx); err != nil {
 				return err
 			}
-
-			if shouldFlush {
-				s := time.Now().UTC()
-				if err := f.flush(ctx); err != nil {
-					return err
-				}
-				f.flushTimer.Since(s)
-			}
+			f.flushTimer.Since(s)
 
 			if !f.flushAggressively(f.lastReportedAt.Load(), f.aggressiveFlushEnabled.Load()) {
 				select {
@@ -253,21 +243,6 @@ func (f *Flusher) startFlushing(ctx context.Context) error {
 	}
 }
 
-func (f *Flusher) shouldFlush() (bool, error) {
-	currentTime := time.Now().UTC()
-	start, end, err := f.getRange(f.ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
-	if err != nil {
-		return false, err
-	}
-	if start.IsZero() || start.After(currentTime.Add(-f.flushInterval.Load())) {
-		return false, nil
-	}
-	if end.After(currentTime.Add(-f.recentExclusionWindow.Load())) {
-		return false, nil
-	}
-	return true, nil
-}
-
 func (f *Flusher) flushAggressively(lastReportedAt time.Time, aggresiveFlushEnabled bool) bool {
 	if !aggresiveFlushEnabled {
 		return false
@@ -278,11 +253,16 @@ func (f *Flusher) flushAggressively(lastReportedAt time.Time, aggresiveFlushEnab
 
 // flush is the main logic for flushing data.
 func (f *Flusher) flush(ctx context.Context) error {
+	currentTime := time.Now().UTC()
+
 	// 1. Get the time range to flush
 	s := time.Now().UTC()
-	start, end, err := f.getRange(ctx, f.aggWindowMins.Load(), f.recentExclusionWindow.Load())
+	start, end, valid, err := f.getRange(ctx, currentTime, f.flushWindow.Load(), f.recentExclusionWindow.Load())
 	if err != nil {
 		return err
+	}
+	if !valid {
+		return nil
 	}
 	f.minReportedAtQueryTimer.Since(s)
 
@@ -314,22 +294,31 @@ func (f *Flusher) flush(ctx context.Context) error {
 	return nil
 }
 
-func (f *Flusher) getRange(ctx context.Context, aggWindowMins, recentExclusionWindow time.Duration) (start, end time.Time, error error) {
-	start, err := f.db.GetStart(ctx, f.table)
+func (f *Flusher) getRange(ctx context.Context, currentTime time.Time, flushWindow, recentExclusionWindow time.Duration) (start, end time.Time, valid bool, err error) {
+	start, err = f.db.GetStart(ctx, f.table)
 	if err != nil {
-		return time.Time{}, time.Time{}, err
+		return time.Time{}, time.Time{}, false, err
 	}
 
-	end = f.calcEnd(start, aggWindowMins, recentExclusionWindow)
-	return start, end, nil
+	if start.IsZero() {
+		return start, end, false, nil
+	}
+
+	end = f.calcEnd(start, currentTime, flushWindow, recentExclusionWindow)
+
+	currentHourStart := currentTime.Truncate(time.Hour)
+	if end.Sub(start) == flushWindow || end == currentHourStart {
+		return start, end, true, nil
+	}
+
+	return start, end, false, nil
 }
 
 // Since we have hourly/daily/monthly aggregates on Reporting Service, we want the window to be within same hour
 // Don't consider most recent data where there are inserts happening
-func (f *Flusher) calcEnd(start time.Time, aggWindowMins, recentExclusionWindow time.Duration) time.Time {
-	end := start.Add(aggWindowMins)
-	currentTime := time.Now().UTC()
-	nextHour := currentTime.Truncate(time.Hour).Add(time.Hour)
+func (f *Flusher) calcEnd(start, currentTime time.Time, flushWindow, recentExclusionWindow time.Duration) time.Time {
+	end := start.Add(flushWindow)
+	nextHour := start.Truncate(time.Hour).Add(time.Hour)
 	endLimit := currentTime.Add(-recentExclusionWindow)
 
 	if end.After(nextHour) {
