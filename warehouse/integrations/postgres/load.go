@@ -11,8 +11,10 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/safeguard"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -32,6 +34,9 @@ type loadUsersTableResponse struct {
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	var loadTableStats *types.LoadTableStats
+	cancel := safeguard.MustStop(ctx, 5*time.Minute)
+	defer cancel()
+
 	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		var err error
 		loadTableStats, _, err = pg.loadTable(
