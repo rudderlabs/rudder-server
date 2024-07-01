@@ -971,10 +971,10 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 	}
 }
 
-func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
+func (g *GRPC) GetFirstAbortedUploadInContinuousAbortsByDestination(
 	ctx context.Context,
-	request *proto.FirstAbortedUploadsInContinuousAbortsRequest,
-) (*proto.FirstAbortedUploadsInContinuousAbortsResponse, error) {
+	request *proto.FirstAbortedUploadInContinuousAbortsByDestinationRequest,
+) (*proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse, error) {
 	g.logger.Infon(
 		"Getting first aborted uploads in a series of continuous aborts",
 		obskit.WorkspaceID(request.WorkspaceId),
@@ -987,16 +987,16 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 	if request.GetStart() != "" {
 		startTime, err = time.Parse(time.RFC3339, request.GetStart())
 		if err != nil {
-			return &proto.FirstAbortedUploadsInContinuousAbortsResponse{},
+			return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{},
 				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
 		}
 	} else {
 		startTime = time.Now().AddDate(0, 0, -30)
 	}
 
-	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadsInContinuousAborts(ctx, request.WorkspaceId, startTime)
+	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, request.WorkspaceId, startTime)
 	if err != nil {
-		return &proto.FirstAbortedUploadsInContinuousAbortsResponse{},
+		return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to find first aborted uploads in a series of continuous aborts info: %v", err)
 	}
 
@@ -1011,5 +1011,5 @@ func (g *GRPC) GetFirstAbortedUploadsInContinuousAborts(
 		}
 	})
 
-	return &proto.FirstAbortedUploadsInContinuousAbortsResponse{Uploads: uploads}, nil
+	return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{Uploads: uploads}, nil
 }

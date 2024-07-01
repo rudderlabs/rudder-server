@@ -1358,7 +1358,7 @@ func (u *Uploads) update(
 	return nil
 }
 
-func (u *Uploads) GetFirstAbortedUploadsInContinuousAborts(ctx context.Context, workspaceID string, start time.Time) ([]model.FirstAbortedUploadResponse, error) {
+func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, workspaceID string, start time.Time) ([]model.FirstAbortedUploadResponse, error) {
 	outputColumns := "id, source_id, destination_id, created_at, first_event_at, last_event_at"
 
 	stmt := fmt.Sprintf(`

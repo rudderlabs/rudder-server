@@ -1626,7 +1626,7 @@ func TestGRPC(t *testing.T) {
 			}
 
 			t.Run("success", func(t *testing.T) {
-				res, err := grpcClient.GetFirstAbortedUploadsInContinuousAborts(ctx, &proto.FirstAbortedUploadsInContinuousAbortsRequest{
+				res, err := grpcClient.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, &proto.FirstAbortedUploadInContinuousAbortsByDestinationRequest{
 					WorkspaceId: workspaceID,
 				})
 				require.NoError(t, err)

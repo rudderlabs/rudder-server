@@ -2840,7 +2840,7 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 	t.Run("query to get the first aborted upload in series of continuous aborts", func(t *testing.T) {
 		t.Parallel()
 
-		uploads, err := repoUpload.GetFirstAbortedUploadsInContinuousAborts(ctx, "workspace_id", time.Now().AddDate(0, 0, -30))
+		uploads, err := repoUpload.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, "workspace_id", time.Now().AddDate(0, 0, -30))
 		require.NoError(t, err)
 		require.Len(t, uploads, 2)
 
@@ -2864,7 +2864,7 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 	t.Run("query to get empty list of first aborted upload in series of continuous aborts", func(t *testing.T) {
 		t.Parallel()
 
-		uploads, err := repoUpload.GetFirstAbortedUploadsInContinuousAborts(ctx, "workspace_id_1", time.Now().AddDate(0, 0, -30))
+		uploads, err := repoUpload.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, "workspace_id_1", time.Now().AddDate(0, 0, -30))
 		require.NoError(t, err)
 		require.Len(t, uploads, 0)
 	})
