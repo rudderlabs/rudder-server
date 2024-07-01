@@ -75,13 +75,6 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, eventStatsReporter)
 
-	trackedUsersFlusher, err := flusher.CreateFlusher(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default)
-	if err != nil {
-		log.Errorn("error creating tracked users flusher", obskit.Error(err))
-		panic(err) //  TODO: Should we panic here?
-	}
-	rm.flushers = append(rm.flushers, trackedUsersFlusher)
-
 	return rm
 }
 
@@ -100,6 +93,15 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	for i := range rm.reporters {
 		reporter := rm.reporters[i]
 		syncers = append(syncers, reporter.DatabaseSyncer(c))
+	}
+
+	if c.Label == types.CoreReportingLabel || c.Label == "" {
+		trackedUsersFlusher, err := flusher.CreateFlusher(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default)
+		if err != nil {
+			rm.log.Errorn("error creating tracked users flusher", obskit.Error(err))
+			panic(err) //  TODO: Should we panic here?
+		}
+		rm.flushers = append(rm.flushers, trackedUsersFlusher)
 	}
 
 	return func() {
