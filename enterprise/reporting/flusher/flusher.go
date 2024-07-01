@@ -90,7 +90,7 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 
 func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
-	sleepInterval := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.sleepInterval")
+	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
 	minConcReqs := conf.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
 	maxConcReqs := conf.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
