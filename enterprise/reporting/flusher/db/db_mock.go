@@ -36,18 +36,18 @@ func (m *MockDB) EXPECT() *MockDBMockRecorder {
 	return m.recorder
 }
 
-// CloseDB mocks base method.
-func (m *MockDB) CloseDB() error {
+// Close mocks base method.
+func (m *MockDB) Close() error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CloseDB")
+	ret := m.ctrl.Call(m, "Close")
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// CloseDB indicates an expected call of CloseDB.
-func (mr *MockDBMockRecorder) CloseDB() *gomock.Call {
+// Close indicates an expected call of Close.
+func (mr *MockDBMockRecorder) Close() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseDB", reflect.TypeOf((*MockDB)(nil).CloseDB))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockDB)(nil).Close))
 }
 
 // Delete mocks base method.
@@ -92,18 +92,4 @@ func (m *MockDB) GetStart(ctx context.Context, table string) (time.Time, error) 
 func (mr *MockDBMockRecorder) GetStart(ctx, table interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStart", reflect.TypeOf((*MockDB)(nil).GetStart), ctx, table)
-}
-
-// InitDB mocks base method.
-func (m *MockDB) InitDB() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InitDB")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// InitDB indicates an expected call of InitDB.
-func (mr *MockDBMockRecorder) InitDB() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitDB", reflect.TypeOf((*MockDB)(nil).InitDB))
 }

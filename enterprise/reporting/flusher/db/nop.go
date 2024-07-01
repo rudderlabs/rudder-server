@@ -9,10 +9,6 @@ import (
 
 type NOP struct{}
 
-func (n *NOP) InitDB() error {
-	return nil
-}
-
 func (n *NOP) GetStart(ctx context.Context, table string) (time.Time, error) {
 	return time.Time{}, nil
 }
@@ -25,6 +21,6 @@ func (n *NOP) Delete(ctx context.Context, table string, start, end time.Time) er
 	return nil
 }
 
-func (n *NOP) CloseDB() error {
+func (n *NOP) Close() error {
 	return nil
 }

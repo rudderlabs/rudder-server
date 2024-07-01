@@ -11,18 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
-func TestInitDB(t *testing.T) {
-	db, _, err := sqlmock.New()
-	assert.NoError(t, err)
-
-	p := &PostgresDB{
-		db: db,
-	}
-
-	err = p.InitDB()
-	assert.NoError(t, err)
-}
-
 func TestGetStart(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
@@ -66,23 +54,6 @@ func TestFetchBatch(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
-func TestFetch(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	assert.NoError(t, err)
-
-	rows := sqlmock.NewRows([]string{"col1", "col2"}).
-		AddRow("val1", "val2")
-
-	mock.ExpectQuery("SELECT \\* FROM").WillReturnRows(rows)
-
-	p := &PostgresDB{
-		db: db,
-	}
-
-	_, err = p.Fetch(context.Background(), "test_table", time.Now().UTC(), time.Now().UTC())
-	assert.NoError(t, err)
-}
-
 func TestDelete(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
@@ -97,7 +68,7 @@ func TestDelete(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestCloseDB(t *testing.T) {
+func TestClose(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 
@@ -107,7 +78,7 @@ func TestCloseDB(t *testing.T) {
 		db: db,
 	}
 
-	err = p.CloseDB()
+	err = p.Close()
 	assert.NoError(t, err)
 }
 

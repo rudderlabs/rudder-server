@@ -11,15 +11,12 @@ import (
 
 	"github.com/cenkalti/backoff"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-)
-
-const (
-	StatFlusherHttpReqLatency = "flusher_http_request_duration_seconds"
-	StatFlusherHttpReqCount   = "flusher_http_requests_total"
 )
 
 type ReportingClient struct {
@@ -48,14 +45,14 @@ func NewReportingClient(url string, log logger.Logger, stats stats.Stats, tags s
 }
 
 func (c *ReportingClient) initStats() {
-	c.reqLatency = c.stats.NewTaggedStat(StatFlusherHttpReqLatency, stats.TimerType, c.tags)
-	c.reqCount = c.stats.NewTaggedStat(StatFlusherHttpReqCount, stats.CountType, c.tags)
+	c.reqLatency = c.stats.NewTaggedStat("reporting_flusher_http_request_duration_seconds", stats.TimerType, c.tags)
+	c.reqCount = c.stats.NewTaggedStat("reporting_flusher_http_requests_total", stats.CountType, c.tags)
 }
 
 func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface{}) error {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(payloadBytes))
@@ -63,7 +60,7 @@ func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		start := time.Now().UTC()
+		start := time.Now()
 		resp, err := c.netClient.Do(req)
 		if err != nil {
 			return err
@@ -85,10 +82,10 @@ func (c *ReportingClient) MakePOSTRequest(ctx context.Context, payload interface
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
-		c.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
 	})
 	if err != nil {
-		c.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+		c.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
 	}
 	return err
 }
