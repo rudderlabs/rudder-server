@@ -41,8 +41,8 @@ require (
 	github.com/databricks/databricks-sql-go v1.5.7
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/docker/docker v27.0.2+incompatible
-	github.com/go-chi/chi/v5 v5.0.14
+	github.com/docker/docker v27.0.3+incompatible
+	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-migrate/migrate/v4 v4.17.1
@@ -68,7 +68,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.19.0
 	github.com/onsi/gomega v1.33.1
 	github.com/ory/dockertest/v3 v3.10.0
-	github.com/oschwald/maxminddb-golang v1.13.0
+	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.6.1
 	github.com/redis/go-redis/v9 v9.5.3
@@ -80,7 +80,7 @@ require (
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
 	github.com/rudderlabs/sql-tunnels v0.1.7
-	github.com/samber/lo v1.42.0
+	github.com/samber/lo v1.44.0
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/segmentio/ksuid v1.0.4
 	github.com/snowflakedb/gosnowflake v1.10.1
