@@ -26,7 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -51,7 +51,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	var (
 		group                errgroup.Group
 		postgresContainer    *postgres.Resource
-		transformerContainer *destination.TransformerResource
+		transformerContainer *transformertest.Resource
 		workspaceToken       = "workspace-token"
 	)
 
@@ -63,7 +63,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		return nil
 	})
 	group.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		if err != nil {
 			return fmt.Errorf("could not start transformer: %v", err)
 		}
@@ -144,7 +144,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		fmt.Sprintf("RSERVER_PROFILER_PORT=%d", debugPort),
 		fmt.Sprintf("RSERVER_ENABLE_STATS=%s", "false"),
 		fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir),
-		fmt.Sprintf("DEST_TRANSFORM_URL=%s", transformerContainer.TransformURL),
+		fmt.Sprintf("DEST_TRANSFORM_URL=%s", transformerContainer.TransformerURL),
 		fmt.Sprintf("WORKSPACE_TOKEN=%s", workspaceToken),
 	}
 	if testing.Verbose() {

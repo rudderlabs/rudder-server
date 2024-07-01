@@ -407,7 +407,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		}
 		toSet["rudderId"] = rudderId
 		if _, ok := toSet["receivedAt"]; !ok {
-			toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
+			toSet["receivedAt"] = gw.now().Format(misc.RFC3339Milli)
 		}
 		if _, ok := toSet["request_ip"]; ok {
 			var tcOk bool

@@ -1,0 +1,16 @@
+{
+    "name": "shopify",
+    "description": "Track Call -> carts_create ",
+    "input": {
+        "request": {
+            "query": "topic=carts_create"
+        }
+    },
+    "output": {
+        "response": {
+            "status": 200,
+            "contentType": "text/plain",
+            "body": "OK"     
+        }
+    }
+}

@@ -22,11 +22,11 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 )
 
@@ -50,7 +50,7 @@ func TestWebhook(t *testing.T) {
 
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	transformerContainer, err := destination.SetupTransformer(pool, t)
+	transformerContainer, err := transformertest.Setup(pool, t)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -61,7 +61,7 @@ func TestWebhook(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformURL, t.TempDir())
+		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -104,7 +104,7 @@ func TestDocsEndpoint(t *testing.T) {
 
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
-	transformerContainer, err := destination.SetupTransformer(pool, t)
+	transformerContainer, err := transformertest.Setup(pool, t)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -115,7 +115,7 @@ func TestDocsEndpoint(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformURL, t.TempDir())
+		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
