@@ -20,11 +20,22 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
+func resetFlusherInstances() {
+	flusherMu.Lock()
+	defer flusherMu.Unlock()
+	for k := range flusherInstances {
+		delete(flusherInstances, k)
+	}
+}
+
 func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *client.MockClient, *handler.MockHandler, *Flusher) {
+	resetFlusherInstances()
+
 	ctrl := gomock.NewController(t)
 	mockDB := db.NewMockDB(ctrl)
 	mockClient := client.NewMockClient(ctrl)
 	mockHandler := handler.NewMockHandler(ctrl)
+	conf := config.New()
 
 	ctx := context.Background()
 	log := logger.NOP
@@ -34,7 +45,7 @@ func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *client.MockClient, *h
 	reportingURL := "http://localhost"
 	inAppAggregationEnabled := true
 
-	f := NewFlusher(ctx, mockDB, log, inputStats, table, labels, reportingURL, inAppAggregationEnabled, mockHandler)
+	f := NewFlusher(ctx, mockDB, log, inputStats, conf, table, labels, reportingURL, inAppAggregationEnabled, mockHandler)
 	f.client = mockClient
 
 	f.initStats(f.commonTags)
@@ -75,13 +86,6 @@ func TestNewFlusher(t *testing.T) {
 		assert.Equal(t, "test_table", f.table)
 		assert.Equal(t, "http://localhost", f.reportingURL)
 	})
-
-	t.Run("return same instance for a table", func(t *testing.T) {
-		_, _, _, _, f2 := setup(t)
-		defer ctrl.Finish()
-
-		assert.Equal(t, f, f2)
-	})
 }
 
 func TestStartAndStop(t *testing.T) {
@@ -92,7 +96,7 @@ func TestStartAndStop(t *testing.T) {
 	f.db = &db.NOP{}
 
 	t.Run("start and stop flusher", func(t *testing.T) {
-		go f.Start()
+		go f.Run()
 
 		require.Eventually(t, func() bool {
 			return f.started.Load()
@@ -111,60 +115,12 @@ func TestStartAndStop(t *testing.T) {
 	})
 }
 
-func TestStartFlushing(t *testing.T) {
-	ctrl, _, _, _, f := setup(t)
-	defer ctrl.Finish()
-
-	setupFlusher(f)
-	f.db = &db.NOP{}
-
-	t.Run("start flushing loop", func(t *testing.T) {
-		go func() {
-			if err := f.startFlushing(f.ctx); err != nil {
-				t.Errorf("Error starting flushing: %v", err)
-			}
-		}()
-		f.cancel()
-
-		// Check that f.ctx is cancelled.
-		select {
-		case <-f.ctx.Done():
-		default:
-			t.Fatal("Expected context to be cancelled, but it was not")
-		}
-	})
-}
-
-func TestStartLagCapture(t *testing.T) {
-	ctrl, _, _, _, f := setup(t)
-	defer ctrl.Finish()
-
-	setupFlusher(f)
-	f.db = &db.NOP{}
-
-	t.Run("start flushing loop", func(t *testing.T) {
-		go func() {
-			if err := f.startLagCapture(f.ctx); err != nil {
-				t.Errorf("Error starting lag capture: %v", err)
-			}
-		}()
-		f.cancel()
-
-		// Check that f.ctx is cancelled.
-		select {
-		case <-f.ctx.Done():
-		default:
-			t.Fatal("Expected context to be cancelled, but it was not")
-		}
-	})
-}
-
 func TestFlush(t *testing.T) {
 	ctrl, mockDB, mockClient, mockHandler, f := setup(t)
 	defer ctrl.Finish()
 
-	midOfPrevHour := time.Now().UTC().Add(-time.Hour).Truncate(time.Hour).Add(30 * time.Minute)
-	start := midOfPrevHour.Add(-5 * time.Minute)
+	midOCurHour := time.Now().UTC().Add(-time.Hour).Truncate(time.Hour).Add(30 * time.Minute)
+	start := midOCurHour.Add(-5 * time.Minute)
 	end := start.Add(1 * time.Minute)
 	reports := createReports(10)
 	setupFlusher(f)

@@ -12,26 +12,21 @@ import (
 )
 
 type PostgresDB struct {
-	db           *sql.DB
-	connStr      string
-	maxOpenConns int
+	db *sql.DB
 }
 
-func NewPostgresDB(connStr string, maxOpenConns int) DB {
-	return &PostgresDB{
-		connStr:      connStr,
-		maxOpenConns: maxOpenConns,
-	}
-}
-
-func (p *PostgresDB) InitDB() error {
-	db, err := sql.Open("postgres", p.connStr)
+func New(connStr string, maxOpenConns int) (*PostgresDB, error) {
+	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	db.SetMaxOpenConns(p.maxOpenConns)
-	p.db = db
-	return nil
+	db.SetMaxOpenConns(maxOpenConns)
+
+	p := &PostgresDB{
+		db: db,
+	}
+	return p, nil
+
 }
 
 func (p *PostgresDB) GetStart(ctx context.Context, table string) (time.Time, error) {
@@ -48,11 +43,6 @@ func (p *PostgresDB) GetStart(ctx context.Context, table string) (time.Time, err
 func (p *PostgresDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]report.RawReport, error) {
 	query := fmt.Sprintf(`SELECT * FROM %s WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at LIMIT $3 OFFSET $4`, table)
 	return p.fetch(ctx, query, start, end, limit, offset)
-}
-
-func (p *PostgresDB) Fetch(ctx context.Context, table string, start, end time.Time) ([]report.RawReport, error) {
-	query := fmt.Sprintf(`SELECT * FROM %s WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`, table)
-	return p.fetch(ctx, query, start, end)
 }
 
 func (p *PostgresDB) fetch(ctx context.Context, query string, args ...interface{}) ([]report.RawReport, error) {
@@ -97,6 +87,6 @@ func (p *PostgresDB) Delete(ctx context.Context, tableName string, minReportedAt
 	return err
 }
 
-func (p *PostgresDB) CloseDB() error {
+func (p *PostgresDB) Close() error {
 	return p.db.Close()
 }

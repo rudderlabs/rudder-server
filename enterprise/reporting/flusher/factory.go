@@ -2,8 +2,9 @@ package flusher
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"errors"
+	"net/url"
+	"path"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -13,21 +14,30 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats stats.Stats) *Flusher {
-	connStr := misc.GetConnectionString(config.Default, "reporting")
-	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
-	db := db.NewPostgresDB(connStr, maxOpenConns)
+func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config) (*Flusher, error) {
+	connStr := misc.GetConnectionString(conf, "reporting")
+	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
+	db, err := db.New(connStr, maxOpenConns)
+	if err != nil {
+		return nil, err
+	}
 
 	if table == "tracked_users_reports" {
 		labels := []string{"workspace_id", "source_id", "instance_id"}
 
-		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
+		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
+		parsedURL, err := url.Parse(reportingBaseURL)
+		if err != nil {
+			return nil, err
+		}
+		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
+		reportingURL := parsedURL.String()
 
 		tuHandler := handler.NewTrackedUsersHandler(table, labels)
-		f := NewFlusher(ctx, db, log, stats, table, labels, reportingURL, true, tuHandler)
+		f := NewFlusher(ctx, db, log, stats, conf, table, labels, reportingURL, true, tuHandler)
 
-		return f
+		return f, err
 	}
 
-	return nil
+	return nil, errors.New("invalid table name for flusher. Only tracked_users_reports is supported now")
 }

@@ -32,6 +32,15 @@ func TestMakePOSTRequest(t *testing.T) {
 		err := client.MakePOSTRequest(context.Background(), &testData)
 		assert.NoError(t, err)
 	})
+
+	t.Run("JSON marshal error", func(t *testing.T) {
+		invalidPayload := make(chan int) // invalid payload that cannot be marshalled to JSON
+
+		err := client.MakePOSTRequest(context.Background(), invalidPayload)
+
+		assert.NotNil(t, err)
+		assert.Contains(t, err.Error(), "json: unsupported type: chan int")
+	})
 }
 
 func TestIsHTTPRequestSuccessful(t *testing.T) {
@@ -43,17 +52,22 @@ func TestIsHTTPRequestSuccessful(t *testing.T) {
 		want   bool
 	}{
 		{
-			name:   "Status 429",
-			status: 429,
-			want:   false,
-		},
-		{
-			name:   "Status 200",
+			name:   "status 200",
 			status: 200,
 			want:   true,
 		},
 		{
-			name:   "Status 500",
+			name:   "status 400",
+			status: 400,
+			want:   true,
+		},
+		{
+			name:   "status 429",
+			status: 429,
+			want:   false,
+		},
+		{
+			name:   "status 500",
 			status: 500,
 			want:   false,
 		},
