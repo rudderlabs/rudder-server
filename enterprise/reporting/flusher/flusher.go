@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -37,13 +36,12 @@ type Flusher struct {
 	client *http.Client
 
 	instanceId string
-
-	table string
+	table      string
+	module     string
 
 	sleepInterval config.ValueLoader[time.Duration]
 	flushWindow   config.ValueLoader[time.Duration]
 
-	inAppAggregationEnabled             bool
 	recentExclusionWindow               config.ValueLoader[time.Duration]
 	batchSizeFromDB                     config.ValueLoader[int]
 	aggressiveFlushEnabled              config.ValueLoader[bool]
@@ -70,7 +68,7 @@ type Flusher struct {
 	commonTags stats.Tags
 }
 
-func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, inAppAggregationEnabled bool, aggregator aggregator.Aggregator) *Flusher {
+func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -78,14 +76,14 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 		return instance
 	}
 
-	f := createFlusher(ctx, db, log, stats, conf, table, reportingURL, inAppAggregationEnabled, aggregator)
+	f := createFlusher(ctx, db, log, stats, conf, table, reportingURL, aggregator, module)
 
 	flusherInstances[table] = f
 
 	return f
 }
 
-func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, inAppAggregationEnabled bool, aggregator aggregator.Aggregator) *Flusher {
+func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -114,12 +112,12 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		batchSizeFromDB:                     batchSizeFromDB,
 		table:                               table,
 		aggregator:                          aggregator,
-		inAppAggregationEnabled:             inAppAggregationEnabled,
 		batchSizeToReporting:                batchSizeToReporting,
 		maxOpenConnections:                  maxOpenConns,
 		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
 		client:                              client,
+		module:                              module,
 	}
 
 	f.initCommonTags()
@@ -137,9 +135,9 @@ func (f *Flusher) CleanUp() error {
 
 func (f *Flusher) initCommonTags() {
 	f.commonTags = stats.Tags{
-		"instanceId":       f.instanceId,
-		"tableName":        f.table,
-		"inAppAggregation": strconv.FormatBool(f.inAppAggregationEnabled),
+		"instance": f.instanceId,
+		"table":    f.table,
+		"module":   f.module,
 	}
 }
 
@@ -199,7 +197,7 @@ func (f *Flusher) Flush(ctx context.Context) error {
 	}
 	f.minReportedAtQueryTimer.Since(s)
 
-	// 2. Aggregate reports. Get reports in batches and aggregate in app if inAppAggregationEnabled or aggregate in DB
+	// 2. Aggregate reports. We have different aggregators for in-app and in-db aggregation
 	s = time.Now()
 	f.aggReportsTimer.Since(s)
 	jsonReports, err := f.aggregate(ctx, start, end)

@@ -41,9 +41,8 @@ func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *aggregator.MockAggreg
 	inputStats := stats.NOP
 	table := "test_table"
 	reportingURL := "http://localhost"
-	inAppAggregationEnabled := true
 
-	f := NewFlusher(ctx, mockDB, log, inputStats, conf, table, reportingURL, inAppAggregationEnabled, mockAggregator)
+	f := NewFlusher(ctx, mockDB, log, inputStats, conf, table, reportingURL, mockAggregator, "core")
 
 	f.initStats(f.commonTags)
 

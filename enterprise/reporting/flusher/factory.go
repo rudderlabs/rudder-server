@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config) (*CronRunner, error) {
+func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (*CronRunner, error) {
 	connStr := misc.GetConnectionString(conf, "reporting")
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := db.New(connStr, maxOpenConns)
@@ -34,9 +34,9 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 
 		a := aggregator.NewTrackedUsersInAppAggregator(db.DB)
 
-		f := NewFlusher(ctx, db, log, stats, conf, table, reportingURL, true, a)
+		f := NewFlusher(ctx, db, log, stats, conf, table, reportingURL, a, module)
 
-		c := NewCronRunner(ctx, log, stats, conf, f, a, table)
+		c := NewCronRunner(ctx, log, stats, conf, f, a, table, module)
 
 		return c, err
 	}
