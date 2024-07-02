@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -968,4 +969,47 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 		statsFactory.NewTaggedStat("warehouse.grpc.response_time", stats.TimerType, tags).Since(start)
 		return res, err
 	}
+}
+
+func (g *GRPC) GetFirstAbortedUploadInContinuousAbortsByDestination(
+	ctx context.Context,
+	request *proto.FirstAbortedUploadInContinuousAbortsByDestinationRequest,
+) (*proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse, error) {
+	g.logger.Infon(
+		"Getting first aborted uploads in a series of continuous aborts",
+		obskit.WorkspaceID(request.WorkspaceId),
+		logger.NewStringField("startTime", request.Start),
+	)
+
+	var startTime time.Time
+	var err error
+
+	if request.GetStart() != "" {
+		startTime, err = time.Parse(time.RFC3339, request.GetStart())
+		if err != nil {
+			return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{},
+				status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time should be in correct %s format", time.RFC3339)
+		}
+	} else {
+		startTime = time.Now().AddDate(0, 0, -30)
+	}
+
+	abortedUploadsInfo, err := g.uploadRepo.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, request.WorkspaceId, startTime)
+	if err != nil {
+		return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to find first aborted uploads in a series of continuous aborts info: %v", err)
+	}
+
+	uploads := lo.Map(abortedUploadsInfo, func(item model.FirstAbortedUploadResponse, index int) *proto.FirstAbortedUploadResponse {
+		return &proto.FirstAbortedUploadResponse{
+			Id:            item.ID,
+			SourceId:      item.SourceID,
+			DestinationId: item.DestinationID,
+			CreatedAt:     timestamppb.New(item.CreatedAt),
+			FirstEventAt:  timestamppb.New(item.FirstEventAt),
+			LastEventAt:   timestamppb.New(item.LastEventAt),
+		}
+	})
+
+	return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{Uploads: uploads}, nil
 }

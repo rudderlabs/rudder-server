@@ -2658,3 +2658,214 @@ func TestUploads_Update(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	})
 }
+
+func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
+	t.Parallel()
+
+	db, ctx := setupDB(t), context.Background()
+
+	now := time.Now().UTC()
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return time.Now().UTC()
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return time.Now().UTC()
+	}))
+
+	destType := "RS"
+	uploads := []model.Upload{
+		// uploads with last upload success
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_success",
+			DestinationID:   "destination_with_last_upload_success",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_last_upload_success",
+			LastEventAt:     now.Add(-3 * time.Hour),
+			FirstEventAt:    now.Add(-4 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_success",
+			DestinationID:   "destination_with_last_upload_success",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_last_upload_success",
+			LastEventAt:     now.Add(-2 * time.Hour),
+			FirstEventAt:    now.Add(-3 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_success",
+			DestinationID:   "destination_with_last_upload_success",
+			DestinationType: destType,
+			Status:          model.ExportedData,
+			SourceTaskRunID: "task_run_id_with_last_upload_success",
+			LastEventAt:     now.Add(-1 * time.Hour),
+			FirstEventAt:    now.Add(-2 * time.Hour),
+		},
+		// uploads with no success
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_no_successful_upload",
+			DestinationID:   "destination_with_no_successful_upload",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_no_successful_upload",
+			LastEventAt:     now.Add(-4 * time.Hour),
+			FirstEventAt:    now.Add(-5 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_no_successful_upload",
+			DestinationID:   "destination_with_no_successful_upload",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_no_successful_upload",
+			LastEventAt:     now.Add(-3 * time.Hour),
+			FirstEventAt:    now.Add(-4 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_no_successful_upload",
+			DestinationID:   "destination_with_no_successful_upload",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_no_successful_upload",
+			LastEventAt:     now.Add(-2 * time.Hour),
+			FirstEventAt:    now.Add(-3 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_no_successful_upload",
+			DestinationID:   "destination_with_no_successful_upload",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_with_no_successful_upload",
+			LastEventAt:     now.Add(-1 * time.Hour),
+			FirstEventAt:    now.Add(-2 * time.Hour),
+		},
+		// uploads with last upload aborted
+
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_aborted",
+			DestinationID:   "destination_with_last_upload_aborted",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_last_upload_aborted",
+			LastEventAt:     now.Add(-4 * time.Hour),
+			FirstEventAt:    now.Add(-5 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_aborted",
+			DestinationID:   "destination_with_last_upload_aborted",
+			DestinationType: destType,
+			Status:          model.ExportedData,
+			SourceTaskRunID: "task_run_id_last_upload_aborted",
+			LastEventAt:     now.Add(-3 * time.Hour),
+			FirstEventAt:    now.Add(-4 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_aborted",
+			DestinationID:   "destination_with_last_upload_aborted",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_last_upload_aborted",
+			LastEventAt:     now.Add(-2 * time.Hour),
+			FirstEventAt:    now.Add(-3 * time.Hour),
+		},
+		{
+			WorkspaceID:     "workspace_id",
+			Namespace:       "namespace",
+			SourceID:        "source_with_last_upload_aborted",
+			DestinationID:   "destination_with_last_upload_aborted",
+			DestinationType: destType,
+			Status:          model.Aborted,
+			SourceTaskRunID: "task_run_id_last_upload_aborted",
+			LastEventAt:     now.Add(-1 * time.Hour),
+			FirstEventAt:    now.Add(-2 * time.Hour),
+		},
+		// uploads with last upload running
+		{
+			WorkspaceID:     "workspace_id_1",
+			Namespace:       "namespace_1",
+			SourceID:        "source_id_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: destType,
+			Status:          model.ExportingData,
+			SourceTaskRunID: "task_run_id_1",
+			LastEventAt:     now.Add(-time.Hour),
+			FirstEventAt:    now.Add(-2 * time.Hour),
+		},
+	}
+
+	for i := range uploads {
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
+			ID:              stagingID,
+			SourceID:        uploads[i].SourceID,
+			DestinationID:   uploads[i].DestinationID,
+			SourceTaskRunID: uploads[i].SourceTaskRunID,
+			FirstEventAt:    uploads[i].FirstEventAt,
+			LastEventAt:     uploads[i].LastEventAt,
+			Status:          uploads[i].Status,
+			WorkspaceID:     uploads[i].WorkspaceID,
+		}})
+		require.NoError(t, err)
+
+		uploads[i].ID = id
+		uploads[i].Error = []byte("{}")
+		uploads[i].UploadSchema = model.Schema{}
+		uploads[i].LoadFileType = "csv"
+		uploads[i].StagingFileStartID = int64(i + 1)
+		uploads[i].StagingFileEndID = int64(i + 1)
+	}
+
+	t.Run("query to get the first aborted upload in series of continuous aborts", func(t *testing.T) {
+		t.Parallel()
+
+		uploads, err := repoUpload.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, "workspace_id", time.Now().AddDate(0, 0, -30))
+		require.NoError(t, err)
+		require.Len(t, uploads, 2)
+
+		if uploads[0].ID > uploads[1].ID {
+			uploads[0], uploads[1] = uploads[1], uploads[0]
+		}
+
+		require.Equal(t, uploads[0].ID, int64(4))
+		require.Equal(t, uploads[0].SourceID, "source_with_no_successful_upload")
+		require.Equal(t, uploads[0].DestinationID, "destination_with_no_successful_upload")
+		require.Equal(t, uploads[0].LastEventAt.Unix(), now.Add(-4*time.Hour).Unix())
+		require.Equal(t, uploads[0].FirstEventAt.Unix(), now.Add(-5*time.Hour).Unix())
+
+		require.Equal(t, uploads[1].ID, int64(10))
+		require.Equal(t, uploads[1].SourceID, "source_with_last_upload_aborted")
+		require.Equal(t, uploads[1].DestinationID, "destination_with_last_upload_aborted")
+		require.Equal(t, uploads[1].LastEventAt.Unix(), now.Add(-2*time.Hour).Unix())
+		require.Equal(t, uploads[1].FirstEventAt.Unix(), now.Add(-3*time.Hour).Unix())
+	})
+
+	t.Run("query to get empty list of first aborted upload in series of continuous aborts", func(t *testing.T) {
+		t.Parallel()
+
+		uploads, err := repoUpload.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, "workspace_id_1", time.Now().AddDate(0, 0, -30))
+		require.NoError(t, err)
+		require.Len(t, uploads, 0)
+	})
+}
