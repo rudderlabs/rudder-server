@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -67,7 +67,7 @@ type Flusher struct {
 	commonTags stats.Tags
 }
 
-func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -82,7 +82,7 @@ func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Con
 	return f
 }
 
-func createFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func createFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
