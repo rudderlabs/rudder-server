@@ -36,15 +36,12 @@ func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *aggregator.MockAggreg
 	mockAggregator := aggregator.NewMockAggregator(ctrl)
 	conf := config.New()
 
-	ctx := context.Background()
 	log := logger.NOP
 	inputStats := stats.NOP
 	table := "test_table"
 	reportingURL := "http://localhost"
 
-	f := NewFlusher(ctx, mockDB, log, inputStats, conf, table, reportingURL, mockAggregator, "core")
-
-	f.initStats(f.commonTags)
+	f := NewFlusher(mockDB, log, inputStats, conf, table, reportingURL, mockAggregator, "core")
 
 	return ctrl, mockDB, mockAggregator, f
 }

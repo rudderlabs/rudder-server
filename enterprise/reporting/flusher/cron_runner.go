@@ -28,7 +28,6 @@ type CronRunner struct {
 	flusher       *Flusher
 	aggregator    aggregator.Aggregator
 	sleepInterval config.ValueLoader[time.Duration]
-	stopChan      chan struct{}
 
 	flushTimer   stats.Measurement
 	reportingLag stats.Measurement
@@ -53,7 +52,6 @@ func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, co
 		flusher:       flusher,
 		aggregator:    aggregator,
 		sleepInterval: sleepInterval,
-		stopChan:      make(chan struct{}),
 		table:         table,
 		module:        module,
 	}
@@ -99,7 +97,7 @@ func (c *CronRunner) startFlushing(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			s := time.Now().UTC()
+			s := time.Now()
 			if err := c.flusher.Flush(ctx); err != nil {
 				return err
 			}

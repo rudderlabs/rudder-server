@@ -33,15 +33,15 @@ type Flusher struct {
 	db                 db.DB
 	maxOpenConnections int
 
-	client *http.Client
+	client     *http.Client
+	aggregator aggregator.Aggregator
 
 	instanceId string
 	table      string
 	module     string
 
-	sleepInterval config.ValueLoader[time.Duration]
-	flushWindow   config.ValueLoader[time.Duration]
-
+	sleepInterval                       config.ValueLoader[time.Duration]
+	flushWindow                         config.ValueLoader[time.Duration]
 	recentExclusionWindow               config.ValueLoader[time.Duration]
 	batchSizeFromDB                     config.ValueLoader[int]
 	aggressiveFlushEnabled              config.ValueLoader[bool]
@@ -64,11 +64,10 @@ type Flusher struct {
 	reqLatency              stats.Measurement
 	reqCount                stats.Measurement
 
-	aggregator aggregator.Aggregator
 	commonTags stats.Tags
 }
 
-func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -76,20 +75,20 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 		return instance
 	}
 
-	f := createFlusher(ctx, db, log, stats, conf, table, reportingURL, aggregator, module)
+	f := createFlusher(db, log, stats, conf, table, reportingURL, aggregator, module)
 
 	flusherInstances[table] = f
 
 	return f
 }
 
-func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func createFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
+	recentExclusionWindow := conf.GetReloadableDurationVar(1, time.Minute, "Reporting.flusher.recentExclusionWindowInSeconds")
 	minConcReqs := conf.GetReloadableIntVar(32, 1, "Reporting.flusher.minConcurrentRequests")
 	maxConcReqs := conf.GetReloadableIntVar(32, 1, "Reporting.flusher.maxConcurrentRequests")
-	recentExclusionWindow := conf.GetReloadableDurationVar(1, time.Minute, "Reporting.flusher.recentExclusionWindowInSeconds")
 	batchSizeFromDB := conf.GetReloadableIntVar(1000, 1, "Reporting.flusher.batchSizeFromDB")
 	batchSizeToReporting := conf.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
 	aggressiveFlushEnabled := conf.GetReloadableBoolVar(false, "Reporting.flusher.aggressiveFlushEnabled")
@@ -105,10 +104,10 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		instanceId:                          conf.GetString("INSTANCE_ID", "1"),
 		sleepInterval:                       sleepInterval,
 		flushWindow:                         flushWindow,
+		recentExclusionWindow:               recentExclusionWindow,
 		minConcurrentRequests:               minConcReqs,
 		maxConcurrentRequests:               maxConcReqs,
 		stats:                               stats,
-		recentExclusionWindow:               recentExclusionWindow,
 		batchSizeFromDB:                     batchSizeFromDB,
 		table:                               table,
 		aggregator:                          aggregator,
