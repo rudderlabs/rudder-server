@@ -297,6 +297,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")
 	rt.reloadableConfig.savePayloadOnError = config.GetReloadableBoolVar(false, "Router."+rt.destType+".savePayloadOnError", "Router.savePayloadOnError")
 	rt.reloadableConfig.transformerProxy = config.GetReloadableBoolVar(false, "Router."+rt.destType+".transformerProxy", "Router.transformerProxy")
+	rt.reloadableConfig.edgeTransform = config.GetReloadableBoolVar(false, "Router."+rt.destType+".edgeTransform", "Router.edgeTransform")
 	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, "Router."+rt.destType+".skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf")
 	rt.reloadableConfig.skipRtAbortAlertForDelivery = config.GetReloadableBoolVar(false, "Router."+rt.destType+".skipRtAbortAlertForDelivery", "Router.skipRtAbortAlertForDelivery")
 	rt.reloadableConfig.jobQueryBatchSize = config.GetReloadableIntVar(10000, 1, "Router.jobQueryBatchSize")
