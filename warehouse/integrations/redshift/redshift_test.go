@@ -2,7 +2,6 @@ package redshift_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -114,8 +115,9 @@ func TestIntegration(t *testing.T) {
 		rsTestCredentials.DbName,
 	)
 
-	db, err := sql.Open("postgres", dsn)
+	pgxConf, err := pgx.ParseConfig(dsn)
 	require.NoError(t, err)
+	db := stdlib.OpenDB(*pgxConf)
 	require.NoError(t, db.Ping())
 
 	bootstrapSvc := func(t testing.TB, additionalEnvs map[string]string, preferAppend *bool) {
