@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
+	"github.com/rudderlabs/rudder-server/services/streammanager/wunderkind"
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
@@ -48,6 +49,8 @@ func NewProducer(destination *backendconfig.DestinationT, opts common.Opts) (com
 		return lambda.NewProducer(destination, opts)
 	case "GOOGLE_CLOUD_FUNCTION":
 		return googlecloudfunction.NewProducer(destination, opts)
+	case "WUNDERKIND":
+		return wunderkind.NewProducer(destination, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
