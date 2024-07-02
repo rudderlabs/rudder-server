@@ -201,6 +201,7 @@ type processorStats struct {
 	processJobThroughput          func(partition string) stats.Measurement
 	transformationsThroughput     func(partition string) stats.Measurement
 	DBWriteThroughput             func(partition string) stats.Measurement
+	trackedUsersReportGeneration  func(partition string) stats.Measurement
 }
 
 type DestStatT struct {
@@ -599,6 +600,11 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.DBWriteThroughput = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_throughput", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_time", stats.TimerType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -2016,6 +2022,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	if len(statusList) != len(jobList) {
 		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
 	}
+	trackedUsersReportGenStart := time.Now()
+	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources())
+	proc.stats.trackedUsersReportGeneration(partition).SendTiming(time.Since(trackedUsersReportGenStart))
+
 	processTime := time.Since(start)
 	proc.stats.processJobsTime(partition).SendTiming(processTime)
 	processJobThroughput := throughputPerSecond(totalEvents, processTime)
@@ -2037,7 +2047,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
-		proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources()),
+		trackedUsersReports,
 	}
 }
 
