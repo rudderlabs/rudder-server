@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -215,6 +217,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
+		trackedusers.NewNoopDataCollector(),
 	)
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
