@@ -142,8 +142,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 
 	reports := make([]*UsersReport, 0)
 	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
-		sourceIDReports := make([]*UsersReport, 0, len(sourceUserMp))
-		sourceIDReports = append(sourceIDReports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
+		reports = append(reports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
 			return &UsersReport{
 				WorkspaceID:              workspaceID,
 				SourceID:                 sourceID,
@@ -152,7 +151,6 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 				IdentifiedAnonymousIDHLL: userIdTypeMap[idTypeUserIDAnonymousIDCombination],
 			}
 		})...)
-		reports = append(reports, sourceIDReports...)
 	}
 	return reports
 }
