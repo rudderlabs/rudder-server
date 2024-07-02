@@ -20,7 +20,7 @@ func NewTrackedUsersInAppAggregator(db *sql.DB) *TrackedUsersInAppAggregator {
 }
 
 func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total int, unique int, err error) {
-	selectColumns := "workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll"
+	selectColumns := "reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll"
 	query := fmt.Sprintf(`SELECT %s FROM tracked_users_reports WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`, selectColumns)
 
 	rows, err := a.db.Query(query, start, end)
@@ -34,7 +34,7 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	for rows.Next() {
 		total += 1
 		r := TrackedUsersReport{}
-		err := rows.Scan(&r.WorkspaceID, &r.SourceID, &r.InstanceID, &r.UserIDHLLHex, &r.AnonymousIDHLLHex, &r.IdentifiedAnonymousIDHLLHex)
+		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.InstanceID, &r.UserIDHLLHex, &r.AnonymousIDHLLHex, &r.IdentifiedAnonymousIDHLLHex)
 		if err != nil {
 			return nil, 0, 0, err
 		}

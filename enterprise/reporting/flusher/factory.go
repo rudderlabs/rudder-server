@@ -34,7 +34,7 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 
 		a := aggregator.NewTrackedUsersInAppAggregator(db.DB)
 
-		f := NewFlusher(ctx, db, log, stats, conf, table, reportingURL, a, module)
+		f := NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
 
 		c := NewCronRunner(ctx, log, stats, conf, f, a, table, module)
 
