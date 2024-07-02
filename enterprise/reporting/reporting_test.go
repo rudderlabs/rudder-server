@@ -394,12 +394,14 @@ func TestExtractErrorDetails(t *testing.T) {
 	type depTc struct {
 		caseDescription string
 		inputErrMsg     string
+		reportedBy      string
 		output          depTcOutput
 	}
 	testCases := []depTc{
 		{
 			caseDescription: "should validate the deprecation correctly",
 			inputErrMsg:     "Offline Conversions API is deprecated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until.",
+			reportedBy:      types.ROUTER,
 			output: depTcOutput{
 				errorMsg:  "Offline Conversions API is deprecated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until ",
 				errorCode: "deprecation",
@@ -408,9 +410,19 @@ func TestExtractErrorDetails(t *testing.T) {
 		{
 			caseDescription: "should validate the deprecation correctly even though we have upper-case keywords",
 			inputErrMsg:     "Offline Conversions API is DeprEcated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until.",
+			reportedBy:      types.ROUTER,
 			output: depTcOutput{
 				errorMsg:  "Offline Conversions API is DeprEcated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until ",
 				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "shouldn't return deprecation error code if the error is reported by user transformer",
+			inputErrMsg:     "Offline Conversions API is DeprEcated from onwards. Please use Conversions API, which is the latest version that supports Offline Conversions API and can be used until.",
+			reportedBy:      types.USER_TRANSFORMER,
+			output: depTcOutput{
+				errorMsg:  "Offline Conversions API is DeprEcated from onwards Please use Conversions API which is the latest version that supports Offline Conversions API and can be used until ",
+				errorCode: "",
 			},
 		},
 	}
@@ -418,7 +430,14 @@ func TestExtractErrorDetails(t *testing.T) {
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
-			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
+			errorDetails := edr.extractErrorDetails(&types.PUReportedMetric{
+				PUDetails: types.PUDetails{
+					PU: tc.reportedBy,
+				},
+				StatusDetail: &types.StatusDetail{
+					SampleResponse: tc.inputErrMsg,
+				},
+			})
 
 			require.Equal(t, tc.output.errorMsg, errorDetails.ErrorMessage)
 			require.Equal(t, tc.output.errorCode, errorDetails.ErrorCode)
