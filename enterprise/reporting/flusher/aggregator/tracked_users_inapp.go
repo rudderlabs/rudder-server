@@ -54,13 +54,15 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		k := fmt.Sprintf("%s-%s-%s", r.WorkspaceID, r.SourceID, r.InstanceID)
 
 		if agg, exists := aggReportsMap[k]; exists {
-			if err := a.aggregate(agg, r); err != nil {
-				return nil, 0, 0, err
-			}
+			a.aggregate(agg, r)
 		} else {
 			aggReportsMap[k] = r
 		}
 
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, err
 	}
 
 	jsonReports, err = marshalReports(aggReportsMap)
@@ -71,12 +73,10 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	return jsonReports, total, len(aggReportsMap), nil
 }
 
-func (a *TrackedUsersInAppAggregator) aggregate(aggReport, report TrackedUsersReport) error {
+func (a *TrackedUsersInAppAggregator) aggregate(aggReport, report TrackedUsersReport) {
 	aggReport.UserIDHLL.Union(*report.UserIDHLL)
 	aggReport.AnonymousIDHLL.Union(*report.AnonymousIDHLL)
 	aggReport.IdentifiedAnonymousIDHLL.Union(*report.IdentifiedAnonymousIDHLL)
-
-	return nil
 }
 
 func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error) {
