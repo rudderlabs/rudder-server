@@ -168,7 +168,6 @@ func (f *Flusher) GetLag(ctx context.Context) time.Duration {
 	} else {
 		return currentUTC.Sub(start)
 	}
-
 }
 
 func (f *Flusher) FlushAggressively(ctx context.Context) bool {
