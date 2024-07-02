@@ -5,13 +5,14 @@ import (
 	"errors"
 	"time"
 
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 )
 
 type CronRunner struct {
@@ -71,7 +72,6 @@ func (c *CronRunner) initStats() {
 }
 
 func (c *CronRunner) Run() {
-
 	c.g.Go(func() error {
 		return c.startFlushing(c.ctx)
 	})
