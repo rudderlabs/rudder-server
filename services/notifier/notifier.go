@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
@@ -261,11 +265,20 @@ func (n *Notifier) setupDatabase(
 	ctx context.Context,
 	dsn string,
 ) error {
-	database, err := sql.Open("postgres", dsn)
+	pgxConf, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return fmt.Errorf("could not open: %w", err)
+		return fmt.Errorf("could not parse pgx config: %w", err)
 	}
-	database.SetMaxOpenConns(n.config.maxOpenConnections)
+	pgxConf.RuntimeParams = map[string]string{
+		"pool_max_conns": strconv.FormatInt(int64(n.config.maxOpenConnections), 10),
+	}
+
+	pgpool, err := pgxpool.New(ctx, pgxConf.ConnString())
+	if err != nil {
+		return fmt.Errorf("could not create pgxpool: %w", err)
+	}
+
+	database := stdlib.OpenDBFromPool(pgpool)
 
 	if err := database.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping: %w", err)

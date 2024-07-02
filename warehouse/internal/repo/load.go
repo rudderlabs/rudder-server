@@ -64,20 +64,17 @@ func (lf *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
 	return (*repo)(lf).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		query := fmt.Sprintf(`
+			INSERT INTO
+				` + loadTableName + `
+			(staging_file_id, location, source_id, destination_id, destination_type, table_name, total_events, created_at, metadata)
+			VALUES
+			($1, $2, $3, $4, $5, $6, $7, $8, $9);`,
+		)
+
 		stmt, err := tx.PrepareContext(
 			ctx,
-			pq.CopyIn(
-				"wh_load_files",
-				"staging_file_id",
-				"location",
-				"source_id",
-				"destination_id",
-				"destination_type",
-				"table_name",
-				"total_events",
-				"created_at",
-				"metadata",
-			),
+			query,
 		)
 		if err != nil {
 			return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
@@ -90,10 +87,6 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 			if err != nil {
 				return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 			}
-		}
-		_, err = stmt.ExecContext(ctx)
-		if err != nil {
-			return fmt.Errorf(`inserting load files: CopyIn final exec: %w`, err)
 		}
 		return nil
 	})

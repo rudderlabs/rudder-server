@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
-
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
@@ -96,19 +94,17 @@ func (n *repo) insert(
 
 	now := n.now()
 
+	query := fmt.Sprintf(`
+		INSERT INTO
+			` + notifierTableName +
+		`(batch_id, status, payload, workspace, priority, job_type, created_at, updated_at)
+		VALUES
+		($1, $2, $3, $4, $5, $6, $7, $8);`,
+	)
+
 	stmt, err := txn.PrepareContext(
 		ctx,
-		pq.CopyIn(
-			notifierTableName,
-			"batch_id",
-			"status",
-			"payload",
-			"workspace",
-			"priority",
-			"job_type",
-			"created_at",
-			"updated_at",
-		),
+		query,
 	)
 	if err != nil {
 		return fmt.Errorf(`inserting: CopyIn: %w`, err)
@@ -130,9 +126,6 @@ func (n *repo) insert(
 		if err != nil {
 			return fmt.Errorf(`inserting: CopyIn exec: %w`, err)
 		}
-	}
-	if _, err = stmt.ExecContext(ctx); err != nil {
-		return fmt.Errorf(`inserting: CopyIn final exec: %w`, err)
 	}
 
 	if publishRequest.UploadSchema != nil {

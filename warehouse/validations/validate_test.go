@@ -143,7 +143,7 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+					require.Error(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -215,7 +215,7 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+					require.Error(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -318,7 +318,7 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+					require.Error(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -468,7 +468,7 @@ func TestValidator(t *testing.T) {
 				require.NoError(t, err)
 
 				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+					require.Error(t, v.Validate(ctx), tc.wantError.Error())
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}

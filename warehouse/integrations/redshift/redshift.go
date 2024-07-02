@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/samber/lo"
@@ -937,9 +940,11 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
 		}
 	} else {
-		if db, err = sql.Open("postgres", dsn.String()); err != nil {
-			return nil, fmt.Errorf("connecting to redshift: %w", err)
+		pgxConf, err := pgx.ParseConfig(dsn.String())
+		if err != nil {
+			return nil, fmt.Errorf("could not parse pgx config: %w", err)
 		}
+		db = stdlib.OpenDB(*pgxConf)
 	}
 
 	_, err = db.ExecContext(ctx, `SET query_group to 'RudderStack'`)

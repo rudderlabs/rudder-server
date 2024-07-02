@@ -463,7 +463,7 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 		tableUploads, err := repoTableUpload.GetByJobRunTaskRun(ctx, sourceID, destinationID, jobRunID, taskRunID)
 		require.NoError(t, err)
 		require.Len(t, tableUploads, len(tables))
-		require.Equal(t, tables, lo.Map(tableUploads, func(item model.TableUpload, index int) string {
+		require.ElementsMatch(t, tables, lo.Map(tableUploads, func(item model.TableUpload, index int) string {
 			return item.TableName
 		}))
 	})

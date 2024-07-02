@@ -22,7 +22,7 @@ services:
     depends_on:
       - db-private-postgres
   db-private-postgres:
-    image: postgres:latest
+    image: postgres:11-alpine
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres

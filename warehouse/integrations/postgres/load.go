@@ -10,8 +10,11 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/safeguard"
@@ -20,8 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -112,7 +113,15 @@ func (pg *Postgres) loadTable(
 	)
 
 	log.Debugw("creating prepared stmt for loading data")
-	copyInStmt := pq.CopyIn(stagingTableName, sortedColumnKeys...)
+	copyInStmt := fmt.Sprintf(`INSERT INTO %[1]s(%[2]s) VALUES (%[3]s);`,
+		stagingTableName,
+		warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys),
+		strings.Join(
+			lo.Map(sortedColumnKeys, func(_ string, index int) string {
+				return "$" + strconv.Itoa(index+1)
+			}), ",",
+		),
+	)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing statement for copy in: %w", err)
@@ -127,9 +136,6 @@ func (pg *Postgres) loadTable(
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 		}
-	}
-	if _, err = stmt.ExecContext(ctx); err != nil {
-		return nil, "", fmt.Errorf("executing copyIn statement: %w", err)
 	}
 
 	var rowsDeleted int64

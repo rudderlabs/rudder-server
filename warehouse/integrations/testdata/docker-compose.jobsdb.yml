@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   jobsDb:
-    image: postgres:latest
+    image: postgres:11-alpine
     environment:
       - POSTGRES_DB=jobsdb
       - POSTGRES_PASSWORD=password

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:11-alpine
     environment:
       - POSTGRES_DB=rudderdb
       - POSTGRES_PASSWORD=rudder-password

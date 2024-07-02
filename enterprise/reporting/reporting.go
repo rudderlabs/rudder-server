@@ -19,7 +19,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -578,30 +577,36 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		return nil
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ReportsTable,
-		"workspace_id", "namespace", "instance_id",
-		"source_definition_id",
-		"source_category",
-		"source_id",
-		"destination_definition_id",
-		"destination_id",
-		"source_task_run_id",
-		"source_job_id",
-		"source_job_run_id",
-		"transformation_id",
-		"transformation_version_id",
-		"tracking_plan_id",
-		"tracking_plan_version",
-		"in_pu", "pu",
-		"reported_at",
-		"status",
-		"count", "violation_count",
-		"terminal_state", "initial_state",
-		"status_code",
-		"sample_response", "sample_event",
-		"event_name", "event_type",
-		"error_type",
-	))
+	query := fmt.Sprintf(`INSERT INTO %s (
+                		workspace_id, namespace, instance_id,
+                		source_definition_id,
+                		source_category,
+                		source_id,
+                		destination_definition_id,
+                		destination_id,
+                		source_task_run_id,
+                		source_job_id,
+                		source_job_run_id,
+                		transformation_id,
+                		transformation_version_id,
+                		tracking_plan_id,
+                		tracking_plan_version,
+                		in_pu, pu,
+                		reported_at,
+                		status,
+                		count, violation_count,
+                		terminal_state, initial_state,
+                		status_code,
+                		sample_response, sample_event,
+                		event_name, event_type,
+                		error_type
+					) VALUES (
+						$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+					)`,
+		ReportsTable,
+	)
+
+	stmt, err := txn.PrepareContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("preparing statement: %v", err)
 	}
@@ -652,9 +657,6 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		if err != nil {
 			return fmt.Errorf("executing statement: %v", err)
 		}
-	}
-	if _, err = stmt.ExecContext(ctx); err != nil {
-		return fmt.Errorf("executing final statement: %v", err)
 	}
 
 	return nil

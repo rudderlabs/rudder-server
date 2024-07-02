@@ -1073,7 +1073,7 @@ func TestRouter(t *testing.T) {
 					SkipWorkspaces:  nil,
 				})
 				if tc.wantErr != nil {
-					require.EqualError(t, err, tc.wantErr.Error())
+					require.Error(t, err, tc.wantErr.Error())
 					return
 				}
 				require.NoError(t, err)

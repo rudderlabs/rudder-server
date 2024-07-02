@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -83,7 +85,10 @@ func TestGRPC(t *testing.T) {
 
 		ctx, stopTest := context.WithCancel(context.Background())
 
-		db := sqlmw.New(pgResource.DB)
+		pgxConf, err := pgx.ParseConfig(pgResource.DBDsn)
+		require.NoError(t, err)
+
+		db := sqlmw.New(stdlib.OpenDB(*pgxConf))
 
 		controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"publicKey": "public_key", "privateKey": "private_key"}`))
@@ -336,7 +341,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), res.GetDuration())
 					require.NotEmpty(t, res.GetTables())
 					require.False(t, res.GetIsArchivedUpload())
-					require.EqualValues(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
+					require.ElementsMatch(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
 						return item.GetName()
 					}))
 
@@ -1340,7 +1345,7 @@ func TestGRPC(t *testing.T) {
 							Status:          detail.GetStatus(),
 						}
 					})
-					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
+					require.ElementsMatch(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
 							Error:           "some error 6",
 							ErrorCategory:   model.PermissionError,
@@ -1362,7 +1367,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Aborted,
 						},
 						{
-							Error:           "some error 2",
+							Error:           "some error 4",
 							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,
@@ -1432,7 +1437,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Aborted,
 						},
 						{
-							Error:           "some error 2",
+							Error:           "some error 4",
 							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,

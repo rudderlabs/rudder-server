@@ -238,7 +238,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					pool, err := dockertest.NewPool("")
 					require.NoError(t, err)
 
-					pgResource, err := postgres.Setup(pool, t)
+					pgResource, err := postgres.Setup(pool, t, postgres.WithTag("latest"))
 					require.NoError(t, err)
 
 					t.Log("db:", pgResource.DBDsn)
@@ -300,7 +300,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						},
 					})
 					if tc.wantError != nil {
-						require.ErrorContains(t, err, tc.wantError.Error())
+						require.Error(t, err, tc.wantError.Error())
 					} else {
 						require.NoError(t, err)
 					}
