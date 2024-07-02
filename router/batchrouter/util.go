@@ -2,11 +2,14 @@ package batchrouter
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -154,4 +157,11 @@ func IsAsyncDestinationLimitNotReached(brt *Handle, destinationID string) bool {
 	uploadNotInProgress := !asyncDest.UploadInProgress
 	return (isSFTP && maxPayloadSizeReached && uploadNotInProgress) ||
 		(maxEventsReached && maxPayloadSizeReached && uploadNotInProgress)
+}
+
+func getFirstSourceJobRunID(params map[int64]stdjson.RawMessage) string {
+	for key := range params {
+		return gjson.GetBytes(params[key], "source_job_run_id").String()
+	}
+	return ""
 }

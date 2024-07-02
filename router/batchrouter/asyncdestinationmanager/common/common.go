@@ -137,6 +137,8 @@ type AsyncDestinationStruct struct {
 	AttemptNums           map[int64]int
 	FirstAttemptedAts     map[int64]time.Time
 	OriginalJobParameters map[int64]stdjson.RawMessage
+	PartFileNumber        int
+	SourceJobRunID        string
 }
 
 type AsyncFailedPayload struct {
