@@ -1,23 +1,26 @@
 package flusher
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/client"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/handler"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 var (
@@ -26,18 +29,16 @@ var (
 )
 
 type Flusher struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	g      *errgroup.Group
-	log    logger.Logger
+	log logger.Logger
 
 	db                 db.DB
 	maxOpenConnections int
 
+	client *http.Client
+
 	instanceId string
 
-	table  string
-	labels []string
+	table string
 
 	sleepInterval config.ValueLoader[time.Duration]
 	flushWindow   config.ValueLoader[time.Duration]
@@ -56,24 +57,20 @@ type Flusher struct {
 	stats                   stats.Stats
 	minReportedAtQueryTimer stats.Measurement
 	reportsQueryTimer       stats.Measurement
-	flushTimer              stats.Measurement
 	reportsCounter          stats.Measurement
 	aggReportsTimer         stats.Measurement
 	aggReportsCounter       stats.Measurement
-	reportingLag            stats.Measurement
 	sendReportsTimer        stats.Measurement
 	deleteReportsTimer      stats.Measurement
 	concurrentRequests      stats.Measurement
+	reqLatency              stats.Measurement
+	reqCount                stats.Measurement
 
-	client     client.Client
-	handler    handler.Handler
+	aggregator aggregator.Aggregator
 	commonTags stats.Tags
-
-	startOnce sync.Once
-	started   atomic.Bool
 }
 
-func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, inAppAggregationEnabled bool, aggregator aggregator.Aggregator) *Flusher {
 	flusherMu.Lock()
 	defer flusherMu.Unlock()
 
@@ -81,14 +78,14 @@ func NewFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.St
 		return instance
 	}
 
-	f := createFlusher(ctx, db, log, stats, conf, table, labels, reportingURL, inAppAggregationEnabled, handler)
+	f := createFlusher(ctx, db, log, stats, conf, table, reportingURL, inAppAggregationEnabled, aggregator)
 
 	flusherInstances[table] = f
 
 	return f
 }
 
-func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, labels []string, reportingURL string, inAppAggregationEnabled bool, handler handler.Handler) *Flusher {
+func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, reportingURL string, inAppAggregationEnabled bool, aggregator aggregator.Aggregator) *Flusher {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -99,13 +96,11 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 	batchSizeToReporting := conf.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
 	aggressiveFlushEnabled := conf.GetReloadableBoolVar(false, "Reporting.flusher.aggressiveFlushEnabled")
 	lagThresholdForAggresiveFlushInMins := conf.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.lagThresholdForAggresiveFlushInMins")
-	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+
+	tr := &http.Transport{}
+	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 
 	f := Flusher{
-		ctx:                                 ctx,
-		cancel:                              cancel,
-		g:                                   g,
 		db:                                  db,
 		log:                                 log,
 		reportingURL:                        reportingURL,
@@ -116,55 +111,28 @@ func createFlusher(ctx context.Context, db db.DB, log logger.Logger, stats stats
 		maxConcurrentRequests:               maxConcReqs,
 		stats:                               stats,
 		recentExclusionWindow:               recentExclusionWindow,
-		labels:                              labels,
 		batchSizeFromDB:                     batchSizeFromDB,
 		table:                               table,
-		handler:                             handler,
+		aggregator:                          aggregator,
 		inAppAggregationEnabled:             inAppAggregationEnabled,
 		batchSizeToReporting:                batchSizeToReporting,
 		maxOpenConnections:                  maxOpenConns,
 		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
+		client:                              client,
 	}
 
 	f.initCommonTags()
-	f.client = client.NewReportingClient(reportingURL, log, stats, f.commonTags)
+	f.initStats(f.commonTags)
 	return &f
 }
 
-func (f *Flusher) Run() {
-	f.startOnce.Do(func() {
-		f.initStats(f.commonTags)
-
-		f.g.Go(func() error {
-			return f.startLagCapture(f.ctx)
-		})
-
-		f.g.Go(func() error {
-			return f.startFlushing(f.ctx)
-		})
-
-		f.started.Store(true)
-
-		if err := f.g.Wait(); err != nil {
-			f.log.Errorn("Error in flusher", obskit.Error(err))
-
-			// TODO: Should we panic here ?
-			if !errors.Is(err, context.Canceled) {
-				panic(err)
-			}
-		}
-	})
-}
-
-func (f *Flusher) Stop() {
-	f.cancel()
-	_ = f.g.Wait()
+func (f *Flusher) CleanUp() error {
 	err := f.db.Close()
 	if err != nil {
-		f.log.Errorn("Error closing DB", obskit.Error(err))
+		return err
 	}
-	f.started.Store(false)
+	return nil
 }
 
 func (f *Flusher) initCommonTags() {
@@ -175,24 +143,7 @@ func (f *Flusher) initCommonTags() {
 	}
 }
 
-func (f *Flusher) startLagCapture(ctx context.Context) error {
-	ticker := time.NewTicker(2 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			lag := f.getLag()
-			f.reportingLag.Gauge(lag.Seconds())
-		}
-	}
-}
-
 func (f *Flusher) initStats(tags map[string]string) {
-	f.flushTimer = f.stats.NewTaggedStat("reporting_flusher_flush_duration_seconds", stats.TimerType, tags)
-
 	f.minReportedAtQueryTimer = f.stats.NewTaggedStat("reporting_flusher_get_min_reported_at_query_duration_seconds", stats.TimerType, tags)
 
 	f.reportsQueryTimer = f.stats.NewTaggedStat("reporting_flusher_get_reports_batch_query_duration_seconds", stats.TimerType, tags)
@@ -204,37 +155,12 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.deleteReportsTimer = f.stats.NewTaggedStat("reporting_flusher_delete_reports_duration_seconds", stats.TimerType, tags)
 
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
-	f.reportingLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
+	f.reqLatency = f.stats.NewTaggedStat("reporting_flusher_http_request_duration_seconds", stats.TimerType, tags)
+	f.reqCount = f.stats.NewTaggedStat("reporting_flusher_http_requests_total", stats.CountType, tags)
 }
 
-func (f *Flusher) startFlushing(ctx context.Context) error {
-	ticker := time.NewTicker(f.sleepInterval.Load())
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			s := time.Now().UTC()
-			if err := f.flush(ctx); err != nil {
-				return err
-			}
-			f.flushTimer.Since(s)
-
-			if !f.flushAggressively() {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-ticker.C:
-				}
-			}
-		}
-	}
-}
-
-func (f *Flusher) getLag() time.Duration {
-	start, err := f.db.GetStart(f.ctx, f.table)
+func (f *Flusher) GetLag(ctx context.Context) time.Duration {
+	start, err := f.db.GetStart(ctx, f.table)
 	if err != nil {
 		f.log.Errorn("Error getting start time", obskit.Error(err))
 	}
@@ -248,49 +174,50 @@ func (f *Flusher) getLag() time.Duration {
 
 }
 
-func (f *Flusher) flushAggressively() bool {
+func (f *Flusher) FlushAggressively(ctx context.Context) bool {
 	if !f.aggressiveFlushEnabled.Load() {
 		return false
 	}
-	lag := f.getLag()
+	lag := f.GetLag(ctx)
 	reportingLagInMins := lag.Minutes()
 	return reportingLagInMins > f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
 
 // flush is the main logic for flushing data.
-func (f *Flusher) flush(ctx context.Context) error {
-	currentTime := time.Now().UTC()
+func (f *Flusher) Flush(ctx context.Context) error {
+	currentUTC := time.Now().UTC()
 
 	// 1. Get the time range to flush
-	s := time.Now().UTC()
-	start, end, valid, err := f.getRange(ctx, currentTime, f.flushWindow.Load(), f.recentExclusionWindow.Load())
+	s := time.Now()
+	start, end, valid, err := f.getRange(ctx, currentUTC)
 	if err != nil {
 		return err
 	}
+
 	if !valid {
 		return nil
 	}
 	f.minReportedAtQueryTimer.Since(s)
 
 	// 2. Aggregate reports. Get reports in batches and aggregate in app if inAppAggregationEnabled or aggregate in DB
-	s = time.Now().UTC()
+	s = time.Now()
 	f.aggReportsTimer.Since(s)
-	aggReports, err := f.aggregate(ctx, start, end, f.inAppAggregationEnabled, f.batchSizeFromDB.Load())
+	jsonReports, err := f.aggregate(ctx, start, end)
 	if err != nil {
 		return err
 	}
-	f.aggReportsCounter.Observe(float64(len(aggReports)))
+	f.aggReportsCounter.Observe(float64(len(jsonReports)))
 
 	// 3. Flush aggregated reports
-	s = time.Now().UTC()
-	err = f.send(ctx, aggReports, f.batchSizeToReporting.Load(), f.getConcurrency())
+	s = time.Now()
+	err = f.send(ctx, jsonReports)
 	if err != nil {
 		return err
 	}
 	f.sendReportsTimer.Since(s)
 
 	// 4. Delete reports
-	s = time.Now().UTC()
+	s = time.Now()
 	if err := f.delete(ctx, start, end); err != nil {
 		return err
 	}
@@ -299,7 +226,10 @@ func (f *Flusher) flush(ctx context.Context) error {
 	return nil
 }
 
-func (f *Flusher) getRange(ctx context.Context, currentTime time.Time, flushWindow, recentExclusionWindow time.Duration) (start, end time.Time, valid bool, err error) {
+// Since we have hourly/daily/monthly aggregates on Reporting Service, we want the window to be within same hour
+// Don't consider most recent data where there are inserts happening
+// Always try to consider full window of flush interval or till current hour
+func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, end time.Time, valid bool, err error) {
 	start, err = f.db.GetStart(ctx, f.table)
 	if err != nil {
 		return time.Time{}, time.Time{}, false, err
@@ -309,22 +239,9 @@ func (f *Flusher) getRange(ctx context.Context, currentTime time.Time, flushWind
 		return start, end, false, nil
 	}
 
-	end = f.calcEnd(start, currentTime, flushWindow, recentExclusionWindow)
-
-	currentHourStart := currentTime.Truncate(time.Hour)
-	if end.Sub(start) == flushWindow || end == currentHourStart {
-		return start, end, true, nil
-	}
-
-	return start, end, false, nil
-}
-
-// Since we have hourly/daily/monthly aggregates on Reporting Service, we want the window to be within same hour
-// Don't consider most recent data where there are inserts happening
-func (f *Flusher) calcEnd(start, currentTime time.Time, flushWindow, recentExclusionWindow time.Duration) time.Time {
-	end := start.Add(flushWindow)
+	end = start.Add(f.flushWindow.Load())
 	nextHour := start.Truncate(time.Hour).Add(time.Hour)
-	endLimit := currentTime.Add(-recentExclusionWindow)
+	endLimit := currentUTC.Add(-f.recentExclusionWindow.Load())
 
 	if end.After(nextHour) {
 		end = nextHour
@@ -332,118 +249,50 @@ func (f *Flusher) calcEnd(start, currentTime time.Time, flushWindow, recentExclu
 	if end.After(endLimit) {
 		end = endLimit
 	}
-	return end
-}
 
-func (f *Flusher) aggregate(ctx context.Context, start, end time.Time, inAppAggregationEnabled bool, batchSize int) ([]*report.DecodedReport, error) {
-	if inAppAggregationEnabled {
-		aggReports, err := f.aggregateInApp(ctx, start, end, batchSize)
-		if err != nil {
-			return nil, err
-		}
-		return aggReports, nil
-	} else {
-		panic("aggregation in DB is not implemented")
-	}
-}
-
-func (f *Flusher) aggregateInApp(ctx context.Context, start, end time.Time, batchSize int) ([]*report.DecodedReport, error) {
-	var offset int
-	aggReportsMap := make(map[string]report.DecodedReport)
-	reportsCount := 0
-
-	for {
-		s := time.Now().UTC()
-		reports, err := f.db.FetchBatch(ctx, f.table, start, end, batchSize, offset)
-		if err != nil {
-			return nil, err
-		}
-		if len(reports) == 0 {
-			break
-		}
-
-		f.reportsQueryTimer.Since(s)
-		reportsCount = reportsCount + len(reports)
-
-		s = time.Now().UTC()
-		err = f.aggregateBatch(reports, aggReportsMap)
-		if err != nil {
-			return nil, err
-		}
-		f.aggReportsTimer.Since(s)
-
-		if len(reports) < batchSize {
-			break
-		}
-
-		offset += batchSize
+	currentHourStart := currentUTC.Truncate(time.Hour)
+	if end.Sub(start) == f.flushWindow.Load() || end == currentHourStart {
+		return start, end, true, nil
 	}
 
-	f.reportsCounter.Observe(float64(reportsCount))
-
-	aggReports := convertToSlice(aggReportsMap)
-	return aggReports, nil
+	return start, end, false, nil
 }
 
-func (f *Flusher) aggregateBatch(reports []report.RawReport, aggReportsMap map[string]report.DecodedReport) error {
-	for _, r := range reports {
-		dr, err := f.handler.Decode(r)
-		if err != nil {
-			return err
-		}
-
-		k := f.getAggKey(r)
-
-		if agg, exists := aggReportsMap[k]; exists {
-			if err := f.handler.Aggregate(agg, dr); err != nil {
-				return err
-			}
-		} else {
-			aggReportsMap[k] = dr
-		}
+func (f *Flusher) aggregate(ctx context.Context, start, end time.Time) ([]json.RawMessage, error) {
+	jsonReports, total, unique, err := f.aggregator.Aggregate(ctx, start, end)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	f.reportsCounter.Observe(float64(total))
+	f.aggReportsCounter.Observe(float64(unique))
+
+	return jsonReports, nil
 }
 
-func (f *Flusher) getAggKey(r map[string]interface{}) string {
-	var k string
-	for _, l := range f.labels {
-		if v, exists := r[l]; exists {
-			k += v.(string) + "_"
-		}
-	}
-	return k
-}
-
-func convertToSlice(r map[string]report.DecodedReport) []*report.DecodedReport {
-	s := make([]*report.DecodedReport, 0, len(r))
-	for _, v := range r {
-		s = append(s, &v)
-	}
-	return s
-}
-
-func (f *Flusher) send(ctx context.Context, aggReports []*report.DecodedReport, batchSize, concurrency int) error {
-	if batchSize > 1 {
-		if err := f.sendInBatches(ctx, aggReports, batchSize, concurrency); err != nil {
+func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error {
+	if f.batchSizeToReporting.Load() > 1 {
+		if err := f.sendInBatches(ctx, aggReports); err != nil {
 			return err
 		}
 	} else {
-		if err := f.sendIndividually(ctx, aggReports, concurrency); err != nil {
+		if err := f.sendIndividually(ctx, aggReports); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (f *Flusher) getConcurrency() int {
-	if f.flushAggressively() {
+func (f *Flusher) getConcurrency(ctx context.Context) int {
+	if f.FlushAggressively(ctx) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()
 }
 
-func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*report.DecodedReport, batchSize, concurrency int) error {
+func (f *Flusher) sendInBatches(ctx context.Context, aggReports []json.RawMessage) error {
+	batchSize := f.batchSizeToReporting.Load()
+	concurrency := f.getConcurrency(ctx)
+
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 
@@ -455,7 +304,7 @@ func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*report.Decode
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.client.MakePOSTRequest(ctx, batch); err != nil {
+			if err := f.makePOSTRequest(ctx, f.reportingURL, batch); err != nil {
 				return err
 			}
 			return nil
@@ -469,14 +318,15 @@ func (f *Flusher) sendInBatches(ctx context.Context, aggReports []*report.Decode
 	return nil
 }
 
-func (f *Flusher) sendIndividually(ctx context.Context, aggReports []*report.DecodedReport, concurrency int) error {
+func (f *Flusher) sendIndividually(ctx context.Context, aggReports []json.RawMessage) error {
+	concurrency := f.getConcurrency(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 
 	for _, r := range aggReports {
 		r := r // avoid closure capture issue
 		g.Go(func() error {
-			return f.client.MakePOSTRequest(ctx, r)
+			return f.makePOSTRequest(ctx, f.reportingURL, r)
 		})
 	}
 
@@ -492,4 +342,53 @@ func (f *Flusher) delete(ctx context.Context, start, end time.Time) error {
 		return err
 	}
 	return nil
+}
+
+func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	o := func() error {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		start := time.Now()
+		resp, err := f.client.Do(req)
+		if err != nil {
+			return err
+		}
+		f.reqLatency.Since(start)
+		f.reqCount.Count(1)
+
+		defer func() { httputil.CloseResponse(resp) }()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		if !f.isHTTPRequestSuccessful(resp.StatusCode) {
+			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+		}
+		return err
+	}
+
+	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
+		f.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
+	})
+	if err != nil {
+		f.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
+	}
+	return err
+}
+
+func (f *Flusher) isHTTPRequestSuccessful(status int) bool {
+	if status == 429 {
+		return false
+	}
+
+	return status >= 200 && status < 500
 }

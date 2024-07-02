@@ -9,12 +9,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/handler"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config) (*Flusher, error) {
+func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config) (*CronRunner, error) {
 	connStr := misc.GetConnectionString(conf, "reporting")
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := db.New(connStr, maxOpenConns)
@@ -23,7 +23,6 @@ func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats s
 	}
 
 	if table == "tracked_users_reports" {
-		labels := []string{"workspace_id", "source_id", "instance_id"}
 
 		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 		parsedURL, err := url.Parse(reportingBaseURL)
@@ -33,11 +32,14 @@ func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats s
 		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
 		reportingURL := parsedURL.String()
 
-		tuHandler := handler.NewTrackedUsersHandler(table, labels)
-		f := NewFlusher(ctx, db, log, stats, conf, table, labels, reportingURL, true, tuHandler)
+		a := aggregator.NewTrackedUsersInAppAggregator(db.DB)
 
-		return f, err
+		f := NewFlusher(ctx, db, log, stats, conf, table, reportingURL, true, a)
+
+		c := NewCronRunner(ctx, log, stats, conf, f, a, table)
+
+		return c, err
 	}
 
-	return nil, errors.New("invalid table name for flusher. Only tracked_users_reports is supported now")
+	return nil, errors.New("invalid table name. Only tracked_users_reports is supported now")
 }

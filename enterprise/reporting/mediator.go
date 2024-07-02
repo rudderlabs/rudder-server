@@ -31,7 +31,7 @@ type Mediator struct {
 	reporters []types.Reporting
 	stats     stats.Stats
 
-	flushers []*flusher.Flusher
+	cronRunners []*flusher.CronRunner
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -96,12 +96,12 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	}
 
 	if c.Label == types.CoreReportingLabel || c.Label == "" {
-		trackedUsersFlusher, err := flusher.CreateFlusher(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default)
+		trackedUsersFlusher, err := flusher.CreateRunner(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default)
 		if err != nil {
 			rm.log.Errorn("error creating tracked users flusher", obskit.Error(err))
 			panic(err) //  TODO: Should we panic here?
 		}
-		rm.flushers = append(rm.flushers, trackedUsersFlusher)
+		rm.cronRunners = append(rm.cronRunners, trackedUsersFlusher)
 	}
 
 	return func() {
@@ -113,7 +113,7 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 			})
 		}
 
-		for _, f := range rm.flushers {
+		for _, f := range rm.cronRunners {
 			rm.g.Go(func() error {
 				f.Run()
 				return nil
@@ -131,7 +131,7 @@ func (rm *Mediator) Stop() {
 		reporter.Stop()
 	}
 
-	for _, f := range rm.flushers {
+	for _, f := range rm.cronRunners {
 		f.Stop()
 	}
 }
