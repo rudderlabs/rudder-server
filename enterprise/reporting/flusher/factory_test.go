@@ -24,21 +24,21 @@ func TestCreateFlusher(t *testing.T) {
 
 	t.Run("successful creation", func(t *testing.T) {
 		table := "tracked_users_reports"
-		f, _ := CreateFlusher(ctx, table, mockLogger, mockStats, conf)
-		assert.NotNil(t, f)
-		assert.Equal(t, table, f.table)
+		r, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf)
+		assert.NotNil(t, r)
+		assert.Equal(t, table, r.table)
 	})
 
-	t.Run("should return same flusher for a table", func(t *testing.T) {
+	t.Run("should use same flusher for a table", func(t *testing.T) {
 		table := "tracked_users_reports"
-		f1, _ := CreateFlusher(ctx, table, mockLogger, mockStats, conf)
-		f2, _ := CreateFlusher(ctx, table, mockLogger, mockStats, conf)
-		assert.Equal(t, f1, f2)
+		r1, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf)
+		r2, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf)
+		assert.Equal(t, r1.flusher, r2.flusher)
 	})
 
 	t.Run("should return error for invalid tables", func(t *testing.T) {
 		table := "invalid_table"
-		_, err := CreateFlusher(ctx, table, mockLogger, mockStats, conf)
+		_, err := CreateRunner(ctx, table, mockLogger, mockStats, conf)
 		assert.Error(t, err)
 	})
 }

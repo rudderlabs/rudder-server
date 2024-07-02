@@ -10,7 +10,6 @@ import (
 	time "time"
 
 	gomock "github.com/golang/mock/gomock"
-	report "github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 // MockDB is a mock of DB interface.
@@ -62,21 +61,6 @@ func (m *MockDB) Delete(ctx context.Context, table string, start, end time.Time)
 func (mr *MockDBMockRecorder) Delete(ctx, table, start, end interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockDB)(nil).Delete), ctx, table, start, end)
-}
-
-// FetchBatch mocks base method.
-func (m *MockDB) FetchBatch(ctx context.Context, table string, start, end time.Time, limit, offset int) ([]report.RawReport, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchBatch", ctx, table, start, end, limit, offset)
-	ret0, _ := ret[0].([]report.RawReport)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FetchBatch indicates an expected call of FetchBatch.
-func (mr *MockDBMockRecorder) FetchBatch(ctx, table, start, end, limit, offset interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchBatch", reflect.TypeOf((*MockDB)(nil).FetchBatch), ctx, table, start, end, limit, offset)
 }
 
 // GetStart mocks base method.
