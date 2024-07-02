@@ -2,15 +2,18 @@ package warehouse
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
@@ -216,11 +219,20 @@ func (a *App) Setup(ctx context.Context) error {
 func (a *App) setupDatabase(ctx context.Context) error {
 	dsn := a.connectionString("warehouse")
 
-	database, err := sql.Open("postgres", dsn)
+	pgxConf, err := pgx.ParseConfig(dsn)
 	if err != nil {
-		return fmt.Errorf("could not open: %w", err)
+		return fmt.Errorf("could not parse pgx config: %w", err)
 	}
-	database.SetMaxOpenConns(a.config.maxOpenConnections)
+	pgxConf.RuntimeParams = map[string]string{
+		"pool_max_conns": strconv.FormatInt(int64(a.config.maxOpenConnections), 10),
+	}
+
+	pgpool, err := pgxpool.New(ctx, pgxConf.ConnString())
+	if err != nil {
+		return fmt.Errorf("could not create pgxpool: %w", err)
+	}
+
+	database := stdlib.OpenDBFromPool(pgpool)
 
 	isCompatible, err := validators.IsPostgresCompatible(ctx, database)
 	if err != nil {

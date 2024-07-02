@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
 
@@ -199,8 +201,9 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 		strconv.Itoa(port),
 		jobsDBDatabase,
 	)
-	jobsDB, err := sql.Open("postgres", dsn)
+	pgxConf, err := pgx.ParseConfig(dsn)
 	require.NoError(t, err)
+	jobsDB := stdlib.OpenDB(*pgxConf)
 	require.NoError(t, jobsDB.Ping())
 
 	return jobsDB

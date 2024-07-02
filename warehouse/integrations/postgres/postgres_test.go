@@ -2,7 +2,6 @@ package postgres_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -10,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -187,8 +188,9 @@ func TestIntegration(t *testing.T) {
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "rudder-password", "localhost", strconv.Itoa(postgresPort), "rudderdb",
 		)
-		db, err := sql.Open("postgres", dsn)
+		pgxConf, err := pgx.ParseConfig(dsn)
 		require.NoError(t, err)
+		db := stdlib.OpenDB(*pgxConf)
 		require.NoError(t, db.Ping())
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
@@ -1037,15 +1039,17 @@ func TestIntegration(t *testing.T) {
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "rudder-password", "localhost", strconv.Itoa(primaryDBPort), "rudderdb",
 		)
-		primaryDB, err := sql.Open("postgres", primaryDSN)
+		primaryPGXConf, err := pgx.ParseConfig(primaryDSN)
 		require.NoError(t, err)
+		primaryDB := stdlib.OpenDB(*primaryPGXConf)
 		require.NoError(t, primaryDB.Ping())
 		standByDSN := fmt.Sprintf(
 			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			"rudder", "rudder-password", "localhost", strconv.Itoa(standbyDBPort), "rudderdb",
 		)
-		standByDB, err := sql.Open("postgres", standByDSN)
+		standByPGXConf, err := pgx.ParseConfig(standByDSN)
 		require.NoError(t, err)
+		standByDB := stdlib.OpenDB(*standByPGXConf)
 		require.NoError(t, standByDB.Ping())
 
 		t.Run("Regular table", func(t *testing.T) {
