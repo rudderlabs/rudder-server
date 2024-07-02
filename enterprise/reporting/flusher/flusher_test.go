@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,7 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
 )
 
 func resetFlusherInstances() {
@@ -61,17 +59,6 @@ func setupFlusher(f *Flusher) {
 	f.flushWindow = config.SingleValueLoader(1 * time.Minute)
 	f.maxOpenConnections = 2
 	f.recentExclusionWindow = config.SingleValueLoader(30 * time.Second)
-}
-
-func createReports(numItems int) []report.RawReport {
-	items := make([]report.RawReport, numItems)
-	for i := 0; i < numItems; i++ {
-		items[i] = report.RawReport{
-			"column1": fmt.Sprintf("value%d", i*2+1),
-			"column2": fmt.Sprintf("value%d", i*2+2),
-		}
-	}
-	return items
 }
 
 func TestNewFlusher(t *testing.T) {
