@@ -23,20 +23,22 @@ import (
 )
 
 const (
-	idTypeUserID                       = "userID"
-	idTypeAnonymousID                  = "anonymousID"
-	idTypeUserIDAnonymousIDCombination = "userIDAnonymousIDCombination"
+	idTypeUserID                = "userID"
+	idTypeAnonymousID           = "anonymousID"
+	idTypeIdentifiedAnonymousID = "identifiedAnonymousID"
 
 	// changing this will be non backwards compatible
 	murmurSeed = 123
+
+	trackUsersTable = "tracked_users_reports"
 )
 
 type UsersReport struct {
 	WorkspaceID              string
 	SourceID                 string
 	UserIDHll                *hll.Hll
-	AnonymousIDHLL           *hll.Hll
-	IdentifiedAnonymousIDHLL *hll.Hll
+	AnonymousIDHll           *hll.Hll
+	IdentifiedAnonymousIDHll *hll.Hll
 }
 
 //go:generate mockgen -destination=./mocks/mock_user_reporter.go -package=mockuserreporter github.com/rudderlabs/rudder-server/enterprise/trackedusers UsersReporter
@@ -52,6 +54,7 @@ type UniqueUsersReporter struct {
 	log         logger.Logger
 	hllSettings *hll.Settings
 	instanceID  string
+	now         func() time.Time
 }
 
 func NewUniqueUsersReporter(log logger.Logger, conf *config.Config) (*UniqueUsersReporter, error) {
@@ -64,6 +67,9 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config) (*UniqueUser
 			SparseEnabled:     true,
 		},
 		instanceID: config.GetString("INSTANCE_ID", "1"),
+		now: func() time.Time {
+			return time.Now()
+		},
 	}, nil
 }
 
@@ -131,7 +137,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 
 		if userID != "" && anonymousID != "" {
 			combinedUserIDAnonymousID := combineUserIDAnonymousID(userID, anonymousID)
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeUserIDAnonymousIDCombination)
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeIdentifiedAnonymousID)
 		}
 	}
 
@@ -147,8 +153,8 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 				WorkspaceID:              workspaceID,
 				SourceID:                 sourceID,
 				UserIDHll:                userIdTypeMap[idTypeUserID],
-				AnonymousIDHLL:           userIdTypeMap[idTypeAnonymousID],
-				IdentifiedAnonymousIDHLL: userIdTypeMap[idTypeUserIDAnonymousIDCombination],
+				AnonymousIDHll:           userIdTypeMap[idTypeAnonymousID],
+				IdentifiedAnonymousIDHll: userIdTypeMap[idTypeIdentifiedAnonymousID],
 			}
 		})...)
 	}
@@ -159,7 +165,7 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 	if len(reports) == 0 {
 		return nil
 	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("tracked_users_reports",
+	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(trackUsersTable,
 		"workspace_id",
 		"instance_id",
 		"source_id",
@@ -169,7 +175,7 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 		"identified_anonymousid_hll",
 	))
 	if err != nil {
-		return fmt.Errorf("preparing statement: %v", err)
+		return fmt.Errorf("preparing statement: %w", err)
 	}
 	defer func() { _ = stmt.Close() }()
 
@@ -177,18 +183,18 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 		_, err := stmt.Exec(report.WorkspaceID,
 			u.instanceID,
 			report.SourceID,
-			time.Now(),
+			u.now(),
 			hllToString(report.UserIDHll),
-			hllToString(report.AnonymousIDHLL),
-			hllToString(report.IdentifiedAnonymousIDHLL),
+			hllToString(report.AnonymousIDHll),
+			hllToString(report.IdentifiedAnonymousIDHll),
 		)
 		if err != nil {
-			return fmt.Errorf("executing statement: %v", err)
+			return fmt.Errorf("executing statement: %w", err)
 		}
 
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
-		return fmt.Errorf("executing final statement: %v", err)
+		return fmt.Errorf("executing final statement: %w", err)
 	}
 	return nil
 }
