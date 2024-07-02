@@ -2,12 +2,12 @@ package aggregator
 
 import (
 	"context"
-
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/report"
+	"encoding/json"
+	"time"
 )
 
 type NOP struct{}
 
-func (n *NOP) Aggregate(ctx context.Context, aggReport, report report.DecodedReport) ([]interface{}, error) {
-	return nil, nil
+func (n *NOP) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total int, unique int, err error) {
+	return nil, 0, 0, nil
 }
