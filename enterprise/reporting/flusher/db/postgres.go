@@ -24,7 +24,6 @@ func New(connStr string, maxOpenConns int) (*PostgresDB, error) {
 		DB: db,
 	}
 	return p, nil
-
 }
 
 func (p *PostgresDB) GetStart(ctx context.Context, table string) (time.Time, error) {

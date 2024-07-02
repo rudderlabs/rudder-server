@@ -8,5 +8,5 @@ import (
 )
 
 type Aggregator interface {
-	Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total int, unique int, err error)
+	Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total, unique int, err error)
 }

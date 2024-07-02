@@ -19,7 +19,7 @@ func NewTrackedUsersInAppAggregator(db *sql.DB) *TrackedUsersInAppAggregator {
 	return &TrackedUsersInAppAggregator{db: db}
 }
 
-func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total int, unique int, err error) {
+func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, total, unique int, err error) {
 	selectColumns := "reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll"
 	query := fmt.Sprintf(`SELECT %s FROM tracked_users_reports WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`, selectColumns)
 
