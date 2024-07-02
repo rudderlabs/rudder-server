@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/spaolacci/murmur3"
@@ -314,7 +316,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 				postgresContainer, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
-				collector, err := NewUniqueUsersReporter(logger.NOP, config.Default)
+				collector, err := NewUniqueUsersReporter(logger.NOP, config.Default, stats.NOP)
 				require.NoError(t, err)
 				err = collector.MigrateDatabase(postgresContainer.DBDsn, config.Default)
 				require.NoError(t, err)

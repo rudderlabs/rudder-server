@@ -108,5 +108,11 @@ var (
 			// 0.1s, 0.5s, 1s, 5s, 1m, 5m, 10m, 30m, 1h, 12h, 24h
 			0.1, 0.5, 1, 5, 60, 300, 600, 1800, 3600, 12 * 3600, 24 * 3600,
 		},
+		"tracked_users_hll_bytes": {
+			float64(10 * bytesize.B),  // for hll containing single id = 8B
+			float64(100 * bytesize.B), // for hll containing 10 ids = 80B
+			float64(1 * bytesize.KB),  // for hll containing 100 ids = 800B
+			float64(10 * bytesize.KB), // max size for hll with log2m=14, regWidth=5 = 10KB
+		},
 	}
 )
