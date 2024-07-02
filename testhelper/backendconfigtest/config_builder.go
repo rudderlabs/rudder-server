@@ -28,3 +28,9 @@ func (b *ConfigBuilder) WithSource(source backendconfig.SourceT) *ConfigBuilder 
 	b.v.Sources = append(b.v.Sources, source)
 	return b
 }
+
+// WithWorkspaceID adds a workspaceID to the config
+func (b *ConfigBuilder) WithWorkspaceID(workspaceID string) *ConfigBuilder {
+	b.v.WorkspaceID = workspaceID
+	return b
+}
