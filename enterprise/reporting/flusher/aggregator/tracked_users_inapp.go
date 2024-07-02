@@ -68,9 +68,7 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		return nil, 0, 0, err
 	}
 
-	unique = len(aggReportsMap)
-
-	return jsonReports, total, unique, nil
+	return jsonReports, total, len(aggReportsMap), nil
 }
 
 func (a *TrackedUsersInAppAggregator) aggregate(aggReport, report TrackedUsersReport) error {

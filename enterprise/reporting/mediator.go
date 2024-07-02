@@ -96,7 +96,7 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	}
 
 	if c.Label == types.CoreReportingLabel || c.Label == "" {
-		trackedUsersFlusher, err := flusher.CreateRunner(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default)
+		trackedUsersFlusher, err := flusher.CreateRunner(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default, c.Label)
 		if err != nil {
 			rm.log.Errorn("error creating tracked users flusher", obskit.Error(err))
 			panic(err) //  TODO: Should we panic here?
