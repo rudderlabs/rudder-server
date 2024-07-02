@@ -148,6 +148,7 @@ type Handle struct {
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
+		nonEventStreamSources           map[string]bool
 	}
 
 	drainConfig struct {
@@ -814,6 +815,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
 			credentialsMap                  = make(map[string][]transformer.Credential)
+			nonEventStreamSources           = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -832,6 +834,9 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 							proc.logger.Error(err)
 						}
 					}
+				}
+				if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWebhook) {
+					nonEventStreamSources[source.ID] = true
 				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
@@ -854,6 +859,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.credentialsMap = credentialsMap
+		proc.config.nonEventStreamSources = nonEventStreamSources
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -878,6 +884,12 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
 	}
 	return &source, err
+}
+
+func (proc *Handle) getNonEventStreamSources() map[string]bool {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.nonEventStreamSources
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
@@ -1590,8 +1602,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
-	nonEventStreamSourceIds := make(map[string]bool)
-
 	spans := make([]stats.TraceSpan, 0, len(jobList))
 	defer func() {
 		for _, span := range spans {
@@ -1663,10 +1673,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
 			}
 			continue
-		}
-
-		if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWebhook) {
-			nonEventStreamSourceIds[sourceID] = true
 		}
 
 		for _, enricher := range proc.enrichers {
@@ -2031,7 +2037,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
-		proc.trackedUsersReporter.GenerateReportsFromJobs(subJobs.subJobs, nonEventStreamSourceIds),
+		proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources()),
 	}
 }
 
