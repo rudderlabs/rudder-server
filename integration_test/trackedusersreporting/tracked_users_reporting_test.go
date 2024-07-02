@@ -85,6 +85,7 @@ func TestTrackedUsersReporting(t *testing.T) {
 		return tc.webhook.RequestsCount() == eventsCount
 	}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
 
+	// TODO: once flusher is implemented, add a mock reporting server to check is we are getting correct cardinality of users
 	cardinalityMap := getCardinalityFromDB(t, tc.postgresResource)
 	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID])
 	cancel()
