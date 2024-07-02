@@ -7,6 +7,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
@@ -17,26 +18,28 @@ func TestCreateFlusher(t *testing.T) {
 
 	mockLogger := logger.NOP
 	mockStats := stats.NOP
+	conf := config.New()
+	module := "core"
 
 	ctx := context.Background()
 
 	t.Run("successful creation", func(t *testing.T) {
 		table := "tracked_users_reports"
-		f := CreateFlusher(ctx, table, mockLogger, mockStats)
-		assert.NotNil(t, f)
-		assert.Equal(t, table, f.table)
+		r, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf, module)
+		assert.NotNil(t, r)
+		assert.Equal(t, table, r.table)
 	})
 
-	t.Run("should return same flusher for a table", func(t *testing.T) {
+	t.Run("should use same flusher for a table", func(t *testing.T) {
 		table := "tracked_users_reports"
-		f1 := CreateFlusher(ctx, table, mockLogger, mockStats)
-		f2 := CreateFlusher(ctx, table, mockLogger, mockStats)
-		assert.Equal(t, f1, f2)
+		r1, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf, module)
+		r2, _ := CreateRunner(ctx, table, mockLogger, mockStats, conf, module)
+		assert.Equal(t, r1.flusher, r2.flusher)
 	})
 
-	t.Run("should return nil for invalid tables", func(t *testing.T) {
+	t.Run("should return error for invalid tables", func(t *testing.T) {
 		table := "invalid_table"
-		f := CreateFlusher(ctx, table, mockLogger, mockStats)
-		assert.Equal(t, f, nil)
+		_, err := CreateRunner(ctx, table, mockLogger, mockStats, conf, module)
+		assert.Error(t, err)
 	})
 }

@@ -2,32 +2,44 @@ package flusher
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"errors"
+	"net/url"
+	"path"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/handler"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func CreateFlusher(ctx context.Context, table string, log logger.Logger, stats stats.Stats) *Flusher {
-	connStr := misc.GetConnectionString(config.Default, "reporting")
-	maxOpenConns := config.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
-	db := db.NewPostgresDB(connStr, maxOpenConns)
-
-	if table == "tracked_users_reports" {
-		labels := []string{"workspace_id", "source_id", "instance_id"}
-
-		reportingURL := fmt.Sprintf("%s/trackedUser", strings.TrimSuffix(config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/"), "/"))
-
-		tuHandler := handler.NewTrackedUsersHandler(table, labels)
-		f := NewFlusher(ctx, db, log, stats, table, labels, reportingURL, true, tuHandler)
-
-		return f
+func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (*CronRunner, error) {
+	connStr := misc.GetConnectionString(conf, "reporting")
+	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
+	db, err := db.New(connStr, maxOpenConns)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	if table == "tracked_users_reports" {
+
+		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
+		parsedURL, err := url.Parse(reportingBaseURL)
+		if err != nil {
+			return nil, err
+		}
+		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
+		reportingURL := parsedURL.String()
+
+		a := aggregator.NewTrackedUsersInAppAggregator(db.DB)
+
+		f := NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
+
+		c := NewCronRunner(ctx, log, stats, conf, f, a, table, module)
+
+		return c, err
+	}
+
+	return nil, errors.New("invalid table name. Only tracked_users_reports is supported now")
 }

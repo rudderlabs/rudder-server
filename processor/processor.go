@@ -906,19 +906,19 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
-		timestamp = time.Now()
+		timestamp = defaultTimestamp
 	}
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
-	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp", receivedAt)
+	sentAt := getTimestampFromEvent(singularEvent, "sentAt", receivedAt)
 	var timestamp time.Time
 	var ok bool
 

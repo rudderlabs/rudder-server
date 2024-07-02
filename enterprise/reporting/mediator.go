@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -30,7 +31,7 @@ type Mediator struct {
 	reporters []types.Reporting
 	stats     stats.Stats
 
-	flushers []*flusher.Flusher
+	cronRunners []*flusher.CronRunner
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -74,9 +75,6 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	eventStatsReporter := NewEventStatsReporter(configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, eventStatsReporter)
 
-	trackedUsersFlusher := flusher.CreateFlusher(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats)
-	rm.flushers = append(rm.flushers, trackedUsersFlusher)
-
 	return rm
 }
 
@@ -97,6 +95,15 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 		syncers = append(syncers, reporter.DatabaseSyncer(c))
 	}
 
+	if c.Label == types.CoreReportingLabel || c.Label == "" {
+		trackedUsersFlusher, err := flusher.CreateRunner(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default, c.Label)
+		if err != nil {
+			rm.log.Errorn("error creating tracked users flusher", obskit.Error(err))
+			panic(err) //  TODO: Should we panic here?
+		}
+		rm.cronRunners = append(rm.cronRunners, trackedUsersFlusher)
+	}
+
 	return func() {
 		for i := range syncers {
 			syncer := syncers[i]
@@ -106,9 +113,9 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 			})
 		}
 
-		for _, f := range rm.flushers {
+		for _, f := range rm.cronRunners {
 			rm.g.Go(func() error {
-				f.Start()
+				f.Run()
 				return nil
 			})
 		}
@@ -124,7 +131,7 @@ func (rm *Mediator) Stop() {
 		reporter.Stop()
 	}
 
-	for _, f := range rm.flushers {
+	for _, f := range rm.cronRunners {
 		f.Stop()
 	}
 }

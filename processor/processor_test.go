@@ -4951,18 +4951,18 @@ func assertDestinationTransform(
 				Expect(inputTime).To(BeTemporally("~", expected, time.Second))
 			}
 
-			parseTimestamp := func(timestamp string) time.Time {
+			parseTimestamp := func(timestamp string, defaultTimeStamp time.Time) time.Time {
 				parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
 				if ok != nil {
-					return time.Now()
+					return defaultTimeStamp
 				} else {
 					return parsed
 				}
 			}
 
-			receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
-			sentAt := parseTimestamp(messages[messageID].expectedSentAt)
-			originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
+			receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt, time.Now())
+			sentAt := parseTimestamp(messages[messageID].expectedSentAt, receivedAt)
+			originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp, receivedAt)
 
 			expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
 			expectTimestamp(event.Message["sentAt"].(string), sentAt)
@@ -5328,6 +5328,109 @@ var _ = Describe("TestConfigFilter", func() {
 		})
 	})
 })
+
+func Test_GetTimestampFromEvent(t *testing.T) {
+	input := []struct {
+		event             transformer.TransformerEvent
+		timestamp         time.Time
+		expectedTimeStamp time.Time
+	}{
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			timestamp:         time.Now(),
+			expectedTimeStamp: time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			timestamp:         time.Now(),
+			expectedTimeStamp: time.Now(),
+		},
+	}
+
+	for _, in := range input {
+		t.Run("GetTimestampFromEvent", func(t *testing.T) {
+			got := getTimestampFromEvent(in.event.Message, "timestamp", in.timestamp)
+			require.WithinDuration(t, in.expectedTimeStamp, got, 200*time.Millisecond, "expected timestamp %v, got %v", in.expectedTimeStamp, got)
+		})
+	}
+}
+
+func Test_EnhanceWithTimeFields(t *testing.T) {
+	input := []struct {
+		event                     transformer.TransformerEvent
+		singularEvent             types.SingularEventT
+		recievedAt                time.Time
+		expectedSentAt            string
+		expectedTimeStamp         string
+		expectedOriginalTimestamp string
+	}{
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			singularEvent: types.SingularEventT{
+				"originalTimestamp": "2021-06-09T09:00:00.000Z",
+				"sentAt":            "2021-06-09T09:00:00.000Z",
+			},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			singularEvent:             types.SingularEventT{},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			singularEvent:             types.SingularEventT{},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			singularEvent: types.SingularEventT{
+				"originalTimestamp": "2021-06-09T09:30:00.000Z",
+				"sentAt":            "2021-06-09T09:15:00.000Z",
+			},
+			recievedAt:                time.Date(2021, 6, 9, 9, 45, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:15:00.000Z",
+			expectedTimeStamp:         "2021-06-09T10:00:00.000Z", // timestamp = receivedAt - (sentAt - originalTimestamp)
+			expectedOriginalTimestamp: "2021-06-09T09:30:00.000Z",
+		},
+	}
+
+	for _, in := range input {
+		t.Run("EnhanceWithTimeFields", func(t *testing.T) {
+			enhanceWithTimeFields(&in.event, in.singularEvent, in.recievedAt)
+			require.Equal(t, in.expectedSentAt, in.event.Message["sentAt"])
+			require.Equal(t, in.expectedTimeStamp, in.event.Message["timestamp"])
+			require.Equal(t, in.expectedOriginalTimestamp, in.event.Message["originalTimestamp"])
+		})
+	}
+}
 
 func TestStoreMessageMerge(t *testing.T) {
 	sm1 := &storeMessage{
