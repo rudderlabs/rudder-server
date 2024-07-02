@@ -580,7 +580,7 @@ var _ = Describe("router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callGetAllJobs)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(
 				&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
@@ -653,7 +653,7 @@ var _ = Describe("router", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				}).After(callGetAllJobs)
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
 
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
@@ -1271,7 +1271,7 @@ var _ = Describe("router", func() {
 						}
 					})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1426,7 +1426,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -1662,7 +1662,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(2).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1815,7 +1815,7 @@ var _ = Describe("router", func() {
 					}
 				})
 
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1983,7 +1983,7 @@ var _ = Describe("router", func() {
 						},
 					}
 				})
-			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
+			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).Return(&routerutils.SendPostResponse{StatusCode: 200, ResponseBody: []byte("")})
 			done := make(chan struct{})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {

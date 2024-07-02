@@ -17,8 +17,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -27,16 +32,31 @@ import (
 
 var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 
+type loggableInfo struct {
+	enabled        bool
+	destinationIDs []string
+	destTypes      []string
+	workspaceIDs   []string
+	eventNames     []string
+}
+
 // netHandle is the wrapper holding private variables
 type netHandle struct {
 	disableEgress bool
 	httpClient    sysUtils.HTTPClientI
 	logger        logger.Logger
+	loggableInfo  loggableInfo
+}
+
+type responseLogDetails struct {
+	statusCode int
+	body       []byte
+	headers    http.Header
 }
 
 // NetHandle interface
 type NetHandle interface {
-	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
+	SendPost(ctx context.Context, structData integrations.PostParametersT, destination types.DestinationInfo) *utils.SendPostResponse
 }
 
 // temp solution for handling complex query params
@@ -59,7 +79,7 @@ func handleQueryParam(param interface{}) string {
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 // this returns the statusCode, status and response body from the response of the destination call
-func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
+func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT, destInfo types.DestinationInfo) *utils.SendPostResponse {
 	if network.disableEgress {
 		return &utils.SendPostResponse{
 			StatusCode:   200,
@@ -208,6 +228,8 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
+		network.doRequestLog(structData, destInfo)
+		network.doResponseLog(responseLogDetails{body: respBody, headers: resp.Header, statusCode: resp.StatusCode}, destInfo)
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
 
 		var contentTypeHeader string
@@ -243,6 +265,57 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 	}
 }
 
+func (n *netHandle) shouldLog(destInfo types.DestinationInfo) bool {
+	return n.loggableInfo.enabled && ((lo.Contains(n.loggableInfo.destinationIDs, destInfo.ID) ||
+		lo.Contains(n.loggableInfo.workspaceIDs, destInfo.WorkspaceID) ||
+		lo.Contains(n.loggableInfo.destTypes, destInfo.DefinitionName)) && lo.Contains(n.loggableInfo.eventNames, destInfo.EventName))
+}
+
+func (n *netHandle) doRequestLog(structData integrations.PostParametersT, destInfo types.DestinationInfo) {
+	if !n.shouldLog(destInfo) {
+		return
+	}
+	transformedEventBytes, err := json.Marshal(structData)
+	if err != nil {
+		n.logger.Warnw("transformed event marshal failure",
+			obskit.Error(err),
+			obskit.DestinationID(destInfo.ID),
+			obskit.DestinationType(destInfo.DefinitionName),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
+		)
+	}
+	n.logger.Infon("delivery request",
+		obskit.DestinationType(destInfo.DefinitionName),
+		obskit.DestinationID(destInfo.ID),
+		obskit.WorkspaceID(destInfo.WorkspaceID),
+		logger.NewStringField("transformedEvent", string(transformedEventBytes)),
+	)
+}
+
+func (n *netHandle) doResponseLog(resp responseLogDetails, destInfo types.DestinationInfo) {
+	if !n.shouldLog(destInfo) {
+		return
+	}
+
+	headerBytes, err := json.Marshal(resp.headers)
+	if err != nil {
+		n.logger.Warnw("header marshal failure",
+			obskit.Error(err),
+			obskit.DestinationID(destInfo.ID),
+			obskit.DestinationType(destInfo.DefinitionName),
+			obskit.WorkspaceID(destInfo.WorkspaceID),
+		)
+	}
+	n.logger.Infon("delivery response",
+		obskit.DestinationType(destInfo.DefinitionName),
+		obskit.DestinationID(destInfo.ID),
+		obskit.WorkspaceID(destInfo.WorkspaceID),
+		logger.NewStringField("resHeaders", string(headerBytes)),
+		logger.NewStringField("resBody", string(resp.body)),
+		logger.NewIntField("resStatusCode", int64(resp.statusCode)),
+	)
+}
+
 // Setup initializes the module
 func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
@@ -275,4 +348,17 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+
+	isEnabled := config.GetReloadableBoolVar(false, "Router.Network.ResponseLogger.enabled").Load()
+	destTypes := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destTypes").Load()
+	destinationIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.destinationIDs").Load()
+	workspaceIDs := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.workspaceIDs").Load()
+	eventNames := config.GetReloadableStringSliceVar([]string{}, "Router.Network.ResponseLogger.eventNames").Load()
+	network.loggableInfo = loggableInfo{
+		enabled:        isEnabled,
+		destinationIDs: destinationIDs,
+		destTypes:      destTypes,
+		workspaceIDs:   workspaceIDs,
+		eventNames:     eventNames,
+	}
 }

@@ -527,8 +527,14 @@ func (w *worker) processDestinationJobs() {
 									}
 								} else {
 									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
+									destInfo := types.DestinationInfo{
+										WorkspaceID:    destinationJob.Destination.WorkspaceID,
+										ID:             destinationJob.Destination.ID,
+										DefinitionName: destinationJob.Destination.DestinationDefinition.Name,
+										EventName:      gjson.GetBytes(destinationJob.JobMetadataArray[0].JobT.Parameters, "event_name").String(),
+									}
 									rdlTime := time.Now()
-									resp := w.rt.netHandle.SendPost(sendCtx, val)
+									resp := w.rt.netHandle.SendPost(sendCtx, val, destInfo)
 									cancel()
 									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 									w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))

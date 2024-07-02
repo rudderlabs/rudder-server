@@ -144,3 +144,10 @@ var (
 	// ErrBarrierExists is returned when a job ordering barrier exists for the job's ordering key
 	ErrBarrierExists = errors.New("barrier")
 )
+
+type DestinationInfo struct {
+	WorkspaceID    string
+	ID             string
+	DefinitionName string
+	EventName      string
+}
