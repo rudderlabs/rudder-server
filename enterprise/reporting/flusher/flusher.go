@@ -62,6 +62,7 @@ type Flusher struct {
 	concurrentRequests      stats.Measurement
 	reqLatency              stats.Measurement
 	reqCount                stats.Measurement
+	sentBytes               stats.Measurement
 	flushLag                stats.Measurement
 
 	commonTags stats.Tags
@@ -153,6 +154,7 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
 	f.reqLatency = f.stats.NewTaggedStat("reporting_flusher_http_request_duration_seconds", stats.TimerType, tags)
 	f.reqCount = f.stats.NewTaggedStat("reporting_flusher_http_requests_total", stats.CountType, tags)
+	f.sentBytes = f.stats.NewTaggedStat("reporting_flusher_sent_bytes", stats.HistogramType, tags)
 
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
 }
@@ -365,6 +367,7 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 		}
 		f.reqLatency.Since(start)
 		f.reqCount.Count(1)
+		f.sentBytes.Observe(float64(len(payloadBytes)))
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
