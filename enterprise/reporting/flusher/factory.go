@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"path"
+	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -14,7 +15,32 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+var (
+	flusherInstances = make(map[string]*Flusher)
+	flusherMu        sync.Mutex
+)
+
+func getFlusher(table string) *Flusher {
+	flusherMu.Lock()
+	defer flusherMu.Unlock()
+
+	if instance, exists := flusherInstances[table]; exists {
+		return instance
+	}
+	return nil
+}
+
+func addFlusher(table string, flusher *Flusher) {
+	flusherMu.Lock()
+	defer flusherMu.Unlock()
+
+	flusherInstances[table] = flusher
+
+}
+
+// This function has to be called once for each table
 func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (Runner, error) {
+
 	connStr := misc.GetConnectionString(conf, "reporting")
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := db.New(connStr, maxOpenConns)
@@ -36,9 +62,14 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
 		reportingURL := parsedURL.String()
 
-		a := aggregator.NewTrackedUsersInAppAggregator(db.DB)
+		a := aggregator.NewTrackedUsersInAppAggregator(db.DB, stats, conf, table, module)
 
-		f := NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
+		f := getFlusher(table)
+
+		if f == nil {
+			f = NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
+			addFlusher(table, f)
+		}
 
 		c := NewCronRunner(ctx, log, stats, conf, f, a, table, module)
 

@@ -20,17 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
 )
 
-func resetFlusherInstances() {
-	flusherMu.Lock()
-	defer flusherMu.Unlock()
-	for k := range flusherInstances {
-		delete(flusherInstances, k)
-	}
-}
-
-func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *aggregator.MockAggregator, *Flusher) {
-	resetFlusherInstances()
-
+func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *config.Config, *aggregator.MockAggregator, *Flusher) {
 	ctrl := gomock.NewController(t)
 	mockDB := db.NewMockDB(ctrl)
 	mockAggregator := aggregator.NewMockAggregator(ctrl)
@@ -41,24 +31,24 @@ func setup(t *testing.T) (*gomock.Controller, *db.MockDB, *aggregator.MockAggreg
 	table := "test_table"
 	reportingURL := "http://localhost"
 
+	conf.Set("Reporting.flusher.maxOpenConnections", 2)
+	conf.Set("Reporting.flusher.sleepInterval", 1*time.Second)
+	conf.Set("Reporting.flusher.flushWindow", 1*time.Minute)
+	conf.Set("Reporting.flusher.recentExclusionWindowInSeconds", 30*time.Second)
+	conf.Set("Reporting.flusher.minConcurrentRequests", 2)
+	conf.Set("Reporting.flusher.maxConcurrentRequests", 5)
+	conf.Set("Reporting.flusher.batchSizeFromDB", 4)
+	conf.Set("Reporting.flusher.batchSizeToReporting", 2)
+	conf.Set("Reporting.flusher.aggressiveFlushEnabled", false)
+	conf.Set("Reporting.flusher.lagThresholdForAggresiveFlushInMins", 10*time.Minute)
+
 	f := NewFlusher(mockDB, log, inputStats, conf, table, reportingURL, mockAggregator, "core")
 
-	return ctrl, mockDB, mockAggregator, f
-}
-
-func setupFlusher(f *Flusher) {
-	f.batchSizeFromDB = config.SingleValueLoader(4)
-	f.batchSizeToReporting = config.SingleValueLoader(2)
-	f.minConcurrentRequests = config.SingleValueLoader(2)
-	f.maxConcurrentRequests = config.SingleValueLoader(5)
-	f.lagThresholdForAggresiveFlushInMins = config.SingleValueLoader(10 * time.Minute)
-	f.flushWindow = config.SingleValueLoader(1 * time.Minute)
-	f.maxOpenConnections = 2
-	f.recentExclusionWindow = config.SingleValueLoader(30 * time.Second)
+	return ctrl, mockDB, conf, mockAggregator, f
 }
 
 func TestNewFlusher(t *testing.T) {
-	ctrl, mockDB, mockAggregator, f := setup(t)
+	ctrl, mockDB, _, mockAggregator, f := setup(t)
 	defer ctrl.Finish()
 
 	t.Run("flusher creation", func(t *testing.T) {
@@ -71,14 +61,12 @@ func TestNewFlusher(t *testing.T) {
 }
 
 func TestFlush(t *testing.T) {
-	ctrl, mockDB, mockAggregator, f := setup(t)
+	ctrl, mockDB, _, mockAggregator, f := setup(t)
 	defer ctrl.Finish()
 
 	midOfCurHour := time.Now().UTC().Add(-time.Hour).Truncate(time.Hour).Add(30 * time.Minute)
 	start := midOfCurHour.Add(-5 * time.Minute)
 	end := start.Add(1 * time.Minute)
-	// reports := createReports(10)
-	setupFlusher(f)
 
 	jsonPayloads := []json.RawMessage{
 		json.RawMessage(`{"key1":"value1"}`),
@@ -90,7 +78,7 @@ func TestFlush(t *testing.T) {
 		mockDB.EXPECT().GetStart(gomock.Any(), f.table).Return(start, nil).Times(2)
 
 		// 2. Get aggregate reports
-		mockAggregator.EXPECT().Aggregate(gomock.Any(), start, end).Return(jsonPayloads, 5, 2, nil).Times(1)
+		mockAggregator.EXPECT().Aggregate(gomock.Any(), start, end).Return(jsonPayloads, nil).Times(1)
 
 		// 3. Send reports is testing that http server is called
 		called := false
@@ -110,14 +98,32 @@ func TestFlush(t *testing.T) {
 	})
 }
 
+func TestFlushAggressively(t *testing.T) {
+	ctrl, mockDB, conf, _, f := setup(t)
+	defer ctrl.Finish()
+
+	ctx := context.Background()
+
+	t.Run("flush aggresively", func(t *testing.T) {
+		conf.Set("Reporting.flusher.aggressiveFlushEnabled", true)
+		oneHourAgo := time.Now().UTC().Add(-time.Hour)
+
+		mockDB.EXPECT().GetStart(gomock.Any(), f.table).Return(oneHourAgo, nil).Times(1)
+
+		flushAggresively := f.FlushAggressively(ctx)
+		assert.True(t, flushAggresively)
+	})
+}
+
 func TestGetRange(t *testing.T) {
-	ctrl, mockDB, _, f := setup(t)
+	ctrl, mockDB, conf, _, f := setup(t)
 	defer ctrl.Finish()
 
 	recentExclusionWindow := 30 * time.Second
 	flushWindow := 2 * time.Minute
-	f.recentExclusionWindow = config.SingleValueLoader(30 * time.Second)
-	f.flushWindow = config.SingleValueLoader(2 * time.Minute)
+
+	conf.Set("Reporting.flusher.recentExclusionWindowInSeconds", recentExclusionWindow)
+	conf.Set("Reporting.flusher.flushWindow", flushWindow)
 
 	currentTime := time.Now().UTC()
 	startOfHour := currentTime.Truncate(time.Hour)

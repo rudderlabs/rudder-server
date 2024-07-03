@@ -37,14 +37,12 @@ func (m *MockAggregator) EXPECT() *MockAggregatorMockRecorder {
 }
 
 // Aggregate mocks base method.
-func (m *MockAggregator) Aggregate(ctx context.Context, start, end time.Time) ([]json.RawMessage, int, int, error) {
+func (m *MockAggregator) Aggregate(ctx context.Context, start, end time.Time) ([]json.RawMessage, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Aggregate", ctx, start, end)
 	ret0, _ := ret[0].([]json.RawMessage)
-	ret1, _ := ret[1].(int)
-	ret2, _ := ret[2].(int)
-	ret3, _ := ret[3].(error)
-	return ret0, ret1, ret2, ret3
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Aggregate indicates an expected call of Aggregate.
