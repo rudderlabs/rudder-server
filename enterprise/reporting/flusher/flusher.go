@@ -54,7 +54,6 @@ type Flusher struct {
 
 	stats                   stats.Stats
 	minReportedAtQueryTimer stats.Measurement
-	reportsQueryTimer       stats.Measurement
 	reportsCounter          stats.Measurement
 	aggReportsTimer         stats.Measurement
 	aggReportsCounter       stats.Measurement
@@ -63,6 +62,7 @@ type Flusher struct {
 	concurrentRequests      stats.Measurement
 	reqLatency              stats.Measurement
 	reqCount                stats.Measurement
+	flushLag                stats.Measurement
 
 	commonTags stats.Tags
 }
@@ -143,7 +143,6 @@ func (f *Flusher) initCommonTags() {
 func (f *Flusher) initStats(tags map[string]string) {
 	f.minReportedAtQueryTimer = f.stats.NewTaggedStat("reporting_flusher_get_min_reported_at_query_duration_seconds", stats.TimerType, tags)
 
-	f.reportsQueryTimer = f.stats.NewTaggedStat("reporting_flusher_get_reports_batch_query_duration_seconds", stats.TimerType, tags)
 	f.aggReportsTimer = f.stats.NewTaggedStat("reporting_flusher_get_aggregated_reports_duration_seconds", stats.TimerType, tags)
 	f.reportsCounter = f.stats.NewTaggedStat("reporting_flusher_get_reports_count", stats.HistogramType, tags)
 	f.aggReportsCounter = f.stats.NewTaggedStat("reporting_flusher_get_aggregated_reports_count", stats.HistogramType, tags)
@@ -154,9 +153,11 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
 	f.reqLatency = f.stats.NewTaggedStat("reporting_flusher_http_request_duration_seconds", stats.TimerType, tags)
 	f.reqCount = f.stats.NewTaggedStat("reporting_flusher_http_requests_total", stats.CountType, tags)
+
+	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
 }
 
-func (f *Flusher) GetLag(ctx context.Context) time.Duration {
+func (f *Flusher) getLag(ctx context.Context) time.Duration {
 	start, err := f.db.GetStart(ctx, f.table)
 	if err != nil {
 		f.log.Errorn("Error getting start time", obskit.Error(err))
@@ -174,7 +175,7 @@ func (f *Flusher) FlushAggressively(ctx context.Context) bool {
 	if !f.aggressiveFlushEnabled.Load() {
 		return false
 	}
-	lag := f.GetLag(ctx)
+	lag := f.getLag(ctx)
 	reportingLagInMins := lag.Minutes()
 	return reportingLagInMins > f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
@@ -182,6 +183,10 @@ func (f *Flusher) FlushAggressively(ctx context.Context) bool {
 // flush is the main logic for flushing data.
 func (f *Flusher) Flush(ctx context.Context) error {
 	currentUTC := time.Now().UTC()
+
+	// Emit the lag metric
+	lag := f.getLag(ctx)
+	f.flushLag.Gauge(lag.Seconds())
 
 	// 1. Get the time range to flush
 	s := time.Now()
@@ -197,11 +202,11 @@ func (f *Flusher) Flush(ctx context.Context) error {
 
 	// 2. Aggregate reports. We have different aggregators for in-app and in-db aggregation
 	s = time.Now()
-	f.aggReportsTimer.Since(s)
 	jsonReports, err := f.aggregate(ctx, start, end)
 	if err != nil {
 		return err
 	}
+	f.aggReportsTimer.Since(s)
 	f.aggReportsCounter.Observe(float64(len(jsonReports)))
 
 	// 3. Flush aggregated reports
@@ -291,6 +296,7 @@ func (f *Flusher) sendInBatches(ctx context.Context, aggReports []json.RawMessag
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
+	f.concurrentRequests.Gauge(float64(concurrency))
 
 	for i := 0; i < len(aggReports); i += batchSize {
 		end := i + batchSize
@@ -318,6 +324,7 @@ func (f *Flusher) sendIndividually(ctx context.Context, aggReports []json.RawMes
 	concurrency := f.getConcurrency(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
+	f.concurrentRequests.Gauge(float64(concurrency))
 
 	for _, r := range aggReports {
 		r := r // avoid closure capture issue
