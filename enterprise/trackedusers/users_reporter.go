@@ -239,18 +239,18 @@ func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
 			"identifier":   idTypeUserID,
 		}).Observe(float64(len(report.UserIDHll.ToBytes())))
 	}
-	if report.AnonymousIDHLL != nil {
+	if report.AnonymousIDHll != nil {
 		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
 			"workspace_id": report.WorkspaceID,
 			"source_id":    report.SourceID,
 			"identifier":   idTypeAnonymousID,
-		}).Observe(float64(len(report.AnonymousIDHLL.ToBytes())))
+		}).Observe(float64(len(report.AnonymousIDHll.ToBytes())))
 	}
-	if report.IdentifiedAnonymousIDHLL != nil {
+	if report.IdentifiedAnonymousIDHll != nil {
 		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
 			"workspace_id": report.WorkspaceID,
 			"source_id":    report.SourceID,
 			"identifier":   idTypeIdentifiedAnonymousID,
-		}).Observe(float64(len(report.IdentifiedAnonymousIDHLL.ToBytes())))
+		}).Observe(float64(len(report.IdentifiedAnonymousIDHll.ToBytes())))
 	}
 }
