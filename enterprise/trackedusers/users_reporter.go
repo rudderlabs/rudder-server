@@ -180,13 +180,25 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 	defer func() { _ = stmt.Close() }()
 
 	for _, report := range reports {
-		_, err := stmt.Exec(report.WorkspaceID,
+		userIDHllString, err := u.hllToString(report.UserIDHll)
+		if err != nil {
+			return fmt.Errorf("converting user id hll to string: %w", err)
+		}
+		anonIDHllString, err := u.hllToString(report.AnonymousIDHll)
+		if err != nil {
+			return fmt.Errorf("converting anon id hll to string: %w", err)
+		}
+		identifiedAnnIDHllString, err := u.hllToString(report.IdentifiedAnonymousIDHll)
+		if err != nil {
+			return fmt.Errorf("converting identified anon id hll to string: %w", err)
+		}
+		_, err = stmt.Exec(report.WorkspaceID,
 			u.instanceID,
 			report.SourceID,
 			u.now(),
-			hllToString(report.UserIDHll),
-			hllToString(report.AnonymousIDHll),
-			hllToString(report.IdentifiedAnonymousIDHll),
+			userIDHllString,
+			anonIDHllString,
+			identifiedAnnIDHllString,
 		)
 		if err != nil {
 			return fmt.Errorf("executing statement: %w", err)
@@ -200,11 +212,15 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 }
 
 // convert hll to hexadecimal encoding
-func hllToString(hll *hll.Hll) string {
-	if hll != nil {
-		return hex.EncodeToString(hll.ToBytes())
+func (u *UniqueUsersReporter) hllToString(hllStruct *hll.Hll) (string, error) {
+	if hllStruct == nil {
+		newHllStruct, err := hll.NewHll(*u.hllSettings)
+		if err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(newHllStruct.ToBytes()), nil
 	}
-	return ""
+	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
 func combineUserIDAnonymousID(userID, anonymousID string) string {
