@@ -25,12 +25,11 @@ const (
 type Mediator struct {
 	log logger.Logger
 
-	g         *errgroup.Group
-	ctx       context.Context
-	cancel    context.CancelFunc
-	reporters []types.Reporting
-	stats     stats.Stats
-
+	g           *errgroup.Group
+	ctx         context.Context
+	cancel      context.CancelFunc
+	reporters   []types.Reporting
+	stats       stats.Stats
 	cronRunners []flusher.Runner
 }
 
