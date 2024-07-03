@@ -87,7 +87,7 @@ func TestFlush(t *testing.T) {
 
 	t.Run("flush", func(t *testing.T) {
 		// 1. Get time range
-		mockDB.EXPECT().GetStart(gomock.Any(), f.table).Return(start, nil)
+		mockDB.EXPECT().GetStart(gomock.Any(), f.table).Return(start, nil).Times(2)
 
 		// 2. Get aggregate reports
 		mockAggregator.EXPECT().Aggregate(gomock.Any(), start, end).Return(jsonPayloads, 5, 2, nil).Times(1)
