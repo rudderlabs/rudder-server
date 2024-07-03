@@ -15,6 +15,11 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 )
 
+type Runner interface {
+	Run()
+	Stop()
+}
+
 type CronRunner struct {
 	ctx    context.Context
 	cancel context.CancelFunc

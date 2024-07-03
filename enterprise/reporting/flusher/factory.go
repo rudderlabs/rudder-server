@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (*CronRunner, error) {
+func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (Runner, error) {
 	connStr := misc.GetConnectionString(conf, "reporting")
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := db.New(connStr, maxOpenConns)
@@ -23,6 +23,10 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 	}
 
 	if table == "tracked_users_reports" {
+
+		if !conf.GetBool("TrackedUsers.enabled", false) {
+			return &NOPCronRunner{}, nil
+		}
 
 		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 		parsedURL, err := url.Parse(reportingBaseURL)

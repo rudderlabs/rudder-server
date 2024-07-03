@@ -31,7 +31,7 @@ type Mediator struct {
 	reporters []types.Reporting
 	stats     stats.Stats
 
-	cronRunners []*flusher.CronRunner
+	cronRunners []flusher.Runner
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
