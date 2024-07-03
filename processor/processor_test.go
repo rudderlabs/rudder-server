@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	mockdatacollector "github.com/rudderlabs/rudder-server/enterprise/trackedusers/mocks"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 
@@ -70,6 +70,34 @@ func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events
 	}{source: source, events: events})
 }
 
+type mockTrackedUsersReporter struct {
+	generateCalls []struct {
+		jobs []*jobsdb.JobT
+	}
+	reportCalls []struct {
+		reportedReports []*trackedusers.UsersReport
+	}
+}
+
+func (m *mockTrackedUsersReporter) ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error {
+	m.reportCalls = append(m.reportCalls, struct {
+		reportedReports []*trackedusers.UsersReport
+	}{reportedReports: reports})
+	return nil
+}
+
+func (m *mockTrackedUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, _ map[string]bool) []*trackedusers.UsersReport {
+	m.generateCalls = append(m.generateCalls, struct {
+		jobs []*jobsdb.JobT
+	}{jobs: jobs})
+	return lo.FilterMap(jobs, func(job *jobsdb.JobT, _ int) (*trackedusers.UsersReport, bool) {
+		return &trackedusers.UsersReport{
+			WorkspaceID: job.WorkspaceId,
+			SourceID:    gjson.GetBytes(job.Parameters, "source_id").String(),
+		}, true
+	})
+}
+
 type testContext struct {
 	mockCtrl                 *gomock.Controller
 	mockBackendConfig        *mocksBackendConfig.MockBackendConfig
@@ -84,7 +112,7 @@ type testContext struct {
 	MockDedup                *mockDedup.MockDedup
 	MockObserver             *mockObserver
 	MockRsourcesService      *rsources.MockJobService
-	mockTrackedUsersReporter *mockdatacollector.MockUsersReporter
+	mockTrackedUsersReporter *mockTrackedUsersReporter
 }
 
 func (c *testContext) Setup() {
@@ -114,7 +142,7 @@ func (c *testContext) Setup() {
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
-	c.mockTrackedUsersReporter = mockdatacollector.NewMockUsersReporter(c.mockCtrl)
+	c.mockTrackedUsersReporter = &mockTrackedUsersReporter{}
 }
 
 func (c *testContext) Finish() {
@@ -1731,8 +1759,6 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			c.mockTrackedUsersReporter.EXPECT().GenerateReportsFromJobs(unprocessedJobsList, map[string]bool{}).Return(trackerUsersReports).Times(1)
-			c.mockTrackedUsersReporter.EXPECT().ReportUsers(gomock.Any(), trackerUsersReports, gomock.Any()).Times(1)
 			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1740,6 +1766,10 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 			handlePendingGatewayJobs(processor)
+			Expect(c.mockTrackedUsersReporter.generateCalls).To(HaveLen(1))
+			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
+			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
+			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
 		})
 	})
 })

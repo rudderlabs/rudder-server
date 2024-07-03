@@ -75,6 +75,11 @@ type sourceObserver interface {
 	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
 }
 
+type trackedUsersReporter interface {
+	ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
+}
+
 // Handle is a handle to the processor module
 type Handle struct {
 	conf          *config.Config
@@ -162,7 +167,7 @@ type Handle struct {
 	storePlocker  kitsync.PartitionLocker
 
 	sourceObservers      []sourceObserver
-	trackedUsersReporter trackedusers.UsersReporter
+	trackedUsersReporter trackedUsersReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
