@@ -35,12 +35,10 @@ func addFlusher(table string, flusher *Flusher) {
 	defer flusherMu.Unlock()
 
 	flusherInstances[table] = flusher
-
 }
 
 // This function has to be called once for each table
 func CreateRunner(ctx context.Context, table string, log logger.Logger, stats stats.Stats, conf *config.Config, module string) (Runner, error) {
-
 	connStr := misc.GetConnectionString(conf, "reporting")
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := db.New(connStr, maxOpenConns)
