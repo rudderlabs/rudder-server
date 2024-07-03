@@ -56,13 +56,24 @@ var (
 		for i := 0; i < noOfIdentifiedAnnID; i++ {
 			identifiedAnnIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
-		return &UsersReport{
+		report := &UsersReport{
 			WorkspaceID:              workspaceID,
 			SourceID:                 sourceID,
 			UserIDHll:                &userIDHll,
 			AnonymousIDHll:           &annIDHll,
 			IdentifiedAnonymousIDHll: &identifiedAnnIDHll,
 		}
+
+		if noOfUserIDs == 0 {
+			report.UserIDHll = nil
+		}
+		if noOfAnnID == 0 {
+			report.AnonymousIDHll = nil
+		}
+		if noOfIdentifiedAnnID == 0 {
+			report.IdentifiedAnonymousIDHll = nil
+		}
+		return report
 	}
 )
 
@@ -179,6 +190,47 @@ func TestUniqueUsersReporter(t *testing.T) {
 								combineUserIDAnonymousID("user", "ann")), murmurSeed))
 							return &resHll
 						}(),
+					},
+				},
+			},
+			{
+				name: "happy case - no identified use ids",
+				jobs: []*jobsdb.JobT{
+					prepareJob(sampleSourceID, "", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id", "", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user", "", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "", "ann", sampleWorkspaceID2),
+				},
+				trackedUsers: []*UsersReport{
+					{
+						WorkspaceID: sampleWorkspaceID,
+						SourceID:    sampleSourceID,
+						UserIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
+							return &resHll
+						}(),
+						AnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							return &resHll
+						}(),
+						IdentifiedAnonymousIDHll: nil,
+					},
+					{
+						WorkspaceID: sampleWorkspaceID2,
+						SourceID:    sampleSourceID,
+						UserIDHll:   nil,
+						AnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							return &resHll
+						}(),
+						IdentifiedAnonymousIDHll: nil,
 					},
 				},
 			},
@@ -304,6 +356,17 @@ func TestUniqueUsersReporter(t *testing.T) {
 				trackedUsers: map[string]map[string]int{
 					sampleWorkspaceID: {
 						sampleSourceID: 5,
+					},
+				},
+			},
+			{
+				name: "happy case - no identified anon id",
+				reports: []*UsersReport{
+					prepareUserReport(t, sampleSourceID, sampleWorkspaceID, 3, 3, 0),
+				},
+				trackedUsers: map[string]map[string]int{
+					sampleWorkspaceID: {
+						sampleSourceID: 6,
 					},
 				},
 			},
