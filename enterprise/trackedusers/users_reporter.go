@@ -41,8 +41,6 @@ type UsersReport struct {
 	IdentifiedAnonymousIDHll *hll.Hll
 }
 
-//go:generate mockgen -destination=./mocks/mock_user_reporter.go -package=mockuserreporter github.com/rudderlabs/rudder-server/enterprise/trackedusers UsersReporter
-
 // UsersReporter is interface to report unique users from reports
 type UsersReporter interface {
 	ReportUsers(ctx context.Context, reports []*UsersReport, tx *txn.Tx) error
