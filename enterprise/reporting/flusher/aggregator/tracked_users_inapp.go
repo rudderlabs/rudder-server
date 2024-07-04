@@ -45,7 +45,7 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	defer rows.Close()
 
 	total := 0
-	aggReportsMap := make(map[string]TrackedUsersReport)
+	aggReportsMap := make(map[string]*TrackedUsersReport)
 	for rows.Next() {
 		total += 1
 		r := TrackedUsersReport{}
@@ -69,9 +69,12 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		k := fmt.Sprintf("%s-%s-%s", r.WorkspaceID, r.SourceID, r.InstanceID)
 
 		if agg, exists := aggReportsMap[k]; exists {
-			a.aggregate(agg, r)
+			agg.UserIDHLL.Union(*r.UserIDHLL)
+			agg.AnonymousIDHLL.Union(*r.AnonymousIDHLL)
+			agg.IdentifiedAnonymousIDHLL.Union(*r.IdentifiedAnonymousIDHLL)
+			aggReportsMap[k] = agg
 		} else {
-			aggReportsMap[k] = r
+			aggReportsMap[k] = &r
 		}
 
 	}
@@ -91,12 +94,6 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	return jsonReports, nil
 }
 
-func (a *TrackedUsersInAppAggregator) aggregate(aggReport, report TrackedUsersReport) {
-	aggReport.UserIDHLL.Union(*report.UserIDHLL)
-	aggReport.AnonymousIDHLL.Union(*report.AnonymousIDHLL)
-	aggReport.IdentifiedAnonymousIDHLL.Union(*report.IdentifiedAnonymousIDHLL)
-}
-
 func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error) {
 	data, err := hex.DecodeString(encoded)
 	if err != nil {
@@ -109,7 +106,7 @@ func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error
 	return &hll, nil
 }
 
-func marshalReports(aggReportsMap map[string]TrackedUsersReport) ([]json.RawMessage, error) {
+func marshalReports(aggReportsMap map[string]*TrackedUsersReport) ([]json.RawMessage, error) {
 	jsonReports := make([]json.RawMessage, 0, len(aggReportsMap))
 	for _, v := range aggReportsMap {
 		data, err := json.Marshal(v)
