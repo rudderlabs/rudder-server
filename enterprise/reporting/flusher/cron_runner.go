@@ -20,6 +20,11 @@ type Runner interface {
 	Stop()
 }
 
+type NOPCronRunner struct{}
+
+func (c *NOPCronRunner) Run()  {}
+func (c *NOPCronRunner) Stop() {}
+
 type CronRunner struct {
 	ctx    context.Context
 	cancel context.CancelFunc
