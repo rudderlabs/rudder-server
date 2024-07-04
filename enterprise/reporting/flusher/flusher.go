@@ -3,6 +3,7 @@ package flusher
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,14 +18,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 type Flusher struct {
 	log logger.Logger
 
-	db                 db.DB
+	db                 *sql.DB
 	maxOpenConnections int
 
 	client     *http.Client
@@ -60,7 +60,7 @@ type Flusher struct {
 	commonTags stats.Tags
 }
 
-func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -99,7 +99,7 @@ func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Con
 
 	f.initCommonTags()
 	f.initStats(f.commonTags)
-	return &f
+	return &f, nil
 }
 
 func (f *Flusher) CleanUp() error {
@@ -134,8 +134,19 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
 }
 
+func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
+	var start sql.NullTime
+	query := fmt.Sprintf("SELECT MIN(reported_at) FROM %s", f.table)
+	err := f.db.QueryRowContext(ctx, query).Scan(&start)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return start.Time, nil
+}
+
 func (f *Flusher) getLag(ctx context.Context) time.Duration {
-	start, err := f.db.GetStart(ctx, f.table)
+	start, err := f.getStart(ctx)
 	if err != nil {
 		f.log.Errorn("Error getting start time", obskit.Error(err))
 	}
@@ -207,7 +218,7 @@ func (f *Flusher) Flush(ctx context.Context) error {
 // Don't consider most recent data where there are inserts happening
 // Always try to consider full window of flush interval or till current hour
 func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, end time.Time, valid bool, err error) {
-	start, err = f.db.GetStart(ctx, f.table)
+	start, err = f.getStart(ctx)
 	if err != nil {
 		return time.Time{}, time.Time{}, false, err
 	}
@@ -280,11 +291,10 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 	return nil
 }
 
-func (f *Flusher) delete(ctx context.Context, start, end time.Time) error {
-	if err := f.db.Delete(ctx, f.table, start, end); err != nil {
-		return err
-	}
-	return nil
+func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.Time) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE reported_at >= $1 AND reported_at < $2", f.table)
+	_, err := f.db.ExecContext(ctx, query, minReportedAt, maxReportedAt)
+	return err
 }
 
 func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
