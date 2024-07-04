@@ -12,6 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/segmentio/go-hll"
+	"github.com/spaolacci/murmur3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -21,10 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/webhook"
-	"github.com/segmentio/go-hll"
-	"github.com/spaolacci/murmur3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func migrateDatabase(dbConn string, conf *config.Config) error {
