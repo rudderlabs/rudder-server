@@ -3,7 +3,6 @@ package wunderkind
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
@@ -28,15 +27,11 @@ var (
 )
 
 func TestNewProducer(t *testing.T) {
-	os.Setenv("WUNDERKIND_REGION", "us-east-1")
-	os.Setenv("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
-	os.Setenv("WUNDERKIND_EXTERNAL_ID", sampleExternalID)
-	os.Setenv("WUNDERKIND_LAMBDA", sampleFunction)
+	t.Setenv("WUNDERKIND_REGION", "us-east-1")
+	t.Setenv("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
+	t.Setenv("WUNDERKIND_EXTERNAL_ID", sampleExternalID)
+	t.Setenv("WUNDERKIND_LAMBDA", sampleFunction)
 
-	defer os.Unsetenv("WUNDERKIND_REGION")
-	defer os.Unsetenv("WUNDERKIND_IAM_ROLE_ARN")
-	defer os.Unsetenv("WUNDERKIND_EXTERNAL_ID")
-	defer os.Unsetenv("WUNDERKIND_LAMBDA")
 	destinationConfig := map[string]interface{}{}
 	destination := backendconfig.DestinationT{
 		Config:      destinationConfig,
@@ -49,7 +44,7 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer.client)
 
 	// Invalid Region
-	os.Setenv("WUNDERKIND_EXTERNAL_ID", "")
+	t.Setenv("WUNDERKIND_EXTERNAL_ID", "")
 	destinationConfig = map[string]interface{}{}
 	destination.Config = destinationConfig
 	timeOut = 10 * time.Second
@@ -92,15 +87,10 @@ func TestProduceWithInvalidData(t *testing.T) {
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
-	os.Setenv("WUNDERKIND_REGION", "us-east-1")
-	os.Setenv("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
-	os.Setenv("WUNDERKIND_EXTERNAL_ID", sampleExternalID)
-	os.Setenv("WUNDERKIND_LAMBDA", sampleFunction)
-
-	defer os.Unsetenv("WUNDERKIND_REGION")
-	defer os.Unsetenv("WUNDERKIND_IAM_ROLE_ARN")
-	defer os.Unsetenv("WUNDERKIND_EXTERNAL_ID")
-	defer os.Unsetenv("WUNDERKIND_LAMBDA")
+	t.Setenv("WUNDERKIND_REGION", "us-east-1")
+	t.Setenv("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
+	t.Setenv("WUNDERKIND_EXTERNAL_ID", sampleExternalID)
+	t.Setenv("WUNDERKIND_LAMBDA", sampleFunction)
 
 	ctrl := gomock.NewController(t)
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
