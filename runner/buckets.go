@@ -112,6 +112,8 @@ var (
 			float64(10 * bytesize.B),  // for hll containing single id = 8B
 			float64(100 * bytesize.B), // for hll containing 10 ids = 80B
 			float64(1 * bytesize.KB),  // for hll containing 100 ids = 800B
+			float64(3 * bytesize.KB),  // for hll containing 300 ids = 2400B
+			float64(6 * bytesize.KB),  // for hll containing 700 ids = 5600B
 			float64(10 * bytesize.KB), // max size for hll with log2m=14, regWidth=5 = 10KB
 		},
 	}
