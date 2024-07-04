@@ -2,7 +2,6 @@ package wunderkind
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
 	jsoniter "github.com/json-iterator/go"
@@ -85,8 +84,6 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 		return 400, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
 	}
 
-	fmt.Println("Invoke Input: ", invokeInput)
-
 	response, err := client.Invoke(&invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
@@ -94,7 +91,7 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 		return statusCode, respStatus, responseMessage
 	}
 
-	// handle a case where lambda invocation is successful, but there is an error with the payload.
+	// handle a case where lambda invocation is successful, but there is an issue with the payload.
 	if response.FunctionError != nil {
 		statusCode := 400
 		respStatus := "Failure"
