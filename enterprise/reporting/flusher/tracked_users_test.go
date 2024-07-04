@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/segmentio/go-hll"
 	"github.com/spaolacci/murmur3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -64,7 +64,7 @@ func addDataToHLL(hllData *hll.Hll, min, max, count int) {
 }
 
 // generate a report where there can be overlap of users, anon-users, anon-identified-users
-func generateReport(reportedAt time.Time, workspaceId, sourceId, instanceId string, numUsers, numAnons, numIdentAnons int) *aggregator.TrackedUsersReport {
+func generateReport(reportedAt time.Time, workspaceId, sourceId string, numUsers, numAnons, numIdentAnons int) *aggregator.TrackedUsersReport {
 	userIdHLL, _ := hll.NewHll(hllSettings())
 	anonymousIdHLL, _ := hll.NewHll(hllSettings())
 	identifiedAnonymousIdHLL, _ := hll.NewHll(hllSettings())
@@ -77,7 +77,7 @@ func generateReport(reportedAt time.Time, workspaceId, sourceId, instanceId stri
 		ReportedAt:               reportedAt,
 		WorkspaceID:              workspaceId,
 		SourceID:                 sourceId,
-		InstanceID:               instanceId,
+		InstanceID:               "instance1",
 		UserIDHLL:                &userIdHLL,
 		AnonymousIDHLL:           &anonymousIdHLL,
 		IdentifiedAnonymousIDHLL: &identifiedAnonymousIdHLL,
@@ -136,18 +136,19 @@ func TestTrackedUsersFlush(t *testing.T) {
 
 	// reports generated with tenMinAgo should be flushed
 	reports := []*aggregator.TrackedUsersReport{
-		generateReport(tenMinAgo, "workspace1", "source1", "instance1", 10000, 10000, 10000),
-		generateReport(tenMinAgo, "workspace1", "source1", "instance1", 500, 500, 1000),
-		generateReport(tenMinAgo, "workspace1", "source2", "instance1", 1000, 1000, 1000),
-		generateReport(tenMinAgo, "workspace2", "source1", "instance1", 1000, 1000, 1000),
+		generateReport(tenMinAgo, "workspace1", "source1", 10000, 10000, 10000),
+		generateReport(tenMinAgo, "workspace1", "source1", 500, 500, 1000),
+		generateReport(tenMinAgo, "workspace1", "source2", 1000, 1000, 1000),
+		generateReport(tenMinAgo, "workspace2", "source1", 1000, 1000, 1000),
 
-		generateReport(oneMinAgo, "workspace1", "source1", "instance1", 1000, 1000, 1000),
+		generateReport(oneMinAgo, "workspace1", "source1", 1000, 1000, 1000),
 	}
 
 	// set up db
 	pool, _ := dockertest.NewPool("")
 	pgContainer, err := postgres.Setup(pool, t)
-	migrateDatabase(pgContainer.DBDsn, config.Default)
+	require.NoError(t, err)
+	err = migrateDatabase(pgContainer.DBDsn, config.Default)
 	require.NoError(t, err)
 	config.Set("TrackedUsers.enabled", true)
 	config.Set("DB.port", pgContainer.Port)
@@ -156,7 +157,8 @@ func TestTrackedUsersFlush(t *testing.T) {
 	config.Set("DB.password", pgContainer.Password)
 	config.Set("Reporting.flusher.batchSizeToReporting", 2)
 
-	addReportsToDB(ctx, pgContainer.DB, reports)
+	err = addReportsToDB(ctx, pgContainer.DB, reports)
+	assert.NoError(t, err)
 
 	// validate 5 reports were added
 	var count int
