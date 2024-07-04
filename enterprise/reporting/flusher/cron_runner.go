@@ -20,6 +20,11 @@ type Runner interface {
 	Stop()
 }
 
+type NOPCronRunner struct{}
+
+func (c *NOPCronRunner) Run()  {}
+func (c *NOPCronRunner) Stop() {}
+
 type CronRunner struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -104,7 +109,7 @@ func (c *CronRunner) startFlushing(ctx context.Context) error {
 		default:
 			s := time.Now()
 			if err := c.flusher.Flush(ctx); err != nil {
-				return err
+				c.log.Errorn("error in flusher flush", obskit.Error(err))
 			}
 			c.flushTimer.Since(s)
 

@@ -3,11 +3,11 @@ package flusher
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -18,19 +18,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/db"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-)
-
-var (
-	flusherInstances = make(map[string]*Flusher)
-	flusherMu        sync.Mutex
 )
 
 type Flusher struct {
 	log logger.Logger
 
-	db                 db.DB
+	db                 *sql.DB
 	maxOpenConnections int
 
 	client     *http.Client
@@ -54,9 +48,7 @@ type Flusher struct {
 
 	stats                   stats.Stats
 	minReportedAtQueryTimer stats.Measurement
-	reportsCounter          stats.Measurement
 	aggReportsTimer         stats.Measurement
-	aggReportsCounter       stats.Measurement
 	sendReportsTimer        stats.Measurement
 	deleteReportsTimer      stats.Measurement
 	concurrentRequests      stats.Measurement
@@ -68,22 +60,7 @@ type Flusher struct {
 	commonTags stats.Tags
 }
 
-func NewFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
-	flusherMu.Lock()
-	defer flusherMu.Unlock()
-
-	if instance, exists := flusherInstances[table]; exists {
-		return instance
-	}
-
-	f := createFlusher(db, log, stats, conf, table, reportingURL, aggregator, module)
-
-	flusherInstances[table] = f
-
-	return f
-}
-
-func createFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) *Flusher {
+func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -122,7 +99,7 @@ func createFlusher(db db.DB, log logger.Logger, stats stats.Stats, conf *config.
 
 	f.initCommonTags()
 	f.initStats(f.commonTags)
-	return &f
+	return &f, nil
 }
 
 func (f *Flusher) CleanUp() error {
@@ -145,8 +122,6 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.minReportedAtQueryTimer = f.stats.NewTaggedStat("reporting_flusher_get_min_reported_at_query_duration_seconds", stats.TimerType, tags)
 
 	f.aggReportsTimer = f.stats.NewTaggedStat("reporting_flusher_get_aggregated_reports_duration_seconds", stats.TimerType, tags)
-	f.reportsCounter = f.stats.NewTaggedStat("reporting_flusher_get_reports_count", stats.HistogramType, tags)
-	f.aggReportsCounter = f.stats.NewTaggedStat("reporting_flusher_get_aggregated_reports_count", stats.HistogramType, tags)
 
 	f.sendReportsTimer = f.stats.NewTaggedStat("reporting_flusher_send_reports_duration_seconds", stats.TimerType, tags)
 	f.deleteReportsTimer = f.stats.NewTaggedStat("reporting_flusher_delete_reports_duration_seconds", stats.TimerType, tags)
@@ -159,8 +134,19 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
 }
 
+func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
+	var start sql.NullTime
+	query := fmt.Sprintf("SELECT MIN(reported_at) FROM %s", f.table)
+	err := f.db.QueryRowContext(ctx, query).Scan(&start)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return start.Time, nil
+}
+
 func (f *Flusher) getLag(ctx context.Context) time.Duration {
-	start, err := f.db.GetStart(ctx, f.table)
+	start, err := f.getStart(ctx)
 	if err != nil {
 		f.log.Errorn("Error getting start time", obskit.Error(err))
 	}
@@ -209,7 +195,6 @@ func (f *Flusher) Flush(ctx context.Context) error {
 		return err
 	}
 	f.aggReportsTimer.Since(s)
-	f.aggReportsCounter.Observe(float64(len(jsonReports)))
 
 	// 3. Flush aggregated reports
 	s = time.Now()
@@ -233,7 +218,7 @@ func (f *Flusher) Flush(ctx context.Context) error {
 // Don't consider most recent data where there are inserts happening
 // Always try to consider full window of flush interval or till current hour
 func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, end time.Time, valid bool, err error) {
-	start, err = f.db.GetStart(ctx, f.table)
+	start, err = f.getStart(ctx)
 	if err != nil {
 		return time.Time{}, time.Time{}, false, err
 	}
@@ -261,27 +246,12 @@ func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, en
 }
 
 func (f *Flusher) aggregate(ctx context.Context, start, end time.Time) ([]json.RawMessage, error) {
-	jsonReports, total, unique, err := f.aggregator.Aggregate(ctx, start, end)
+	jsonReports, err := f.aggregator.Aggregate(ctx, start, end)
 	if err != nil {
 		return nil, err
 	}
-	f.reportsCounter.Observe(float64(total))
-	f.aggReportsCounter.Observe(float64(unique))
 
 	return jsonReports, nil
-}
-
-func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error {
-	if f.batchSizeToReporting.Load() > 1 {
-		if err := f.sendInBatches(ctx, aggReports); err != nil {
-			return err
-		}
-	} else {
-		if err := f.sendIndividually(ctx, aggReports); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (f *Flusher) getConcurrency(ctx context.Context) int {
@@ -291,7 +261,7 @@ func (f *Flusher) getConcurrency(ctx context.Context) int {
 	return f.minConcurrentRequests.Load()
 }
 
-func (f *Flusher) sendInBatches(ctx context.Context, aggReports []json.RawMessage) error {
+func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error {
 	batchSize := f.batchSizeToReporting.Load()
 	concurrency := f.getConcurrency(ctx)
 
@@ -321,31 +291,10 @@ func (f *Flusher) sendInBatches(ctx context.Context, aggReports []json.RawMessag
 	return nil
 }
 
-func (f *Flusher) sendIndividually(ctx context.Context, aggReports []json.RawMessage) error {
-	concurrency := f.getConcurrency(ctx)
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency)
-	f.concurrentRequests.Gauge(float64(concurrency))
-
-	for _, r := range aggReports {
-		r := r // avoid closure capture issue
-		g.Go(func() error {
-			return f.makePOSTRequest(ctx, f.reportingURL, r)
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (f *Flusher) delete(ctx context.Context, start, end time.Time) error {
-	if err := f.db.Delete(ctx, f.table, start, end); err != nil {
-		return err
-	}
-	return nil
+func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.Time) error {
+	query := fmt.Sprintf("DELETE FROM %s WHERE reported_at >= $1 AND reported_at < $2", f.table)
+	_, err := f.db.ExecContext(ctx, query, minReportedAt, maxReportedAt)
+	return err
 }
 
 func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
