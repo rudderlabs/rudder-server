@@ -1,4 +1,4 @@
-package kvstoremanager
+package redis
 
 import (
 	"context"
@@ -10,15 +10,19 @@ import (
 	"strconv"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/redis/go-redis/v9"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var abortableErrors = []string{}
 
 type RedisManager struct {
+	logger        logger.Logger
 	clusterMode   bool
 	config        types.ConfigT
 	client        *redis.Client
@@ -32,6 +36,7 @@ func init() {
 func NewRedisManager(config types.ConfigT) *RedisManager {
 	redisMgr := &RedisManager{
 		config: config,
+		logger: logger.NewLogger().Child("kvstoremgr.redis"),
 	}
 	redisMgr.CreateClient()
 	return redisMgr
@@ -169,60 +174,75 @@ func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
 	return err
 }
 
-func (m *RedisManager) ExtractJSONSetArgs(jsonData json.RawMessage) ([]string, error) {
-	key := gjson.GetBytes(jsonData, "message.key").String()
-	path := gjson.GetBytes(jsonData, "message.path").String()
-	jsonVal := gjson.GetBytes(jsonData, "message.value")
-
-	actualPath := "$" // root insert
-	if path != "" {
-		actualPath = fmt.Sprintf("$.%s", path)
-	}
-	args := []string{key, actualPath, jsonVal.String()}
-
-	// Insert a value into a path for a key
-	// 1. Validate if key is present
-	// 2. If key is not present, then insert value into the path
-	//    Execute the following command:
-	//    > JSON.SET key $ {[path]: value}
-	// Limitation: It can only insert values at a single level
-	// Example of limitation:
-	//    - JSON.SET key $.k1.k2.k3 '{"A":1}' cannot be done and would be converted to
-	//      JSON.SET key $ '{"k1.k2.k3": {"A": 1}}'
-	// Example of correct usage:
-	//    - JSON.SET key $.k1 '{"A":1}' can be done and would be converted to
-	//      JSON.SET key $ '{"k1": {"A": 1}}'
-	if actualPath != "$" {
-		v, err := m.GetClient().JSONGet(context.Background(), key).Result()
-		if err != nil {
-			return nil, err
-		}
-		if v == "" {
-			// key is new one but we need to insert a value other than root
-			// formulate {[path]: value}
-			mapStr, err := json.Marshal(map[string]interface{}{
-				path: jsonVal.Value(),
-			})
-			if err != nil {
-				return nil, err
-			}
-			// data is not present in key
-			args = []string{key, "$", string(mapStr)} // arguments to insert data
-		}
-	}
-	return args, nil
+type jsonSetCmdArgs struct {
+	key   string
+	path  string
+	value string
 }
 
-func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage) (interface{}, error) {
-	nmSetArgs, err := m.ExtractJSONSetArgs(jsonData)
+func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSetCmdArgs, error) {
+	isRootInsert := inputArgs.path == ""
+	setCmdArgs := &jsonSetCmdArgs{
+		key:   inputArgs.key,
+		path:  "$",
+		value: inputArgs.jsonVal.String(),
+	}
+	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), inputArgs.key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	valueToBeInserted := redisValueForKey // value to which the transformed value should be merged which will be inserted into Redis
+	if redisValueForKey == "" {
+		valueToBeInserted = "{}"
+	}
+
+	var mergeFrom string = inputArgs.jsonVal.String() // transformed value
+	if !isRootInsert {
+		nestedJsonVal, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
+		if setErr != nil {
+			return nil, fmt.Errorf("setArgsForMergeStrategy: setting value into path: %w", setErr)
+		}
+		mergeFrom = nestedJsonVal
+	}
+	// merge jsons
+	mergedValueToBeInserted, mergedErr := jsonpatch.MergeMergePatches([]byte(valueToBeInserted), []byte(mergeFrom))
+	if mergedErr != nil {
+		return nil, fmt.Errorf("setArgsForMergeStrategy: JSON merge failed: %w", mergedErr)
+	}
+	setCmdArgs.value = string(mergedValueToBeInserted)
+	return setCmdArgs, nil
+}
+
+type setArguments struct {
+	key     string
+	path    string
+	jsonVal gjson.Result
+}
+
+// nolint:unparam
+func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) (*jsonSetCmdArgs, error) {
+	key := gjson.GetBytes(transformedData, "message.key").String()
+	path := gjson.GetBytes(transformedData, "message.path").String()
+	jsonVal := gjson.GetBytes(transformedData, "message.value")
+
+	return m.setArgsForMergeStrategy(setArguments{
+		key:     key,
+		path:    path,
+		jsonVal: jsonVal,
+	})
+}
+
+func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error) {
+	nmSetArgs, err := m.extractJSONSetArgs(jsonData, config)
 	if err != nil {
 		return nil, err
 	}
 	redisClient := m.GetClient()
 	ctx := context.Background()
-	val, err := redisClient.JSONSet(ctx, nmSetArgs[0], nmSetArgs[1], nmSetArgs[2]).Result()
+	val, err := redisClient.JSONSet(ctx, nmSetArgs.key, nmSetArgs.path, nmSetArgs.value).Result()
 	if err != nil {
-		return nil, fmt.Errorf("setting key:(%s %s %s): %w", nmSetArgs[0], nmSetArgs[1], nmSetArgs[2], err)
+		return nil, fmt.Errorf("SendDataAsJSON: error setting JSON data at key '%s' with path '%s' and value '%s': %w", nmSetArgs.key, nmSetArgs.path, nmSetArgs.value, err)
 	}
 
 	return val, err

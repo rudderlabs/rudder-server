@@ -758,7 +758,7 @@ func WHCounterStat(s stats.Stats, name string, warehouse *model.Warehouse, extra
 // FormatPemContent formats the content of certificates and keys by adding necessary newlines around specific markers.
 func FormatPemContent(content string) string {
 	// Remove all existing newline characters
-	formattedContent := strings.ReplaceAll(content, "\n", "")
+	formattedContent := strings.ReplaceAll(content, "\n", " ")
 
 	// Add a newline after specific BEGIN markers
 	formattedContent = strings.Replace(formattedContent, "-----BEGIN CERTIFICATE-----", "-----BEGIN CERTIFICATE-----\n", 1)

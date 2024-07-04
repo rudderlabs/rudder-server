@@ -409,15 +409,15 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		if _, ok := toSet["receivedAt"]; !ok {
 			toSet["receivedAt"] = time.Now().Format(misc.RFC3339Milli)
 		}
-		if _, ok := toSet["requestIP"]; ok {
+		if _, ok := toSet["request_ip"]; ok {
 			var tcOk bool
-			ipAddr, tcOk = toSet["requestIP"].(string)
+			ipAddr, tcOk = toSet["request_ip"].(string)
 			if !tcOk {
-				gw.logger.Warnf("requestIP is not a string: %v", toSet["requestIP"])
+				gw.logger.Warnf("request_ip is not a string: %v", toSet["request_ip"])
 			}
 
 		} else {
-			toSet["requestIP"] = ipAddr
+			toSet["request_ip"] = ipAddr
 		}
 		fillMessageID(toSet)
 		if eventTypeFromReq == "audiencelist" {
@@ -834,7 +834,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
 		if err != nil {
-			return nil, fmt.Errorf("filling requestIP: %w", err)
+			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
 
 		eventBatch := singularEventBatch{
@@ -874,8 +874,8 @@ func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {
 }
 
 func fillRequestIP(event []byte, ip string) ([]byte, error) {
-	if !gjson.GetBytes(event, "requestIP").Exists() {
-		return sjson.SetBytes(event, "requestIP", ip)
+	if !gjson.GetBytes(event, "request_ip").Exists() {
+		return sjson.SetBytes(event, "request_ip", ip)
 	}
 	return event, nil
 }

@@ -144,6 +144,7 @@ type Handle struct {
 		eventSchemaV2Enabled            bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
+		credentialsMap                  map[string][]transformer.Credential
 	}
 
 	drainConfig struct {
@@ -805,6 +806,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
+			credentialsMap                  = make(map[string][]transformer.Credential)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -827,6 +829,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
+			credentialsMap[workspaceID] = lo.MapToSlice(wConfig.Credentials, func(key string, value backendconfig.Credential) transformer.Credential {
+				return transformer.Credential{
+					ID:       key,
+					Key:      value.Key,
+					Value:    value.Value,
+					IsSecret: value.IsSecret,
+				}
+			})
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
@@ -836,6 +846,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
+		proc.config.credentialsMap = credentialsMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -888,19 +899,19 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
-		timestamp = time.Now()
+		timestamp = defaultTimestamp
 	}
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
-	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp", receivedAt)
+	sentAt := getTimestampFromEvent(singularEvent, "sentAt", receivedAt)
 	var timestamp time.Time
 	var ok bool
 
@@ -1106,6 +1117,7 @@ func (proc *Handle) getTransformerEvents(
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
 			Destination: *destination,
+			Credentials: proc.config.credentialsMap[commonMetaData.WorkspaceID],
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
@@ -1962,6 +1974,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
 						shallowEventCopy.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 					}
+					shallowEventCopy.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
 					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
