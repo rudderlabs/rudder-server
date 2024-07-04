@@ -62,7 +62,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.7.0
-	github.com/minio/minio-go/v7 v7.0.72
+	github.com/minio/minio-go/v7 v7.0.73
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.19.0
@@ -108,9 +108,11 @@ require (
 	golang.org/x/sync v0.7.0
 	google.golang.org/api v0.187.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d
-	google.golang.org/grpc v1.64.0
+	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 )
+
+require github.com/go-ini/ini v1.67.0 // indirect
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
@@ -222,7 +224,7 @@ require (
 	github.com/kataras/tablewriter v0.0.0-20180708051242-e063d29b7c23 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20240513124658-fba389f38bae // indirect
