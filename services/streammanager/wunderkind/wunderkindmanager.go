@@ -76,7 +76,8 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 	}
 
 	var invokeInput lambda.InvokeInput
-	invokeInput.SetFunctionName(config.GetEnv(WUNDERKIND_LAMBDA))
+	wunderKindLambda := config.GetEnv(WUNDERKIND_LAMBDA)
+	invokeInput.SetFunctionName(wunderKindLambda)
 	invokeInput.SetPayload([]byte(input.Payload))
 	invokeInput.SetInvocationType(INVOCATION_TYPE)
 	invokeInput.SetLogType("Tail")
@@ -101,7 +102,7 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 		return statusCode, respStatus, responseMessage
 	}
 
-	return 200, "Success", "Event delivered to Wunderkind :: " + "arn:aws:lambda:us-east-1:799135786153:function:shq-dev-trk-mparticle-api"
+	return 200, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
 }
 
 func (*WunderkindProducer) Close() error {
