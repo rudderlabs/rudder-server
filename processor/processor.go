@@ -2236,6 +2236,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 		sm.dedupKeys[id] = v
 	}
 	sm.totalEvents += subJob.totalEvents
+	sm.trackedUsersReports = append(sm.trackedUsersReports, subJob.trackedUsersReports...)
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
