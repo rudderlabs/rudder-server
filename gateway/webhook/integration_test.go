@@ -256,7 +256,7 @@ func TestIntegrationWebhook(t *testing.T) {
 					Name:  "source_id",
 					Value: sourceID,
 				}},
-				JobsLimit: 10,
+				JobsLimit: 100,
 			})
 			require.NoError(t, err)
 
@@ -283,11 +283,11 @@ func TestIntegrationWebhook(t *testing.T) {
 
 			r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 				WorkspaceID: workspaceID,
-				// ParameterFilters: []jobsdb.ParameterFilterT{{
-				// 	Name:  "source_id",
-				// 	Value: sourceID,
-				// }},
-				JobsLimit: 1,
+				ParameterFilters: []jobsdb.ParameterFilterT{{
+					Name:  "source_id",
+					Value: sourceID,
+				}},
+				JobsLimit: 100,
 			})
 			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
