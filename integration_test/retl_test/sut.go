@@ -24,10 +24,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -119,7 +119,7 @@ func (s *SUT) Start(t *testing.T) {
 	containersGroup, _ := errgroup.WithContext(context.TODO())
 
 	var postgresContainer *postgres.Resource
-	var transformerContainer *destination.TransformerResource
+	var transformerContainer *transformertest.Resource
 
 	containersGroup.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t)
@@ -129,7 +129,7 @@ func (s *SUT) Start(t *testing.T) {
 		return nil
 	})
 	containersGroup.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		return err
 	})
 
@@ -150,7 +150,7 @@ func (s *SUT) Start(t *testing.T) {
 
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	httpPortInt, err := kithelper.GetFreePort()

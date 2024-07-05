@@ -29,10 +29,10 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -85,7 +85,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			t.Logf("Starting docker services (postgres & transformer)")
 			var (
 				postgresContainer    *postgres.Resource
-				transformerContainer *destination.TransformerResource
+				transformerContainer *transformertest.Resource
 				gatewayPort          string
 			)
 			pool, err := dockertest.NewPool("")
@@ -96,7 +96,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 				return err
 			})
 			containersGroup.Go(func() (err error) {
-				transformerContainer, err = destination.SetupTransformer(pool, t)
+				transformerContainer, err = transformertest.Setup(pool, t)
 				return err
 			})
 			require.NoError(t, containersGroup.Wait())
@@ -128,7 +128,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("DB.user", postgresContainer.User)
 			config.Set("DB.name", postgresContainer.Database)
 			config.Set("DB.password", postgresContainer.Password)
-			config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+			config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 			config.Set("Warehouse.mode", "off")
 			config.Set("enableStats", false)
