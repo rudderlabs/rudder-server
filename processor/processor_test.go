@@ -5470,12 +5470,13 @@ func TestStoreMessageMerge(t *testing.T) {
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
 			"1": {{JobID: 1}},
 		},
-		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}},
-		routerDestIDs:  []string{"1"},
-		reportMetrics:  []*types.PUReportedMetric{{}},
-		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 1},
-		dedupKeys:      map[string]struct{}{"1": {}},
-		totalEvents:    1,
+		procErrorJobs:       []*jobsdb.JobT{{JobID: 1}},
+		routerDestIDs:       []string{"1"},
+		reportMetrics:       []*types.PUReportedMetric{{}},
+		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
+		dedupKeys:           map[string]struct{}{"1": {}},
+		totalEvents:         1,
+		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}},
 	}
 
 	sm2 := &storeMessage{
@@ -5485,12 +5486,13 @@ func TestStoreMessageMerge(t *testing.T) {
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
 			"2": {{JobID: 2}},
 		},
-		procErrorJobs:  []*jobsdb.JobT{{JobID: 2}},
-		routerDestIDs:  []string{"2"},
-		reportMetrics:  []*types.PUReportedMetric{{}},
-		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 2},
-		dedupKeys:      map[string]struct{}{"2": {}},
-		totalEvents:    1,
+		procErrorJobs:       []*jobsdb.JobT{{JobID: 2}},
+		routerDestIDs:       []string{"2"},
+		reportMetrics:       []*types.PUReportedMetric{{}},
+		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
+		dedupKeys:           map[string]struct{}{"2": {}},
+		totalEvents:         1,
+		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 	}
 
 	merged := storeMessage{
@@ -5509,6 +5511,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.Len(t, merged.reportMetrics, 1, "report metrics should have 1 element")
 	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
 	require.Len(t, merged.dedupKeys, 1, "dedup keys should have 1 element")
+	require.Len(t, merged.trackedUsersReports, 1, "trackedUsersReports should have 1 element")
 	require.Equal(t, merged.totalEvents, 1, "total events should be 1")
 
 	merged.merge(sm2)
@@ -5523,4 +5526,5 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.EqualValues(t, merged.sourceDupStats[dupStatKey{sourceID: "1"}], 3)
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
+	require.Len(t, merged.trackedUsersReports, 3, "trackedUsersReports should have 3 element")
 }
