@@ -125,7 +125,7 @@ func (pg *Postgres) loadTable(
 			fileName, sortedColumnKeys,
 		)
 		if err != nil {
-			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
+			return nil, "", fmt.Errorf("loading data into staging table: %w, %s", err, fileName)
 		}
 	}
 	if _, err = stmt.ExecContext(ctx); err != nil {
@@ -209,7 +209,7 @@ func (pg *Postgres) loadDataIntoStagingTable(
 
 		_, err = stmt.ExecContext(ctx, recordInterface...)
 		if err != nil {
-			return fmt.Errorf("exec statement: %w", err)
+			return fmt.Errorf("exec statement: %w %v", err, recordInterface)
 		}
 	}
 	return nil
