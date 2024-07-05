@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -66,20 +70,49 @@ func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events
 	}{source: source, events: events})
 }
 
+type mockTrackedUsersReporter struct {
+	generateCalls []struct {
+		jobs []*jobsdb.JobT
+	}
+	reportCalls []struct {
+		reportedReports []*trackedusers.UsersReport
+	}
+}
+
+func (m *mockTrackedUsersReporter) ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error {
+	m.reportCalls = append(m.reportCalls, struct {
+		reportedReports []*trackedusers.UsersReport
+	}{reportedReports: reports})
+	return nil
+}
+
+func (m *mockTrackedUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, _ map[string]bool) []*trackedusers.UsersReport {
+	m.generateCalls = append(m.generateCalls, struct {
+		jobs []*jobsdb.JobT
+	}{jobs: jobs})
+	return lo.FilterMap(jobs, func(job *jobsdb.JobT, _ int) (*trackedusers.UsersReport, bool) {
+		return &trackedusers.UsersReport{
+			WorkspaceID: job.WorkspaceId,
+			SourceID:    gjson.GetBytes(job.Parameters, "source_id").String(),
+		}, true
+	})
+}
+
 type testContext struct {
-	mockCtrl              *gomock.Controller
-	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
-	mockGatewayJobsDB     *mocksJobsDB.MockJobsDB
-	mockRouterJobsDB      *mocksJobsDB.MockJobsDB
-	mockBatchRouterJobsDB *mocksJobsDB.MockJobsDB
-	mockReadProcErrorsDB  *mocksJobsDB.MockJobsDB
-	mockWriteProcErrorsDB *mocksJobsDB.MockJobsDB
-	mockEventSchemasDB    *mocksJobsDB.MockJobsDB
-	mockArchivalDB        *mocksJobsDB.MockJobsDB
-	MockReportingI        *mockReportingTypes.MockReporting
-	MockDedup             *mockDedup.MockDedup
-	MockObserver          *mockObserver
-	MockRsourcesService   *rsources.MockJobService
+	mockCtrl                 *gomock.Controller
+	mockBackendConfig        *mocksBackendConfig.MockBackendConfig
+	mockGatewayJobsDB        *mocksJobsDB.MockJobsDB
+	mockRouterJobsDB         *mocksJobsDB.MockJobsDB
+	mockBatchRouterJobsDB    *mocksJobsDB.MockJobsDB
+	mockReadProcErrorsDB     *mocksJobsDB.MockJobsDB
+	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
+	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
+	mockArchivalDB           *mocksJobsDB.MockJobsDB
+	MockReportingI           *mockReportingTypes.MockReporting
+	MockDedup                *mockDedup.MockDedup
+	MockObserver             *mockObserver
+	MockRsourcesService      *rsources.MockJobService
+	mockTrackedUsersReporter *mockTrackedUsersReporter
 }
 
 func (c *testContext) Setup() {
@@ -109,6 +142,7 @@ func (c *testContext) Setup() {
 	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
+	c.mockTrackedUsersReporter = &mockTrackedUsersReporter{}
 }
 
 func (c *testContext) Finish() {
@@ -258,7 +292,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			WriteKey: WriteKeyEnabledNoUT,
 			Enabled:  true,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Category: "eventStream",
+				Category: "webhook",
 			},
 			Destinations: []backendconfig.DestinationT{
 				{
@@ -1419,6 +1453,327 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	})
 })
 
+var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() {
+	initProcessor()
+
+	var c *testContext
+	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	prepareHandle := func(proc *Handle) *Handle {
+		proc.config.transformerURL = transformerServer.URL
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		Expect(err).To(BeNil())
+		proc.isolationStrategy = isolationStrategy
+		return proc
+	}
+	BeforeEach(func() {
+		c = &testContext{}
+		c.Setup()
+	})
+
+	AfterEach(func() {
+		c.Finish()
+	})
+
+	AfterAll(func() {
+		transformerServer.Close()
+	})
+
+	Context("trackedUsers", func() {
+		BeforeEach(func() {
+			// crash recovery check
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		})
+
+		It("should track Users from unprocessed jobs ", func() {
+			messages := map[string]mockEventData{
+				// this message should be delivered only to destination A
+				"message-1": {
+					id:                        "1",
+					jobid:                     1010,
+					originalTimestamp:         "2000-01-02T01:23:45",
+					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+					sentAt:                    "2000-01-02 01:23",
+					expectedSentAt:            "2000-01-02T01:23:00.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": false, "enabled-destination-a-definition-display-name": true},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut"},
+				},
+				// this message should not be delivered to destination A
+				"message-2": {
+					id:                        "2",
+					jobid:                     1010,
+					originalTimestamp:         "2000-02-02T01:23:45",
+					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{"All": true, "enabled-destination-a-definition-display-name": false},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut"},
+				},
+				// this message should be delivered to all destinations
+				"message-3": {
+					id:                 "3",
+					jobid:              2010,
+					originalTimestamp:  "malformed timestamp",
+					sentAt:             "2000-03-02T01:23:15",
+					expectedSentAt:     "2000-03-02T01:23:15.000Z",
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": true},
+					params:             map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
+				},
+				// this message should be delivered to all destinations (default All value)
+				"message-4": {
+					id:                        "4",
+					jobid:                     2010,
+					originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+					expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+					integrations:              map[string]bool{},
+					params:                    map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
+				},
+				// this message should not be delivered to any destination
+				"message-5": {
+					id:                 "5",
+					jobid:              2010,
+					expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+					integrations:       map[string]bool{"All": false},
+					params:             map[string]string{"source_id": "enabled-source-no-ut", "source_job_run_id": "job_run_id_1", "source_task_run_id": "task_run_id_1"},
+				},
+			}
+
+			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					JobID:         1002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     1010,
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabledNoUT,
+						"2001-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-1"],
+							messages["message-2"],
+						}, createMessagePayloadWithoutSources,
+					),
+					EventCount:    2,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2002,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+				{
+					UUID:          uuid.New(),
+					JobID:         2003,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
+					CustomVal:     gatewayCustomVal[0],
+					EventPayload:  nil,
+					EventCount:    1,
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     2010,
+					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabledNoUT,
+						"2002-01-02T02:23:45.000Z",
+						[]mockEventData{
+							messages["message-3"],
+							messages["message-4"],
+							messages["message-5"],
+						},
+						createMessagePayloadWithoutSources,
+					),
+					EventCount: 3,
+					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
+				},
+			}
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+
+			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
+				gomock.Any(),
+				jobsdb.GetQueryParams{
+					CustomValFilters: gatewayCustomVal,
+					JobsLimit:        processor.config.maxEventsToProcess.Load(),
+					EventsLimit:      processor.config.maxEventsToProcess.Load(),
+					PayloadSizeLimit: processor.payloadLimit.Load(),
+				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+			transformExpectations := map[string]transformExpectation{
+				DestinationIDEnabledA: {
+					events:                    3,
+					messageIds:                "message-1,message-3,message-4",
+					receiveMetadata:           true,
+					destinationDefinitionName: "enabled-destination-a-definition-name",
+				},
+			}
+
+			// We expect one transform call to destination A, after callUnprocessed.
+			mockTransformer.EXPECT().Transform(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).Times(1).After(callUnprocessed).
+				DoAndReturn(assertDestinationTransform(
+					messages,
+					SourceIDEnabledNoUT,
+					DestinationIDEnabledA,
+					transformExpectations[DestinationIDEnabledA],
+				))
+
+			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+				Expect(job.UUID.String()).To(testutils.BeValidUUID())
+				Expect(job.JobID).To(Equal(int64(0)))
+				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
+				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
+				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
+				require.JSONEq(GinkgoT(), fmt.Sprintf(`{
+					"source_id":"source-from-transformer",
+					"source_name": "%s",
+					"destination_id":"destination-from-transformer",
+					"received_at":"",
+					"transform_at":"processor",
+					"message_id":"",
+					"gateway_job_id":0,
+					"source_task_run_id":"",
+					"source_job_id":"",
+					"source_job_run_id":"",
+					"event_name":"",
+					"event_type":"",
+					"source_definition_id":"",
+					"destination_definition_id":"",
+					"source_category":"",
+					"record_id":null,
+					"workspaceId":"",
+					"traceparent":""
+				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
+			}
+			// One Store call is expected for all events
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				_ = f(jobsdb.EmptyStoreSafeTx())
+			}).Return(nil)
+
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+					for i, job := range jobs {
+						assertStoreJob(job, i, "value-enabled-destination-a")
+					}
+				})
+
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{In: 2, Failed: 2},
+				).Times(1).Return(nil)
+
+			c.MockRsourcesService.EXPECT().
+				IncrementStats(
+					gomock.Any(),
+					gomock.Any(),
+					"job_run_id_1",
+					rsources.JobTargetKey{
+						TaskRunID: "task_run_id_1",
+						SourceID:  "enabled-source-no-ut",
+					},
+					rsources.Stats{Out: 1},
+				).Times(1).Return(nil)
+
+			c.mockArchivalDB.EXPECT().
+				WithStoreSafeTx(
+					gomock.Any(),
+					gomock.Any(),
+				).Times(1).
+				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+					_ = f(jobsdb.EmptyStoreSafeTx())
+				}).Return(nil)
+			c.mockArchivalDB.EXPECT().
+				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+				Times(1).
+				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+					Expect(jobs).To(HaveLen(2))
+				})
+
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil).Times(1)
+			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
+					for i := range unprocessedJobsList {
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
+					}
+				})
+
+			trackerUsersReports := []*trackedusers.UsersReport{
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabledNoUT,
+				},
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabled,
+				},
+				{
+					SourceID: SourceIDEnabledNoUT,
+				},
+			}
+			Setup(processor, c, false, false)
+			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+			handlePendingGatewayJobs(processor)
+			Expect(c.mockTrackedUsersReporter.generateCalls).To(HaveLen(1))
+			Expect(c.mockTrackedUsersReporter.generateCalls[0].jobs).Should(Equal(unprocessedJobsList))
+			Expect(c.mockTrackedUsersReporter.reportCalls).To(HaveLen(1))
+			Expect(c.mockTrackedUsersReporter.reportCalls[0].reportedReports).Should(Equal(trackerUsersReports))
+		})
+	})
+})
+
 var _ = Describe("Processor", Ordered, func() {
 	initProcessor()
 
@@ -1474,6 +1829,7 @@ var _ = Describe("Processor", Ordered, func() {
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
+				trackedusers.NewNoopDataCollector(),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1504,6 +1860,7 @@ var _ = Describe("Processor", Ordered, func() {
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
+				trackedusers.NewNoopDataCollector(),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -1539,6 +1896,7 @@ var _ = Describe("Processor", Ordered, func() {
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
+				trackedusers.NewNoopDataCollector(),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -2641,6 +2999,7 @@ var _ = Describe("Processor", Ordered, func() {
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
+				trackedusers.NewNoopDataCollector(),
 			)
 
 			setMainLoopTimeout(processor, 1*time.Second)
@@ -2699,6 +3058,7 @@ var _ = Describe("Processor", Ordered, func() {
 				destinationdebugger.NewNoOpService(),
 				transformationdebugger.NewNoOpService(),
 				[]enricher.PipelineEnricher{},
+				trackedusers.NewNoopDataCollector(),
 			)
 			defer processor.Shutdown()
 
@@ -4621,18 +4981,18 @@ func assertDestinationTransform(
 				Expect(inputTime).To(BeTemporally("~", expected, time.Second))
 			}
 
-			parseTimestamp := func(timestamp string) time.Time {
+			parseTimestamp := func(timestamp string, defaultTimeStamp time.Time) time.Time {
 				parsed, ok := time.Parse(misc.RFC3339Milli, timestamp)
 				if ok != nil {
-					return time.Now()
+					return defaultTimeStamp
 				} else {
 					return parsed
 				}
 			}
 
-			receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt)
-			sentAt := parseTimestamp(messages[messageID].expectedSentAt)
-			originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp)
+			receivedAt := parseTimestamp(messages[messageID].expectedReceivedAt, time.Now())
+			sentAt := parseTimestamp(messages[messageID].expectedSentAt, receivedAt)
+			originalTimestamp := parseTimestamp(messages[messageID].expectedOriginalTimestamp, receivedAt)
 
 			expectTimestamp(event.Message["receivedAt"].(string), receivedAt)
 			expectTimestamp(event.Message["sentAt"].(string), sentAt)
@@ -4706,6 +5066,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
+		trackedusers.NewNoopDataCollector(),
 	)
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
@@ -4997,6 +5358,109 @@ var _ = Describe("TestConfigFilter", func() {
 		})
 	})
 })
+
+func Test_GetTimestampFromEvent(t *testing.T) {
+	input := []struct {
+		event             transformer.TransformerEvent
+		timestamp         time.Time
+		expectedTimeStamp time.Time
+	}{
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			timestamp:         time.Now(),
+			expectedTimeStamp: time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			timestamp:         time.Now(),
+			expectedTimeStamp: time.Now(),
+		},
+	}
+
+	for _, in := range input {
+		t.Run("GetTimestampFromEvent", func(t *testing.T) {
+			got := getTimestampFromEvent(in.event.Message, "timestamp", in.timestamp)
+			require.WithinDuration(t, in.expectedTimeStamp, got, 200*time.Millisecond, "expected timestamp %v, got %v", in.expectedTimeStamp, got)
+		})
+	}
+}
+
+func Test_EnhanceWithTimeFields(t *testing.T) {
+	input := []struct {
+		event                     transformer.TransformerEvent
+		singularEvent             types.SingularEventT
+		recievedAt                time.Time
+		expectedSentAt            string
+		expectedTimeStamp         string
+		expectedOriginalTimestamp string
+	}{
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			singularEvent: types.SingularEventT{
+				"originalTimestamp": "2021-06-09T09:00:00.000Z",
+				"sentAt":            "2021-06-09T09:00:00.000Z",
+			},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{
+					"timestamp": "2021-06-09T09:00:00.000Z",
+				},
+			},
+			singularEvent:             types.SingularEventT{},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			singularEvent:             types.SingularEventT{},
+			recievedAt:                time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:00:00.000Z",
+			expectedTimeStamp:         "2021-06-09T09:00:00.000Z",
+			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
+		},
+		{
+			event: transformer.TransformerEvent{
+				Message: types.SingularEventT{},
+			},
+			singularEvent: types.SingularEventT{
+				"originalTimestamp": "2021-06-09T09:30:00.000Z",
+				"sentAt":            "2021-06-09T09:15:00.000Z",
+			},
+			recievedAt:                time.Date(2021, 6, 9, 9, 45, 0, 0, time.UTC),
+			expectedSentAt:            "2021-06-09T09:15:00.000Z",
+			expectedTimeStamp:         "2021-06-09T10:00:00.000Z", // timestamp = receivedAt - (sentAt - originalTimestamp)
+			expectedOriginalTimestamp: "2021-06-09T09:30:00.000Z",
+		},
+	}
+
+	for _, in := range input {
+		t.Run("EnhanceWithTimeFields", func(t *testing.T) {
+			enhanceWithTimeFields(&in.event, in.singularEvent, in.recievedAt)
+			require.Equal(t, in.expectedSentAt, in.event.Message["sentAt"])
+			require.Equal(t, in.expectedTimeStamp, in.event.Message["timestamp"])
+			require.Equal(t, in.expectedOriginalTimestamp, in.event.Message["originalTimestamp"])
+		})
+	}
+}
 
 func TestStoreMessageMerge(t *testing.T) {
 	sm1 := &storeMessage{

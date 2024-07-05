@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
@@ -54,10 +56,11 @@ import (
 )
 
 const (
-	MetricKeyDelimiter = "!<<#>>!"
-	UserTransformation = "USER_TRANSFORMATION"
-	DestTransformation = "DEST_TRANSFORMATION"
-	EventFilter        = "EVENT_FILTER"
+	MetricKeyDelimiter    = "!<<#>>!"
+	UserTransformation    = "USER_TRANSFORMATION"
+	DestTransformation    = "DEST_TRANSFORMATION"
+	EventFilter           = "EVENT_FILTER"
+	sourceCategoryWebhook = "webhook"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -70,6 +73,11 @@ func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 
 type sourceObserver interface {
 	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
+}
+
+type trackedUsersReporter interface {
+	ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
 }
 
 // Handle is a handle to the processor module
@@ -144,6 +152,7 @@ type Handle struct {
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
+		nonEventStreamSources           map[string]bool
 	}
 
 	drainConfig struct {
@@ -156,7 +165,8 @@ type Handle struct {
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
-	sourceObservers []sourceObserver
+	sourceObservers      []sourceObserver
+	trackedUsersReporter trackedUsersReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -367,6 +377,7 @@ func (proc *Handle) Setup(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
+	trackedUsersReporter trackedusers.UsersReporter,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -401,6 +412,8 @@ func (proc *Handle) Setup(
 
 	proc.namespace = config.GetKubeNamespace()
 	proc.instanceID = misc.GetInstanceID()
+
+	proc.trackedUsersReporter = trackedUsersReporter
 
 	// Stats
 	if proc.statsFactory == nil {
@@ -805,6 +818,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
 			credentialsMap                  = make(map[string][]transformer.Credential)
+			nonEventStreamSources           = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -823,6 +837,9 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 							proc.logger.Error(err)
 						}
 					}
+				}
+				if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWebhook) {
+					nonEventStreamSources[source.ID] = true
 				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
@@ -845,6 +862,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
 		proc.config.credentialsMap = credentialsMap
+		proc.config.nonEventStreamSources = nonEventStreamSources
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -869,6 +887,12 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
 	}
 	return &source, err
+}
+
+func (proc *Handle) getNonEventStreamSources() map[string]bool {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.nonEventStreamSources
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
@@ -897,19 +921,19 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
-		timestamp = time.Now()
+		timestamp = defaultTimestamp
 	}
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
-	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp", receivedAt)
+	sentAt := getTimestampFromEvent(singularEvent, "sentAt", receivedAt)
 	var timestamp time.Time
 	var ok bool
 
@@ -2016,6 +2040,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
+		proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources()),
 	}
 }
 
@@ -2034,8 +2059,9 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
+	hasMore             bool
+	rsourcesStats       rsources.StatsCollector
+	trackedUsersReports []*trackedusers.UsersReport
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
@@ -2131,6 +2157,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
+		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2152,10 +2179,11 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
-	statusList    []*jobsdb.JobStatusT
-	destJobs      []*jobsdb.JobT
-	batchDestJobs []*jobsdb.JobT
-	droppedJobs   []*jobsdb.JobT
+	trackedUsersReports []*trackedusers.UsersReport
+	statusList          []*jobsdb.JobStatusT
+	destJobs            []*jobsdb.JobT
+	batchDestJobs       []*jobsdb.JobT
+	droppedJobs         []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
@@ -2356,6 +2384,11 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
+			}
+
+			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing tracked users: %w", err)
 			}
 
 			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())

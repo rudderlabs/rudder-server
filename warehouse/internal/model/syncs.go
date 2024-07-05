@@ -61,3 +61,12 @@ type RetryFailedBatchesRequest struct {
 	SourceID      string
 	Status        string
 }
+
+type FirstAbortedUploadResponse struct {
+	ID            int64
+	SourceID      string
+	DestinationID string
+	CreatedAt     time.Time
+	FirstEventAt  time.Time
+	LastEventAt   time.Time
+}

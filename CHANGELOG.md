@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.1](https://github.com/rudderlabs/rudder-server/compare/v1.28.0...v1.28.1) (2024-06-21)
+
+
+### Bug Fixes
+
+* memory leak for clickhouse during loading ([#4829](https://github.com/rudderlabs/rudder-server/issues/4829)) ([7772638](https://github.com/rudderlabs/rudder-server/commit/77726383c8c218af0f9a3de68d19ede7cab8506e))
+
 ## [1.28.0](https://github.com/rudderlabs/rudder-server/compare/v1.27.0...v1.28.0) (2024-06-19)
 
 
