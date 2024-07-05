@@ -34,9 +34,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -55,7 +55,7 @@ func TestKafkaBatching(t *testing.T) {
 		kafkaContainer       *kafka.Resource
 		postgresContainer    *postgres.Resource
 		etcdContainer        *thEtcd.Resource
-		transformerContainer *destination.TransformerResource
+		transformerContainer *transformertest.Resource
 
 		serverInstanceID    = "1"
 		workspaceNamespace  = "test-workspace-namespace"
@@ -80,7 +80,7 @@ func TestKafkaBatching(t *testing.T) {
 		return err
 	})
 	group.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		return err
 	})
 	require.NoError(t, group.Wait())
@@ -173,7 +173,7 @@ func TestKafkaBatching(t *testing.T) {
 			"RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG=false",
 			"RUDDER_TMPDIR="+rudderTmpDir,
 			"DEPLOYMENT_TYPE="+string(deployment.MultiTenantType),
-			"DEST_TRANSFORM_URL="+transformerContainer.TransformURL,
+			"DEST_TRANSFORM_URL="+transformerContainer.TransformerURL,
 			"HOSTED_SERVICE_SECRET="+hostedServiceSecret,
 			"WORKSPACE_NAMESPACE="+workspaceNamespace,
 			"RSERVER_WAREHOUSE_MODE=off",

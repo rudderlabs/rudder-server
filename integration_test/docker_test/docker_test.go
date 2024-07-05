@@ -37,9 +37,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -60,7 +60,7 @@ var (
 	kafkaContainer               *kafka.Resource
 	redisContainer               *redis.Resource
 	postgresContainer            *pgdocker.Resource
-	transformerContainer         *destination.TransformerResource
+	transformerContainer         *transformertest.Resource
 	minioContainer               *minio.Resource
 )
 
@@ -306,7 +306,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return nil
 	})
 	containersGroup.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -321,7 +321,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
 	httpPortInt, err := kithelper.GetFreePort()

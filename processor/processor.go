@@ -146,7 +146,6 @@ type Handle struct {
 		transformTimesPQLength          int
 		captureEventNameStats           config.ValueLoader[bool]
 		transformerURL                  string
-		pollInterval                    time.Duration
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
@@ -784,7 +783,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	proc.config.pollInterval = config.GetDurationVar(5, time.Second, "Processor.pollInterval", "Processor.pollIntervalInS")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 

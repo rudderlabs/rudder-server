@@ -26,11 +26,11 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -130,7 +130,7 @@ func ArchivalScenario(
 
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err, "failed to setup minio container")
-	transformerContainer, err := destination.SetupTransformer(pool, t)
+	transformerContainer, err := transformertest.Setup(pool, t)
 	require.NoError(t, err, "failed to setup transformer container")
 
 	configMap := dummyConfig(numWorkspace, numSourcesPerWorkspace, minioResource)
@@ -150,7 +150,7 @@ func ArchivalScenario(
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
