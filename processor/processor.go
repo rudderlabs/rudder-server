@@ -609,7 +609,7 @@ func (proc *Handle) Setup(
 		})
 	}
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_time", stats.TimerType, stats.Tags{
+		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_seconds", stats.TimerType, stats.Tags{
 			"partition": partition,
 		})
 	}

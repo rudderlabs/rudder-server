@@ -111,10 +111,16 @@ var (
 		"tracked_users_hll_bytes": {
 			float64(10 * bytesize.B),  // for hll containing single id = 8B
 			float64(100 * bytesize.B), // for hll containing 10 ids = 80B
+			float64(400 * bytesize.B), // for hll containing 50 ids = 400B
 			float64(1 * bytesize.KB),  // for hll containing 100 ids = 800B
 			float64(3 * bytesize.KB),  // for hll containing 300 ids = 2400B
 			float64(6 * bytesize.KB),  // for hll containing 700 ids = 5600B
 			float64(10 * bytesize.KB), // max size for hll with log2m=14, regWidth=5 = 10KB
+			float64(41 * bytesize.KB), // max size for hll with log2m=16, regWidth=5 = 40KB
+		},
+		"processor_tracked_users_report_gen_seconds": {
+			// 1microsecond, 2.5microsecond, 5microsecond, 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
+			0.00001, 0.00025, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 		},
 	}
 )
