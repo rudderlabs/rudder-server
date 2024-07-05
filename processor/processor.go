@@ -1595,7 +1595,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Event count for performance stat monitoring
 	totalEvents := 0
 
-	proc.logger.Infof("[Processor] Total jobs picked up: %d, partition: %s", len(jobList), partition)
+	proc.logger.Infof("[TRACKEDUSERS] Total jobs picked up: %d, partition: %s", len(jobList), partition)
 
 	marshalStart := time.Now()
 	dedupKeys := make(map[string]struct{})
@@ -2030,7 +2030,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	trackedUsersReportGenStart := time.Now()
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources())
 	if len(trackedUsersReports) == 0 {
-		proc.logger.Errorf("[Processor] Tracked users reports generated: %d, joblist: %v", len(trackedUsersReports), jobList[0])
+		proc.logger.Errorf("[TRACKEDUSERS] Tracked users reports generated: %d, joblist: %v", len(trackedUsersReports), jobList[0])
 	}
 	proc.stats.trackedUsersReportGeneration(partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
@@ -2401,6 +2401,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				}
 			}
 
+			proc.logger.Infof("[TRACKEDUSERS] storing reports: %d", len(in.trackedUsersReports))
 			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
 			if err != nil {
 				return fmt.Errorf("storing tracked users: %w", err)
