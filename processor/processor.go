@@ -1595,7 +1595,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	// Event count for performance stat monitoring
 	totalEvents := 0
 
-	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
+	proc.logger.Infof("[Processor] Total jobs picked up: %d, partition: %s", len(jobList), partition)
 
 	marshalStart := time.Now()
 	dedupKeys := make(map[string]struct{})
@@ -2029,6 +2029,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	}
 	trackedUsersReportGenStart := time.Now()
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources())
+	if len(trackedUsersReports) == 0 {
+		proc.logger.Errorf("[Processor] Tracked users reports generated: %d, joblist: %v", len(trackedUsersReports), jobList[0])
+	}
 	proc.stats.trackedUsersReportGeneration(partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
 	processTime := time.Since(start)

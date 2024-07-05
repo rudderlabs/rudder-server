@@ -101,26 +101,26 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 	workspaceSourceUserIdTypeMap := make(map[string]map[string]map[string]*hll.Hll)
 	for _, job := range jobs {
 		if job.WorkspaceId == "" {
-			u.log.Warn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
+			u.log.Infon("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
 			continue
 		}
 
 		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 		if sourceID == "" {
-			u.log.Warn("source_id not found in job parameters", obskit.WorkspaceID(job.WorkspaceId),
+			u.log.Infon("source_id not found in job parameters", obskit.WorkspaceID(job.WorkspaceId),
 				logger.NewIntField("jobId", job.JobID))
 			continue
 		}
 
 		if sourceIDtoFilter != nil && sourceIDtoFilter[sourceID] {
-			u.log.Debug("source to filter", obskit.SourceID(sourceID))
+			u.log.Infon("source to filter", obskit.SourceID(sourceID))
 			continue
 		}
 		userID := gjson.GetBytes(job.EventPayload, "batch.0.userId").String()
 		anonymousID := gjson.GetBytes(job.EventPayload, "batch.0.anonymousId").String()
 
 		if userID == "" && anonymousID == "" {
-			u.log.Warn("both userID and anonymousID not found in job event payload", obskit.WorkspaceID(job.WorkspaceId),
+			u.log.Infon("both userID and anonymousID not found in job event payload", obskit.WorkspaceID(job.WorkspaceId),
 				logger.NewIntField("jobId", job.JobID))
 			continue
 		}
@@ -144,7 +144,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 	}
 
 	if len(workspaceSourceUserIdTypeMap) == 0 {
-		u.log.Warn("no data to collect", obskit.WorkspaceID(jobs[0].WorkspaceId))
+		u.log.Infon("no data to collect", obskit.WorkspaceID(jobs[0].WorkspaceId))
 		return nil
 	}
 
@@ -165,6 +165,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 
 func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersReport, tx *txn.Tx) error {
 	if len(reports) == 0 {
+		u.log.Info("no reports to track")
 		return nil
 	}
 	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(trackUsersTable,
