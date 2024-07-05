@@ -144,7 +144,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 	}
 
 	if len(workspaceSourceUserIdTypeMap) == 0 {
-		u.log.Infon("[TRACKEDUSERS] no data to collect", obskit.WorkspaceID(jobs[0].WorkspaceId))
+		u.log.Infon("[TRACKEDUSERS] no data to collect in", obskit.WorkspaceID(jobs[0].WorkspaceId))
 		return nil
 	}
 
