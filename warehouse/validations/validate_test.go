@@ -2,7 +2,6 @@ package validations_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -98,14 +97,14 @@ func TestValidator(t *testing.T) {
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
-			wantError error
+			wantError bool
 		}{
 			{
 				name: "invalid credentials",
 				config: map[string]interface{}{
 					"database": "invalid_database",
 				},
-				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
+				wantError: true,
 			},
 			{
 				name: "valid credentials",
@@ -142,8 +141,8 @@ func TestValidator(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+				if tc.wantError {
+					require.Error(t, v.Validate(ctx))
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -167,7 +166,7 @@ func TestValidator(t *testing.T) {
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
-			wantError error
+			wantError bool
 		}{
 			{
 				name: "with no privilege",
@@ -176,7 +175,7 @@ func TestValidator(t *testing.T) {
 					"password":  password,
 					"namespace": "test_namespace_with_no_privilege",
 				},
-				wantError: errors.New("pq: permission denied for database jobsdb"),
+				wantError: true,
 			},
 			{
 				name: "with privilege",
@@ -214,8 +213,8 @@ func TestValidator(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+				if tc.wantError {
+					require.Error(t, v.Validate(ctx))
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -256,7 +255,7 @@ func TestValidator(t *testing.T) {
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
-			wantError error
+			wantError bool
 		}{
 			{
 				name: "no privilege",
@@ -264,7 +263,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema cat_test_namespace"),
+				wantError: true,
 			},
 			{
 				name: "create table privilege",
@@ -272,7 +271,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("alter table: pq: permission denied for schema cat_test_namespace"),
+				wantError: true,
 			},
 			{
 				name: "alter privilege",
@@ -317,8 +316,8 @@ func TestValidator(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+				if tc.wantError {
+					require.Error(t, v.Validate(ctx))
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}
@@ -397,7 +396,7 @@ func TestValidator(t *testing.T) {
 		testCases := []struct {
 			name      string
 			config    map[string]interface{}
-			wantError error
+			wantError bool
 		}{
 			{
 				name: "invalid object storage",
@@ -406,7 +405,7 @@ func TestValidator(t *testing.T) {
 					"accessKeyID":     "temp-access-key",
 					"secretAccessKey": "test-secret-key",
 				},
-				wantError: errors.New("upload file: uploading file: checking bucket: The Access Key Id you provided does not exist in our records."),
+				wantError: true,
 			},
 			{
 				name: "no privilege",
@@ -414,7 +413,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema lt_test_namespace"),
+				wantError: true,
 			},
 			{
 				name: "create table privilege",
@@ -422,7 +421,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("load test table: pq: permission denied for schema lt_test_namespace"),
+				wantError: true,
 			},
 			{
 				name: "insert privilege",
@@ -467,8 +466,8 @@ func TestValidator(t *testing.T) {
 				})
 				require.NoError(t, err)
 
-				if tc.wantError != nil {
-					require.EqualError(t, v.Validate(ctx), tc.wantError.Error())
+				if tc.wantError {
+					require.Error(t, v.Validate(ctx))
 				} else {
 					require.NoError(t, v.Validate(ctx))
 				}

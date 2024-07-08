@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -220,25 +223,19 @@ func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
 
 	dsn.RawQuery = values.Encode()
 
-	var (
-		err error
-		db  *sql.DB
-	)
-
 	if cred.tunnelInfo != nil {
-
-		db, err = tunnelling.Connect(dsn.String(), cred.tunnelInfo.Config)
+		db, err := tunnelling.Connect(dsn.String(), cred.tunnelInfo.Config)
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
 		return pg.getNewMiddleWare(db), nil
 	}
 
-	if db, err = sql.Open("postgres", dsn.String()); err != nil {
-		return nil, fmt.Errorf("opening connection to postgres: %w", err)
+	pgxConf, err := pgx.ParseConfig(dsn.String())
+	if err != nil {
+		return nil, fmt.Errorf("could not parse pgx config: %w", err)
 	}
-
-	return pg.getNewMiddleWare(db), nil
+	return pg.getNewMiddleWare(stdlib.OpenDB(*pgxConf)), nil
 }
 
 func (pg *Postgres) getConnectionCredentials() credentials {
