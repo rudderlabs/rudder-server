@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	txn "github.com/rudderlabs/rudder-server/utils/tx"
@@ -53,9 +55,10 @@ type UniqueUsersReporter struct {
 	hllSettings *hll.Settings
 	instanceID  string
 	now         func() time.Time
+	stats       stats.Stats
 }
 
-func NewUniqueUsersReporter(log logger.Logger, conf *config.Config) (*UniqueUsersReporter, error) {
+func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.Stats) (*UniqueUsersReporter, error) {
 	return &UniqueUsersReporter{
 		log: log,
 		hllSettings: &hll.Settings{
@@ -65,6 +68,7 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config) (*UniqueUser
 			SparseEnabled:     true,
 		},
 		instanceID: config.GetString("INSTANCE_ID", "1"),
+		stats:      stats,
 		now: func() time.Time {
 			return time.Now()
 		},
@@ -178,6 +182,7 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 	defer func() { _ = stmt.Close() }()
 
 	for _, report := range reports {
+		u.recordHllSizeStats(report)
 		userIDHllString, err := u.hllToString(report.UserIDHll)
 		if err != nil {
 			return fmt.Errorf("converting user id hll to string: %w", err)
@@ -238,4 +243,28 @@ func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll,
 	}
 	idTypeHllMap[identifierType].AddRaw(murmur3.Sum64WithSeed([]byte(identifier), murmurSeed))
 	return idTypeHllMap
+}
+
+func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
+	if report.UserIDHll != nil {
+		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
+			"workspace_id": report.WorkspaceID,
+			"source_id":    report.SourceID,
+			"identifier":   idTypeUserID,
+		}).Observe(float64(len(report.UserIDHll.ToBytes())))
+	}
+	if report.AnonymousIDHll != nil {
+		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
+			"workspace_id": report.WorkspaceID,
+			"source_id":    report.SourceID,
+			"identifier":   idTypeAnonymousID,
+		}).Observe(float64(len(report.AnonymousIDHll.ToBytes())))
+	}
+	if report.IdentifiedAnonymousIDHll != nil {
+		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
+			"workspace_id": report.WorkspaceID,
+			"source_id":    report.SourceID,
+			"identifier":   idTypeIdentifiedAnonymousID,
+		}).Observe(float64(len(report.IdentifiedAnonymousIDHll.ToBytes())))
+	}
 }
