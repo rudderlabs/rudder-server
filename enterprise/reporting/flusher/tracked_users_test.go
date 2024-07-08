@@ -162,7 +162,8 @@ func TestTrackedUsersFlush(t *testing.T) {
 
 	// validate 5 reports were added
 	var count int
-	_ = pgContainer.DB.QueryRow("SELECT COUNT(*) FROM tracked_users_reports").Scan(&count)
+	err = pgContainer.DB.QueryRow("SELECT COUNT(*) FROM tracked_users_reports").Scan(&count)
+	assert.NoError(t, err)
 	assert.Equal(t, 5, count)
 
 	// setup test webhook with reporting url

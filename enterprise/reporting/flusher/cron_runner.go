@@ -2,7 +2,6 @@ package flusher
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.uber.org/atomic"
@@ -12,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 )
 
 type Runner interface {
@@ -37,7 +35,6 @@ type CronRunner struct {
 	table         string
 	module        string
 	flusher       *Flusher
-	aggregator    aggregator.Aggregator
 	sleepInterval config.ValueLoader[time.Duration]
 
 	flushTimer   stats.Measurement
@@ -46,7 +43,7 @@ type CronRunner struct {
 	started atomic.Bool
 }
 
-func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, conf *config.Config, flusher *Flusher, aggregator aggregator.Aggregator, table, module string) *CronRunner {
+func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, conf *config.Config, flusher *Flusher, table, module string) *CronRunner {
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	instanceId := conf.GetString("INSTANCE_ID", "1")
 
@@ -61,7 +58,6 @@ func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, co
 		log:           log,
 		instanceId:    instanceId,
 		flusher:       flusher,
-		aggregator:    aggregator,
 		sleepInterval: sleepInterval,
 		table:         table,
 		module:        module,
@@ -89,12 +85,7 @@ func (c *CronRunner) Run() {
 	c.started.Store(true)
 
 	if err := c.g.Wait(); err != nil {
-		c.log.Errorn("Error in flusher", obskit.Error(err))
-
-		// TODO: Should we panic here ?
-		if !errors.Is(err, context.Canceled) {
-			panic(err)
-		}
+		c.log.Errorn("error in cron-runner", obskit.Error(err))
 	}
 }
 
@@ -109,11 +100,11 @@ func (c *CronRunner) startFlushing(ctx context.Context) error {
 		default:
 			s := time.Now()
 			if err := c.flusher.Flush(ctx); err != nil {
-				c.log.Errorn("error in flusher flush", obskit.Error(err))
+				c.log.Errorn("error in Flush", obskit.Error(err))
 			}
 			c.flushTimer.Since(s)
 
-			if !c.flusher.FlushAggressively(ctx) {
+			if !c.flusher.ShouldFlushAggressively(ctx) {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -126,8 +117,12 @@ func (c *CronRunner) startFlushing(ctx context.Context) error {
 
 func (c *CronRunner) Stop() {
 	c.cancel()
-	_ = c.g.Wait()
-	err := c.flusher.CleanUp()
+	err := c.g.Wait()
+	if err != nil {
+		c.log.Errorn("error in stopping cron-runner", obskit.Error(err))
+	}
+
+	err = c.flusher.CleanUp()
 	if err != nil {
 		c.log.Errorn("error in flusher cleanup", obskit.Error(err))
 	}

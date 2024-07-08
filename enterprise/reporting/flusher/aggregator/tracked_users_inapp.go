@@ -14,6 +14,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
+const tableName = `tracked_users_reports`
+
 type TrackedUsersInAppAggregator struct {
 	db    *sql.DB
 	stats stats.Stats
@@ -22,11 +24,11 @@ type TrackedUsersInAppAggregator struct {
 	aggReportsCounter stats.Measurement
 }
 
-func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Config, table, module string) *TrackedUsersInAppAggregator {
+func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Config, module string) *TrackedUsersInAppAggregator {
 	t := TrackedUsersInAppAggregator{db: db, stats: s}
 	tags := stats.Tags{
 		"instance": conf.GetString("INSTANCE_ID", "1"),
-		"table":    table,
+		"table":    tableName,
 		"module":   module,
 	}
 	t.reportsCounter = t.stats.NewTaggedStat("reporting_flusher_get_reports_count", stats.HistogramType, tags)
@@ -35,12 +37,11 @@ func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Conf
 }
 
 func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, err error) {
-	selectColumns := "reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll"
-	query := fmt.Sprintf(`SELECT %s FROM tracked_users_reports WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`, selectColumns)
+	query := `SELECT reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll FROM ` + tableName + `  WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
 
 	rows, err := a.db.Query(query, start, end)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot read reports %w", err)
 	}
 	defer rows.Close()
 
@@ -51,19 +52,19 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		r := TrackedUsersReport{}
 		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.InstanceID, &r.UserIDHLLHex, &r.AnonymousIDHLLHex, &r.IdentifiedAnonymousIDHLLHex)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot scan row %w", err)
 		}
 		r.UserIDHLL, err = a.decodeHLL(r.UserIDHLLHex)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot decode hll %w", err)
 		}
 		r.AnonymousIDHLL, err = a.decodeHLL(r.AnonymousIDHLLHex)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot decode hll %w", err)
 		}
 		r.IdentifiedAnonymousIDHLL, err = a.decodeHLL(r.IdentifiedAnonymousIDHLLHex)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("cannot decode hll %w", err)
 		}
 
 		k := fmt.Sprintf("%s-%s-%s", r.WorkspaceID, r.SourceID, r.InstanceID)
@@ -80,12 +81,12 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("rows errors %w", err)
 	}
 
 	jsonReports, err = marshalReports(aggReportsMap)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error marshalling reports %w", err)
 	}
 
 	a.reportsCounter.Observe(float64(total))

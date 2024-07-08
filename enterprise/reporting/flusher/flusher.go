@@ -139,31 +139,34 @@ func (f *Flusher) getStart(ctx context.Context) (time.Time, error) {
 	query := fmt.Sprintf("SELECT MIN(reported_at) FROM %s", f.table)
 	err := f.db.QueryRowContext(ctx, query).Scan(&start)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, fmt.Errorf("error getting min reported_at %w", err)
 	}
 
 	return start.Time, nil
 }
 
-func (f *Flusher) getLag(ctx context.Context) time.Duration {
+func (f *Flusher) getLag(ctx context.Context) (time.Duration, error) {
 	start, err := f.getStart(ctx)
 	if err != nil {
-		f.log.Errorn("Error getting start time", obskit.Error(err))
+		return 0, fmt.Errorf("error getting start %w", err)
 	}
 
 	currentUTC := time.Now().UTC()
 	if start.IsZero() {
-		return 0
+		return 0, nil
 	} else {
-		return currentUTC.Sub(start)
+		return currentUTC.Sub(start), nil
 	}
 }
 
-func (f *Flusher) FlushAggressively(ctx context.Context) bool {
+func (f *Flusher) ShouldFlushAggressively(ctx context.Context) bool {
 	if !f.aggressiveFlushEnabled.Load() {
 		return false
 	}
-	lag := f.getLag(ctx)
+	lag, err := f.getLag(ctx)
+	if err != nil {
+		return false
+	}
 	reportingLagInMins := lag.Minutes()
 	return reportingLagInMins > f.lagThresholdForAggresiveFlushInMins.Load().Minutes()
 }
@@ -173,17 +176,20 @@ func (f *Flusher) Flush(ctx context.Context) error {
 	currentUTC := time.Now().UTC()
 
 	// Emit the lag metric
-	lag := f.getLag(ctx)
+	lag, err := f.getLag(ctx)
+	if err != nil {
+		return err
+	}
 	f.flushLag.Gauge(lag.Seconds())
 
 	// 1. Get the time range to flush
 	s := time.Now()
-	start, end, valid, err := f.getRange(ctx, currentUTC)
+	start, end, isFullFlushWindow, err := f.getRange(ctx, currentUTC)
 	if err != nil {
 		return err
 	}
 
-	if !valid {
+	if !isFullFlushWindow {
 		return nil
 	}
 	f.minReportedAtQueryTimer.Since(s)
@@ -217,10 +223,10 @@ func (f *Flusher) Flush(ctx context.Context) error {
 // Since we have hourly/daily/monthly aggregates on Reporting Service, we want the window to be within same hour
 // Don't consider most recent data where there are inserts happening
 // Always try to consider full window of flush interval or till current hour
-func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, end time.Time, valid bool, err error) {
+func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, end time.Time, isFullFlushWindow bool, err error) {
 	start, err = f.getStart(ctx)
 	if err != nil {
-		return time.Time{}, time.Time{}, false, err
+		return time.Time{}, time.Time{}, false, fmt.Errorf("error getting start in getRange %w", err)
 	}
 
 	if start.IsZero() {
@@ -255,7 +261,7 @@ func (f *Flusher) aggregate(ctx context.Context, start, end time.Time) ([]json.R
 }
 
 func (f *Flusher) getConcurrency(ctx context.Context) int {
-	if f.FlushAggressively(ctx) {
+	if f.ShouldFlushAggressively(ctx) {
 		return f.maxConcurrentRequests.Load()
 	}
 	return f.minConcurrentRequests.Load()
@@ -320,7 +326,7 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return err
+			return fmt.Errorf("error response body from reporting %w", err)
 		}
 
 		if !f.isHTTPRequestSuccessful(resp.StatusCode) {
