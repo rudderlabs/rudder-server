@@ -27,10 +27,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -177,7 +177,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	t.Logf("Starting postgres container")
 	postgresContainer, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithShmSize(256*bytesize.MB))
 	require.NoError(t, err, "it should be able to start postgres container without an error")
-	transformerContainer, err := destination.SetupTransformer(pool, t)
+	transformerContainer, err := transformertest.Setup(pool, t)
 	require.NoError(t, err)
 	t.Logf("Starting the server")
 	webhook := m.newWebhook(t)
@@ -212,7 +212,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
 
-	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)

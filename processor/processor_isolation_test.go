@@ -27,10 +27,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -179,7 +179,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	defer cancel()
 	var (
 		postgresContainer    *postgres.Resource
-		transformerContainer *destination.TransformerResource
+		transformerContainer *transformertest.Resource
 		gatewayPort          string
 	)
 	pool, err := dockertest.NewPool("")
@@ -190,7 +190,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		return err
 	})
 	require.NoError(t, containersGroup.Wait())
@@ -216,7 +216,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)

@@ -1,0 +1,16 @@
+{
+    "name": "shopify",
+    "description": "Unsupported event type",
+    "input": {
+        "request": {
+            "query": "signature=rudderstack&topic=random_event"
+        }
+    },
+    "output": {
+        "response": {
+            "status": 200,
+            "contentType": "text/plain",
+            "body": "OK"     
+        }
+    }
+}
