@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
@@ -41,18 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-)
-
-var (
-	defaultHistogramBuckets = []float64{
-		0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
-		300 /* 5 mins */, 600 /* 10 mins */, 1800, /* 30 mins */
-	}
-	defaultWarehouseHistogramBuckets = []float64{
-		0.1, 0.25, 0.5, 1, 2.5, 5, 10, 60,
-		300 /* 5 mins */, 600 /* 10 mins */, 1800 /* 30 mins */, 10800 /* 3 hours */, 36000, /* 10 hours */
-		86400 /* 1 day */, 259200 /* 3 days */, 604800 /* 7 days */, 1209600, /* 2 weeks */
-	}
 )
 
 // ReleaseInfo holds the release information
@@ -122,6 +109,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	}
 	if r.canStartWarehouse() {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultWarehouseHistogramBuckets))
+		for histogramName, buckets := range customBucketsWarehouse {
+			statsOptions = append(statsOptions, stats.WithHistogramBuckets(histogramName, buckets))
+		}
 	} else {
 		statsOptions = append(statsOptions, stats.WithDefaultHistogramBuckets(defaultHistogramBuckets))
 		for histogramName, buckets := range customBucketsServer {
@@ -175,11 +165,10 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{
-			"version":            r.releaseInfo.Version,
-			"commit":             r.releaseInfo.Commit,
-			"buildDate":          r.releaseInfo.BuildDate,
-			"builtBy":            r.releaseInfo.BuiltBy,
-			"TransformerVersion": transformer.GetVersion(),
+			"version":   r.releaseInfo.Version,
+			"commit":    r.releaseInfo.Commit,
+			"buildDate": r.releaseInfo.BuildDate,
+			"builtBy":   r.releaseInfo.BuiltBy,
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
@@ -330,12 +319,11 @@ func runAllInit() {
 
 func (r *Runner) versionInfo() map[string]interface{} {
 	return map[string]interface{}{
-		"Version":            r.releaseInfo.Version,
-		"Commit":             r.releaseInfo.Commit,
-		"BuildDate":          r.releaseInfo.BuildDate,
-		"BuiltBy":            r.releaseInfo.BuiltBy,
-		"TransformerVersion": transformer.GetVersion(),
-		"Features":           info.ServerComponent.Features,
+		"Version":   r.releaseInfo.Version,
+		"Commit":    r.releaseInfo.Commit,
+		"BuildDate": r.releaseInfo.BuildDate,
+		"BuiltBy":   r.releaseInfo.BuiltBy,
+		"Features":  info.ServerComponent.Features,
 	}
 }
 

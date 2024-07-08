@@ -1567,6 +1567,78 @@ func TestGRPC(t *testing.T) {
 			})
 		})
 
+		t.Run("GetFirstAbortedUploadsInContinuousAborts", func(t *testing.T) {
+			now := time.Now().UTC()
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return time.Now().UTC()
+			}))
+			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				return time.Now().UTC()
+			}))
+
+			uploads := []model.Upload{
+				{
+					WorkspaceID:     workspaceID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					DestinationType: destinationType,
+					Status:          model.Aborted,
+					Namespace:       "namespace",
+					SourceTaskRunID: "task_run_id",
+					LastEventAt:     now.Add(-7 * time.Hour),
+					FirstEventAt:    now.Add(-8 * time.Hour),
+				},
+				{
+					WorkspaceID:     workspaceID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					DestinationType: destinationType,
+					Status:          model.Aborted,
+					Namespace:       "namespace",
+					SourceTaskRunID: "task_run_id",
+					LastEventAt:     now.Add(-3 * time.Hour),
+					FirstEventAt:    now.Add(-4 * time.Hour),
+				},
+			}
+
+			for i := range uploads {
+				stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+				require.NoError(t, err)
+
+				id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
+					ID:              stagingID,
+					SourceID:        uploads[i].SourceID,
+					DestinationID:   uploads[i].DestinationID,
+					SourceTaskRunID: uploads[i].SourceTaskRunID,
+					FirstEventAt:    uploads[i].FirstEventAt,
+					LastEventAt:     uploads[i].LastEventAt,
+					Status:          uploads[i].Status,
+					WorkspaceID:     uploads[i].WorkspaceID,
+				}})
+				require.NoError(t, err)
+
+				uploads[i].ID = id
+				uploads[i].Error = []byte("{}")
+				uploads[i].UploadSchema = model.Schema{}
+				uploads[i].LoadFileType = "csv"
+				uploads[i].StagingFileStartID = int64(i + 1)
+				uploads[i].StagingFileEndID = int64(i + 1)
+			}
+
+			t.Run("success", func(t *testing.T) {
+				res, err := grpcClient.GetFirstAbortedUploadInContinuousAbortsByDestination(ctx, &proto.FirstAbortedUploadInContinuousAbortsByDestinationRequest{
+					WorkspaceId: workspaceID,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, res)
+				require.Len(t, res.GetUploads(), 1)
+				require.Equal(t, res.GetUploads()[0].SourceId, sourceID)
+				require.Equal(t, res.GetUploads()[0].DestinationId, destinationID)
+				require.Equal(t, res.GetUploads()[0].LastEventAt.AsTime().Unix(), now.Add(-7*time.Hour).Unix())
+				require.Equal(t, res.GetUploads()[0].FirstEventAt.AsTime().Unix(), now.Add(-8*time.Hour).Unix())
+			})
+		})
+
 		server.GracefulStop()
 
 		setupCh := make(chan struct{})

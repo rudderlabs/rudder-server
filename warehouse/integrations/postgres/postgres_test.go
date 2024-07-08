@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/golang/mock/gomock"
@@ -21,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -45,6 +48,7 @@ func TestIntegration(t *testing.T) {
 	c := testcompose.New(t, compose.FilePaths([]string{
 		"testdata/docker-compose.postgres.yml",
 		"testdata/docker-compose.ssh-server.yml",
+		"testdata/docker-compose.replication.yml",
 		"../testdata/docker-compose.jobsdb.yml",
 		"../testdata/docker-compose.minio.yml",
 	}))
@@ -58,6 +62,8 @@ func TestIntegration(t *testing.T) {
 	minioPort := c.Port("minio", 9000)
 	postgresPort := c.Port("postgres", 5432)
 	sshPort := c.Port("ssh-server", 2222)
+	primaryDBPort := c.Port("primary", 5432)
+	standbyDBPort := c.Port("standby", 5432)
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -963,6 +969,283 @@ func TestIntegration(t *testing.T) {
 				),
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
+		})
+	})
+
+	t.Run("Logical Replication", func(t *testing.T) {
+		const (
+			namespace   = "test_namespace"
+			sourceID    = "test_source_id"
+			destType    = "test_dest_type"
+			workspaceID = "test_workspace_id"
+		)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(primaryDBPort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   "MINIO",
+					"bucketName":       bucketName,
+					"accessKeyID":      accessKeyID,
+					"secretAccessKey":  secretAccessKey,
+					"useSSL":           false,
+					"endPoint":         minioEndpoint,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		primaryWarehouse := th.Clone(t, warehouse)
+		primaryWarehouse.Destination.Config["port"] = strconv.Itoa(primaryDBPort)
+		standByWarehouse := th.Clone(t, warehouse)
+		standByWarehouse.Destination.Config["port"] = strconv.Itoa(standbyDBPort)
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: warehouseutils.MINIO,
+			Config: map[string]any{
+				"bucketName":       bucketName,
+				"accessKeyID":      accessKeyID,
+				"secretAccessKey":  secretAccessKey,
+				"endPoint":         minioEndpoint,
+				"forcePathStyle":   true,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"region":           region,
+				"enableSSE":        false,
+				"bucketProvider":   warehouseutils.MINIO,
+			},
+		})
+		require.NoError(t, err)
+
+		primaryDSN := fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", strconv.Itoa(primaryDBPort), "rudderdb",
+		)
+		primaryDB, err := sql.Open("postgres", primaryDSN)
+		require.NoError(t, err)
+		require.NoError(t, primaryDB.Ping())
+		standByDSN := fmt.Sprintf(
+			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			"rudder", "rudder-password", "localhost", strconv.Itoa(standbyDBPort), "rudderdb",
+		)
+		standByDB, err := sql.Open("postgres", standByDSN)
+		require.NoError(t, err)
+		require.NoError(t, standByDB.Ping())
+
+		t.Run("Regular table", func(t *testing.T) {
+			ctx := context.Background()
+			tableName := "replication_table"
+			expectedCount := 14
+
+			replicationTableSchema := model.TableSchema{
+				"test_bool":     "boolean",
+				"test_datetime": "datetime",
+				"test_float":    "float",
+				"test_int":      "int",
+				"test_string":   "string",
+				"id":            "string",
+				"received_at":   "datetime",
+			}
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, replicationTableSchema, replicationTableSchema)
+
+			primaryPG := postgres.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, primaryPG.Setup(ctx, primaryWarehouse, mockUploader))
+			require.NoError(t, primaryPG.CreateSchema(ctx))
+			require.NoError(t, primaryPG.CreateTable(ctx, tableName, replicationTableSchema))
+			standByPG := postgres.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, standByPG.Setup(ctx, standByWarehouse, mockUploader))
+			require.NoError(t, standByPG.CreateSchema(ctx))
+			require.NoError(t, standByPG.CreateTable(ctx, tableName, replicationTableSchema))
+
+			// Creating publication and subscription
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION regular_publication FOR TABLE %s.%s;", namespace, tableName))
+			require.NoError(t, err)
+			_, err = standByDB.ExecContext(ctx, fmt.Sprintf("CREATE SUBSCRIPTION regular_subscription CONNECTION 'host=primary port=5432 user=%s password=%s dbname=%s' PUBLICATION regular_publication;", user, password, database))
+			require.NoError(t, err)
+
+			// Loading data should fail because of the missing primary key
+			_, err = primaryPG.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			var pgErr *pq.Error
+			require.ErrorAs(t, err, &pgErr)
+			require.EqualValues(t, pq.ErrorCode("55000"), pgErr.Code)
+
+			// Adding primary key
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, tableName))
+			require.NoError(t, err)
+
+			// Loading data should work now
+			_, err = primaryPG.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+
+			// Checking the number of rows in both primary and standby databases
+			var (
+				countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.%s;", namespace, tableName)
+				count      int
+			)
+			require.Eventually(t, func() bool {
+				err := primaryDB.QueryRowContext(ctx, countQuery).Scan(&count)
+				if err != nil {
+					t.Logf("Error while querying primary database: %v", err)
+					return false
+				}
+				if count != expectedCount {
+					t.Logf("Expected %d rows in primary database, got %d", expectedCount, count)
+					return false
+				}
+				return true
+			},
+				10*time.Second,
+				100*time.Millisecond,
+			)
+			require.Eventually(t, func() bool {
+				err := standByDB.QueryRowContext(ctx, countQuery).Scan(&count)
+				if err != nil {
+					t.Logf("Error while querying standby database: %v", err)
+					return false
+				}
+				if count != expectedCount {
+					t.Logf("Expected %d rows in standby database, got %d", expectedCount, count)
+					return false
+				}
+				return true
+			},
+				10*time.Second,
+				100*time.Millisecond,
+			)
+		})
+		t.Run("Users table", func(t *testing.T) {
+			ctx := context.Background()
+			expectedCount := 14
+
+			IdentifiesTableSchema := model.TableSchema{
+				"test_bool":     "boolean",
+				"test_datetime": "datetime",
+				"test_float":    "float",
+				"test_int":      "int",
+				"test_string":   "string",
+				"id":            "string",
+				"received_at":   "datetime",
+				"user_id":       "string",
+			}
+			usersTableSchema := model.TableSchema{
+				"test_bool":     "boolean",
+				"test_datetime": "datetime",
+				"test_float":    "float",
+				"test_int":      "int",
+				"test_string":   "string",
+				"id":            "string",
+				"received_at":   "datetime",
+			}
+
+			usersUploadOutput := whth.UploadLoadFile(t, fm, "testdata/users.csv.gz", warehouseutils.UsersTable)
+			identifiesUploadOutput := whth.UploadLoadFile(t, fm, "testdata/identifies.csv.gz", warehouseutils.IdentifiesTable)
+
+			ctrl := gomock.NewController(t)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
+			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), warehouseutils.GetLoadFilesOptions{Table: warehouseutils.UsersTable}).Return([]warehouseutils.LoadFile{{Location: usersUploadOutput.Location}}, nil).AnyTimes()
+			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), warehouseutils.GetLoadFilesOptions{Table: warehouseutils.IdentifiesTable}).Return([]warehouseutils.LoadFile{{Location: identifiesUploadOutput.Location}}, nil).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInUpload(warehouseutils.UsersTable).Return(usersTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInUpload(warehouseutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(warehouseutils.UsersTable).Return(usersTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
+			mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
+
+			primaryPG := postgres.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, primaryPG.Setup(ctx, primaryWarehouse, mockUploader))
+			require.NoError(t, primaryPG.CreateSchema(ctx))
+			require.NoError(t, primaryPG.CreateTable(ctx, warehouseutils.IdentifiesTable, IdentifiesTableSchema))
+			require.NoError(t, primaryPG.CreateTable(ctx, warehouseutils.UsersTable, usersTableSchema))
+			standByPG := postgres.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, standByPG.Setup(ctx, standByWarehouse, mockUploader))
+			require.NoError(t, standByPG.CreateSchema(ctx))
+			require.NoError(t, standByPG.CreateTable(ctx, warehouseutils.IdentifiesTable, IdentifiesTableSchema))
+			require.NoError(t, standByPG.CreateTable(ctx, warehouseutils.UsersTable, usersTableSchema))
+
+			// Creating publication and subscription
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION users_publication FOR TABLE %[1]s.%[2]s, %[1]s.%[3]s;", namespace, warehouseutils.IdentifiesTable, warehouseutils.UsersTable))
+			require.NoError(t, err)
+			_, err = standByDB.ExecContext(ctx, fmt.Sprintf("CREATE SUBSCRIPTION users_subscription CONNECTION 'host=primary port=5432 user=%s password=%s dbname=%s' PUBLICATION users_publication;", user, password, database))
+			require.NoError(t, err)
+
+			// Adding primary key to identifies table
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, warehouseutils.IdentifiesTable))
+			require.NoError(t, err)
+
+			// Loading data should fail for the users table because of the missing primary key
+			errorsMap := primaryPG.LoadUserTables(ctx)
+			require.NoError(t, errorsMap[warehouseutils.IdentifiesTable])
+			var pgErr *pq.Error
+			require.ErrorAs(t, errorsMap[warehouseutils.UsersTable], &pgErr)
+			require.EqualValues(t, pq.ErrorCode("55000"), pgErr.Code)
+
+			// Adding primary key to users table
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, warehouseutils.UsersTable))
+			require.NoError(t, err)
+
+			// Loading data should work now
+			errorsMap = primaryPG.LoadUserTables(ctx)
+			require.NoError(t, errorsMap[warehouseutils.IdentifiesTable])
+			require.NoError(t, errorsMap[warehouseutils.UsersTable])
+
+			// Checking the number of rows in both primary and standby databases
+			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
+				var (
+					countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.%s;", namespace, tableName)
+					count      int
+				)
+				require.Eventually(t, func() bool {
+					err := primaryDB.QueryRowContext(ctx, countQuery).Scan(&count)
+					if err != nil {
+						t.Logf("Error while querying primary database: %v", err)
+						return false
+					}
+					if count != expectedCount {
+						t.Logf("Expected %d rows in primary database, got %d", expectedCount, count)
+						return false
+					}
+					return true
+				},
+					10*time.Second,
+					100*time.Millisecond,
+				)
+				require.Eventually(t, func() bool {
+					err := standByDB.QueryRowContext(ctx, countQuery).Scan(&count)
+					if err != nil {
+						t.Logf("Error while querying standby database: %v", err)
+						return false
+					}
+					if count != expectedCount {
+						t.Logf("Expected %d rows in standby database, got %d", expectedCount, count)
+						return false
+					}
+					return true
+				},
+					10*time.Second,
+					100*time.Millisecond,
+				)
+			}
 		})
 	})
 }

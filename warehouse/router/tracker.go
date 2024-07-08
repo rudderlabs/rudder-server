@@ -23,7 +23,14 @@ import (
 // CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouse
 // we pick the staging file which is oldest within the range NOW() - 2 * syncFrequency and NOW() - 3 * syncFrequency
 func (r *Router) CronTracker(ctx context.Context) error {
+	tick := r.statsFactory.NewTaggedStat("warehouse_cron_tracker_tick", stats.CountType, stats.Tags{
+		"module":   moduleName,
+		"destType": r.destType,
+	})
 	for {
+
+		tick.Count(1)
+
 		r.configSubscriberLock.RLock()
 		warehouses := append([]model.Warehouse{}, r.warehouses...)
 		r.configSubscriberLock.RUnlock()
@@ -81,9 +88,11 @@ func (r *Router) Track(
 	}
 
 	trackUploadMissingStat := r.statsFactory.NewTaggedStat("warehouse_track_upload_missing", stats.GaugeType, stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      moduleName,
-		"destType":    r.destType,
+		"workspaceId":   warehouse.WorkspaceID,
+		"module":        moduleName,
+		"destType":      r.destType,
+		"sourceId":      source.ID,
+		"destinationId": destination.ID,
 		"warehouseID": misc.GetTagName(
 			destination.ID,
 			source.Name,

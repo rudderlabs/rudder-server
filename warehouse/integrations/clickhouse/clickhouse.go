@@ -727,6 +727,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				ch.logger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
 				ch.logger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
+				stmtCancel()
 			}, func() {
 				ch.logger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
 				stmtCancel()
@@ -1019,7 +1020,7 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 			}
 			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
 
-			warehouseutils.WHCounterStat(warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {

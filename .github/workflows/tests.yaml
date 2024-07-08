@@ -39,7 +39,7 @@ jobs:
         if: matrix.FEATURES == 'oss'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
-          RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
+          RSERVER_ENABLE_MULTITENANCY: false
   warehouse-integration:
     name: Warehouse Integration
     runs-on: 'ubuntu-20.04'
@@ -92,6 +92,8 @@ jobs:
           REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
+          SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:

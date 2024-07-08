@@ -407,6 +407,19 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return
 		}
 		toSet["rudderId"] = rudderId
+		if _, ok := toSet["receivedAt"]; !ok {
+			toSet["receivedAt"] = gw.now().Format(misc.RFC3339Milli)
+		}
+		if _, ok := toSet["request_ip"]; ok {
+			var tcOk bool
+			ipAddr, tcOk = toSet["request_ip"].(string)
+			if !tcOk {
+				gw.logger.Warnf("request_ip is not a string: %v", toSet["request_ip"])
+			}
+
+		} else {
+			toSet["request_ip"] = ipAddr
+		}
 		fillMessageID(toSet)
 		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
@@ -674,12 +687,9 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 
 			// Sending events to config backend
 			for _, job := range jobs {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-				writeKey, ok := gw.getWriteKeyFromSourceID(sourceID)
-				if !ok {
-					gw.logger.Warnn("unable to get writeKey for job",
-						logger.NewStringField("uuid", job.UUID.String()),
-						obskit.SourceID(sourceID))
+				writeKey := gjson.GetBytes(job.EventPayload, "writeKey").String()
+				if writeKey == "" {
+					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
 				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
@@ -743,6 +753,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		Batch      []json.RawMessage `json:"batch"`
 		ReceivedAt string            `json:"receivedAt"`
 		RequestIP  string            `json:"requestIP"`
+		WriteKey   string            `json:"writeKey"` // only needed for live-events
 	}
 
 	var (
@@ -784,6 +795,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			continue
 		}
 
+		gw.stats.NewTaggedStat("gateway.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    msg.Properties.SourceID,
+			"workspaceId": msg.Properties.WorkspaceID,
+		}).Since(msg.Properties.ReceivedAt)
+
 		jobsDBParams := params{
 			MessageID:       msg.Properties.MessageID,
 			SourceID:        msg.Properties.SourceID,
@@ -792,6 +808,14 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			UserID:          msg.Properties.UserID,
 			TraceParent:     msg.Properties.TraceID,
 			DestinationID:   msg.Properties.DestinationID,
+		}
+
+		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
+		if !ok {
+			// only live-events will not work if writeKey is not found
+			gw.logger.Errorn("unable to get writeKey for job",
+				logger.NewStringField("messageId", msg.Properties.MessageID),
+				obskit.SourceID(msg.Properties.SourceID))
 		}
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
@@ -805,10 +829,20 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			)
 		}
 
+		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
+		if err != nil {
+			return nil, fmt.Errorf("filling receivedAt: %w", err)
+		}
+		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
+		if err != nil {
+			return nil, fmt.Errorf("filling request_ip: %w", err)
+		}
+
 		eventBatch := singularEventBatch{
 			Batch:      []json.RawMessage{msg.Payload},
 			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
 			RequestIP:  msg.Properties.RequestIP,
+			WriteKey:   writeKey,
 		}
 
 		payload, err := json.Marshal(eventBatch)
@@ -831,6 +865,20 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return jobs, nil
+}
+
+func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {
+	if !gjson.GetBytes(event, "receivedAt").Exists() {
+		return sjson.SetBytes(event, "receivedAt", receivedAt.Format(misc.RFC3339Milli))
+	}
+	return event, nil
+}
+
+func fillRequestIP(event []byte, ip string) ([]byte, error) {
+	if !gjson.GetBytes(event, "request_ip").Exists() {
+		return sjson.SetBytes(event, "request_ip", ip)
+	}
+	return event, nil
 }
 
 func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {

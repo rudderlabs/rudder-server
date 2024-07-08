@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -171,9 +172,11 @@ func TestRouter_Track(t *testing.T) {
 			require.NoError(t, err)
 
 			m := statsStore.Get("warehouse_track_upload_missing", stats.Tags{
-				"module":      moduleName,
-				"workspaceId": warehouse.WorkspaceID,
-				"destType":    handle.destType,
+				"module":        moduleName,
+				"workspaceId":   warehouse.WorkspaceID,
+				"destType":      handle.destType,
+				"sourceId":      warehouse.Source.ID,
+				"destinationId": warehouse.Destination.ID,
 				"warehouseID": misc.GetTagName(
 					warehouse.Destination.ID,
 					warehouse.Source.Name,
@@ -200,13 +203,28 @@ func TestRouter_CronTracker(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		mockLogger := mock_logger.NewMockLogger(mockCtrl)
 
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		r := Router{
-			logger: mockLogger,
+			logger:       mockLogger,
+			statsFactory: statsStore,
+			destType:     warehouseutils.POSTGRES,
 		}
 
 		mockLogger.EXPECT().Infon("context is cancelled, stopped running tracking").Times(1)
 
-		err := r.CronTracker(ctx)
+		err = r.CronTracker(ctx)
 		require.NoError(t, err)
+
+		m := statsStore.GetByName("warehouse_cron_tracker_tick")
+		require.Equal(t, []memstats.Metric{{
+			Name: "warehouse_cron_tracker_tick",
+			Tags: stats.Tags{
+				"module":   moduleName,
+				"destType": warehouseutils.POSTGRES,
+			},
+			Value: 1,
+		}}, m)
 	})
 }

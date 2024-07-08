@@ -54,7 +54,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	// Multiple source transformers are used to generate rudder events from webhooks
 	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
 	// Parse all query params from sources mentioned in this list
-	webhook.config.sourceListForParsingParams = config.GetStringSliceVar(make([]string, 0), "Gateway.webhook.sourceListForParsingParams")
+	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {
 		webhook.config.sourceListForParsingParams[i] = strings.ToLower(s)

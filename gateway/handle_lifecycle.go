@@ -181,6 +181,12 @@ func WithInternalHttpHandlers(handlers map[string]http.Handler) OptFunc {
 	}
 }
 
+func WithNow(now func() time.Time) OptFunc {
+	return func(gw *Handle) {
+		gw.now = now
+	}
+}
+
 // initUserWebRequestWorkers initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
 func (gw *Handle) initUserWebRequestWorkers() {
 	gw.userWebRequestWorkers = make([]*userWebRequestWorkerT, gw.conf.maxUserWebRequestWorkerProcess)

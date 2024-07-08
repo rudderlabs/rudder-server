@@ -12,14 +12,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -133,6 +137,7 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 			UUID:         uuid.New(),
 			CustomVal:    customVal,
 			EventCount:   eventsPerJob,
+			WorkspaceId:  "workspaceID",
 		}
 	}
 	return js
@@ -165,6 +170,15 @@ func TestProcessorManager(t *testing.T) {
 	})
 	require.NoError(t, err, "GetUnprocessed failed")
 	require.Equal(t, 0, len(unprocessedListEmpty.Jobs))
+
+	t.Log("now is a second after jobs' receivedAt time")
+	now, err := time.Parse(time.RFC3339Nano, "2021-06-06T20:26:40.598+05:30")
+	require.NoError(t, err, "parsing now")
+
+	statsStore, err := memstats.New(memstats.WithNow(func() time.Time {
+		return now
+	}))
+	require.NoError(t, err)
 
 	jobCountPerDS := 10
 	eventsPerJob := 10
@@ -222,6 +236,8 @@ func TestProcessorManager(t *testing.T) {
 		destinationdebugger.NewNoOpService(),
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
+		trackedusers.NewNoopDataCollector(),
+		WithStats(statsStore),
 		func(m *LifecycleManager) {
 			m.Handle.config.enablePipelining = false
 		})
@@ -258,6 +274,21 @@ func TestProcessorManager(t *testing.T) {
 			require.NoError(t, err)
 			return len(res.Jobs)
 		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
+
+		require.Equal(t,
+			statsStore.GetByName("processor.event_pickup_lag_seconds"),
+			[]memstats.Metric{{
+				Name: "processor.event_pickup_lag_seconds",
+				Tags: map[string]string{
+					"sourceId":    "sourceID",
+					"workspaceId": "workspaceID",
+				},
+				Durations: lo.Times(jobCountPerDS, func(i int) time.Duration {
+					return time.Second
+				}),
+			}},
+			"correctly capture the lag between job's receivedAt and now",
+		)
 	})
 
 	t.Run("adding more jobs after the processor is already running", func(t *testing.T) {

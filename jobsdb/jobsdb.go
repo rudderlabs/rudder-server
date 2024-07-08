@@ -38,10 +38,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -56,7 +58,10 @@ import (
 	"github.com/lib/pq"
 )
 
-var errStaleDsList = errors.New("stale dataset list")
+var (
+	errStaleDsList = errors.New("stale dataset list")
+	jsonfast       = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
@@ -368,9 +373,18 @@ type ConnectionDetails struct {
 	DestinationID string
 }
 
-func (r *JobStatusT) sanitizeJson() {
-	r.ErrorResponse = sanitizeJson(r.ErrorResponse)
-	r.Parameters = sanitizeJson(r.Parameters)
+func (r *JobStatusT) sanitizeJson() error {
+	var err error
+	r.ErrorResponse, err = sanitizeJSON(r.ErrorResponse)
+	if err != nil {
+		return err
+	}
+
+	r.Parameters, err = sanitizeJSON(r.Parameters)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 /*
@@ -397,9 +411,17 @@ func (job *JobT) String() string {
 	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
 }
 
-func (job *JobT) sanitizeJson() {
-	job.EventPayload = sanitizeJson(job.EventPayload)
-	job.Parameters = sanitizeJson(job.Parameters)
+func (job *JobT) sanitizeJSON() error {
+	var err error
+	job.EventPayload, err = sanitizeJSON(job.EventPayload)
+	if err != nil {
+		return err
+	}
+	job.Parameters, err = sanitizeJSON(job.Parameters)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // The struct fields need to be exposed to JSON package
@@ -529,6 +551,7 @@ var dbInvalidJsonErrors = map[string]struct{}{
 	"22P05": {},
 	"22025": {},
 	"22019": {},
+	"22021": {}, // invalid byte sequence for encoding "UTF8"
 }
 
 // Some helper functions
@@ -1272,15 +1295,6 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	return nil
 }
 
-func (jd *Handle) addDSInTx(tx *Tx, ds dataSetT) error {
-	defer jd.getTimerStat(
-		"add_new_ds",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	).RecordDuration()()
-	jd.logger.Infof("Creating DS %+v", ds)
-	return jd.createDSInTx(tx, ds)
-}
-
 func (jd *Handle) computeNewIdxForAppend(l lock.LockToken) string {
 	dList, err := jd.doRefreshDSList(l)
 	jd.assertError(err)
@@ -1325,7 +1339,22 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 
 	// Create the jobs and job_status tables
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if err = jd.createDSTablesInTx(ctx, tx, newDS); err != nil {
+		return fmt.Errorf("creating DS tables %w", err)
+	}
+	if err = jd.createDSIndicesInTx(ctx, tx, newDS); err != nil {
+		return fmt.Errorf("creating DS indices %w", err)
+	}
+
+	err = jd.journalMarkDoneInTx(tx, opID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
 		uuid UUID NOT NULL,
@@ -1336,23 +1365,11 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
-		return err
+		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
-		return err
-	}
-	for _, param := range cacheParameterFilters {
-		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
-			return err
-		}
-	}
-
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
-		job_id BIGINT REFERENCES %q(job_id),
+		job_id BIGINT,
 		job_state VARCHAR(64),
 		attempt SMALLINT,
 		exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -1360,18 +1377,41 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
 		parameters JSONB DEFAULT '{}'::JSONB,
-		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)); err != nil {
-		return err
+		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
-		return err
+	return nil
+}
+
+func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
+		return fmt.Errorf("creating workspace index: %w", err)
 	}
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
+		return fmt.Errorf("creating custom_val index: %w", err)
 	}
-	err = jd.journalMarkDoneInTx(tx, opID)
-	if err != nil {
-		return err
+	for _, param := range cacheParameterFilters {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
+			return fmt.Errorf("creating %s index: %w", param, err)
+		}
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		fmt.Sprintf(
+			`ALTER TABLE %[1]q
+			ADD CONSTRAINT "fk_%[1]s_job_id"
+			FOREIGN KEY (job_id)
+			REFERENCES %[2]q (job_id)`,
+			newDS.JobStatusTable,
+			newDS.JobTable,
+		)); err != nil {
+		return fmt.Errorf("adding foreign key constraint: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("adding job_id_id index: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("create view: %w", err)
 	}
 	return nil
 }
@@ -1916,7 +1956,10 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 				return err
 			}
 			for i := range jobList {
-				jobList[i].sanitizeJson()
+				err = jobList[i].sanitizeJSON()
+				if err != nil {
+					return fmt.Errorf("sanitizeJSON: %w", err)
+				}
 			}
 			return store()
 		}
@@ -2224,7 +2267,10 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				return
 			}
 			for i := range statusList {
-				statusList[i].sanitizeJson()
+				err = statusList[i].sanitizeJson()
+				if err != nil {
+					return
+				}
 			}
 			err = store()
 		}
@@ -3137,12 +3183,27 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	return &job
 }
 
-func sanitizeJson(input json.RawMessage) json.RawMessage {
+// sanitizeJSON makes a json payload safe for writing into postgres.
+// 1. Removes any \u0000 string from the payload
+// ~2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8~
+// 3. unmashals and marshals the payload to remove any extra keys
+func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
-	return v
+
+	var a any
+	err := jsonfast.Unmarshal(v, &a)
+	if err != nil {
+		return nil, err
+	}
+	v, err = jsonfast.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
 }
 
 type smallDS struct {

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
@@ -54,10 +56,11 @@ import (
 )
 
 const (
-	MetricKeyDelimiter = "!<<#>>!"
-	UserTransformation = "USER_TRANSFORMATION"
-	DestTransformation = "DEST_TRANSFORMATION"
-	EventFilter        = "EVENT_FILTER"
+	MetricKeyDelimiter    = "!<<#>>!"
+	UserTransformation    = "USER_TRANSFORMATION"
+	DestTransformation    = "DEST_TRANSFORMATION"
+	EventFilter           = "EVENT_FILTER"
+	sourceCategoryWebhook = "webhook"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -70,6 +73,11 @@ func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 
 type sourceObserver interface {
 	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
+}
+
+type trackedUsersReporter interface {
+	ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error
+	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
 }
 
 // Handle is a handle to the processor module
@@ -138,22 +146,27 @@ type Handle struct {
 		transformTimesPQLength          int
 		captureEventNameStats           config.ValueLoader[bool]
 		transformerURL                  string
-		pollInterval                    time.Duration
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
+		credentialsMap                  map[string][]transformer.Credential
+		nonEventStreamSources           map[string]bool
 	}
 
 	drainConfig struct {
 		jobRunIDs config.ValueLoader[[]string]
 	}
 
+	namespace  string
+	instanceID string
+
 	adaptiveLimit func(int64) int64
 	storePlocker  kitsync.PartitionLocker
 
-	sourceObservers []sourceObserver
+	sourceObservers      []sourceObserver
+	trackedUsersReporter trackedUsersReporter
 }
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
@@ -364,6 +377,7 @@ func (proc *Handle) Setup(
 	destDebugger destinationdebugger.DestinationDebugger,
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
+	trackedUsersReporter trackedusers.UsersReporter,
 ) {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -396,8 +410,15 @@ func (proc *Handle) Setup(
 	}
 	proc.storePlocker = *kitsync.NewPartitionLocker()
 
+	proc.namespace = config.GetKubeNamespace()
+	proc.instanceID = misc.GetInstanceID()
+
+	proc.trackedUsersReporter = trackedUsersReporter
+
 	// Stats
-	proc.statsFactory = stats.Default
+	if proc.statsFactory == nil {
+		proc.statsFactory = stats.Default
+	}
 	proc.tracer = proc.statsFactory.NewTracer("processor")
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
@@ -762,7 +783,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	proc.config.pollInterval = config.GetDurationVar(5, time.Second, "Processor.pollInterval", "Processor.pollIntervalInS")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 
@@ -797,6 +817,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
 			eventAuditEnabled               = make(map[string]bool)
+			credentialsMap                  = make(map[string][]transformer.Credential)
+			nonEventStreamSources           = make(map[string]bool)
 		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
@@ -816,9 +838,20 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 						}
 					}
 				}
+				if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, sourceCategoryWebhook) {
+					nonEventStreamSources[source.ID] = true
+				}
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
+			credentialsMap[workspaceID] = lo.MapToSlice(wConfig.Credentials, func(key string, value backendconfig.Credential) transformer.Credential {
+				return transformer.Credential{
+					ID:       key,
+					Key:      value.Key,
+					Value:    value.Value,
+					IsSecret: value.IsSecret,
+				}
+			})
 		}
 		proc.config.configSubscriberLock.Lock()
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
@@ -828,6 +861,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
 		proc.config.eventAuditEnabled = eventAuditEnabled
+		proc.config.credentialsMap = credentialsMap
+		proc.config.nonEventStreamSources = nonEventStreamSources
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
@@ -852,6 +887,12 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
 	}
 	return &source, err
+}
+
+func (proc *Handle) getNonEventStreamSources() map[string]bool {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.nonEventStreamSources
 }
 
 func (proc *Handle) getEnabledDestinations(sourceId, destinationName string) []backendconfig.DestinationT {
@@ -880,19 +921,19 @@ func (proc *Handle) getBackendEnabledDestinationTypes(sourceId string) map[strin
 	return enabledDestinationTypes
 }
 
-func getTimestampFromEvent(event types.SingularEventT, field string) time.Time {
+func getTimestampFromEvent(event types.SingularEventT, field string, defaultTimestamp time.Time) time.Time {
 	var timestamp time.Time
 	var ok bool
 	if timestamp, ok = misc.GetParsedTimestamp(event[field]); !ok {
-		timestamp = time.Now()
+		timestamp = defaultTimestamp
 	}
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
-	originalTimestamp := getTimestampFromEvent(singularEventMap, "originalTimestamp")
-	sentAt := getTimestampFromEvent(singularEventMap, "sentAt")
+	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp", receivedAt)
+	sentAt := getTimestampFromEvent(singularEvent, "sentAt", receivedAt)
 	var timestamp time.Time
 	var ok bool
 
@@ -910,13 +951,13 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEventMap
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
+func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, batchEvent *jobsdb.JobT, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
 	commonMetadata.WorkspaceID = source.WorkspaceID
-	commonMetadata.Namespace = config.GetKubeNamespace()
-	commonMetadata.InstanceID = misc.GetInstanceID()
+	commonMetadata.Namespace = proc.namespace
+	commonMetadata.InstanceID = proc.instanceID
 	commonMetadata.RudderID = batchEvent.UserID
 	commonMetadata.JobID = batchEvent.JobID
 	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
@@ -1098,6 +1139,7 @@ func (proc *Handle) getTransformerEvents(
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
 			Destination: *destination,
+			Credentials: proc.config.credentialsMap[commonMetaData.WorkspaceID],
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
 	}
@@ -1609,6 +1651,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
 
+		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    sourceID,
+			"workspaceId": batchEvent.WorkspaceId,
+		}).Since(receivedAt)
+
 		newStatus := jobsdb.JobStatusT{
 			JobID:         batchEvent.JobID,
 			JobState:      jobsdb.Succeeded.State,
@@ -1670,7 +1717,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				ReceivedAt:    receivedAt,
 			}
 
-			commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
+			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
 				singularEvent,
 				batchEvent,
 				receivedAt,
@@ -1949,6 +1996,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
 						shallowEventCopy.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 					}
+					shallowEventCopy.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
 					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
@@ -1992,6 +2040,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 		subJobs.hasMore,
 		subJobs.rsourcesStats,
+		proc.trackedUsersReporter.GenerateReportsFromJobs(jobList, proc.getNonEventStreamSources()),
 	}
 }
 
@@ -2010,8 +2059,9 @@ type transformationMessage struct {
 	totalEvents int
 	start       time.Time
 
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
+	hasMore             bool
+	rsourcesStats       rsources.StatsCollector
+	trackedUsersReports []*trackedusers.UsersReport
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
@@ -2107,6 +2157,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
+		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
 		batchDestJobs,
@@ -2128,10 +2179,11 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
-	statusList    []*jobsdb.JobStatusT
-	destJobs      []*jobsdb.JobT
-	batchDestJobs []*jobsdb.JobT
-	droppedJobs   []*jobsdb.JobT
+	trackedUsersReports []*trackedusers.UsersReport
+	statusList          []*jobsdb.JobStatusT
+	destJobs            []*jobsdb.JobT
+	batchDestJobs       []*jobsdb.JobT
+	droppedJobs         []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	procErrorJobs         []*jobsdb.JobT
@@ -2169,6 +2221,8 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 		sm.dedupKeys[id] = v
 	}
 	sm.totalEvents += subJob.totalEvents
+
+	sm.trackedUsersReports = append(sm.trackedUsersReports, subJob.trackedUsersReports...)
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
@@ -2334,6 +2388,11 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 				}
 			}
 
+			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("storing tracked users: %w", err)
+			}
+
 			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
@@ -2418,8 +2477,8 @@ func (proc *Handle) transformSrcDest(
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
-		Namespace:            config.GetKubeNamespace(),
-		InstanceID:           misc.GetInstanceID(),
+		Namespace:            proc.namespace,
+		InstanceID:           proc.instanceID,
 		DestinationID:        destID,
 		DestinationType:      destType,
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
