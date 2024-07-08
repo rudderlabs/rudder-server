@@ -412,11 +412,22 @@ func (job *JobT) String() string {
 }
 
 func (job *JobT) sanitizeJSON() error {
-	var err error
-	job.EventPayload, err = sanitizeJSON(job.EventPayload)
+	eventPayload, err := sanitizeJSON(job.EventPayload)
 	if err != nil {
-		return err
+		eventPayload, err = jsonfast.Marshal(struct {
+			Payload string `json:"payload"`
+			Error   string `json:"error"`
+		}{
+			Payload: string(job.EventPayload),
+			Error:   err.Error(),
+		})
+		if err != nil {
+
+			return err
+		}
 	}
+	job.EventPayload = eventPayload
+
 	job.Parameters, err = sanitizeJSON(job.Parameters)
 	if err != nil {
 		return err
