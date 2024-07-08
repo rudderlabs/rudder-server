@@ -458,6 +458,26 @@ func (pg *Postgres) loadUsersTable(
 	}
 
 	query = fmt.Sprintf(`
+		CREATE INDEX users_identifies_union_id_idx ON %[1]s (id);`,
+		unionStagingTableName,
+	)
+	pg.logger.Debugw("creating index on union staging users table",
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.TableName, warehouseutils.UsersTable,
+		logfield.StagingTableName, usersStagingTableName,
+		logfield.Query, query,
+	)
+	if _, err = tx.ExecContext(ctx, query); err != nil {
+		return loadUsersTableResponse{
+			usersError: fmt.Errorf("creating index on union staging users table: %w", err),
+		}
+	}
+
+	query = fmt.Sprintf(`
 		CREATE TEMPORARY TABLE %[1]s AS (
 		  SELECT
 			DISTINCT *
