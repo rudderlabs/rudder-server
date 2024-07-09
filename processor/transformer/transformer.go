@@ -270,7 +270,6 @@ func (trans *handle) transform(
 		trackWg.Done()
 	}()
 
-	trans.sentStat.Count(len(clientEvents))
 	batches := lo.Chunk(clientEvents, batchSize)
 
 	trans.stat.NewTaggedStat(
@@ -316,6 +315,7 @@ func (trans *handle) transform(
 		}
 	}
 
+	trans.sentStat.Count(len(clientEvents))
 	trans.receivedStat.Count(len(outClientEvents))
 
 	return Response{

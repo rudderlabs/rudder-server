@@ -26,10 +26,10 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 )
 
@@ -84,14 +84,14 @@ func Test_RouterThrottling(t *testing.T) {
 	var (
 		group                errgroup.Group
 		postgresContainer    *postgres.Resource
-		transformerContainer *destination.TransformerResource
+		transformerContainer *transformertest.Resource
 	)
 	group.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
 		return
 	})
 	group.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t)
 		return
 	})
 	require.NoError(t, group.Wait())
@@ -157,7 +157,7 @@ func Test_RouterThrottling(t *testing.T) {
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "false")
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("RSERVER_MODE", "normal")
 	t.Setenv("RSERVER_ROUTER_WEBHOOK_ISOLATE_DEST_ID", "true")
 	t.Setenv("RSERVER_ROUTER_JOB_QUERY_BATCH_SIZE", "1000")
