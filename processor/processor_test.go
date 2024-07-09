@@ -5495,10 +5495,32 @@ func TestStoreMessageMerge(t *testing.T) {
 		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 	}
 
+	sm3 := &storeMessage{
+		[]*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
+		[]*jobsdb.JobStatusT{{JobID: 3}},
+		[]*jobsdb.JobT{{JobID: 3}},
+		[]*jobsdb.JobT{{JobID: 3}},
+		[]*jobsdb.JobT{{JobID: 3}},
+		map[string][]*jobsdb.JobT{
+			"3": {{JobID: 3}},
+		},
+		[]*jobsdb.JobT{{JobID: 3}},
+		[]string{"3"},
+		[]*types.PUReportedMetric{{}},
+		map[dupStatKey]int{{sourceID: "1"}: 3},
+		map[string]struct{}{"3": {}},
+		1,
+		time.Time{},
+		false,
+		nil,
+		map[string]stats.Tags{},
+	}
+
 	merged := storeMessage{
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
 		sourceDupStats:        map[dupStatKey]int{},
 		dedupKeys:             map[string]struct{}{},
+		start:                 time.UnixMicro(99999999),
 	}
 
 	merged.merge(sm1)
@@ -5527,4 +5549,31 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.Len(t, merged.dedupKeys, 2, "dedup keys should have 2 elements")
 	require.Equal(t, merged.totalEvents, 2, "total events should be 2")
 	require.Len(t, merged.trackedUsersReports, 3, "trackedUsersReports should have 3 element")
+
+	merged.merge(sm3)
+	require.Equal(t, merged, storeMessage{
+		trackedUsersReports: []*trackedusers.UsersReport{
+			{WorkspaceID: sampleWorkspaceID},
+			{WorkspaceID: sampleWorkspaceID},
+			{WorkspaceID: sampleWorkspaceID},
+			{WorkspaceID: sampleWorkspaceID},
+			{WorkspaceID: sampleWorkspaceID},
+		},
+		statusList:    []*jobsdb.JobStatusT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
+		destJobs:      []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
+		batchDestJobs: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
+		droppedJobs:   []*jobsdb.JobT{{JobID: 3}},
+		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
+			"1": {{JobID: 1}},
+			"2": {{JobID: 2}},
+			"3": {{JobID: 3}},
+		},
+		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
+		routerDestIDs:  []string{"1", "2", "3"},
+		reportMetrics:  []*types.PUReportedMetric{{}, {}, {}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},
+		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
+		totalEvents:    3,
+		start:          time.UnixMicro(99999999),
+	})
 }
