@@ -961,6 +961,7 @@ func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.Sing
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
+	commonMetadata.OriginalSourceID = source.OriginalID
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = proc.namespace
 	commonMetadata.InstanceID = proc.instanceID
@@ -992,6 +993,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.OriginalSourceID = commonMetadata.OriginalSourceID
 	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
@@ -2484,6 +2486,7 @@ func (proc *Handle) transformSrcDest(
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
 		SourceName:           sourceName,
+		OriginalSourceID:     eventList[0].Metadata.OriginalSourceID,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,

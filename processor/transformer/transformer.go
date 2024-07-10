@@ -47,6 +47,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
 	SourceName          string                            `json:"sourceName"`
+	OriginalSourceID    string                            `json:"originalSourceId"`
 	WorkspaceID         string                            `json:"workspaceId"`
 	Namespace           string                            `json:"namespace"`
 	InstanceID          string                            `json:"instanceId"`
@@ -230,7 +231,33 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
+	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
+	// flip back afterwards
+	for _, clientEvent := range clientEvents {
+		if clientEvent.Metadata.OriginalSourceID != "" {
+			originalSourceID := clientEvent.Metadata.OriginalSourceID
+			clientEvent.Metadata.OriginalSourceID = clientEvent.Metadata.SourceID
+			clientEvent.Metadata.SourceID = originalSourceID
+		}
+	}
+	response := trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
+	for _, event := range response.Events {
+		// flip back sourceID and original sourceID
+		if event.Metadata.OriginalSourceID != "" {
+			originalSourceID := event.Metadata.SourceID
+			event.Metadata.SourceID = event.Metadata.OriginalSourceID
+			event.Metadata.OriginalSourceID = originalSourceID
+		}
+	}
+	for _, event := range response.FailedEvents {
+		// flip back sourceID and original sourceID
+		if event.Metadata.OriginalSourceID != "" {
+			originalSourceID := event.Metadata.SourceID
+			event.Metadata.SourceID = event.Metadata.OriginalSourceID
+			event.Metadata.OriginalSourceID = originalSourceID
+		}
+	}
+	return response
 }
 
 // Validate function is used to invoke tracking plan validation API
