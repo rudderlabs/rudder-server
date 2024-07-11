@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	hllSettings          = hll.Settings{Log2m: 14, Regwidth: 5, ExplicitThreshold: hll.AutoExplicitThreshold, SparseEnabled: true}
+	hllSettings          = hll.Settings{Log2m: 16, Regwidth: 5, ExplicitThreshold: hll.AutoExplicitThreshold, SparseEnabled: true}
 	sampleWorkspaceID    = "workspaceID"
 	sampleWorkspaceID2   = "workspaceID2"
 	sampleSourceID       = "sourceID"
