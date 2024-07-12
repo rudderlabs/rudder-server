@@ -113,11 +113,11 @@ type EDErrorDetails struct {
 	ErrorCode    string `json:"errorCode"`
 	ErrorMessage string `json:"errorMessage"`
 	// TODO: need to check with team if this makes sense ?
-	EventType string `json:"eventType"`
-	EventName string `json:"eventName"`
-	SampleResponse string `json:"sampleResponse"`
-	SampleEvent json.RawMessage `json:"sampleEvent"`
-	Count     int64  `json:"count"`
+	EventType      string          `json:"eventType"`
+	EventName      string          `json:"eventName"`
+	SampleResponse string          `json:"sampleResponse"`
+	SampleEvent    json.RawMessage `json:"sampleEvent"`
+	Count          int64           `json:"count"`
 }
 
 type EDErrorDetailsKey struct {
@@ -129,7 +129,6 @@ type EDErrorDetailsKey struct {
 	EventName string `json:"eventName"`
 }
 
-
 type EDReportsDB struct {
 	EDErrorDetails
 	EDInstanceDetails
@@ -137,15 +136,13 @@ type EDReportsDB struct {
 	ReportMetadata
 
 	PU    string `json:"reportedBy"`
-	SampleResponse string `json:"sample_response"`
-	SampleEvent json.RawMessage `json:"sample_event"`
 	Count int64  `json:"-"`
 }
 
 type EDReportMapValue struct {
-	Count int64
+	Count          int64
 	SampleResponse string
-	SampleEvent json.RawMessage
+	SampleEvent    json.RawMessage
 }
 
 // EDMetric The structure in which the error detail data is being sent to reporting service

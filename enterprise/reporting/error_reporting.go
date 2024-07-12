@@ -50,6 +50,9 @@ var ErrorDetailReportsColumns = []string{
 	"event_type",
 	"error_code",
 	"error_message",
+	"sample_response",
+	"sample_event",
+	"event_name",
 }
 
 type ErrorDetailReporter struct {
@@ -218,6 +221,9 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventType,
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
+			metric.StatusDetail.SampleResponse,
+			metric.StatusDetail.SampleEvent,
+			metric.StatusDetail.EventName,
 		)
 		if err != nil {
 			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
@@ -446,6 +452,9 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			"error_code",
 			"error_message",
 			"dest_type",
+			"sample_response",
+			"sample_event",
+			"event_name",
 		*/
 		dbEdMetric := &types.EDReportsDB{
 			EDErrorDetails:    types.EDErrorDetails{},
@@ -467,9 +476,9 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
-			&dbEdMetric.SampleResponse,
-			&dbEdMetric.SampleEvent,
-			&dbEdMetric.EventName,
+			&dbEdMetric.EDErrorDetails.SampleResponse,
+			&dbEdMetric.EDErrorDetails.SampleEvent,
+			&dbEdMetric.EDErrorDetails.EventName,
 		)
 		if err != nil {
 			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
@@ -535,12 +544,12 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				EventType:    rep.EventType,
 				EventName:    rep.EventName,
 			}
-			reportMapValue, ok:= reportsCountMap[errDet]
+			reportMapValue, ok := reportsCountMap[errDet]
 			if !ok {
 				reportsCountMap[errDet] = types.EDReportMapValue{
 					SampleResponse: rep.SampleResponse,
-					SampleEvent: rep.SampleEvent,
-					Count: rep.Count,
+					SampleEvent:    rep.SampleEvent,
+					Count:          rep.Count,
 				}
 				continue
 			}
@@ -560,14 +569,14 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		for i, repKey := range reportGrpKeys {
 			repValue := reportsCountMap[repKey]
 			errs[i] = types.EDErrorDetails{
-				StatusCode:   repKey.StatusCode,
-				ErrorCode:    repKey.ErrorCode,
-				ErrorMessage: repKey.ErrorMessage,
-				EventType:    repKey.EventType,
+				StatusCode:     repKey.StatusCode,
+				ErrorCode:      repKey.ErrorCode,
+				ErrorMessage:   repKey.ErrorMessage,
+				EventType:      repKey.EventType,
 				SampleResponse: repValue.SampleResponse,
-				SampleEvent: repValue.SampleEvent,
-				EventName: repKey.EventName,
-				Count:        repValue.Count,
+				SampleEvent:    repValue.SampleEvent,
+				EventName:      repKey.EventName,
+				Count:          repValue.Count,
 			}
 		}
 		edrSchema.Errors = errs
