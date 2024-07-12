@@ -414,6 +414,9 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		"error_code",
 		"error_message",
 		"dest_type",
+		"sample_response",
+		"sample_event",
+		"event_name",
 	}, ", ")
 	var rows *sql.Rows
 	queryStart = time.Now()
@@ -464,6 +467,9 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EDErrorDetails.ErrorCode,
 			&dbEdMetric.EDErrorDetails.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
+			&dbEdMetric.SampleResponse,
+			&dbEdMetric.SampleEvent,
+			&dbEdMetric.EventName,
 		)
 		if err != nil {
 			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
@@ -519,16 +525,26 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 			},
 		}
 		messageMap := make(map[string]int)
-		reportsCountMap := make(map[types.EDErrorDetails]int64)
+		reportsCountMap := make(map[types.EDErrorDetailsKey]types.EDReportMapValue)
 		for index, rep := range reports {
 			messageMap[rep.EDErrorDetails.ErrorMessage] = index
-			errDet := types.EDErrorDetails{
+			errDet := types.EDErrorDetailsKey{
 				StatusCode:   rep.StatusCode,
 				ErrorCode:    rep.ErrorCode,
 				ErrorMessage: rep.ErrorMessage,
 				EventType:    rep.EventType,
+				EventName:    rep.EventName,
 			}
-			reportsCountMap[errDet] += rep.Count
+			reportMapValue, ok:= reportsCountMap[errDet]
+			if !ok {
+				reportsCountMap[errDet] = types.EDReportMapValue{
+					SampleResponse: rep.SampleResponse,
+					SampleEvent: rep.SampleEvent,
+					Count: rep.Count,
+				}
+				continue
+			}
+			reportMapValue.Count += rep.Count
 		}
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
@@ -542,13 +558,16 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		})
 		errs := make([]types.EDErrorDetails, len(reportGrpKeys))
 		for i, repKey := range reportGrpKeys {
-			repCount := reportsCountMap[repKey]
+			repValue := reportsCountMap[repKey]
 			errs[i] = types.EDErrorDetails{
 				StatusCode:   repKey.StatusCode,
 				ErrorCode:    repKey.ErrorCode,
 				ErrorMessage: repKey.ErrorMessage,
 				EventType:    repKey.EventType,
-				Count:        repCount,
+				SampleResponse: repValue.SampleResponse,
+				SampleEvent: repValue.SampleEvent,
+				EventName: repKey.EventName,
+				Count:        repValue.Count,
 			}
 		}
 		edrSchema.Errors = errs
