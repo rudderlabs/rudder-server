@@ -222,7 +222,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			errDets.ErrorCode,
 			errDets.ErrorMessage,
 			metric.StatusDetail.SampleResponse,
-			metric.StatusDetail.SampleEvent,
+			string(metric.StatusDetail.SampleEvent),
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
