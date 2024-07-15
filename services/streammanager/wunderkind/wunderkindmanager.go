@@ -22,8 +22,7 @@ const (
 )
 
 var (
-	pkgLogger logger.Logger
-	jsonfast  = jsoniter.ConfigCompatibleWithStandardLibrary
+	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 
 type inputData struct {
@@ -32,14 +31,11 @@ type inputData struct {
 
 type WunderkindProducer struct {
 	client LambdaClient
+	logger logger.Logger
 }
 
 type LambdaClient interface {
 	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
-}
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
 }
 
 // NewProducer creates a producer based on destination config
@@ -55,7 +51,10 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Wunde
 		return nil, err
 	}
 
-	return &WunderkindProducer{client: lambda.New(awsSession)}, nil
+	return &WunderkindProducer{
+		client: lambda.New(awsSession),
+		logger: logger.NewLogger().Child("streammanager").Child("wunderkind"),
+	}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
@@ -89,7 +88,7 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 	response, err := client.Invoke(&invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		pkgLogger.Errorf("[Wunderkind] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		producer.logger.Errorf("Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 
@@ -98,7 +97,7 @@ func (producer *WunderkindProducer) Produce(jsonData json.RawMessage, destConfig
 		statusCode := 400
 		respStatus := "Failure"
 		responseMessage := string(response.Payload)
-		pkgLogger.Errorf("[Wunderkind] Function execution error :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		producer.logger.Errorf("Function execution error :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
 

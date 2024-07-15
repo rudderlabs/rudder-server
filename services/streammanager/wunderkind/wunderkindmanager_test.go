@@ -66,8 +66,6 @@ func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
 	producer := &WunderkindProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLogger(ctrl)
-	pkgLogger = mockLogger
 
 	// Invalid input
 	sampleEventJson := []byte("invalid json")
@@ -96,7 +94,6 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
 	producer := &WunderkindProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
-	pkgLogger = mockLogger
 
 	sampleEventJson, _ := json.Marshal(map[string]interface{}{
 		"payload": sampleMessage,
