@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -70,7 +72,7 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 		instanceID: config.GetString("INSTANCE_ID", "1"),
 		stats:      stats,
 		now: func() time.Time {
-			return time.Now().UTC()
+			return timeutil.Now()
 		},
 	}, nil
 }
