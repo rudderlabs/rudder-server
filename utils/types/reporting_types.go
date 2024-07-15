@@ -108,25 +108,19 @@ type EDInstanceDetails struct {
 	InstanceID  string `json:"-"`
 }
 
-type EDErrorDetails struct {
-	StatusCode   int    `json:"statusCode"`
-	ErrorCode    string `json:"errorCode"`
-	ErrorMessage string `json:"errorMessage"`
-	// TODO: need to check with team if this makes sense ?
-	EventType      string          `json:"eventType"`
-	EventName      string          `json:"eventName"`
-	SampleResponse string          `json:"sampleResponse"`
-	SampleEvent    json.RawMessage `json:"sampleEvent"`
-	Count          int64           `json:"count"`
-}
-
 type EDErrorDetailsKey struct {
 	StatusCode   int    `json:"statusCode"`
 	ErrorCode    string `json:"errorCode"`
 	ErrorMessage string `json:"errorMessage"`
-	// TODO: need to check with team if this makes sense ?
-	EventType string `json:"eventType"`
-	EventName string `json:"eventName"`
+	EventType    string `json:"eventType"`
+	EventName    string `json:"eventName"`
+}
+
+type EDErrorDetails struct {
+	EDErrorDetailsKey
+	SampleResponse string          `json:"sampleResponse"`
+	SampleEvent    json.RawMessage `json:"sampleEvent"`
+	Count          int64           `json:"count"`
 }
 
 type EDReportsDB struct {
