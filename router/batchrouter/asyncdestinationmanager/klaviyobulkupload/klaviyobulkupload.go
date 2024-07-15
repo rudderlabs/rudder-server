@@ -397,7 +397,6 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 	return common.AsyncUploadOutput{
 		ImportingParameters: importParameters,
-		SucceededJobIDs:     successJobs,
 		FailedJobIDs:        failedJobs,
 		FailedCount:         len(failedJobs),
 		ImportingJobIDs:     successJobs,
