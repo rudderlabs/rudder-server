@@ -49,12 +49,16 @@ type testConfig struct {
 	webhook          *webhookutil.Recorder
 	configBEServer   *nethttptest.Server
 	transformerUrl   string
-	reportingServer  *webhookutil.Recorder
+	reportingServer  *mockReportingServer
 }
 
 type userIdentifier struct {
 	userID      string
 	anonymousID string
+}
+
+type mockReportingServer struct {
+	*webhookutil.Recorder
 }
 
 func TestTrackedUsersReporting(t *testing.T) {
@@ -90,17 +94,17 @@ func TestTrackedUsersReporting(t *testing.T) {
 	}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
 
 	require.Eventuallyf(t, func() bool {
-		cardinalityMap := getCardinalityFromReportingServer(t, tc.reportingServer.Requests())
+		cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer(t)
 		return cardinalityMap[workspaceID][sourceID].userIDCount == 2 &&
 			cardinalityMap[workspaceID][sourceID].anonIDCount == 2 &&
 			cardinalityMap[workspaceID][sourceID].identifiedUsersCount == 2
-	}, 2*time.Minute, 5*time.Second, "data not reported to reporting service, count of reqs: %d", tc.reportingServer.RequestsCount())
+	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service, count of reqs: %d", tc.reportingServer.RequestsCount())
 
 	cancel()
 	require.NoError(t, wg.Wait())
 }
 
-func getCardinalityFromReportingServer(t *testing.T, reqs []*http.Request) map[string]map[string]struct {
+func (m *mockReportingServer) getCardinalityFromReportingServer(t *testing.T) map[string]map[string]struct {
 	userIDCount          int
 	anonIDCount          int
 	identifiedUsersCount int
@@ -115,7 +119,7 @@ func getCardinalityFromReportingServer(t *testing.T, reqs []*http.Request) map[s
 		IdentifiedAnonymousIDHLLHex string    `json:"identifiedAnonymousIdHLL"`
 	}
 	entries := make([]trackedUsersEntry, 0)
-	for _, req := range reqs {
+	for _, req := range m.Requests() {
 		unmarshalledReqs := make([]trackedUsersEntry, 0)
 		err := json.NewDecoder(req.Body).Decode(&unmarshalledReqs)
 		require.NoError(t, err)
@@ -216,8 +220,10 @@ func setup(t testing.TB) testConfig {
 	t.Cleanup(webhook.Close)
 	webhookURL := webhook.Server.URL
 
-	reportingServer := webhookutil.NewRecorder()
-	t.Cleanup(webhook.Close)
+	reportingServer := &mockReportingServer{
+		Recorder: webhookutil.NewRecorder(),
+	}
+	t.Cleanup(reportingServer.Close)
 
 	trServer := transformertest.NewBuilder().
 		WithDestTransformHandler(
@@ -293,6 +299,8 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.flusher.flushWindow"), "1s")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.flusher.recentExclusionWindowInSeconds"), "1s")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.flusher.sleepInterval"), "2s")
+	// so that multiple processor batches are processed
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.maxLoopProcessEvents"), "10")
 	t.Setenv("Processor.maxRetry", strconv.Itoa(1))
 
 	defer func() {
@@ -317,7 +325,7 @@ func sendEvents(
 	count := 0
 	for _, identifier := range identifiers {
 		// generate 1 or more events
-		num := 1 + rand.Intn(9)
+		num := 1 + rand.Intn(100)
 		for i := 0; i < num; i++ {
 			count++
 			payload := []byte(fmt.Sprintf(`
@@ -360,8 +368,6 @@ func sendEvents(
 				return 0, fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
 			}
 			kithttputil.CloseResponse(resp)
-			// sleeping so that multiple requests can be sent to reporting
-			time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
 		}
 	}
 	return count, nil
