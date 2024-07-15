@@ -13,8 +13,11 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
 
 	"github.com/samber/lo"
 
@@ -58,7 +61,150 @@ type userIdentifier struct {
 }
 
 type mockReportingServer struct {
-	*webhookutil.Recorder
+	Server *httptest.Server
+	hllMap map[string]map[string]struct {
+		userIDHll          *hll.Hll
+		anonIDHll          *hll.Hll
+		identifiedUsersHll *hll.Hll
+	}
+	hllMapMutex sync.RWMutex
+}
+
+func newMockReportingServer() *mockReportingServer {
+	whr := mockReportingServer{
+		hllMap: make(map[string]map[string]struct {
+			userIDHll          *hll.Hll
+			anonIDHll          *hll.Hll
+			identifiedUsersHll *hll.Hll
+		}),
+	}
+	whr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		defer func() {
+			if err != nil {
+				http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+				return
+			} else {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("OK"))
+				return
+			}
+		}()
+		type trackedUsersEntry struct {
+			ReportedAt                  time.Time `json:"reportedAt"`
+			WorkspaceID                 string    `json:"workspaceId"`
+			SourceID                    string    `json:"sourceId"`
+			InstanceID                  string    `json:"instanceId"`
+			UserIDHLLHex                string    `json:"userIdHLL"`
+			AnonymousIDHLLHex           string    `json:"anonymousIdHLL"`
+			IdentifiedAnonymousIDHLLHex string    `json:"identifiedAnonymousIdHLL"`
+		}
+		unmarshalledReq := make([]*trackedUsersEntry, 0)
+		err = json.NewDecoder(r.Body).Decode(&unmarshalledReq)
+		if err != nil {
+			return
+		}
+		whr.hllMapMutex.Lock()
+		for _, e := range unmarshalledReq {
+			if whr.hllMap[e.WorkspaceID] == nil {
+				whr.hllMap[e.WorkspaceID] = make(map[string]struct {
+					userIDHll          *hll.Hll
+					anonIDHll          *hll.Hll
+					identifiedUsersHll *hll.Hll
+				})
+			}
+			cardinalityMap := whr.hllMap[e.WorkspaceID][e.SourceID]
+			var userHllBytes, annIDHllBytes, combineHllBytes []byte
+			var userHll, annHll, combHll hll.Hll
+			userHllBytes, err = hex.DecodeString(e.UserIDHLLHex)
+			if err != nil {
+				return
+			}
+			userHll, err = hll.FromBytes(userHllBytes)
+			if err != nil {
+				return
+			}
+			if cardinalityMap.userIDHll == nil {
+				cardinalityMap.userIDHll = &userHll
+			} else {
+				cardinalityMap.userIDHll.Union(userHll)
+			}
+			annIDHllBytes, err = hex.DecodeString(e.AnonymousIDHLLHex)
+			if err != nil {
+				return
+			}
+			annHll, err := hll.FromBytes(annIDHllBytes)
+			if err != nil {
+				return
+			}
+			if cardinalityMap.anonIDHll == nil {
+				cardinalityMap.anonIDHll = &annHll
+			} else {
+				cardinalityMap.anonIDHll.Union(annHll)
+			}
+			combineHllBytes, err = hex.DecodeString(e.IdentifiedAnonymousIDHLLHex)
+			if err != nil {
+				return
+			}
+			combHll, err = hll.FromBytes(combineHllBytes)
+			if err != nil {
+				return
+			}
+			if cardinalityMap.identifiedUsersHll == nil {
+				cardinalityMap.identifiedUsersHll = &combHll
+			} else {
+				cardinalityMap.identifiedUsersHll.Union(combHll)
+			}
+			whr.hllMap[e.WorkspaceID][e.SourceID] = cardinalityMap
+		}
+		whr.hllMapMutex.Unlock()
+	}))
+
+	return &whr
+}
+
+func (m *mockReportingServer) Close() {
+	m.Server.Close()
+}
+
+func (m *mockReportingServer) getCardinalityFromReportingServer() map[string]map[string]struct {
+	userIDCount          int
+	anonIDCount          int
+	identifiedUsersCount int
+} {
+	m.hllMapMutex.RLock()
+	defer m.hllMapMutex.RUnlock()
+	return lo.MapEntries(m.hllMap, func(workspaceID string, mp map[string]struct {
+		userIDHll          *hll.Hll
+		anonIDHll          *hll.Hll
+		identifiedUsersHll *hll.Hll
+	}) (string, map[string]struct {
+		userIDCount          int
+		anonIDCount          int
+		identifiedUsersCount int
+	},
+	) {
+		return workspaceID, lo.MapEntries(mp, func(sourceID string, value struct {
+			userIDHll          *hll.Hll
+			anonIDHll          *hll.Hll
+			identifiedUsersHll *hll.Hll
+		}) (string, struct {
+			userIDCount          int
+			anonIDCount          int
+			identifiedUsersCount int
+		},
+		) {
+			return sourceID, struct {
+				userIDCount          int
+				anonIDCount          int
+				identifiedUsersCount int
+			}{
+				userIDCount:          int(value.userIDHll.Cardinality()),
+				anonIDCount:          int(value.anonIDHll.Cardinality()),
+				identifiedUsersCount: int(value.identifiedUsersHll.Cardinality()),
+			}
+		})
+	})
 }
 
 func TestTrackedUsersReporting(t *testing.T) {
@@ -94,111 +240,14 @@ func TestTrackedUsersReporting(t *testing.T) {
 	}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
 
 	require.Eventuallyf(t, func() bool {
-		cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer(t)
+		cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
 		return cardinalityMap[workspaceID][sourceID].userIDCount == 2 &&
 			cardinalityMap[workspaceID][sourceID].anonIDCount == 2 &&
 			cardinalityMap[workspaceID][sourceID].identifiedUsersCount == 2
-	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service, count of reqs: %d", tc.reportingServer.RequestsCount())
+	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service, hllMap: %v", tc.reportingServer.hllMap)
 
 	cancel()
 	require.NoError(t, wg.Wait())
-}
-
-func (m *mockReportingServer) getCardinalityFromReportingServer(t *testing.T) map[string]map[string]struct {
-	userIDCount          int
-	anonIDCount          int
-	identifiedUsersCount int
-} {
-	type trackedUsersEntry struct {
-		ReportedAt                  time.Time `json:"reportedAt"`
-		WorkspaceID                 string    `json:"workspaceId"`
-		SourceID                    string    `json:"sourceId"`
-		InstanceID                  string    `json:"instanceId"`
-		UserIDHLLHex                string    `json:"userIdHLL"`
-		AnonymousIDHLLHex           string    `json:"anonymousIdHLL"`
-		IdentifiedAnonymousIDHLLHex string    `json:"identifiedAnonymousIdHLL"`
-	}
-	entries := make([]trackedUsersEntry, 0)
-	for _, req := range m.Requests() {
-		unmarshalledReqs := make([]trackedUsersEntry, 0)
-		err := json.NewDecoder(req.Body).Decode(&unmarshalledReqs)
-		require.NoError(t, err)
-		entries = append(entries, unmarshalledReqs...)
-	}
-	result := make(map[string]map[string]struct {
-		userIDHll          *hll.Hll
-		anonIDHll          *hll.Hll
-		identifiedUsersHll *hll.Hll
-	})
-	for _, e := range entries {
-		if result[e.WorkspaceID] == nil {
-			result[e.WorkspaceID] = make(map[string]struct {
-				userIDHll          *hll.Hll
-				anonIDHll          *hll.Hll
-				identifiedUsersHll *hll.Hll
-			})
-		}
-		cardinalityMap := result[e.WorkspaceID][e.SourceID]
-		userHllBytes, err := hex.DecodeString(e.UserIDHLLHex)
-		require.NoError(t, err)
-		userHll, err := hll.FromBytes(userHllBytes)
-		require.NoError(t, err)
-		if cardinalityMap.userIDHll == nil {
-			cardinalityMap.userIDHll = &userHll
-		} else {
-			cardinalityMap.userIDHll.Union(userHll)
-		}
-		annIDHllBytes, err := hex.DecodeString(e.AnonymousIDHLLHex)
-		require.NoError(t, err)
-		annHll, err := hll.FromBytes(annIDHllBytes)
-		require.NoError(t, err)
-		if cardinalityMap.anonIDHll == nil {
-			cardinalityMap.anonIDHll = &annHll
-		} else {
-			cardinalityMap.anonIDHll.Union(annHll)
-		}
-		combineHllBytes, err := hex.DecodeString(e.IdentifiedAnonymousIDHLLHex)
-		require.NoError(t, err)
-		combHll, err := hll.FromBytes(combineHllBytes)
-		require.NoError(t, err)
-		if cardinalityMap.identifiedUsersHll == nil {
-			cardinalityMap.identifiedUsersHll = &combHll
-		} else {
-			cardinalityMap.identifiedUsersHll.Union(combHll)
-		}
-		result[e.WorkspaceID][e.SourceID] = cardinalityMap
-	}
-	return lo.MapEntries(result, func(workspaceID string, mp map[string]struct {
-		userIDHll          *hll.Hll
-		anonIDHll          *hll.Hll
-		identifiedUsersHll *hll.Hll
-	}) (string, map[string]struct {
-		userIDCount          int
-		anonIDCount          int
-		identifiedUsersCount int
-	},
-	) {
-		return workspaceID, lo.MapEntries(mp, func(sourceID string, value struct {
-			userIDHll          *hll.Hll
-			anonIDHll          *hll.Hll
-			identifiedUsersHll *hll.Hll
-		}) (string, struct {
-			userIDCount          int
-			anonIDCount          int
-			identifiedUsersCount int
-		},
-		) {
-			return sourceID, struct {
-				userIDCount          int
-				anonIDCount          int
-				identifiedUsersCount int
-			}{
-				userIDCount:          int(value.userIDHll.Cardinality()),
-				anonIDCount:          int(value.anonIDHll.Cardinality()),
-				identifiedUsersCount: int(value.identifiedUsersHll.Cardinality()),
-			}
-		})
-	})
 }
 
 func setup(t testing.TB) testConfig {
@@ -220,9 +269,7 @@ func setup(t testing.TB) testConfig {
 	t.Cleanup(webhook.Close)
 	webhookURL := webhook.Server.URL
 
-	reportingServer := &mockReportingServer{
-		Recorder: webhookutil.NewRecorder(),
-	}
+	reportingServer := newMockReportingServer()
 	t.Cleanup(reportingServer.Close)
 
 	trServer := transformertest.NewBuilder().
