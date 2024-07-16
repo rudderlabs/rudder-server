@@ -112,7 +112,10 @@ require (
 	google.golang.org/protobuf v1.34.2
 )
 
-require github.com/go-ini/ini v1.67.0 // indirect
+require (
+	github.com/go-ini/ini v1.67.0 // indirect
+	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240716203617-abc31dda6828 // indirect
+)
 
 require (
 	cloud.google.com/go v0.115.0 // indirect
