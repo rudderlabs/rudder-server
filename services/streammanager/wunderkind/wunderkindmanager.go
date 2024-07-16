@@ -9,8 +9,8 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/cmd/rudder-cli/config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -31,6 +31,7 @@ type inputData struct {
 }
 
 type Producer struct {
+	conf   *config.Config
 	client lambdaClient
 	logger logger.Logger
 }
@@ -40,11 +41,11 @@ type lambdaClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer() (*Producer, error) {
+func NewProducer(conf *config.Config) (*Producer, error) {
 	sessionConfig := &awsutil.SessionConfig{
-		Region:        config.GetEnv(WunderkindRegion),
-		IAMRoleARN:    config.GetEnv(WunderkindIamRoleArn),
-		ExternalID:    config.GetEnv(WunderkindExternalId),
+		Region:        conf.GetString(WunderkindRegion, ""),
+		IAMRoleARN:    conf.GetString(WunderkindIamRoleArn, ""),
+		ExternalID:    conf.GetString(WunderkindExternalId, ""),
 		RoleBasedAuth: true,
 	}
 	awsSession, err := awsutil.CreateSession(sessionConfig)
@@ -53,6 +54,7 @@ func NewProducer() (*Producer, error) {
 	}
 
 	return &Producer{
+		conf:   conf,
 		client: lambda.New(awsSession),
 		logger: logger.NewLogger().Child("streammanager").Child("wunderkind"),
 	}, nil
@@ -76,7 +78,7 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 	}
 
 	var invokeInput lambda.InvokeInput
-	wunderKindLambda := config.GetEnv(WunderkindLambda)
+	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
 	invokeInput.SetFunctionName(wunderKindLambda)
 	invokeInput.SetPayload([]byte(input.Payload))
 	invokeInput.SetInvocationType(InvocationType)
