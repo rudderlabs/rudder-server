@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -89,7 +90,12 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 	response, err := client.Invoke(&invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
-		p.logger.Errorf("Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		p.logger.Warnn("Invocation",
+			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
+			logger.NewStringField("respStatus", respStatus),
+			logger.NewStringField("responseMessage", responseMessage),
+			obskit.Error(err),
+		)
 		return statusCode, respStatus, responseMessage
 	}
 
@@ -98,7 +104,12 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 		statusCode := http.StatusBadRequest
 		respStatus := "Failure"
 		responseMessage := string(response.Payload)
-		p.logger.Errorf("Function execution error :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		p.logger.Warnn("Function execution",
+			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
+			logger.NewStringField("respStatus", respStatus),
+			logger.NewStringField("responseMessage", responseMessage),
+			logger.NewStringField("functionError", *response.FunctionError),
+		)
 		return statusCode, respStatus, responseMessage
 	}
 

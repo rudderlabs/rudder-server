@@ -108,7 +108,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	// return general Error
 	errorCode := "errorCode"
 	mockClient.EXPECT().Invoke(&sampleInput).Return(nil, errors.New(errorCode))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
 	require.Equal(t, http.StatusInternalServerError, statusCode)
 	require.Equal(t, "Failure", statusMsg)
@@ -120,7 +120,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		FunctionError:   aws.String("Unhandled"),
 		ExecutedVersion: aws.String("$LATEST"),
 	}, nil)
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, _ = producer.Produce(sampleEventJson, destConfig)
 	require.Equal(t, http.StatusBadRequest, statusCode)
 	require.Equal(t, "Failure", statusMsg)
@@ -128,7 +128,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	// return aws error
 	mockClient.EXPECT().Invoke(&sampleInput).Return(
 		nil, awserr.NewRequestFailure(awserr.New(errorCode, errorCode, errors.New(errorCode)), http.StatusBadRequest, "request-id"))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
 	require.Equal(t, http.StatusBadRequest, statusCode)
 	require.Equal(t, errorCode, statusMsg)
