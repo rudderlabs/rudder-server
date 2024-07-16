@@ -22,9 +22,7 @@ const (
 	WunderkindLambda     = "WUNDERKIND_LAMBDA"
 )
 
-var (
-	jsonFast = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var jsonFast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type inputData struct {
 	Payload string `json:"payload"`
