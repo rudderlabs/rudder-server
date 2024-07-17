@@ -2,6 +2,7 @@ package wunderkind
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -41,6 +42,9 @@ type lambdaClient interface {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(conf *config.Config) (*Producer, error) {
+	if err := validate(conf); err != nil {
+		return nil, fmt.Errorf("invalid environment config: %w", err)
+	}
 	sessionConfig := &awsutil.SessionConfig{
 		Region:        conf.GetString(WunderkindRegion, ""),
 		IAMRoleARN:    conf.GetString(WunderkindIamRoleArn, ""),
@@ -114,6 +118,26 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 	}
 
 	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
+}
+
+func validate(conf *config.Config) error {
+	if conf.GetString(WunderkindRegion, "") == "" {
+		return errors.New("region cannot be empty")
+	}
+
+	if conf.GetString(WunderkindIamRoleArn, "") == "" {
+		return errors.New("iam role arn cannot be empty")
+	}
+
+	if conf.GetString(WunderkindExternalId, "") == "" {
+		return errors.New("external id cannot be empty")
+	}
+
+	if conf.GetString(WunderkindLambda, "") == "" {
+		return errors.New("lambda function cannot be empty")
+	}
+
+	return nil
 }
 
 func (*Producer) Close() error {
