@@ -25,7 +25,7 @@ replace (
 require (
 	cloud.google.com/go/bigquery v1.61.0
 	cloud.google.com/go/pubsub v1.40.0
-	cloud.google.com/go/storage v1.42.0
+	cloud.google.com/go/storage v1.43.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -33,11 +33,11 @@ require (
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/apache/pulsar-client-go v0.12.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/aws/aws-sdk-go v1.54.13
+	github.com/aws/aws-sdk-go v1.54.15
 	github.com/bugsnag/bugsnag-go/v2 v2.4.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.5.0
 	github.com/databricks/databricks-sql-go v1.5.7
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
@@ -62,7 +62,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.7.0
-	github.com/minio/minio-go/v7 v7.0.73
+	github.com/minio/minio-go/v7 v7.0.74
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.19.0
@@ -71,7 +71,7 @@ require (
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.6.1
-	github.com/redis/go-redis/v9 v9.5.3
+	github.com/redis/go-redis/v9 v9.5.4
 	github.com/rs/cors v1.11.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.2
@@ -80,7 +80,7 @@ require (
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
 	github.com/rudderlabs/sql-tunnels v0.1.7
-	github.com/samber/lo v1.44.0
+	github.com/samber/lo v1.46.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/segmentio/ksuid v1.0.4
@@ -161,7 +161,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
-	github.com/containerd/containerd v1.7.12 // indirect
+	github.com/containerd/containerd v1.7.15 // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.10.0 // indirect

@@ -11,9 +11,15 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
+)
+
+const (
+	TrackedUsersReportsTable = "tracked_users_reports"
 )
 
 type Mediator struct {
@@ -24,6 +30,8 @@ type Mediator struct {
 	cancel    context.CancelFunc
 	reporters []types.Reporting
 	stats     stats.Stats
+
+	cronRunners []flusher.Runner
 }
 
 func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -87,6 +95,15 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 		syncers = append(syncers, reporter.DatabaseSyncer(c))
 	}
 
+	if c.Label == types.CoreReportingLabel || c.Label == "" {
+		trackedUsersFlusher, err := flusher.CreateRunner(rm.ctx, TrackedUsersReportsTable, rm.log, rm.stats, config.Default, c.Label)
+		if err != nil {
+			rm.log.Errorn("error creating tracked users flusher", obskit.Error(err))
+			panic(err) //  TODO: Should we panic here?
+		}
+		rm.cronRunners = append(rm.cronRunners, trackedUsersFlusher)
+	}
+
 	return func() {
 		for i := range syncers {
 			syncer := syncers[i]
@@ -95,6 +112,14 @@ func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 				return nil
 			})
 		}
+
+		for _, f := range rm.cronRunners {
+			rm.g.Go(func() error {
+				f.Run()
+				return nil
+			})
+		}
+
 		_ = rm.g.Wait()
 	}
 }
@@ -104,5 +129,9 @@ func (rm *Mediator) Stop() {
 	_ = rm.g.Wait()
 	for _, reporter := range rm.reporters {
 		reporter.Stop()
+	}
+
+	for _, f := range rm.cronRunners {
+		f.Stop()
 	}
 }
