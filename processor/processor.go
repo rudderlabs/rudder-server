@@ -1820,13 +1820,15 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				&backendconfig.DestinationT{},
 			)
 
-			// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
-			shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+			trackingPlanId := source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
-			fromRudderTyper := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if fromRudderTyper != nil {
-				trackingPlanVersion = fromRudderTyper.(int)
+			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
+			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
+			if rudderTyperTPID != nil && rudderTyperTPVersion != nil {
+				trackingPlanId = rudderTyperTPID.(string)
+				trackingPlanVersion = rudderTyperTPVersion.(int)
 			}
+			shallowEventCopy.Metadata.TrackingPlanId = trackingPlanId
 			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
