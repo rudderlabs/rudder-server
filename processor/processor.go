@@ -1825,10 +1825,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
 			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
 			if rudderTyperTPID != nil && rudderTyperTPVersion != nil {
-				if id, ok := rudderTyperTPID.(string); ok {
+				if id, ok := rudderTyperTPID.(string); ok && id != "" {
 					trackingPlanID = id
 				}
-				if version, ok := rudderTyperTPVersion.(int); ok {
+				if version, ok := rudderTyperTPVersion.(int); ok && version > 0 {
 					trackingPlanVersion = version
 				}
 			}
