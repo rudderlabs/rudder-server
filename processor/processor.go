@@ -821,7 +821,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
-			sourceIdSourceMap               = map[string]backendconfig.SourceT{}
+			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
 			eventAuditEnabled               = make(map[string]bool)
 			credentialsMap                  = make(map[string][]transformer.Credential)
 			nonEventStreamSources           = make(map[string]bool)

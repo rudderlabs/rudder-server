@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -62,7 +64,7 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 	return &UniqueUsersReporter{
 		log: log,
 		hllSettings: &hll.Settings{
-			Log2m:             conf.GetInt("TrackedUsers.precision", 14),
+			Log2m:             conf.GetInt("TrackedUsers.precision", 16),
 			Regwidth:          conf.GetInt("TrackedUsers.registerWidth", 5),
 			ExplicitThreshold: hll.AutoExplicitThreshold,
 			SparseEnabled:     true,
@@ -70,7 +72,7 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 		instanceID: config.GetString("INSTANCE_ID", "1"),
 		stats:      stats,
 		now: func() time.Time {
-			return time.Now()
+			return timeutil.Now()
 		},
 	}, nil
 }
