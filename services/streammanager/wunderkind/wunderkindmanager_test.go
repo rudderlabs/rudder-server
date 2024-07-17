@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 )
@@ -26,14 +27,13 @@ var (
 )
 
 func TestNewProducer(t *testing.T) {
-
 	t.Run("valid", func(t *testing.T) {
 		conf := config.New()
 		conf.Set("WUNDERKIND_REGION", "us-east-1")
 		conf.Set("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
 		conf.Set("WUNDERKIND_EXTERNAL_ID", sampleExternalID)
 		conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
-		producer, err := NewProducer(conf)
+		producer, err := NewProducer(conf, logger.NOP)
 		require.Nil(t, err)
 		require.NotNil(t, producer)
 		require.NotNil(t, producer.client)
@@ -45,7 +45,7 @@ func TestNewProducer(t *testing.T) {
 		conf.Set("WUNDERKIND_IAM_ROLE_ARN", sampleIAMRoleARN)
 		conf.Set("WUNDERKIND_EXTERNAL_ID", "")
 		conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
-		producer, err := NewProducer(conf)
+		producer, err := NewProducer(conf, logger.NOP)
 		require.Nil(t, producer)
 		require.Equal(t, "invalid environment config: external id cannot be empty", err.Error())
 	})
@@ -82,7 +82,6 @@ func TestProduceWithInvalidData(t *testing.T) {
 		require.Equal(t, "Failure", statusMsg)
 		require.Contains(t, respMsg, "[Wunderkind] error :: Invalid payload")
 	})
-
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
@@ -149,5 +148,4 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		require.Equal(t, errorCode, statusMsg)
 		require.NotEmpty(t, respMsg)
 	})
-
 }

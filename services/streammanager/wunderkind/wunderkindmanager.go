@@ -41,7 +41,7 @@ type lambdaClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(conf *config.Config) (*Producer, error) {
+func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
 	if err := validate(conf); err != nil {
 		return nil, fmt.Errorf("invalid environment config: %w", err)
 	}
@@ -59,7 +59,7 @@ func NewProducer(conf *config.Config) (*Producer, error) {
 	return &Producer{
 		conf:   conf,
 		client: lambda.New(awsSession),
-		logger: logger.NewLogger().Child("streammanager").Child("wunderkind"),
+		logger: log.Child("wunderkind"),
 	}, nil
 }
 

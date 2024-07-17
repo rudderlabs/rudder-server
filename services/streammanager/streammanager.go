@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -51,7 +52,7 @@ func NewProducer(destination *backendconfig.DestinationT, opts common.Opts) (com
 	case "GOOGLE_CLOUD_FUNCTION":
 		return googlecloudfunction.NewProducer(destination, opts)
 	case "WUNDERKIND":
-		return wunderkind.NewProducer(config.Default)
+		return wunderkind.NewProducer(config.Default, logger.NewLogger().Child("streammanager"))
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
 	}
