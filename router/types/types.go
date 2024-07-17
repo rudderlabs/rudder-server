@@ -18,6 +18,16 @@ type RouterJobT struct {
 	Message     json.RawMessage            `json:"message"`
 	JobMetadata JobMetadataT               `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
+	Connection  backendconfig.Connection   `json:"connection"`
+}
+
+type SourceDest struct {
+	SourceID, DestinationID string
+}
+
+type Connection struct {
+	ConnectionID string
+	ConnectionT  backendconfig.Connection
 }
 
 type DestinationJobs []DestinationJobT

@@ -181,12 +181,17 @@ func (w *worker) workLoop() {
 			}
 
 			w.rt.destinationsMapMu.RLock()
-			batchDestination, ok := w.rt.destinationsMap[parameters.DestinationID]
+			batchDestination, destOK := w.rt.destinationsMap[parameters.DestinationID]
+			conn, connOK := w.rt.connectionsMap[types.SourceDest{
+				SourceID:      parameters.SourceID,
+				DestinationID: parameters.DestinationID,
+			}]
 			w.rt.destinationsMapMu.RUnlock()
-			if !ok {
+			if !destOK || (parameters.SourceJobRunID != "" && !connOK) {
 				continue
 			}
 			destination := batchDestination.Destination
+			connection := conn.ConnectionT
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 			// TODO: Remove later
 			w.logger.Debugn("[router worker]",
@@ -218,6 +223,7 @@ func (w *worker) workLoop() {
 					Message:     job.EventPayload,
 					JobMetadata: jobMetadata,
 					Destination: destination,
+					Connection:  connection,
 				})
 
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
@@ -229,6 +235,7 @@ func (w *worker) workLoop() {
 					Message:     job.EventPayload,
 					JobMetadata: jobMetadata,
 					Destination: destination,
+					Connection:  connection,
 				})
 
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
