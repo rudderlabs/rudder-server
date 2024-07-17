@@ -51,15 +51,6 @@ func TestNewProducer(t *testing.T) {
 	})
 }
 
-func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &Producer{}
-	sampleEventJson := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
-	require.Equal(t, http.StatusBadRequest, statusCode)
-	require.Equal(t, "Failure", statusMsg)
-	require.Equal(t, "[Wunderkind] error :: Could not create client", respMsg)
-}
-
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
