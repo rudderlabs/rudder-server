@@ -94,6 +94,7 @@ type Handle struct {
 	// other state
 
 	backendConfigInitialised bool
+	inFlightRequests         *sync.WaitGroup
 
 	trackCounterMu    sync.Mutex // protects trackSuccessCount and trackFailureCount
 	trackSuccessCount int
