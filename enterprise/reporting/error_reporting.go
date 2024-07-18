@@ -543,7 +543,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				reportsCountMap[errDet] = &types.EDReportMapValue{
 					SampleResponse: rep.SampleResponse,
 					SampleEvent:    rep.SampleEvent,
-					Count: rep.Count,
+					Count:          rep.Count,
 				}
 				continue
 			}
