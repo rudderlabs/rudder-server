@@ -534,18 +534,20 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 			},
 		}
 		messageMap := make(map[string]int)
-		reportsCountMap := make(map[types.EDErrorDetailsKey]types.EDReportMapValue)
+		reportsCountMap := make(map[types.EDErrorDetailsKey]*types.EDReportMapValue)
 		for index, rep := range reports {
 			messageMap[rep.EDErrorDetails.ErrorMessage] = index
 			errDet := rep.EDErrorDetails.EDErrorDetailsKey
 			reportMapValue, ok := reportsCountMap[errDet]
 			if !ok {
-				reportsCountMap[errDet] = types.EDReportMapValue{
+				reportsCountMap[errDet] = &types.EDReportMapValue{
 					SampleResponse: rep.SampleResponse,
 					SampleEvent:    rep.SampleEvent,
+					Count: rep.Count,
 				}
+				continue
 			}
-			reportMapValue.Count += 1
+			reportMapValue.Count += rep.Count
 		}
 
 		reportGrpKeys := lo.Keys(reportsCountMap)
@@ -564,7 +566,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 				EDErrorDetailsKey: repKey,
 				SampleResponse:    repValue.SampleResponse,
 				SampleEvent:       repValue.SampleEvent,
-				Count:             repValue.Count,
+				ErrorCount:        repValue.Count,
 			}
 		}
 		edrSchema.Errors = errs

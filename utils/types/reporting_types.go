@@ -120,7 +120,7 @@ type EDErrorDetails struct {
 	EDErrorDetailsKey
 	SampleResponse string          `json:"sampleResponse"`
 	SampleEvent    json.RawMessage `json:"sampleEvent"`
-	Count          int64           `json:"count"`
+	ErrorCount     int64           `json:"count"`
 }
 
 type EDReportsDB struct {
