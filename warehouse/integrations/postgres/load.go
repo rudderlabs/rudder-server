@@ -11,8 +11,10 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/safeguard"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -32,6 +34,9 @@ type loadUsersTableResponse struct {
 
 func (pg *Postgres) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
 	var loadTableStats *types.LoadTableStats
+	cancel := safeguard.MustStop(ctx, 5*time.Minute)
+	defer cancel()
+
 	err := pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		var err error
 		loadTableStats, _, err = pg.loadTable(
@@ -449,6 +454,26 @@ func (pg *Postgres) loadUsersTable(
 	if _, err = tx.ExecContext(ctx, query); err != nil {
 		return loadUsersTableResponse{
 			usersError: fmt.Errorf("creating union staging users table: %w", err),
+		}
+	}
+
+	query = fmt.Sprintf(`
+		CREATE INDEX users_identifies_union_id_idx ON %[1]s (id);`,
+		unionStagingTableName,
+	)
+	pg.logger.Debugw("creating index on union staging users table",
+		logfield.SourceID, pg.Warehouse.Source.ID,
+		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, pg.Warehouse.Destination.ID,
+		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
+		logfield.TableName, warehouseutils.UsersTable,
+		logfield.StagingTableName, usersStagingTableName,
+		logfield.Query, query,
+	)
+	if _, err = tx.ExecContext(ctx, query); err != nil {
+		return loadUsersTableResponse{
+			usersError: fmt.Errorf("creating index on union staging users table: %w", err),
 		}
 	}
 

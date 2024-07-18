@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
@@ -166,11 +165,10 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{
-			"version":            r.releaseInfo.Version,
-			"commit":             r.releaseInfo.Commit,
-			"buildDate":          r.releaseInfo.BuildDate,
-			"builtBy":            r.releaseInfo.BuiltBy,
-			"TransformerVersion": transformer.GetVersion(),
+			"version":   r.releaseInfo.Version,
+			"commit":    r.releaseInfo.Commit,
+			"buildDate": r.releaseInfo.BuildDate,
+			"builtBy":   r.releaseInfo.BuiltBy,
 		}).Gauge(1)
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
@@ -321,12 +319,11 @@ func runAllInit() {
 
 func (r *Runner) versionInfo() map[string]interface{} {
 	return map[string]interface{}{
-		"Version":            r.releaseInfo.Version,
-		"Commit":             r.releaseInfo.Commit,
-		"BuildDate":          r.releaseInfo.BuildDate,
-		"BuiltBy":            r.releaseInfo.BuiltBy,
-		"TransformerVersion": transformer.GetVersion(),
-		"Features":           info.ServerComponent.Features,
+		"Version":   r.releaseInfo.Version,
+		"Commit":    r.releaseInfo.Commit,
+		"BuildDate": r.releaseInfo.BuildDate,
+		"BuiltBy":   r.releaseInfo.BuiltBy,
+		"Features":  info.ServerComponent.Features,
 	}
 }
 

@@ -1,0 +1,21 @@
+{
+    "name": "shopify",
+    "description": "No Query Parameters",
+    "input": {},
+    "output": {
+        "response": {
+            "status": 400,
+            "contentType": "text/plain",
+            "body": "Invalid topic in query_parameters\n"     
+        },
+        "err_queue": [
+            {
+                "query_parameters": {
+                    "writeKey": [
+                        "{{.WriteKey}}"
+                    ]
+                }
+            }
+        ]
+    }
+}
