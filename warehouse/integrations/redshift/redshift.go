@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/samber/lo"
@@ -86,11 +89,15 @@ var errorsMappings = []model.JobError{
 
 // String constants for redshift destination config
 const (
-	RSHost     = "host"
-	RSPort     = "port"
-	RSDbName   = "database"
-	RSUserName = "user"
-	RSPassword = "password"
+	Host              = "host"
+	Port              = "port"
+	Database          = "database"
+	User              = "user"
+	Password          = "password"
+	UseIAMForAuth     = "useIAMForAuth"
+	IAMRoleARNForAuth = "iamRoleARNForAuth"
+	ClusterID         = "clusterId"
+	ClusterRegion     = "clusterRegion"
 )
 
 const (
@@ -181,16 +188,6 @@ type s3ManifestEntry struct {
 
 type s3Manifest struct {
 	Entries []s3ManifestEntry `json:"entries"`
-}
-
-type connectionCredentials struct {
-	Host       string
-	Port       string
-	DbName     string
-	Username   string
-	Password   string
-	timeout    time.Duration
-	TunnelInfo *tunnelling.TunnelInfo
 }
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
@@ -666,6 +663,9 @@ func (rs *Redshift) deleteFromLoadTable(
 	if err != nil {
 		return 0, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
 	}
+	if rs.usingIAMForAuth() {
+		return 0, nil // Check with @atzoum and @lvrach regarding this
+	}
 	return result.RowsAffected()
 }
 
@@ -710,6 +710,9 @@ func (rs *Redshift) insertIntoLoadTable(
 	r, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
 		return 0, fmt.Errorf("inserting into main table: %w", err)
+	}
+	if rs.usingIAMForAuth() {
+		return 0, nil // Check with @atzoum and @lvrach regarding this
 	}
 	return r.RowsAffected()
 }
@@ -910,36 +913,18 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 }
 
 func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
-	cred := rs.getConnectionCredentials()
-	dsn := url.URL{
-		Scheme: "postgres",
-		User:   url.UserPassword(cred.Username, cred.Password),
-		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
-		Path:   cred.DbName,
-	}
-
-	params := url.Values{}
-	params.Add("sslmode", "require")
-
-	if cred.timeout > 0 {
-		params.Add("connect_timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
-	}
-
-	dsn.RawQuery = params.Encode()
-
 	var (
 		err error
 		db  *sql.DB
 	)
 
-	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.Connect(dsn.String(), cred.TunnelInfo.Config); err != nil {
-			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
-		}
+	if rs.usingIAMForAuth() {
+		db, err = rs.connectUsingIAMRole()
 	} else {
-		if db, err = sql.Open("postgres", dsn.String()); err != nil {
-			return nil, fmt.Errorf("connecting to redshift: %w", err)
-		}
+		db, err = rs.connectUsingPassword()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connecting to redshift: %w", err)
 	}
 
 	_, err = db.ExecContext(ctx, `SET query_group to 'RudderStack'`)
@@ -967,6 +952,86 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		}),
 	)
 	return middleware, nil
+}
+
+func (rs *Redshift) usingIAMForAuth() bool {
+	return warehouseutils.ReadAsBool(UseIAMForAuth, rs.Warehouse.Destination.Config)
+}
+
+func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
+	var (
+		database          = warehouseutils.GetConfigValue(Database, rs.Warehouse)
+		user              = warehouseutils.GetConfigValue(User, rs.Warehouse)
+		iamRoleARNForAuth = warehouseutils.GetConfigValue(IAMRoleARNForAuth, rs.Warehouse)
+		clusterID         = warehouseutils.GetConfigValue(ClusterID, rs.Warehouse)
+		clusterRegion     = warehouseutils.GetConfigValue(ClusterRegion, rs.Warehouse)
+		timeout           = rs.connectTimeout
+	)
+
+	data := sqlconnectconfig.RedshiftData{
+		ClusterIdentifier: clusterID,
+		Database:          database,
+		User:              user,
+		Region:            clusterRegion,
+		RoleARN:           iamRoleARNForAuth,
+		//ExternalID:        rs.Warehouse.WorkspaceID,
+		Timeout: timeout,
+	}
+
+	credentialsJSON, err := data.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("connectUsingIAMRole: marshalling redshift credentials: %w", err)
+	}
+
+	sqlConnectDB, err := sqlconnect.NewDB("redshift", credentialsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("connectUsingIAMRole: creating redshift connection: %w", err)
+	}
+	return sqlConnectDB.SqlDB(), nil
+}
+
+func (rs *Redshift) connectUsingPassword() (*sql.DB, error) {
+	var (
+		host       = warehouseutils.GetConfigValue(Host, rs.Warehouse)
+		port       = warehouseutils.GetConfigValue(Port, rs.Warehouse)
+		database   = warehouseutils.GetConfigValue(Database, rs.Warehouse)
+		user       = warehouseutils.GetConfigValue(User, rs.Warehouse)
+		password   = warehouseutils.GetConfigValue(Password, rs.Warehouse)
+		timeout    = rs.connectTimeout
+		tunnelInfo = tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config)
+	)
+
+	var (
+		err error
+		db  *sql.DB
+	)
+
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   fmt.Sprintf("%s:%s", host, port),
+		Path:   database,
+	}
+
+	params := url.Values{}
+	params.Add("sslmode", "require")
+
+	if timeout > 0 {
+		params.Add("connect_timeout", fmt.Sprintf("%d", timeout/time.Second))
+	}
+
+	dsn.RawQuery = params.Encode()
+
+	if tunnelInfo != nil {
+		if db, err = tunnelling.Connect(dsn.String(), tunnelInfo.Config); err != nil {
+			return nil, fmt.Errorf("connectUsingPassword: connecting to redshift through tunnel: %w", err)
+		}
+	} else {
+		if db, err = sql.Open("postgres", dsn.String()); err != nil {
+			return nil, fmt.Errorf("connectUsingPassword: connecting to redshift: %w", err)
+		}
+	}
+	return db, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
@@ -1132,20 +1197,6 @@ func (rs *Redshift) AlterColumn(ctx context.Context, tableName, columnName, colu
 	}
 
 	return res, nil
-}
-
-func (rs *Redshift) getConnectionCredentials() connectionCredentials {
-	creds := connectionCredentials{
-		Host:       warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		Port:       warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		DbName:     warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		Username:   warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		Password:   warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-		timeout:    rs.connectTimeout,
-		TunnelInfo: tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
-	}
-
-	return creds
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
