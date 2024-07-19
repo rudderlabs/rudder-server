@@ -275,6 +275,74 @@ func TestUniqueUsersReporter(t *testing.T) {
 				},
 			},
 			{
+				name: "alias jobs with prevID same as userID",
+				jobs: []*jobsdb.JobT{
+					prepareJob(sampleSourceID, "", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id", "", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id_1", "anon_id_1", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID2),
+					prepareAliasJob(sampleSourceID, "user_id", "user_id", sampleWorkspaceID),
+				},
+				trackedUsers: []*UsersReport{
+					{
+						WorkspaceID: sampleWorkspaceID,
+						SourceID:    sampleSourceID,
+						UserIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id_1"), murmurSeed))
+							return &resHll
+						}(),
+						AnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							return &resHll
+						}(),
+						IdentifiedAnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
+								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
+								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
+								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							return &resHll
+						}(),
+					},
+					{
+						WorkspaceID: sampleWorkspaceID2,
+						SourceID:    sampleSourceID,
+						UserIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
+							return &resHll
+						}(),
+						AnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							return &resHll
+						}(),
+						IdentifiedAnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
+								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							return &resHll
+						}(),
+					},
+				},
+			},
+			{
 				name: "happy case - no identified use ids",
 				jobs: []*jobsdb.JobT{
 					prepareJob(sampleSourceID, "", "anon_id", sampleWorkspaceID),

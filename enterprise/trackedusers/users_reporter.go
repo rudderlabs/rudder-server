@@ -158,7 +158,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		// cardinality: len(userHLL)+len(anonHLL)-len(identifiedAnonHLL): 2+1-2 = 1
 		if eventType == eventTypeAlias {
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
-			if previousID != "" {
+			if previousID != "" && previousID != userID && previousID != anonymousID {
 				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
 			}
 		}
