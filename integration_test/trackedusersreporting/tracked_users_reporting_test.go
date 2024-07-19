@@ -240,14 +240,22 @@ func TestTrackedUsersReporting(t *testing.T) {
 	}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", tc.webhook.RequestsCount())
 
 	require.Eventuallyf(t, func() bool {
-		cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
-		return cardinalityMap[workspaceID][sourceID].userIDCount == 2 &&
-			cardinalityMap[workspaceID][sourceID].anonIDCount == 2 &&
-			cardinalityMap[workspaceID][sourceID].identifiedUsersCount == 2
-	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service, hllMap: %v", tc.reportingServer.hllMap)
+		return getCardinalityOfReportingTable(t, tc.postgresResource) == 0
+	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service")
 
+	cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
+	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].userIDCount)
+	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].anonIDCount)
+	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].identifiedUsersCount)
 	cancel()
 	require.NoError(t, wg.Wait())
+}
+
+func getCardinalityOfReportingTable(t *testing.T, db *postgres.Resource) int {
+	var count int
+	err := db.DB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", "tracked_users_reports")).Scan(&count)
+	require.NoError(t, err)
+	return count
 }
 
 func setup(t testing.TB) testConfig {
