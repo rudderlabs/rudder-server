@@ -52,3 +52,19 @@ jobs:
             ]'
           prerelease: true
           release-as: ${{ steps.extract_branch.outputs.branch }}
+      - name: Extract prerelease version
+        id: extract_version
+        shell: bash
+        run: echo "version=$(echo "${{ steps.extract_branch.outputs.branch }}" | cut -d'/' -f2)" >> $GITHUB_OUTPUT
+      - name: Trigger dispatch event
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: "${{ secrets.PAT }}"
+          repository: rudderlabs/rudder-devops
+          event-type: release-server-hosted
+          client-payload: |
+            {
+                "version": "${{ steps.extract_version.outputs.version }}",
+              },
+              "value-paths": []
+            }
