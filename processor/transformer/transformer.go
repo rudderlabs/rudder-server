@@ -240,8 +240,7 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 			clientEvent.Metadata.SourceID = originalSourceID
 		}
 	}
-	response := trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
-	return response
+	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
 }
 
 // Validate function is used to invoke tracking plan validation API
