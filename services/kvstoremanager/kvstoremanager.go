@@ -1,11 +1,12 @@
 package kvstoremanager
 
+//go:generate mockgen -destination=../../mocks/services/kvstoremanager/mock_kvstoremanager.go -package=mock_kvstoremanager github.com/rudderlabs/rudder-server/services/kvstoremanager KVStoreManager
+
 import (
 	"encoding/json"
 
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
+	"github.com/tidwall/gjson"
 )
 
 type KVStoreManager interface {

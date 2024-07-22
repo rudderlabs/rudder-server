@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -53,12 +54,12 @@ func TestProduceWithInvalidClient(t *testing.T) {
 	assert.Equal(t, "Could not create producer for Kinesis", respMsg)
 }
 
-var validDestinationConfigUseMessageID Config = Config{
+var validDestinationConfigUseMessageID = Config{
 	Stream:       "stream",
 	UseMessageID: true,
 }
 
-var validDestinationConfigNotUseMessageID Config = Config{
+var validDestinationConfigNotUseMessageID = Config{
 	Stream:       "stream",
 	UseMessageID: false,
 }

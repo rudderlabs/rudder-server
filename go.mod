@@ -74,9 +74,9 @@ require (
 	github.com/redis/go-redis/v9 v9.5.4
 	github.com/rs/cors v1.11.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/rudderlabs/bing-ads-go-sdk v0.2.2
+	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.34.2
+	github.com/rudderlabs/rudder-go-kit v0.35.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
 	github.com/rudderlabs/sql-tunnels v0.1.7

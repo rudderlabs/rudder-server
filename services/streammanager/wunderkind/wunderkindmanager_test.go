@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/lambda"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"

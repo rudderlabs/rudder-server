@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/backend-config"

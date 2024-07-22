@@ -12,7 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
