@@ -153,6 +153,7 @@ func TestTransformer(t *testing.T) {
 		tr.conf = config.Default
 		tr.client = srv.Client()
 		tr.guardConcurrency = make(chan struct{}, 200)
+		tr.sentStat = tr.stat.NewStat("transformer_sent", stats.CountType)
 		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 		tr.config.timeoutDuration = 1 * time.Second

@@ -314,10 +314,6 @@ func (trans *handle) transform(
 	var failedEvents []TransformerResponse
 
 	for _, batch := range transformResponse {
-		if batch == nil {
-			continue
-		}
-
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
@@ -326,14 +322,16 @@ func (trans *handle) transform(
 				transformerResponse.Metadata.SourceID = transformerResponse.Metadata.OriginalSourceID
 				transformerResponse.Metadata.OriginalSourceID = originalSourceID
 			}
-			if transformerResponse.StatusCode != 200 {
+			switch transformerResponse.StatusCode {
+			case http.StatusOK:
+				outClientEvents = append(outClientEvents, transformerResponse)
+			default:
 				failedEvents = append(failedEvents, transformerResponse)
-				continue
 			}
-			outClientEvents = append(outClientEvents, transformerResponse)
 		}
 	}
 
+	trans.sentStat.Count(len(clientEvents))
 	trans.receivedStat.Count(len(outClientEvents))
 
 	return Response{
@@ -411,7 +409,8 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	}
 
 	var transformerResponses []TransformerResponse
-	if statusCode == http.StatusOK {
+	switch statusCode {
+	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
 
 		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
@@ -419,19 +418,13 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 			err = json.Unmarshal(respData, &transformerResponses)
 		})
 		// This is returned by our JS engine so should  be parsable
-		// but still handling it
+		// Panic the processor to avoid replays
 		if err != nil {
 			trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
 			trans.logger.Errorf("Transformer returned : %v", string(respData))
-
-			respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
-
-			transformerResponses = nil
-			statusCode = http.StatusBadRequest
+			panic(err)
 		}
-	}
-
-	if statusCode != http.StatusOK {
+	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
@@ -504,12 +497,9 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
-		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
-		if convErr != nil {
-			transformerAPIVersion = 0
-		}
+		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
 		if types.SupportedTransformerApiVersion != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", types.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

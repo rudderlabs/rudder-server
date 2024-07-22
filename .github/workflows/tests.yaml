@@ -135,6 +135,7 @@ jobs:
           - integration_test/warehouse
           - integration_test/tracing
           - integration_test/backendconfigunavailability
+          - integration_test/trackedusersreporting
           - processor
           - regulation-worker
           - router
