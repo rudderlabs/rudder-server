@@ -231,15 +231,6 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
-	// flip back afterwards
-	for _, clientEvent := range clientEvents {
-		if clientEvent.Metadata.OriginalSourceID != "" {
-			originalSourceID := clientEvent.Metadata.OriginalSourceID
-			clientEvent.Metadata.OriginalSourceID = clientEvent.Metadata.SourceID
-			clientEvent.Metadata.SourceID = originalSourceID
-		}
-	}
 	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
 }
 
@@ -257,6 +248,15 @@ func (trans *handle) transform(
 ) Response {
 	if len(clientEvents) == 0 {
 		return Response{}
+	}
+	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
+	// flip back afterwards
+	for _, clientEvent := range clientEvents {
+		if clientEvent.Metadata.OriginalSourceID != "" {
+			originalSourceID := clientEvent.Metadata.OriginalSourceID
+			clientEvent.Metadata.OriginalSourceID = clientEvent.Metadata.SourceID
+			clientEvent.Metadata.SourceID = originalSourceID
+		}
 	}
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
