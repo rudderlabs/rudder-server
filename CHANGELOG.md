@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.30.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.29.0...v1.30.0-rc.1) (2024-07-22)
+
+
+### Features
+
+* drop trigger for populating warehouse schema versions ([#4904](https://github.com/rudderlabs/rudder-server/issues/4904)) ([96558d0](https://github.com/rudderlabs/rudder-server/commit/96558d0251a8728a822f8c331f8d5a60b68b1fc9))
+* onboard new custom destination: wunderkind ([#4798](https://github.com/rudderlabs/rudder-server/issues/4798)) ([8aa0e49](https://github.com/rudderlabs/rudder-server/commit/8aa0e49a3d38f0b29105c1527ae1cbdb9f307684))
+
+
+### Bug Fixes
+
+* fill metadata with typer version id if exist ([#4897](https://github.com/rudderlabs/rudder-server/issues/4897)) ([aab477b](https://github.com/rudderlabs/rudder-server/commit/aab477b462e6b4155ecb144f2b7ac4bd091beb6a))
+* **gateway:** send on closed chan - (*Handle).webRequestQ ([#4709](https://github.com/rudderlabs/rudder-server/issues/4709)) ([d857284](https://github.com/rudderlabs/rudder-server/commit/d85728447884ad491d028e112d0742758f73a1d6))
+* remove successJobs tag from upload in klaviyo bulk ([#4898](https://github.com/rudderlabs/rudder-server/issues/4898)) ([118d01a](https://github.com/rudderlabs/rudder-server/commit/118d01a6154d51703ab08824dcd0b3cd7c6adfc7))
+
+
+### Miscellaneous
+
+* add integration tests for mtu reporting ([#4860](https://github.com/rudderlabs/rudder-server/issues/4860)) ([784a51c](https://github.com/rudderlabs/rudder-server/commit/784a51cd101d70ca2a2b0e9e5394b26b1b0583d2))
+* add missing transformer sent stat ([#4855](https://github.com/rudderlabs/rudder-server/issues/4855)) ([3bc3e38](https://github.com/rudderlabs/rudder-server/commit/3bc3e38ea0af0bfab050d2838ad6c2177443201e))
+* add mock reporting server in mtu integration tests ([#4894](https://github.com/rudderlabs/rudder-server/issues/4894)) ([55cdb59](https://github.com/rudderlabs/rudder-server/commit/55cdb59e65570d3234136316c7e1af95c12818ff))
+* add tests for processor worker ([#4884](https://github.com/rudderlabs/rudder-server/issues/4884)) ([9db1ea4](https://github.com/rudderlabs/rudder-server/commit/9db1ea4a075f295e7780722211832634a64af40a))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.54.14 to 1.54.15 in the frequent group ([#4878](https://github.com/rudderlabs/rudder-server/issues/4878)) ([fe10438](https://github.com/rudderlabs/rudder-server/commit/fe104389765b021c2cb77420b13e7f772bb82a2a))
+* **deps:** bump the frequent group across 1 directory with 2 updates ([#4895](https://github.com/rudderlabs/rudder-server/issues/4895)) ([a2137c0](https://github.com/rudderlabs/rudder-server/commit/a2137c07d599ae6cd96ef61c460512b37476e879))
+* **deps:** bump the go-deps group across 1 directory with 4 updates ([#4900](https://github.com/rudderlabs/rudder-server/issues/4900)) ([f9a8d13](https://github.com/rudderlabs/rudder-server/commit/f9a8d137effe52283fdf97973841c4bedee6341a))
+* flipping SourceID & OriginalSourceID during transformation ([#4887](https://github.com/rudderlabs/rudder-server/issues/4887)) ([009a071](https://github.com/rudderlabs/rudder-server/commit/009a071d05b9ed8bae8182468aec9e20a4516464))
+* include extra columns for errors reporting table ([#4891](https://github.com/rudderlabs/rudder-server/issues/4891)) ([6ca22ca](https://github.com/rudderlabs/rudder-server/commit/6ca22ca1280f35f0a621df195e935eff50ed1d60))
+* update default mtu config ([#4890](https://github.com/rudderlabs/rudder-server/issues/4890)) ([d962876](https://github.com/rudderlabs/rudder-server/commit/d962876974d1d1f1e84fa8f2c2e615d91ed09a50))
+* upgrade go to 1.22.5 ([a80f494](https://github.com/rudderlabs/rudder-server/commit/a80f494e268759cef30e3734b9da1e2828b47735))
+* upgrade go v1.22.5 ([#4905](https://github.com/rudderlabs/rudder-server/issues/4905)) ([a80f494](https://github.com/rudderlabs/rudder-server/commit/a80f494e268759cef30e3734b9da1e2828b47735))
+
 ## [1.29.0](https://github.com/rudderlabs/rudder-server/compare/v1.28.1...v1.29.0) (2024-07-09)
 
 
