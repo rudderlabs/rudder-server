@@ -1,4 +1,5 @@
 on:
+  pull_request:
   push:
     branches:
       - "prerelease/*"
@@ -12,6 +13,7 @@ jobs:
         run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
         id: extract_branch
       - uses: google-github-actions/release-please-action@v3
+        if: github.event_name != 'pull_request'
         with:
           token: ${{ secrets.PAT }}
           pull-request-title-pattern: "chore: prerelease ${version}"
