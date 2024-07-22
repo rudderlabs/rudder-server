@@ -518,10 +518,13 @@ func (rs *Redshift) loadTable(
 		return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 	}
 
-	var rowsDeleted int64
+	var (
+		rowsDeletedResult, rowsInsertedResult sql.Result
+		rowsDeleted, rowsInserted             int64
+	)
 	if rs.ShouldMerge(tableName) {
 		log.Infow("deleting from load table")
-		rowsDeleted, err = rs.deleteFromLoadTable(
+		rowsDeletedResult, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
 			stagingTableName, tableSchemaAfterUpload,
 		)
@@ -531,7 +534,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	log.Infow("inserting into load table")
-	rowsInserted, err := rs.insertIntoLoadTable(
+	rowsInsertedResult, err = rs.insertIntoLoadTable(
 		ctx, txn, tableName,
 		stagingTableName, strKeys,
 	)
@@ -542,6 +545,19 @@ func (rs *Redshift) loadTable(
 	log.Debugw("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
+	}
+
+	if rowsDeletedResult != nil {
+		rowsDeleted, err = rowsDeletedResult.RowsAffected()
+		if err != nil {
+			return nil, "", fmt.Errorf("getting rows affected: %w", err)
+		}
+	}
+	if rowsInsertedResult != nil {
+		rowsInserted, err = rowsInsertedResult.RowsAffected()
+		if err != nil {
+			return nil, "", fmt.Errorf("getting rows affected: %w", err)
+		}
 	}
 
 	log.Infow("completed loading")
@@ -624,7 +640,7 @@ func (rs *Redshift) deleteFromLoadTable(
 	tableName string,
 	stagingTableName string,
 	tableSchemaAfterUpload model.TableSchema,
-) (int64, error) {
+) (sql.Result, error) {
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
@@ -661,12 +677,9 @@ func (rs *Redshift) deleteFromLoadTable(
 
 	result, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
+		return nil, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
 	}
-	if rs.usingIAMForAuth() {
-		return 0, nil // Check with @atzoum and @lvrach regarding this
-	}
-	return result.RowsAffected()
+	return result, nil
 }
 
 func (rs *Redshift) insertIntoLoadTable(
@@ -675,7 +688,7 @@ func (rs *Redshift) insertIntoLoadTable(
 	tableName string,
 	stagingTableName string,
 	sortedColumnKeys []string,
-) (int64, error) {
+) (sql.Result, error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -707,14 +720,11 @@ func (rs *Redshift) insertIntoLoadTable(
 		partitionKey,
 	)
 
-	r, err := txn.ExecContext(ctx, insertStmt)
+	result, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into main table: %w", err)
+		return nil, fmt.Errorf("inserting into main table: %w", err)
 	}
-	if rs.usingIAMForAuth() {
-		return 0, nil // Check with @atzoum and @lvrach regarding this
-	}
-	return r.RowsAffected()
+	return result, nil
 }
 
 func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
@@ -918,7 +928,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		db  *sql.DB
 	)
 
-	if rs.usingIAMForAuth() {
+	if rs.useIAMForAuth() {
 		db, err = rs.connectUsingIAMRole()
 	} else {
 		db, err = rs.connectUsingPassword()
@@ -954,7 +964,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-func (rs *Redshift) usingIAMForAuth() bool {
+func (rs *Redshift) useIAMForAuth() bool {
 	return warehouseutils.ReadAsBool(UseIAMForAuth, rs.Warehouse.Destination.Config)
 }
 
@@ -974,8 +984,9 @@ func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 		User:              user,
 		Region:            clusterRegion,
 		RoleARN:           iamRoleARNForAuth,
-		//ExternalID:        rs.Warehouse.WorkspaceID,
-		Timeout: timeout,
+		ExternalID:        rs.Warehouse.WorkspaceID,
+		RoleARNExpiry:     time.Hour,
+		Timeout:           timeout,
 	}
 
 	credentialsJSON, err := data.MarshalJSON()
