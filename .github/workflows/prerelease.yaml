@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Extract branch name
         shell: bash
-        run: echo "branch=$(echo "${{ github.ref_name }}")"
+        run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")"
         id: extract_branch
       - uses: google-github-actions/release-please-action@v3
         if: github.event_name != 'pull_request'
@@ -55,9 +55,9 @@ jobs:
           prerelease: true
           release-as: ${{ steps.extract_branch.outputs.branch }}
       - name: Extract prerelease version
-        id: extract_version
         shell: bash
         run: echo "version=$(echo "${{ steps.extract_branch.outputs.branch }}" | cut -d'/' -f2)" >> $GITHUB_OUTPUT
+        id: extract_version
       - name: Trigger dispatch event
         uses: peter-evans/repository-dispatch@v3
         with:
@@ -67,5 +67,4 @@ jobs:
           client-payload: |
             {
                 "version": "${{ steps.extract_version.outputs.version }}"
-              }
             }
