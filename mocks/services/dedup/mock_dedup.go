@@ -8,7 +8,7 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	dedup "github.com/rudderlabs/rudder-server/services/dedup"
+	types "github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
 // MockDedup is a mock of Dedup interface.
@@ -61,7 +61,7 @@ func (mr *MockDedupMockRecorder) Commit(arg0 interface{}) *gomock.Call {
 }
 
 // Set mocks base method.
-func (m *MockDedup) Set(arg0 dedup.KeyValue) (bool, int64) {
+func (m *MockDedup) Set(arg0 types.KeyValue) (bool, int64) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Set", arg0)
 	ret0, _ := ret[0].(bool)

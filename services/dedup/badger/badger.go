@@ -1,20 +1,22 @@
-package dedup
+package badger
 
 import (
 	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type badgerDB struct {
+type BadgerDB struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
@@ -25,7 +27,37 @@ type badgerDB struct {
 	opts     badger.Options
 }
 
-func (d *badgerDB) Get(key string) (int64, bool) {
+func NewBadgerDB(path string) *BadgerDB {
+	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+
+	log := logger.NewLogger().Child("dedup")
+	badgerOpts := badger.
+		DefaultOptions(path).
+		WithCompression(options.None).
+		WithIndexCacheSize(16 << 20). // 16mb
+		WithNumGoroutines(1).
+		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
+		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
+		WithBlockCacheSize(0).
+		WithNumVersionsToKeep(1).
+		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
+
+	db := &BadgerDB{
+		stats:  stats.Default,
+		logger: loggerForBadger{log},
+		path:   path,
+		gcDone: make(chan struct{}),
+		close:  make(chan struct{}),
+		window: dedupWindow,
+		opts:   badgerOpts,
+	}
+	return db
+}
+
+func (d *BadgerDB) Get(key string) (int64, bool) {
 	var payloadSize int64
 	var found bool
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
@@ -45,7 +77,7 @@ func (d *badgerDB) Get(key string) (int64, bool) {
 	return payloadSize, found
 }
 
-func (d *badgerDB) Set(kvs []KeyValue) error {
+func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
@@ -66,13 +98,13 @@ func (d *badgerDB) Set(kvs []KeyValue) error {
 	return txn.Commit()
 }
 
-func (d *badgerDB) Close() {
+func (d *BadgerDB) Close() {
 	close(d.close)
 	<-d.gcDone
 	_ = d.badgerDB.Close()
 }
 
-func (d *badgerDB) start() {
+func (d *BadgerDB) Start() {
 	var err error
 
 	d.badgerDB, err = badger.Open(d.opts)
@@ -85,7 +117,7 @@ func (d *badgerDB) start() {
 	})
 }
 
-func (d *badgerDB) gcLoop() {
+func (d *BadgerDB) gcLoop() {
 	for {
 		select {
 		case <-d.close:
@@ -112,4 +144,12 @@ func (d *badgerDB) gcLoop() {
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
 
 	}
+}
+
+type loggerForBadger struct {
+	logger.Logger
+}
+
+func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
+	l.Warnf(fmt, args...)
 }
