@@ -28,7 +28,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_DEV_ACCOUNT_ID }}:role/${{ secrets.AWS_REDSHIFT_GINKGO_ROLE }}
+          aws-access-key-id: ${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Disable IPv6 (temporary fix)
         run: |
