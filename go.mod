@@ -41,7 +41,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.5.7
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.2.0
-	github.com/docker/docker v27.0.3+incompatible
+	github.com/docker/docker v27.1.0+incompatible
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -74,9 +74,9 @@ require (
 	github.com/redis/go-redis/v9 v9.6.0
 	github.com/rs/cors v1.11.0
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
-	github.com/rudderlabs/bing-ads-go-sdk v0.2.2
+	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.34.2
+	github.com/rudderlabs/rudder-go-kit v0.35.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
 	github.com/rudderlabs/sql-tunnels v0.1.7
@@ -115,6 +115,7 @@ require (
 require (
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/hamba/avro/v2 v2.22.2-0.20240625062549-66aad10411d9 // indirect
+	go.uber.org/mock v0.4.0 // indirect
 )
 
 require (
