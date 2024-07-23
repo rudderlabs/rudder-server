@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
 	"sort"
@@ -31,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -900,17 +899,111 @@ func initProcessor() {
 	format.MaxDepth = 10
 }
 
+var _ = Describe("Tracking Plan Validation", Ordered, func() {
+	initProcessor()
+
+	var c *testContext
+
+	BeforeEach(func() {
+		c = &testContext{}
+		c.Setup()
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1) // crash recovery check
+	})
+	AfterEach(func() {
+		c.Finish()
+	})
+
+	Context("RudderTyper", func() {
+		It("TrackingPlanId and TrackingPlanVersion", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
+
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+			Expect(err).To(BeNil())
+
+			processor := NewHandle(config.Default, mockTransformer)
+			processor.isolationStrategy = isolationStrategy
+			processor.config.archivalEnabled = config.SingleValueLoader(false)
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: []*jobsdb.JobT{
+						{
+							UUID:      uuid.New(),
+							JobID:     1,
+							CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							CustomVal: gatewayCustomVal[0],
+							EventPayload: createBatchPayload(
+								WriteKeyEnabledNoUT,
+								"2001-01-02T02:23:45.000Z",
+								[]mockEventData{
+									{
+										id:                        "1",
+										jobid:                     1,
+										originalTimestamp:         "2000-01-02T01:23:45",
+										expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+										sentAt:                    "2000-01-02 01:23",
+										expectedSentAt:            "2000-01-02T01:23:00.000Z",
+										expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+									},
+								},
+								func(e mockEventData) string {
+									return fmt.Sprintf(`
+										{
+										  "rudderId": "some-rudder-id",
+										  "messageId": "message-%[1]s",
+										  "some-property": "property-%[1]s",
+										  "originalTimestamp": %[2]q,
+										  "sentAt": %[3]q,
+										  "context": {
+											"ruddertyper": {
+											  "trackingPlanId": "tracking-plan-id",
+											  "trackingPlanVersion": 123
+											}
+										  }
+										}
+									`,
+										e.id,
+										e.originalTimestamp,
+										e.sentAt,
+									)
+								},
+							),
+							EventCount:    1,
+							LastJobStatus: jobsdb.JobStatusT{},
+							Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+							WorkspaceId:   sampleWorkspaceID,
+						},
+					},
+				},
+			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
+			for _, v := range c.MockObserver.calls {
+				for _, e := range v.events {
+					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123))
+				}
+			}
+		})
+	})
+})
+
 var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	initProcessor()
 
 	var c *testContext
-	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	prepareHandle := func(proc *Handle) *Handle {
-		proc.config.transformerURL = transformerServer.URL
 		proc.eventSchemaDB = c.mockEventSchemasDB
 		proc.config.eventSchemaV2Enabled = true
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
@@ -928,10 +1021,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 
 	AfterEach(func() {
 		c.Finish()
-	})
-
-	AfterAll(func() {
-		transformerServer.Close()
 	})
 
 	Context("event schemas DB", func() {
@@ -1112,13 +1201,8 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	initProcessor()
 
 	var c *testContext
-	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	prepareHandle := func(proc *Handle) *Handle {
-		proc.config.transformerURL = transformerServer.URL
 		proc.archivalDB = c.mockArchivalDB
 		proc.config.archivalEnabled = config.SingleValueLoader(true)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
@@ -1136,10 +1220,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 	AfterEach(func() {
 		c.Finish()
-	})
-
-	AfterAll(func() {
-		transformerServer.Close()
 	})
 
 	Context("archival DB", func() {
@@ -1457,13 +1537,8 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 	initProcessor()
 
 	var c *testContext
-	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	prepareHandle := func(proc *Handle) *Handle {
-		proc.config.transformerURL = transformerServer.URL
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -1476,10 +1551,6 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 
 	AfterEach(func() {
 		c.Finish()
-	})
-
-	AfterAll(func() {
-		transformerServer.Close()
 	})
 
 	Context("trackedUsers", func() {
@@ -1778,13 +1849,8 @@ var _ = Describe("Processor", Ordered, func() {
 	initProcessor()
 
 	var c *testContext
-	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	prepareHandle := func(proc *Handle) *Handle {
-		proc.config.transformerURL = transformerServer.URL
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -1797,10 +1863,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 	AfterEach(func() {
 		c.Finish()
-	})
-
-	AfterAll(func() {
-		transformerServer.Close()
 	})
 
 	Context("Initialization", func() {
