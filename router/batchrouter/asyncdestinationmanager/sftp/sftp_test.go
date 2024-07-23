@@ -7,14 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/sftp/mock_sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_sftp "github.com/rudderlabs/rudder-server/mocks/batchrouter/sftp"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )

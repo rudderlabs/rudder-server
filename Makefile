@@ -10,7 +10,7 @@ GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.57.1
 gofumpt=mvdan.cc/gofumpt@latest
 govulncheck=golang.org/x/vuln/cmd/govulncheck@latest
 goimports=golang.org/x/tools/cmd/goimports@latest
-mockgen=github.com/golang/mock/mockgen@v1.6.0
+mockgen=go.uber.org/mock/mockgen@v0.4.0
 gotestsum=gotest.tools/gotestsum@v1.11.0
 protoc-gen-go=google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
 protoc-gen-go-grpc=google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
@@ -100,7 +100,7 @@ install-tools:
 lint: fmt ## Run linters on all go files
 	$(GO) run $(GOLANGCI) run -v
 	$(GO) run $(govulncheck) ./...
-	$(GO) run $(actionlint) 
+	$(GO) run $(actionlint)
 
 .PHONY: fmt
 fmt: install-tools ## Formats all go files

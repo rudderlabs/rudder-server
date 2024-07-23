@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
