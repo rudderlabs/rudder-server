@@ -18,7 +18,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	sfdb "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 

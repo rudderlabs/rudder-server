@@ -87,17 +87,16 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-// String constants for redshift destination config
 const (
-	Host              = "host"
-	Port              = "port"
-	Database          = "database"
-	User              = "user"
-	Password          = "password"
-	UseIAMForAuth     = "useIAMForAuth"
-	IAMRoleARNForAuth = "iamRoleARNForAuth"
-	ClusterID         = "clusterId"
-	ClusterRegion     = "clusterRegion"
+	configKeyHost              = "host"
+	configKeyPort              = "port"
+	configKeyDatabase          = "database"
+	configKeyUser              = "user"
+	configKeyPassword          = "password"
+	configKeyUseIAMForAuth     = "useIAMForAuth"
+	configKeyIAMRoleARNForAuth = "iamRoleARNForAuth"
+	configKeyClusterID         = "clusterId"
+	configKeyClusterRegion     = "clusterRegion"
 )
 
 const (
@@ -965,16 +964,16 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 }
 
 func (rs *Redshift) useIAMForAuth() bool {
-	return warehouseutils.ReadAsBool(UseIAMForAuth, rs.Warehouse.Destination.Config)
+	return warehouseutils.ReadAsBool(configKeyUseIAMForAuth, rs.Warehouse.Destination.Config)
 }
 
 func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 	var (
-		database          = warehouseutils.GetConfigValue(Database, rs.Warehouse)
-		user              = warehouseutils.GetConfigValue(User, rs.Warehouse)
-		iamRoleARNForAuth = warehouseutils.GetConfigValue(IAMRoleARNForAuth, rs.Warehouse)
-		clusterID         = warehouseutils.GetConfigValue(ClusterID, rs.Warehouse)
-		clusterRegion     = warehouseutils.GetConfigValue(ClusterRegion, rs.Warehouse)
+		database          = warehouseutils.GetConfigValue(configKeyDatabase, rs.Warehouse)
+		user              = warehouseutils.GetConfigValue(configKeyUser, rs.Warehouse)
+		iamRoleARNForAuth = warehouseutils.GetConfigValue(configKeyIAMRoleARNForAuth, rs.Warehouse)
+		clusterID         = warehouseutils.GetConfigValue(configKeyClusterID, rs.Warehouse)
+		clusterRegion     = warehouseutils.GetConfigValue(configKeyClusterRegion, rs.Warehouse)
 		timeout           = rs.connectTimeout
 	)
 
@@ -1003,11 +1002,11 @@ func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 
 func (rs *Redshift) connectUsingPassword() (*sql.DB, error) {
 	var (
-		host       = warehouseutils.GetConfigValue(Host, rs.Warehouse)
-		port       = warehouseutils.GetConfigValue(Port, rs.Warehouse)
-		database   = warehouseutils.GetConfigValue(Database, rs.Warehouse)
-		user       = warehouseutils.GetConfigValue(User, rs.Warehouse)
-		password   = warehouseutils.GetConfigValue(Password, rs.Warehouse)
+		host       = warehouseutils.GetConfigValue(configKeyHost, rs.Warehouse)
+		port       = warehouseutils.GetConfigValue(configKeyPort, rs.Warehouse)
+		database   = warehouseutils.GetConfigValue(configKeyDatabase, rs.Warehouse)
+		user       = warehouseutils.GetConfigValue(configKeyUser, rs.Warehouse)
+		password   = warehouseutils.GetConfigValue(configKeyPassword, rs.Warehouse)
 		timeout    = rs.connectTimeout
 		tunnelInfo = tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config)
 	)

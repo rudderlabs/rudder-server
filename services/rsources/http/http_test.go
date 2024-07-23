@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
@@ -446,13 +447,13 @@ func TestFailedRecordsDisabled(t *testing.T) {
 	require.Equal(t, "rsources: operation not supported\n", string(body), "actual response body different than expected")
 }
 
-var failedRecordsRespBody string = `failed to get failed records
+var failedRecordsRespBody = `failed to get failed records
 `
 
-var statusNotFoundError string = `Status not found
+var statusNotFoundError = `Status not found
 `
 
-var getStatusFailedError string = `GetStatusFailed
+var getStatusFailedError = `GetStatusFailed
 `
 
 func getArgumentFilter(filter map[string][]string) rsources.JobFilter {
