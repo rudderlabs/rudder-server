@@ -13,7 +13,6 @@ import (
 // New creates a new deduplication service. The service needs to be closed after use.
 func New() Dedup {
 	db := badger.NewBadgerDB(badger.DefaultPath())
-	db.Start()
 	return &dedup{
 		badgerDB: db,
 		cache:    make(map[string]int64),
@@ -23,7 +22,7 @@ func New() Dedup {
 // Dedup is the interface for deduplication service
 type Dedup interface {
 	// Set returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
-	Set(kv types.KeyValue) (bool, int64)
+	Set(kv types.KeyValue) (bool, int64, error)
 
 	// Commit commits a list of previously set keys to the DB
 	Commit(keys []string) error
@@ -38,17 +37,20 @@ type dedup struct {
 	cache    map[string]int64
 }
 
-func (d *dedup) Set(kv types.KeyValue) (bool, int64) {
+func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 	if previous, found := d.cache[kv.Key]; found {
-		return false, previous
+		return false, previous, nil
 	}
-	previous, found := d.badgerDB.Get(kv.Key)
+	previous, found, err := d.badgerDB.Get(kv.Key)
+	if err != nil {
+		return false, 0, err
+	}
 	if !found {
 		d.cache[kv.Key] = kv.Value
 	}
-	return !found, previous
+	return !found, previous, nil
 }
 
 func (d *dedup) Commit(keys []string) error {

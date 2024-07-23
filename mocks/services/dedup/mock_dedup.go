@@ -66,12 +66,13 @@ func (mr *MockDedupMockRecorder) Commit(arg0 any) *gomock.Call {
 }
 
 // Set mocks base method.
-func (m *MockDedup) Set(arg0 types.KeyValue) (bool, int64) {
+func (m *MockDedup) Set(arg0 types.KeyValue) (bool, int64, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Set", arg0)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(int64)
-	return ret0, ret1
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
 }
 
 // Set indicates an expected call of Set.

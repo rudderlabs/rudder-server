@@ -1709,7 +1709,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				if ok, previousSize := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
+				if ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize}); !ok && err != nil {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
