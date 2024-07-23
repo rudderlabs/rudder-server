@@ -476,10 +476,12 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:   200,
-				ErrorCode:    "",
-				ErrorMessage: "",
-				EventType:    "identify",
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					StatusCode:   200,
+					ErrorCode:    "",
+					ErrorMessage: "",
+					EventType:    "identify",
+				},
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
@@ -501,10 +503,12 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:   400,
-				ErrorCode:    "",
-				ErrorMessage: "bad data sent for transformation",
-				EventType:    "identify",
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					StatusCode:   400,
+					ErrorCode:    "",
+					ErrorMessage: "bad data sent for transformation",
+					EventType:    "identify",
+				},
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
@@ -526,10 +530,12 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:   400,
-				ErrorCode:    "",
-				ErrorMessage: "bad data sent for transformation",
-				EventType:    "identify",
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					StatusCode:   400,
+					ErrorCode:    "",
+					ErrorMessage: "bad data sent for transformation",
+					EventType:    "identify",
+				},
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335445,
@@ -551,10 +557,12 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:   400,
-				ErrorCode:    "",
-				ErrorMessage: "user_id information missing",
-				EventType:    "identify",
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					StatusCode:   400,
+					ErrorCode:    "",
+					ErrorMessage: "user_id information missing",
+					EventType:    "identify",
+				},
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
@@ -577,10 +585,12 @@ func TestAggregationLogic(t *testing.T) {
 				DestType:                "DES_1",
 			},
 			EDErrorDetails: types.EDErrorDetails{
-				StatusCode:   500,
-				ErrorCode:    "",
-				ErrorMessage: "Cannot read type property of undefined", // some error during batching
-				EventType:    "identify",
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					StatusCode:   500,
+					ErrorCode:    "",
+					ErrorMessage: "Cannot read type property of undefined", // some error during batching
+					EventType:    "identify",
+				},
 			},
 			ReportMetadata: types.ReportMetadata{
 				ReportedAt: 124335446,
@@ -612,18 +622,22 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:   dbErrs[0].StatusCode,
-					ErrorCode:    dbErrs[0].ErrorCode,
-					ErrorMessage: dbErrs[0].ErrorMessage,
-					EventType:    dbErrs[0].EventType,
-					Count:        10,
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						StatusCode:   dbErrs[0].StatusCode,
+						ErrorCode:    dbErrs[0].ErrorCode,
+						ErrorMessage: dbErrs[0].ErrorMessage,
+						EventType:    dbErrs[0].EventType,
+					},
+					ErrorCount: 10,
 				},
 				{
-					StatusCode:   dbErrs[1].StatusCode,
-					ErrorCode:    dbErrs[1].ErrorCode,
-					ErrorMessage: dbErrs[1].ErrorMessage,
-					EventType:    dbErrs[1].EventType,
-					Count:        20,
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						StatusCode:   dbErrs[1].StatusCode,
+						ErrorCode:    dbErrs[1].ErrorCode,
+						ErrorMessage: dbErrs[1].ErrorMessage,
+						EventType:    dbErrs[1].EventType,
+					},
+					ErrorCount: 20,
 				},
 			},
 		},
@@ -646,11 +660,13 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:   dbErrs[3].StatusCode,
-					ErrorCode:    dbErrs[3].ErrorCode,
-					ErrorMessage: dbErrs[3].ErrorMessage,
-					EventType:    dbErrs[3].EventType,
-					Count:        20,
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						StatusCode:   dbErrs[3].StatusCode,
+						ErrorCode:    dbErrs[3].ErrorCode,
+						ErrorMessage: dbErrs[3].ErrorMessage,
+						EventType:    dbErrs[3].EventType,
+					},
+					ErrorCount: 20,
 				},
 			},
 		},
@@ -673,11 +689,13 @@ func TestAggregationLogic(t *testing.T) {
 			},
 			Errors: []types.EDErrorDetails{
 				{
-					StatusCode:   dbErrs[4].StatusCode,
-					ErrorCode:    dbErrs[4].ErrorCode,
-					ErrorMessage: dbErrs[4].ErrorMessage,
-					EventType:    dbErrs[4].EventType,
-					Count:        15,
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						StatusCode:   dbErrs[4].StatusCode,
+						ErrorCode:    dbErrs[4].ErrorCode,
+						ErrorMessage: dbErrs[4].ErrorMessage,
+						EventType:    dbErrs[4].EventType,
+					},
+					ErrorCount: 15,
 				},
 			},
 		},
