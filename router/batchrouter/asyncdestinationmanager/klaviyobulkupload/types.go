@@ -1,5 +1,7 @@
 package klaviyobulkupload
 
+//go:generate mockgen -destination=../../../../mocks/router/klaviyobulkupload/klaviyobulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload Uploader,HttpClient,Poller,ProfileExtractor,UploadStats
+
 import (
 	"net/http"
 

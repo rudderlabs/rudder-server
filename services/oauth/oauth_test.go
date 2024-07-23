@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golang/mock/gomock"
 	"github.com/samber/lo"
+	"go.uber.org/mock/gomock"
 
 	"github.com/stretchr/testify/require"
 

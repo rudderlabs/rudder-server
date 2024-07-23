@@ -14,8 +14,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"go.uber.org/mock/gomock"
+
 	clickhousestd "github.com/ClickHouse/clickhouse-go"
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
