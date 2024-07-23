@@ -8,22 +8,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// DefaultPath returns the default path for the deduplication service's badger DB
-func DefaultPath() string {
-	badgerPathName := "/badgerdbv4"
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-}
-
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(path string) Dedup {
-	db := badger.NewBadgerDB(path)
+func New() Dedup {
+	db := badger.NewBadgerDB(badger.DefaultPath())
 	db.Start()
 	return &dedup{
 		badgerDB: db,

@@ -1,6 +1,7 @@
 package badger
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -25,6 +26,16 @@ type BadgerDB struct {
 	gcDone   chan struct{}
 	path     string
 	opts     badger.Options
+}
+
+// DefaultPath returns the default path for the deduplication service's badger DB
+func DefaultPath() string {
+	badgerPathName := "/badgerdbv4"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
 func NewBadgerDB(path string) *BadgerDB {

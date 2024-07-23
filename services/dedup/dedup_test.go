@@ -27,7 +27,7 @@ func Test_Dedup(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-	d := dedup.New(dbPath)
+	d := dedup.New()
 	defer d.Close()
 
 	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
@@ -70,7 +70,7 @@ func Test_Dedup_Window(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
 	config.Set("Dedup.dedupWindow", "1s")
-	d := dedup.New(dbPath)
+	d := dedup.New()
 	defer d.Close()
 
 	found, _ := d.Set(types.KeyValue{Key: "to be deleted", Value: 1})
@@ -96,7 +96,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
-	d := dedup.New(dbPath)
+	d := dedup.New()
 	defer d.Close()
 
 	size := 105_000
@@ -118,7 +118,7 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.MkdirAll(dbPath, 0o750)
-	d := dedup.New(dbPath)
+	d := dedup.New()
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000
