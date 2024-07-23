@@ -5,8 +5,9 @@ package kvstoremanager
 import (
 	"encoding/json"
 
-	"github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 )
 
 type KVStoreManager interface {
