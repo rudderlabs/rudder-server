@@ -31,32 +31,37 @@ func Test_Dedup(t *testing.T) {
 	defer d.Close()
 
 	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
-		found, _ := d.Set(types.KeyValue{Key: "a", Value: 1})
+		found, _, err := d.Set(types.KeyValue{Key: "a", Value: 1})
+		require.Nil(t, err)
 		require.Equal(t, true, found)
 
 		// Checking it again should give us the previous value from the cache
-		found, value := d.Set(types.KeyValue{Key: "a", Value: 2})
+		found, value, err := d.Set(types.KeyValue{Key: "a", Value: 2})
+		require.Nil(t, err)
 		require.Equal(t, false, found)
 		require.Equal(t, int64(1), value)
 	})
 
 	t.Run("if message is committed, previous value should always return", func(t *testing.T) {
-		found, _ := d.Set(types.KeyValue{Key: "b", Value: 1})
+		found, _, err := d.Set(types.KeyValue{Key: "b", Value: 1})
+		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err := d.Commit([]string{"a"})
+		err = d.Commit([]string{"a"})
 		require.NoError(t, err)
 
-		found, value := d.Set(types.KeyValue{Key: "b", Value: 2})
+		found, value, err := d.Set(types.KeyValue{Key: "b", Value: 2})
+		require.Nil(t, err)
 		require.Equal(t, false, found)
 		require.Equal(t, int64(1), value)
 	})
 
 	t.Run("committing a messageid not present in cache", func(t *testing.T) {
-		found, _ := d.Set(types.KeyValue{Key: "c", Value: 1})
+		found, _, err := d.Set(types.KeyValue{Key: "c", Value: 1})
+		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err := d.Commit([]string{"d"})
+		err = d.Commit([]string{"d"})
 		require.NotNil(t, err)
 	})
 }
@@ -73,17 +78,20 @@ func Test_Dedup_Window(t *testing.T) {
 	d := dedup.New()
 	defer d.Close()
 
-	found, _ := d.Set(types.KeyValue{Key: "to be deleted", Value: 1})
+	found, _, err := d.Set(types.KeyValue{Key: "to be deleted", Value: 1})
+	require.Nil(t, err)
 	require.Equal(t, true, found)
 
-	err := d.Commit([]string{"to be deleted"})
+	err = d.Commit([]string{"to be deleted"})
 	require.NoError(t, err)
 
-	found, _ = d.Set(types.KeyValue{Key: "to be deleted", Value: 2})
+	found, _, err = d.Set(types.KeyValue{Key: "to be deleted", Value: 2})
+	require.Nil(t, err)
 	require.Equal(t, false, found)
 
 	require.Eventually(t, func() bool {
-		found, _ = d.Set(types.KeyValue{Key: "to be deleted", Value: 3})
+		found, _, err = d.Set(types.KeyValue{Key: "to be deleted", Value: 3})
+		require.Nil(t, err)
 		return found
 	}, 2*time.Second, 100*time.Millisecond)
 }
@@ -103,7 +111,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	messages := make([]string, size)
 	for i := 0; i < size; i++ {
 		messages[i] = uuid.New().String()
-		d.Set(types.KeyValue{Key: messages[i], Value: int64(i + 1)})
+		_, _, _ = d.Set(types.KeyValue{Key: messages[i], Value: int64(i + 1)})
 	}
 	err := d.Commit(messages)
 	require.NoError(t, err)
@@ -134,7 +142,7 @@ func Benchmark_Dedup(b *testing.B) {
 
 			if i%batchSize == batchSize-1 || i == b.N-1 {
 				for _, msgID := range msgIDs[:i%batchSize] {
-					d.Set(msgID)
+					_, _, _ = d.Set(msgID)
 					keys = append(keys, msgID.Key)
 				}
 				err := d.Commit(keys)
