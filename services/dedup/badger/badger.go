@@ -3,6 +3,7 @@ package badger
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -26,6 +27,7 @@ type BadgerDB struct {
 	gcDone   chan struct{}
 	path     string
 	opts     badger.Options
+	once     sync.Once
 }
 
 // DefaultPath returns the default path for the deduplication service's badger DB
@@ -68,10 +70,15 @@ func NewBadgerDB(path string) *BadgerDB {
 	return db
 }
 
-func (d *BadgerDB) Get(key string) (int64, bool) {
+func (d *BadgerDB) Get(key string) (int64, bool, error) {
 	var payloadSize int64
 	var found bool
-	err := d.badgerDB.View(func(txn *badger.Txn) error {
+	var err error
+	err = d.init()
+	if err != nil {
+		return 0, false, err
+	}
+	err = d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
@@ -83,12 +90,16 @@ func (d *BadgerDB) Get(key string) (int64, bool) {
 		return nil
 	})
 	if err != nil && err != badger.ErrKeyNotFound {
-		panic(err)
+		return 0, false, err
 	}
-	return payloadSize, found
+	return payloadSize, found, nil
 }
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
+	err := d.init()
+	if err != nil {
+		return err
+	}
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
@@ -115,17 +126,20 @@ func (d *BadgerDB) Close() {
 	_ = d.badgerDB.Close()
 }
 
-func (d *BadgerDB) Start() {
+func (d *BadgerDB) init() error {
 	var err error
 
-	d.badgerDB, err = badger.Open(d.opts)
-	if err != nil {
-		panic(err)
-	}
-	rruntime.Go(func() {
-		d.gcLoop()
-		close(d.gcDone)
+	d.once.Do(func() {
+		d.badgerDB, err = badger.Open(d.opts)
+		if err != nil {
+			return
+		}
+		rruntime.Go(func() {
+			d.gcLoop()
+			close(d.gcDone)
+		})
 	})
+	return err
 }
 
 func (d *BadgerDB) gcLoop() {
