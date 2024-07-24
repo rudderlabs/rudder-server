@@ -69,6 +69,7 @@ type HandleT struct {
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
+		forwardGetRequestForSrcs []string
 	}
 }
 
@@ -114,7 +115,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	var postFrom url.Values
 	var multipartForm *multipart.Form
 
-	if r.Method == "GET" {
+	if r.Method == "GET" && !lo.Contains(webhook.config.forwardGetRequestForSrcs, sourceDefName) {
 		return
 	}
 	contentType := r.Header.Get("Content-Type")
