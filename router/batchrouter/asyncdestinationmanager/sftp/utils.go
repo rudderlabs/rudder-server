@@ -216,7 +216,9 @@ func getTempFilePath() (string, error) {
 	folderPath := path.Join(tmpDirPath, localTmpDirName)
 	_, e := os.Stat(folderPath)
 	if os.IsNotExist(e) {
-		folderPath, _ = os.MkdirTemp(folderPath, "")
+		if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {
+			return "", err
+		}
 	}
 	tmpFilePath := filepath.Join(folderPath, uuid.NewString())
 	return tmpFilePath, nil
