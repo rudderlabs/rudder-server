@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.1](https://github.com/rudderlabs/rudder-server/compare/v1.30.0...v1.30.1) (2024-07-24)
+
+
+### Bug Fixes
+
+* type conversion from float64 to int ([#4921](https://github.com/rudderlabs/rudder-server/issues/4921)) ([f5423ac](https://github.com/rudderlabs/rudder-server/commit/f5423acbfa33bcd4baf4d791940cc6b6a71b147b))
+
 ## [1.30.0](https://github.com/rudderlabs/rudder-server/compare/v1.29.0...v1.30.0) (2024-07-22)
 
 
