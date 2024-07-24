@@ -552,7 +552,15 @@ func TestAllowGetReqForWebhookSrc(t *testing.T) {
 		output bool
 	}
 
-	cases := []testCase{
+	[]struct {
+		description string
+		input       struct {
+			srcMap map[string]struct{}
+			method string
+			srcDef string
+		}
+		output bool
+	}{
 		{
 			description: "should allow get request for adjust",
 			input: struct {
