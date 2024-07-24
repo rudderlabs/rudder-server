@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
@@ -55,7 +56,15 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
 	// Parse all query params from sources mentioned in this list
 	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
-	webhook.config.forwardGetRequestForSrcs = config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs")
+	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
+		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"), 
+		func(item string) (string, struct{}) {
+			return item, struct{}{}
+		},
+	)
+	// lo.SliceToMap(config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"), func(item string) (string, struct{}) {
+	// 	return item, struct{}{}
+	// })
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {
 		webhook.config.sourceListForParsingParams[i] = strings.ToLower(s)

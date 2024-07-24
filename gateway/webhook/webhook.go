@@ -69,7 +69,7 @@ type HandleT struct {
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
-		forwardGetRequestForSrcs   []string
+		forwardGetRequestForSrcMap   map[string]struct{}
 	}
 }
 
@@ -105,6 +105,11 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	http.Error(w, reason, statusCode)
 }
 
+func (wb *HandleT) IsGetAndNotAllow(reqMethod string, sourceDefName string) bool {
+	_, ok := wb.config.forwardGetRequestForSrcMap[sourceDefName]
+	return reqMethod == http.MethodGet && !ok
+}
+
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
@@ -115,7 +120,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	var postFrom url.Values
 	var multipartForm *multipart.Form
 
-	if r.Method == "GET" && !lo.Contains(webhook.config.forwardGetRequestForSrcs, sourceDefName) {
+	if webhook.IsGetAndNotAllow(r.Method, sourceDefName) {
 		return
 	}
 	contentType := r.Header.Get("Content-Type")
