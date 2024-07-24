@@ -518,3 +518,96 @@ func TestPrepareRequestBody(t *testing.T) {
 		})
 	}
 }
+
+func TestAllowGetReqForWebhookSrc(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+	transformerServer := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() { _ = r.Body.Close() }()
+			body, _ := io.ReadAll(r.Body)
+			var requests []interface{}
+			_ = json.Unmarshal(body, &requests)
+			var responses []transformerResponse
+			for i := 0; i < len(requests); i++ {
+				responses = append(responses, transformerResponse{
+					OutputToSource: outputToWebhook,
+					StatusCode:     http.StatusOK,
+				})
+			}
+			respBody, _ := json.Marshal(responses)
+			_, _ = w.Write(respBody)
+		}))
+	wbh := Setup(mockGW, transformer.NewNoOpService(), stats.Default, func(bt *batchWebhookTransformerT) {
+		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
+	})
+	type testCase struct {
+		description string
+		input       struct {
+			srcMap map[string]struct{}
+			method string
+			srcDef string
+		}
+		output bool
+	}
+
+	cases := []testCase{
+		{
+			description: "should allow get request for adjust",
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
+				method: http.MethodGet,
+				srcMap: map[string]struct{}{
+					"adjust": {},
+				},
+				srcDef: "adjust",
+			},
+			output: false,
+		},
+		{
+			description: "should allow post request for adjust",
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
+				method: http.MethodPost,
+				srcMap: map[string]struct{}{
+					"adjust": {},
+				},
+				srcDef: "adjust",
+			},
+			output: false,
+		},
+		{
+			description: "should not allow get request for shopify",
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
+				srcMap: map[string]struct{}{
+					"adjust":     {},
+					"customerio": {},
+				},
+				method: http.MethodGet,
+				srcDef: "Shopify",
+			},
+			output: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.description, func(t *testing.T) {
+			if len(tc.input.srcDef) != 0 {
+				wbh.config.forwardGetRequestForSrcMap = tc.input.srcMap
+			}
+			isGetAndNotAllow := wbh.IsGetAndNotAllow(tc.input.method, tc.input.srcDef)
+			require.Equal(t, tc.output, isGetAndNotAllow)
+		})
+	}
+}
