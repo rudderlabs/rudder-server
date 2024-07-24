@@ -79,7 +79,7 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.35.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
-	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240717075526-06ef050b5cef
+	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240724120814-87dc97b22230
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/samber/lo v1.46.0
 	github.com/segmentio/go-hll v1.0.1
