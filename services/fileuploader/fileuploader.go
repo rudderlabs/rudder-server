@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -48,13 +46,15 @@ func NewStaticProvider(_ context.Context, storageSettings map[string]StorageSett
 		init:            make(chan struct{}),
 		storageSettings: storageSettings,
 	}
-	s.fileManagerMap = make(map[string]filemanager.FileManager)
+	s.fileManagerMap = make(map[string]func() (filemanager.FileManager, error))
 	for workspaceID, settings := range storageSettings {
 		if settings.Bucket.Type != "" {
-			s.fileManagerMap[workspaceID] = lo.Must(filemanager.New(&filemanager.Settings{
-				Provider: settings.Bucket.Type,
-				Config:   settings.Bucket.Config,
-			}))
+			s.fileManagerMap[workspaceID] = sync.OnceValues(func() (filemanager.FileManager, error) {
+				return filemanager.New(&filemanager.Settings{
+					Provider: settings.Bucket.Type,
+					Config:   settings.Bucket.Config,
+				})
+			})
 		}
 	}
 	close(s.init)
@@ -73,7 +73,7 @@ type provider struct {
 	init            chan struct{}
 	mu              sync.RWMutex
 	storageSettings map[string]StorageSettings
-	fileManagerMap  map[string]filemanager.FileManager
+	fileManagerMap  map[string]func() (filemanager.FileManager, error)
 }
 
 func (p *provider) GetFileManager(ctx context.Context, workspaceID string) (filemanager.FileManager, error) {
@@ -89,7 +89,7 @@ func (p *provider) GetFileManager(ctx context.Context, workspaceID string) (file
 	if !ok {
 		return nil, ErrNoStorageForWorkspace
 	}
-	return fileManager, nil
+	return fileManager()
 }
 
 func (p *provider) GetStoragePreferences(ctx context.Context, workspaceID string) (backendconfig.StoragePreferences, error) {
@@ -119,7 +119,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 		currentFileManagerMap := p.fileManagerMap
 		p.mu.RUnlock()
 		settingsMap := make(map[string]StorageSettings)
-		filemanagerMap := make(map[string]filemanager.FileManager)
+		filemanagerMap := make(map[string]func() (filemanager.FileManager, error))
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
 		for workspaceId, c := range configs {
 			currentWorkspaceConfig, ok := currentSettingsMap[workspaceId]
@@ -169,10 +169,12 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 				Preferences: preferences,
 				updatedAt:   time.Now(),
 			}
-			filemanagerMap[workspaceId] = lo.Must(filemanager.New(&filemanager.Settings{
-				Provider: bucket.Type,
-				Config:   bucket.Config,
-			}))
+			filemanagerMap[workspaceId] = sync.OnceValues(func() (filemanager.FileManager, error) {
+				return filemanager.New(&filemanager.Settings{
+					Provider: bucket.Type,
+					Config:   bucket.Config,
+				})
+			})
 		}
 		p.mu.Lock()
 		p.storageSettings = settingsMap
