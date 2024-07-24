@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
@@ -20,12 +22,12 @@ const (
 )
 
 // New creates a new deduplication service. The service needs to be closed after use.
-func New() Dedup {
+func New(conf *config.Config, stats stats.Stats) Dedup {
 	mode := Mode(config.GetString("Dedup.Mode", string(Badger)))
 	switch mode {
 	case Badger:
 		return &dedup{
-			badgerDB: badger.NewBadgerDB(badger.DefaultPath()),
+			badgerDB: badger.NewBadgerDB(conf, stats, badger.DefaultPath()),
 			cache:    make(map[string]int64),
 		}
 	case Scylla:
@@ -34,7 +36,7 @@ func New() Dedup {
 		return nil
 	default:
 		return &dedup{
-			badgerDB: badger.NewBadgerDB(badger.DefaultPath()),
+			badgerDB: badger.NewBadgerDB(conf, stats, badger.DefaultPath()),
 			cache:    make(map[string]int64),
 		}
 	}

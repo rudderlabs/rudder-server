@@ -614,7 +614,7 @@ func (proc *Handle) Setup(
 		})
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New()
+		proc.dedup = dedup.New(proc.conf, proc.statsFactory)
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())

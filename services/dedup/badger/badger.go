@@ -40,8 +40,8 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(path string) *BadgerDB {
-	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *BadgerDB {
+	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 
 	log := logger.NewLogger().Child("dedup")
 	badgerOpts := badger.
@@ -49,17 +49,17 @@ func NewBadgerDB(path string) *BadgerDB {
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
-		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
+		WithNumMemtables(conf.GetInt("BadgerDB.numMemtable", 5)).
+		WithValueThreshold(conf.GetInt64("BadgerDB.valueThreshold", 1048576)).
 		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
-		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
-		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
+		WithNumLevelZeroTables(conf.GetInt("BadgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(conf.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(conf.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(conf.GetBool("BadgerDB.detectConflicts", false))
 
 	db := &BadgerDB{
-		stats:  stats.Default,
+		stats:  stats,
 		logger: loggerForBadger{log},
 		path:   path,
 		gcDone: make(chan struct{}),
