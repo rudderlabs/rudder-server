@@ -69,7 +69,7 @@ type HandleT struct {
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
-		forwardGetRequestForSrcMap   map[string]struct{}
+		forwardGetRequestForSrcMap map[string]struct{}
 	}
 }
 
@@ -105,7 +105,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	http.Error(w, reason, statusCode)
 }
 
-func (wb *HandleT) IsGetAndNotAllow(reqMethod string, sourceDefName string) bool {
+func (wb *HandleT) IsGetAndNotAllow(reqMethod, sourceDefName string) bool {
 	_, ok := wb.config.forwardGetRequestForSrcMap[sourceDefName]
 	return reqMethod == http.MethodGet && !ok
 }

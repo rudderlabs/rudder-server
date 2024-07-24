@@ -545,7 +545,7 @@ func TestAllowGetReqForWebhookSrc(t *testing.T) {
 	})
 	type testCase struct {
 		description string
-		input struct{
+		input       struct {
 			srcMap map[string]struct{}
 			method string
 			srcDef string
@@ -553,36 +553,47 @@ func TestAllowGetReqForWebhookSrc(t *testing.T) {
 		output bool
 	}
 
-
 	cases := []testCase{
 		{
 			description: "should allow get request for adjust",
-			input: struct{srcMap map[string]struct{}; method string; srcDef string}{
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
 				method: http.MethodGet,
 				srcMap: map[string]struct{}{
-					"adjust": struct{}{},
+					"adjust": {},
 				},
-				srcDef: "adjust",				
+				srcDef: "adjust",
 			},
 			output: false,
 		},
 		{
 			description: "should allow post request for adjust",
-			input: struct{srcMap map[string]struct{}; method string; srcDef string}{
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
 				method: http.MethodPost,
 				srcMap: map[string]struct{}{
-					"adjust": struct{}{},
+					"adjust": {},
 				},
-				srcDef: "adjust",				
+				srcDef: "adjust",
 			},
 			output: false,
 		},
 		{
 			description: "should not allow get request for shopify",
-			input: struct{srcMap map[string]struct{}; method string; srcDef string}{
+			input: struct {
+				srcMap map[string]struct{}
+				method string
+				srcDef string
+			}{
 				srcMap: map[string]struct{}{
-					"adjust": struct{}{},
-					"customerio": struct{}{},
+					"adjust":     {},
+					"customerio": {},
 				},
 				method: http.MethodGet,
 				srcDef: "Shopify",

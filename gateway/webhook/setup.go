@@ -57,7 +57,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	// Parse all query params from sources mentioned in this list
 	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
-		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"), 
+		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
 			return item, struct{}{}
 		},
