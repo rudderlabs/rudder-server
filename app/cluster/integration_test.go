@@ -14,7 +14,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"

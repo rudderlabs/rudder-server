@@ -13,10 +13,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
