@@ -40,7 +40,7 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *BadgerDB {
+func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *dedup {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 
 	log := logger.NewLogger().Child("dedup")
@@ -67,7 +67,10 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *BadgerDB 
 		window: dedupWindow,
 		opts:   badgerOpts,
 	}
-	return db
+	return &dedup{
+		badgerDB: db,
+		cache:    make(map[string]int64),
+	}
 }
 
 func (d *BadgerDB) Get(key string) (int64, bool, error) {
@@ -169,6 +172,54 @@ func (d *BadgerDB) gcLoop() {
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
 
 	}
+}
+
+type dedup struct {
+	badgerDB *BadgerDB
+	cacheMu  sync.Mutex
+	cache    map[string]int64
+}
+
+func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	if previous, found := d.cache[kv.Key]; found {
+		return false, previous, nil
+	}
+	previous, found, err := d.badgerDB.Get(kv.Key)
+	if err != nil {
+		return false, 0, err
+	}
+	if !found {
+		d.cache[kv.Key] = kv.Value
+	}
+	return !found, previous, nil
+}
+
+func (d *dedup) Commit(keys []string) error {
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+
+	kvs := make([]types.KeyValue, len(keys))
+	for i, key := range keys {
+		value, ok := d.cache[key]
+		if !ok {
+			return fmt.Errorf("key %v has not been previously set", key)
+		}
+		kvs[i] = types.KeyValue{Key: key, Value: value}
+	}
+
+	err := d.badgerDB.Set(kvs)
+	if err == nil {
+		for _, kv := range kvs {
+			delete(d.cache, kv.Key)
+		}
+	}
+	return err
+}
+
+func (d *dedup) Close() {
+	d.badgerDB.Close()
 }
 
 type loggerForBadger struct {

@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
-
 	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
 var (
@@ -92,6 +93,18 @@ func (d *scyllaDB) BenchmarkNewKeys() {
 	if key != "" {
 		fmt.Println("key exists")
 	}
+}
+
+func (d *scyllaDB) Close() {
+	d.scylla.Close()
+}
+
+func (d *scyllaDB) Set(kv types.KeyValue) (bool, int64, error) {
+	return false, 0, nil
+}
+
+func (d *scyllaDB) Commit(keys []string) error {
+	return nil
 }
 
 func New(conf *config.Config, stats stats.Stats) (*scyllaDB, error) {

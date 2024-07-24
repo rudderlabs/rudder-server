@@ -7,18 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func Test_Dedup(t *testing.T) {
@@ -29,7 +28,8 @@ func Test_Dedup(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-	d := dedup.New(config.New(), stats.Default)
+	d, err := dedup.New(config.New(), stats.Default)
+	require.Nil(t, err)
 	defer d.Close()
 
 	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
@@ -77,7 +77,8 @@ func Test_Dedup_Window(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
 	config.Set("Dedup.dedupWindow", "1s")
-	d := dedup.New(config.New(), stats.Default)
+	d, err := dedup.New(config.New(), stats.Default)
+	require.Nil(t, err)
 	defer d.Close()
 
 	found, _, err := d.Set(types.KeyValue{Key: "to be deleted", Value: 1})
@@ -106,7 +107,8 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
-	d := dedup.New(config.New(), stats.Default)
+	d, err := dedup.New(config.New(), stats.Default)
+	require.Nil(t, err)
 	defer d.Close()
 
 	size := 105_000
@@ -115,7 +117,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 		messages[i] = uuid.New().String()
 		_, _, _ = d.Set(types.KeyValue{Key: messages[i], Value: int64(i + 1)})
 	}
-	err := d.Commit(messages)
+	err = d.Commit(messages)
 	require.NoError(t, err)
 }
 
@@ -128,7 +130,8 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.MkdirAll(dbPath, 0o750)
-	d := dedup.New(config.New(), stats.Default)
+	d, err := dedup.New(config.New(), stats.Default)
+	require.NoError(b, err)
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000
