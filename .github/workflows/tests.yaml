@@ -80,7 +80,7 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -135,6 +135,7 @@ jobs:
           - integration_test/warehouse
           - integration_test/tracing
           - integration_test/backendconfigunavailability
+          - integration_test/trackedusersreporting
           - processor
           - regulation-worker
           - router

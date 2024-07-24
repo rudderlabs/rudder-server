@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+	"google.golang.org/api/option"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"

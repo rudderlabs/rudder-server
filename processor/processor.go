@@ -788,7 +788,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
-	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 
@@ -961,6 +960,7 @@ func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.Sing
 	commonMetadata := transformer.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
+	commonMetadata.OriginalSourceID = source.OriginalID
 	commonMetadata.WorkspaceID = source.WorkspaceID
 	commonMetadata.Namespace = proc.namespace
 	commonMetadata.InstanceID = proc.instanceID
@@ -992,6 +992,7 @@ func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transforme
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
+	metadata.OriginalSourceID = commonMetadata.OriginalSourceID
 	metadata.SourceName = commonMetadata.SourceName
 	metadata.WorkspaceID = commonMetadata.WorkspaceID
 	metadata.Namespace = commonMetadata.Namespace
@@ -1820,9 +1821,20 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				&backendconfig.DestinationT{},
 			)
 
-			// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
-			shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
-			shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
+			trackingPlanID := source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
+			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
+			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
+			if rudderTyperTPID != nil && rudderTyperTPVersion != nil {
+				if id, ok := rudderTyperTPID.(string); ok && id != "" {
+					trackingPlanID = id
+				}
+				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
+					trackingPlanVersion = int(version)
+				}
+			}
+			shallowEventCopy.Metadata.TrackingPlanId = trackingPlanID
+			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
@@ -2484,6 +2496,7 @@ func (proc *Handle) transformSrcDest(
 	commonMetaData := &transformer.Metadata{
 		SourceID:             sourceID,
 		SourceName:           sourceName,
+		OriginalSourceID:     eventList[0].Metadata.OriginalSourceID,
 		SourceType:           eventList[0].Metadata.SourceType,
 		SourceCategory:       eventList[0].Metadata.SourceCategory,
 		WorkspaceID:          workspaceID,
