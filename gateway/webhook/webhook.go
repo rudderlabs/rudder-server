@@ -69,7 +69,7 @@ type HandleT struct {
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
-		forwardGetRequestForSrcs []string
+		forwardGetRequestForSrcs   []string
 	}
 }
 
