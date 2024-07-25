@@ -206,13 +206,13 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 	}()
 
-	g, _ := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	var mu sync.Mutex
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
-		errFileUploader, err := st.fileuploader.GetFileManager(context.Background(), wrkId)
+		errFileUploader, err := st.fileuploader.GetFileManager(ctx, wrkId)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
 			mu.Lock()
@@ -232,7 +232,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			uploadOutput, err := errFileUploader.Upload(ctx, outputFile, prefixes...)
 			st.logger.Infof("Uploaded error logs to %s for workspaceId %s", uploadOutput.Location, wrkId)
 			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{

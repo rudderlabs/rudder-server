@@ -56,6 +56,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	// When the config backend has not published any event yet
 	ready.Wait()
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
+	Expect(err).To(BeNil())
 
 	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
 	t.Setenv("JOBS_BACKUP_DEFAULT_PREFIX", "defaultPrefixWithStorageTTL")

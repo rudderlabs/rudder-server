@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -82,7 +84,6 @@ func (p *provider) GetFileManager(ctx context.Context, workspaceID string) (file
 		return nil, ctx.Err()
 	case <-p.init:
 	}
-	<-p.init
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	fileManager, ok := p.fileManagerMap[workspaceID]
@@ -99,7 +100,6 @@ func (p *provider) GetStoragePreferences(ctx context.Context, workspaceID string
 		return prefs, ctx.Err()
 	case <-p.init:
 	}
-	<-p.init
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	settings, ok := p.storageSettings[workspaceID]
@@ -115,8 +115,8 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 
 	for ev := range ch {
 		p.mu.RLock()
-		currentSettingsMap := p.storageSettings
-		currentFileManagerMap := p.fileManagerMap
+		currentSettingsMap := lo.Assign(p.storageSettings)
+		currentFileManagerMap := lo.Assign(p.fileManagerMap)
 		p.mu.RUnlock()
 		settingsMap := make(map[string]StorageSettings)
 		filemanagerMap := make(map[string]func() (filemanager.FileManager, error))
