@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.30.3-test.1](https://github.com/rudderlabs/rudder-server/compare/v1.30.2...v1.30.3-test.1) (2024-07-25)
+
+
+### Bug Fixes
+
+* introduce config for get requests in webhook sources ([#4927](https://github.com/rudderlabs/rudder-server/issues/4927)) ([dd6791d](https://github.com/rudderlabs/rudder-server/commit/dd6791d09f8e0e119b790216fdd0105f5fb470da))
+
+
+### Miscellaneous
+
+* automate server release on hosted with prerelease ([#4915](https://github.com/rudderlabs/rudder-server/issues/4915)) ([b96b681](https://github.com/rudderlabs/rudder-server/commit/b96b681e759acf30650e5fd8a46d5f6d8da9cf99))
+
 ## [1.30.2](https://github.com/rudderlabs/rudder-server/compare/v1.30.1...v1.30.2) (2024-07-24)
 
 
