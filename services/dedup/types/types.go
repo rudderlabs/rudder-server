@@ -1,6 +1,7 @@
 package types
 
 type KeyValue struct {
-	Key   string
-	Value int64
+	Key         string
+	Value       int64
+	WorkspaceId string
 }

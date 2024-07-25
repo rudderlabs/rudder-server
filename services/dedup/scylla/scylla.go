@@ -3,6 +3,7 @@ package scylla
 import (
 	"context"
 	"fmt"
+	"github.com/samber/lo"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,11 +22,12 @@ var (
 )
 
 type scyllaDB struct {
-	scylla  *gocql.Session
-	conf    *config.Config
-	stat    stats.Stats
-	timeout time.Duration
-	ttl     int
+	scylla         *gocql.Session
+	conf           *config.Config
+	stat           stats.Stats
+	timeout        time.Duration
+	ttl            int
+	createTableMap map[string]sync.Once
 }
 
 func (d *scyllaDB) PopulateBatch() (time.Duration, error) {
@@ -103,7 +105,11 @@ func (d *scyllaDB) Set(kv types.KeyValue) (bool, int64, error) {
 	return false, 0, nil
 }
 
-func (d *scyllaDB) Commit(keys []string) error {
+func (d *scyllaDB) Commit(keys []types.KeyValue) error {
+	keyList := lo.PartitionBy(keys, func(kv types.KeyValue) string {
+		return kv.WorkspaceId
+	})
+	d.scylla.NewBatch(gocql.LoggedBatch).WithContext(context.Background())
 	return nil
 }
 

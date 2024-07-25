@@ -519,3 +519,52 @@ func TestPrepareRequestBody(t *testing.T) {
 		})
 	}
 }
+
+func TestAllowGetReqForWebhookSrc(t *testing.T) {
+	cases := []struct {
+		name                       string
+		forwardGetRequestForSrcMap map[string]struct{}
+		method                     string
+		srcDef                     string
+		expected                   bool
+	}{
+		{
+			name:   "should allow get request for adjust",
+			method: http.MethodGet,
+			forwardGetRequestForSrcMap: map[string]struct{}{
+				"adjust": {},
+			},
+			srcDef:   "adjust",
+			expected: false,
+		},
+		{
+			name:   "should allow post request for adjust",
+			method: http.MethodPost,
+			forwardGetRequestForSrcMap: map[string]struct{}{
+				"adjust": {},
+			},
+			srcDef:   "adjust",
+			expected: false,
+		},
+		{
+			name: "should not allow get request for shopify",
+			forwardGetRequestForSrcMap: map[string]struct{}{
+				"adjust":     {},
+				"customerio": {},
+			},
+			method:   http.MethodGet,
+			srcDef:   "Shopify",
+			expected: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			wbh := HandleT{}
+			wbh.config.forwardGetRequestForSrcMap = tc.forwardGetRequestForSrcMap
+
+			isGetAndNotAllow := wbh.IsGetAndNotAllow(tc.method, tc.srcDef)
+			require.Equal(t, tc.expected, isGetAndNotAllow)
+		})
+	}
+}

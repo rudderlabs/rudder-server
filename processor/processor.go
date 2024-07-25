@@ -794,7 +794,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
-	proc.config.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 
@@ -1714,7 +1713,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				if ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize}); !ok && err != nil {
+				ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceId: batchEvent.WorkspaceId})
+				if err != nil {
+					panic(err)
+				}
+				if !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
@@ -1836,8 +1839,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				if id, ok := rudderTyperTPID.(string); ok && id != "" {
 					trackingPlanID = id
 				}
-				if version, ok := rudderTyperTPVersion.(int); ok && version > 0 {
-					trackingPlanVersion = version
+				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
+					trackingPlanVersion = int(version)
 				}
 			}
 			shallowEventCopy.Metadata.TrackingPlanId = trackingPlanID

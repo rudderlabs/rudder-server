@@ -42,7 +42,6 @@ func DefaultPath() string {
 
 func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *dedup {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
-
 	log := logger.NewLogger().Child("dedup")
 	badgerOpts := badger.
 		DefaultOptions(path).
