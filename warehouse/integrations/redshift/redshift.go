@@ -1026,7 +1026,9 @@ func (rs *Redshift) connectUsingPassword() (*sql.DB, error) {
 	params := url.Values{}
 	params.Add("sslmode", "require")
 
-	if timeout > 0 {
+	if timeout > 0 && timeout < time.Second {
+		return nil, fmt.Errorf("connectUsingPassword: invalid timeout value: %d", timeout)
+	} else if timeout >= time.Second {
 		params.Add("connect_timeout", fmt.Sprintf("%d", timeout/time.Second))
 	}
 
