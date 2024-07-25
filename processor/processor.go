@@ -44,6 +44,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -613,7 +614,7 @@ func (proc *Handle) Setup(
 		})
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New(dedup.DefaultPath())
+		proc.dedup = dedup.New()
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1707,7 +1708,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
+				ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize})
+				if err != nil {
+					panic(err)
+				}
+				if !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
