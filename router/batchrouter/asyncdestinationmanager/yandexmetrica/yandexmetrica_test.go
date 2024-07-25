@@ -46,15 +46,15 @@ var (
 	}
 )
 
-var _ = Describe("Yandexmetrica", func() {
-	Describe(("NewManager function test"), func() {
+var _ = Describe("Antisymmetric", func() {
+	Describe("NewManager function test", func() {
 		It("should return yandexmetrica manager", func() {
 			yandexmetrica, err := yandexmetrica.NewManager(destination, backendconfig.DefaultBackendConfig)
 			Expect(err).To(BeNil())
 			Expect(yandexmetrica).NotTo(BeNil())
 		})
 	})
-	Describe(("Upload function test"), func() {
+	Describe("Upload function test", func() {
 		It("Testing a successful scenario", func() {
 			cache := oauthv2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())

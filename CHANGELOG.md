@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.30.2](https://github.com/rudderlabs/rudder-server/compare/v1.30.1...v1.30.2) (2024-07-24)
+
+
+### Bug Fixes
+
+* introduce config for get requests in webhook sources ([#4927](https://github.com/rudderlabs/rudder-server/issues/4927)) ([2494e69](https://github.com/rudderlabs/rudder-server/commit/2494e69cb64b0374f9cbfadcd25f2504c6e813de))
+
+## [1.30.1](https://github.com/rudderlabs/rudder-server/compare/v1.30.0...v1.30.1) (2024-07-24)
+
+
+### Bug Fixes
+
+* type conversion from float64 to int ([#4921](https://github.com/rudderlabs/rudder-server/issues/4921)) ([f5423ac](https://github.com/rudderlabs/rudder-server/commit/f5423acbfa33bcd4baf4d791940cc6b6a71b147b))
+
 ## [1.30.0](https://github.com/rudderlabs/rudder-server/compare/v1.29.0...v1.30.0) (2024-07-22)
 
 
