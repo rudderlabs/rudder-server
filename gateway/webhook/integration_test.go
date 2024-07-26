@@ -105,7 +105,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		application        app.App
 	)
 
-	transformerURL:="http://localhost:9090"
+	transformerURL := "http://localhost:9090"
 	// TODO: Need to check why this is not working
 	isLocal := config.Default.GetBoolVar(false, "Gateway.LocalIntegrationTest")
 	if transformerContainer.TransformerURL != "" && isLocal {
@@ -204,7 +204,7 @@ func TestIntegrationWebhook(t *testing.T) {
 			if qParams != "" {
 				e := json.Unmarshal([]byte(qParams), &queryParams)
 				require.NoError(t, e)
-				for k,v := range queryParams {
+				for k, v := range queryParams {
 					vStr, _ := v.(string)
 					query.Set(k, vStr)
 				}
@@ -213,7 +213,7 @@ func TestIntegrationWebhook(t *testing.T) {
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
-			method:= http.MethodPost
+			method := http.MethodPost
 			if tc.Input.Request.Method == "GET" {
 				method = http.MethodGet
 			}
