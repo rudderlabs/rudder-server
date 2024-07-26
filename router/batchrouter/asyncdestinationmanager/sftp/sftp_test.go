@@ -3,7 +3,6 @@ package sftp
 import (
 	stdjson "encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -211,27 +210,18 @@ var _ = Describe("SFTP test", func() {
 				SuccessResponse: "File Upload Success",
 			}
 
-			if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-				fmt.Printf("Failed to create temporary directory: %v\n", err)
-				return
-			}
+			err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to create temporary directory")
 
 			tempFile, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
-			if err != nil {
-				log.Fatalf("Failed to create temporary file: %v", err)
-			}
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to create temporary file")
 			defer os.RemoveAll("/tmp/testDir1")
 
 			data := []byte(`{"message":{"action":"insert","fields":{"email":"john@email.com","name":"john"},"messageId":"b6543bc0-f280-4642-8176-4b8d5a1b8fb6","originalTimestamp":"2024-04-20T22:29:37.731+05:30","receivedAt":"2024-04-20T22:29:36.843+05:30","request_ip":"[::1]","rudderId":"853ae90f-0351-424b-973e-a615e6487517","sentAt":"2024-04-20T22:29:37.731+05:30","timestamp":"2024-04-20T22:29:36.842+05:30","type":"record"},"metadata":{"job_id":1}}`)
-			if _, err := tempFile.Write(data); err != nil {
-				log.Fatalf("Failed to write to temporary file: %v", err)
-			}
+			_, err = tempFile.Write(data)
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to write to temporary file")
 
 			received := manager.Upload(&asyncDestination)
-			if err != nil {
-				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
-				return
-			}
 			Expect(received).To(Equal(expected))
 		})
 	})
