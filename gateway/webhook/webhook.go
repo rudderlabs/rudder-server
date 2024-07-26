@@ -106,7 +106,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 }
 
 func (wb *HandleT) IsGetAndNotAllow(reqMethod, sourceDefName string) bool {
-	_, ok := wb.config.forwardGetRequestForSrcMap[sourceDefName]
+	_, ok := wb.config.forwardGetRequestForSrcMap[strings.ToLower(sourceDefName)]
 	return reqMethod == http.MethodGet && !ok
 }
 

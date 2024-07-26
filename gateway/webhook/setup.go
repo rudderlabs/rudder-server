@@ -60,7 +60,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
 		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
-			return item, struct{}{}
+			return strings.ToLower(item), struct{}{}
 		},
 	)
 
