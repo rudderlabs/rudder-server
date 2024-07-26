@@ -105,12 +105,19 @@ func TestIntegrationWebhook(t *testing.T) {
 		application        app.App
 	)
 
+	transformerURL:="http://localhost:9090"
+	// TODO: Need to check why this is not working
+	isLocal := config.Default.GetBoolVar(false, "Gateway.LocalIntegrationTest")
+	if transformerContainer.TransformerURL != "" && isLocal {
+		transformerURL = transformerContainer.TransformerURL
+	}
+
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, conf, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           transformerContainer.TransformerURL,
+		TransformerURL:           transformerURL,
 		FeaturesRetryMaxAttempts: 10,
 	})
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
 	<-transformerFeaturesService.Wait()
 
@@ -191,11 +198,26 @@ func TestIntegrationWebhook(t *testing.T) {
 			t.Logf("workspaceID: %s", workspaceID)
 
 			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
+			// parse query parameters from input request
+			var queryParams map[string]interface{}
+			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").String()
+			if qParams != "" {
+				e := json.Unmarshal([]byte(qParams), &queryParams)
+				require.NoError(t, e)
+				for k,v := range queryParams {
+					vStr, _ := v.(string)
+					query.Set(k, vStr)
+				}
+			}
 			require.NoError(t, err)
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
-			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
+			method:= http.MethodPost
+			if tc.Input.Request.Method == "GET" {
+				method = http.MethodGet
+			}
+			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
 
 			req.Header.Set("X-Forwarded-For", testSetup.Context.RequestIP)
@@ -250,7 +272,14 @@ func TestIntegrationWebhook(t *testing.T) {
 				rudderID, err := kituuid.GetMD5UUID(userID + ":" + anonID)
 				assert.NoError(t, err)
 
+				p, err = sjson.SetBytes(p, "anonymousId", anonID)
+				assert.NoError(t, err)
+
 				p, err = sjson.SetBytes(p, "rudderId", rudderID)
+				assert.NoError(t, err)
+
+				// TODO: should figure out when to do this
+				p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
 				assert.NoError(t, err)
 
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
