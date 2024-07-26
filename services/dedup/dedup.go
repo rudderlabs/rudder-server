@@ -6,6 +6,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
+	"github.com/rudderlabs/rudder-server/services/dedup/mirrorBadger"
+	"github.com/rudderlabs/rudder-server/services/dedup/mirrorScylla"
 	"github.com/rudderlabs/rudder-server/services/dedup/scylla"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
@@ -13,9 +15,10 @@ import (
 type Mode string
 
 const (
-	Badger Mode = "Badger"
-	Scylla Mode = "Scylla"
-	Dual   Mode = "Dual"
+	Badger       Mode = "Badger"
+	Scylla       Mode = "Scylla"
+	MirrorScylla Mode = "MirrorScylla"
+	MirrorBadger Mode = "MirrorBadger"
 )
 
 // New creates a new deduplication service. The service needs to be closed after use.
@@ -30,8 +33,14 @@ func New(conf *config.Config, stats stats.Stats) (Dedup, error) {
 			return nil, err
 		}
 		return scylla, nil
-	case Dual:
-		return nil, nil
+	case MirrorScylla:
+		// Writes happen to both
+		// Read only from Scylla
+		return mirrorScylla.NewMirrorScylla(conf, stats)
+	case MirrorBadger:
+		// Writes happen to both
+		// Read only from Badger
+		return mirrorBadger.NewMirrorBadger(conf, stats)
 	default:
 		return badger.NewBadgerDB(conf, stats, badger.DefaultPath()), nil
 	}
@@ -43,7 +52,7 @@ type Dedup interface {
 	Set(kv types.KeyValue) (bool, int64, error)
 
 	// Commit commits a list of previously set keys to the DB
-	Commit(keys []string) error
+	Commit(keys map[string]types.KeyValue) error
 
 	// Close closes the deduplication service
 	Close()

@@ -1603,7 +1603,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
 
 	marshalStart := time.Now()
-	dedupKeys := make(map[string]struct{})
+	dedupKeys := make(map[string]dedupTypes.KeyValue)
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[dupStatKey]int)
 
@@ -1713,6 +1713,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
+				dedupVal := dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceId: batchEvent.WorkspaceId}
 				ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceId: batchEvent.WorkspaceId})
 				if err != nil {
 					panic(err)
@@ -1722,7 +1723,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
 				}
-				dedupKeys[dedupKey] = struct{}{}
+				dedupKeys[dedupKey] = dedupVal
 			}
 
 			proc.updateSourceEventStatsDetailed(singularEvent, sourceID)
@@ -2086,7 +2087,7 @@ type transformationMessage struct {
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[dupStatKey]int
-	dedupKeys                    map[string]struct{}
+	dedupKeys                    map[string]dedupTypes.KeyValue
 
 	totalEvents int
 	start       time.Time
@@ -2223,7 +2224,7 @@ type storeMessage struct {
 
 	reportMetrics  []*types.PUReportedMetric
 	sourceDupStats map[dupStatKey]int
-	dedupKeys      map[string]struct{}
+	dedupKeys      map[string]dedupTypes.KeyValue
 
 	totalEvents int
 	start       time.Time
@@ -2439,7 +2440,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	if proc.config.enableDedup {
 		proc.updateSourceStats(in.sourceDupStats, "processor_write_key_duplicate_events")
 		if len(in.dedupKeys) > 0 {
-			if err := proc.dedup.Commit(lo.Keys(in.dedupKeys)); err != nil {
+			if err := proc.dedup.Commit(in.dedupKeys); err != nil {
 				panic(err)
 			}
 		}

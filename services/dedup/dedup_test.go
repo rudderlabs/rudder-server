@@ -28,7 +28,9 @@ func Test_Dedup(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-	d, err := dedup.New(config.New(), stats.Default)
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+	d, err := dedup.New(conf, stats.Default)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -49,7 +51,7 @@ func Test_Dedup(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err = d.Commit([]string{"a"})
+		err = d.Commit(map[string]types.KeyValue{"a": {Key: "a", Value: 1}})
 		require.NoError(t, err)
 
 		found, value, err := d.Set(types.KeyValue{Key: "b", Value: 2})
@@ -63,7 +65,7 @@ func Test_Dedup(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err = d.Commit([]string{"d"})
+		err = d.Commit(map[string]types.KeyValue{"d": {Key: "d", Value: 2}})
 		require.NotNil(t, err)
 	})
 }
@@ -74,10 +76,12 @@ func Test_Dedup_Window(t *testing.T) {
 	misc.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
+	conf := config.New()
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
-	config.Set("Dedup.dedupWindow", "1s")
-	d, err := dedup.New(config.New(), stats.Default)
+	conf.Set("Dedup.dedupWindow", "1s")
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+	d, err := dedup.New(conf, stats.Default)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -85,7 +89,9 @@ func Test_Dedup_Window(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, true, found)
 
-	err = d.Commit([]string{"to be deleted"})
+	key := "to be deleted"
+	value := types.KeyValue{Key: key, Value: 2}
+	err = d.Commit(map[string]types.KeyValue{key: value})
 	require.NoError(t, err)
 
 	found, _, err = d.Set(types.KeyValue{Key: "to be deleted", Value: 2})
@@ -107,15 +113,18 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
 	os.RemoveAll(dbPath)
-	d, err := dedup.New(config.New(), stats.Default)
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+	d, err := dedup.New(conf, stats.Default)
 	require.Nil(t, err)
 	defer d.Close()
 
 	size := 105_000
-	messages := make([]string, size)
+	messages := map[string]types.KeyValue{}
 	for i := 0; i < size; i++ {
-		messages[i] = uuid.New().String()
-		_, _, _ = d.Set(types.KeyValue{Key: messages[i], Value: int64(i + 1)})
+		key := uuid.New().String()
+		messages[key] = types.KeyValue{Key: key, Value: int64(i + 1)}
+		_, _, _ = d.Set(messages[key])
 	}
 	err = d.Commit(messages)
 	require.NoError(t, err)
@@ -130,29 +139,31 @@ func Benchmark_Dedup(b *testing.B) {
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.MkdirAll(dbPath, 0o750)
-	d, err := dedup.New(config.New(), stats.Default)
+	conf := config.New()
+	b.Setenv("RUDDER_TMPDIR", dbPath)
+	d, err := dedup.New(conf, stats.Default)
 	require.NoError(b, err)
 
 	b.Run("no duplicates 1000 batch unique", func(b *testing.B) {
 		batchSize := 1000
 
 		msgIDs := make([]types.KeyValue, batchSize)
-		keys := make([]string, 0)
+		messages := map[string]types.KeyValue{}
 
 		for i := 0; i < b.N; i++ {
+			key := uuid.New().String()
 			msgIDs[i%batchSize] = types.KeyValue{
-				Key:   uuid.New().String(),
+				Key:   key,
 				Value: int64(i + 1),
 			}
-
+			messages[key] = msgIDs[i%batchSize]
 			if i%batchSize == batchSize-1 || i == b.N-1 {
 				for _, msgID := range msgIDs[:i%batchSize] {
 					_, _, _ = d.Set(msgID)
-					keys = append(keys, msgID.Key)
 				}
-				err := d.Commit(keys)
+				err := d.Commit(messages)
 				require.NoError(b, err)
-				keys = nil
+				messages = nil
 			}
 		}
 		b.ReportMetric(float64(b.N), "events")

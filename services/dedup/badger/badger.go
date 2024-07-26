@@ -8,6 +8,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -40,9 +41,9 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *dedup {
+func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
-	log := logger.NewLogger().Child("dedup")
+	log := logger.NewLogger().Child("Dedup")
 	badgerOpts := badger.
 		DefaultOptions(path).
 		WithCompression(options.None).
@@ -66,7 +67,7 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *dedup {
 		window: dedupWindow,
 		opts:   badgerOpts,
 	}
-	return &dedup{
+	return &Dedup{
 		badgerDB: db,
 		cache:    make(map[string]int64),
 	}
@@ -173,13 +174,13 @@ func (d *BadgerDB) gcLoop() {
 	}
 }
 
-type dedup struct {
+type Dedup struct {
 	badgerDB *BadgerDB
 	cacheMu  sync.Mutex
 	cache    map[string]int64
 }
 
-func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
+func (d *Dedup) Set(kv types.KeyValue) (bool, int64, error) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 	if previous, found := d.cache[kv.Key]; found {
@@ -195,12 +196,12 @@ func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
 	return !found, previous, nil
 }
 
-func (d *dedup) Commit(keys []string) error {
+func (d *Dedup) Commit(keys map[string]types.KeyValue) error {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 
 	kvs := make([]types.KeyValue, len(keys))
-	for i, key := range keys {
+	for i, key := range lo.Keys(keys) {
 		value, ok := d.cache[key]
 		if !ok {
 			return fmt.Errorf("key %v has not been previously set", key)
@@ -217,7 +218,7 @@ func (d *dedup) Commit(keys []string) error {
 	return err
 }
 
-func (d *dedup) Close() {
+func (d *Dedup) Close() {
 	d.badgerDB.Close()
 }
 

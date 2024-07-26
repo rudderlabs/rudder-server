@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -5541,7 +5543,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:       []string{"1"},
 		reportMetrics:       []*types.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
-		dedupKeys:           map[string]struct{}{"1": {}},
+		dedupKeys:           map[string]dedupTypes.KeyValue{"1": {}},
 		totalEvents:         1,
 		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}},
 	}
@@ -5557,7 +5559,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:       []string{"2"},
 		reportMetrics:       []*types.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
-		dedupKeys:           map[string]struct{}{"2": {}},
+		dedupKeys:           map[string]dedupTypes.KeyValue{"2": {}},
 		totalEvents:         1,
 		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 	}
@@ -5575,7 +5577,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		[]string{"3"},
 		[]*types.PUReportedMetric{{}},
 		map[dupStatKey]int{{sourceID: "1"}: 3},
-		map[string]struct{}{"3": {}},
+		map[string]dedupTypes.KeyValue{"3": {}},
 		1,
 		time.Time{},
 		false,
@@ -5586,7 +5588,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	merged := storeMessage{
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
 		sourceDupStats:        map[dupStatKey]int{},
-		dedupKeys:             map[string]struct{}{},
+		dedupKeys:             map[string]dedupTypes.KeyValue{},
 		start:                 time.UnixMicro(99999999),
 	}
 
@@ -5639,7 +5641,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:  []string{"1", "2", "3"},
 		reportMetrics:  []*types.PUReportedMetric{{}, {}, {}},
 		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},
-		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
+		dedupKeys:      map[string]dedupTypes.KeyValue{"1": {}, "2": {}, "3": {}},
 		totalEvents:    3,
 		start:          time.UnixMicro(99999999),
 	})

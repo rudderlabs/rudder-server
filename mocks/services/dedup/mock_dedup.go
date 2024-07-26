@@ -52,7 +52,7 @@ func (mr *MockDedupMockRecorder) Close() *gomock.Call {
 }
 
 // Commit mocks base method.
-func (m *MockDedup) Commit(arg0 []string) error {
+func (m *MockDedup) Commit(arg0 map[string]types.KeyValue) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Commit", arg0)
 	ret0, _ := ret[0].(error)
