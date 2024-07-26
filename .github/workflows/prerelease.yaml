@@ -55,7 +55,10 @@ jobs:
           release-as: ${{ steps.extract_branch.outputs.branch }}
       - name: Extract prerelease version
         shell: bash
-        run: echo "version=$(echo "${{ steps.extract_branch.outputs.branch }}" | cut -d'/' -f2)" >> $GITHUB_OUTPUT
+        run: |
+          tag_name=$(echo "${{ steps.release.outputs.tag_name }}")
+          version=$(echo "${tag_name#v}")
+          echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
       - name: Trigger dispatch event
         uses: peter-evans/repository-dispatch@v3
