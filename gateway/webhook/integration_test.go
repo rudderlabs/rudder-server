@@ -108,7 +108,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	transformerURL := "http://localhost:9090"
 	// TODO: Need to check why this is not working
 	isLocal := config.Default.GetBoolVar(false, "Gateway.LocalIntegrationTest")
-	if transformerContainer.TransformerURL != "" && isLocal {
+	if transformerContainer.TransformerURL != "" && !isLocal {
 		transformerURL = transformerContainer.TransformerURL
 	}
 
