@@ -63,7 +63,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 
 	// error reporting implementation
 	if config.GetBool("Reporting.errorReporting.enabled", false) {
-		errorReporter := NewErrorDetailReporter(rm.ctx, configSubscriber)
+		errorReporter := NewErrorDetailReporter(rm.ctx, configSubscriber, rm.stats)
 		rm.reporters = append(rm.reporters, errorReporter)
 	}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -80,6 +81,8 @@ type ErrorDetailReporter struct {
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
+
+	stats stats.Stats
 }
 
 type errorDetails struct {
@@ -90,6 +93,7 @@ type errorDetails struct {
 func NewErrorDetailReporter(
 	ctx context.Context,
 	configSubscriber *configSubscriber,
+	stats stats.Stats,
 ) *ErrorDetailReporter {
 	tr := &http.Transport{}
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
@@ -124,6 +128,7 @@ func NewErrorDetailReporter(
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
 		maxOpenConnections:   maxOpenConnections,
+		stats:                     stats,
 	}
 }
 
@@ -197,7 +202,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
 
-		stats.Default.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
+		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
 			"errorCode":     errDets.ErrorCode,
 			"workspaceId":   workspaceID,
 			"destType":      destinationDetail.destType,
@@ -297,17 +302,19 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 	tags := edr.getTags(c.Label)
 
-	mainLoopTimer := stats.Default.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)
-	getReportsTimer := stats.Default.NewTaggedStat("error_detail_reports_get_reports_time", stats.TimerType, tags)
-	aggregateTimer := stats.Default.NewTaggedStat("error_detail_reports_aggregate_time", stats.TimerType, tags)
-	getReportsSize := stats.Default.NewTaggedStat("error_detail_reports_size", stats.HistogramType, tags)
-	getAggregatedReportsSize := stats.Default.NewTaggedStat("error_detail_reports_aggregated_size", stats.HistogramType, tags)
+	mainLoopTimer := edr.stats.NewTaggedStat("error_detail_reports_main_loop_time", stats.TimerType, tags)
+	getReportsTimer := edr.stats.NewTaggedStat("error_detail_reports_get_reports_time", stats.TimerType, tags)
+	aggregateTimer := edr.stats.NewTaggedStat("error_detail_reports_aggregate_time", stats.TimerType, tags)
+	getReportsSize := edr.stats.NewTaggedStat("error_detail_reports_size", stats.HistogramType, tags)
+	getAggregatedReportsSize := edr.stats.NewTaggedStat("error_detail_reports_aggregated_size", stats.HistogramType, tags)
 
-	errorDetailReportsDeleteQueryTimer := stats.Default.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
+	errorDetailReportsDeleteQueryTimer := edr.stats.NewTaggedStat("error_detail_reports_delete_query_time", stats.TimerType, tags)
 
-	edr.minReportedAtQueryTime = stats.Default.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
-	edr.errorDetailReportsQueryTime = stats.Default.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
-	edr.edReportingRequestLatency = stats.Default.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
+	edr.minReportedAtQueryTime = edr.stats.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
+	edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
+	edr.edReportingRequestLatency = edr.stats.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
+
+	vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	// In infinite loop
 	// Get Reports
@@ -375,7 +382,28 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			if err != nil {
 				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
 			}
+			vacuumStart := time.Now()
+			var sizeEstimate int64
+			if err := dbHandle.QueryRowContext(
+				ctx,
+				fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ErrorDetailReportsTable),
+			).Scan(&sizeEstimate); err != nil {
+				edr.log.Errorn(
+					`[ Error detail Reporting ]: Error getting table size estimate`,
+					logger.NewErrorField(err),
+				)
+			}
+				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
+					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+						edr.log.Errorn(
+							`[ Error detail Reporting ]: Error vacuuming error_detail_reports table`,
+							logger.NewErrorField(err),
+						)
+					}
+					vacuumDuration.Since(vacuumStart)
+				}
 		}
+
 
 		mainLoopTimer.Since(loopStart)
 		select {
@@ -602,7 +630,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		edr.edReportingRequestLatency.Since(httpRequestStart)
 		httpStatTags := edr.getTags(label)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		stats.Default.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
+		edr.stats.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)

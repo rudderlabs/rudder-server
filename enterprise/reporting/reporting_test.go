@@ -415,7 +415,7 @@ func TestExtractErrorDetails(t *testing.T) {
 		},
 	}
 
-	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
 			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
@@ -599,7 +599,7 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 	configSubscriber := newConfigSubscriber(logger.NOP)
-	ed := NewErrorDetailReporter(context.Background(), configSubscriber)
+	ed := NewErrorDetailReporter(context.Background(), configSubscriber, stats.NOP)
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{
