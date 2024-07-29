@@ -2,6 +2,7 @@ package scylla
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -13,19 +14,24 @@ import (
 )
 
 type ScyllaDB struct {
-	scylla         *gocql.Session
-	conf           *config.Config
-	stat           stats.Stats
-	ttl            int
+	scylla *gocql.Session
+	conf   *config.Config
+	stat   stats.Stats
+	// Time to live in seconds for an entry in the DB
+	ttl int
+	// Maximum number of keys to commit in a single batch
 	batchSize      int
 	createTableMap map[string]struct{}
+
+	cacheMu sync.Mutex
+	cache   map[string]types.KeyValue
 }
 
 func (d *ScyllaDB) Close() {
 	d.scylla.Close()
 }
 
-func (d *ScyllaDB) Set(kv types.KeyValue) (bool, int64, error) {
+func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Create the table if it doesn't exist
 	if _, ok := d.createTableMap[kv.WorkspaceId]; !ok {
 		err := d.scylla.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id text PRIMARY KEY, value bigint) WITH bloom_filter_fp_chance = 0.005", kv.WorkspaceId)).Exec()
@@ -35,24 +41,41 @@ func (d *ScyllaDB) Set(kv types.KeyValue) (bool, int64, error) {
 		d.createTableMap[kv.WorkspaceId] = struct{}{}
 	}
 
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	// Check if the key exists in the cache
+	// This is essential if we get the same key multiple times in the same batch
+	// Since we are not committing the keys immediately, we need to keep track of the keys in the cache
+	if previous, found := d.cache[kv.Key]; found {
+		return false, previous.Value, nil
+	}
+
 	// Check if the key exists in the DB
 	var value int64
 	err := d.scylla.Query(fmt.Sprintf("SELECT value FROM %s WHERE id = ?", kv.WorkspaceId), kv.Key).Scan(&value)
 	if err != nil && err != gocql.ErrNotFound {
 		return false, 0, err
 	}
-	if err == gocql.ErrNotFound {
-		return true, 0, nil
-	}
+	d.cache[kv.Key] = kv
 	return false, kv.Value, nil
 }
 
-func (d *ScyllaDB) Commit(keys map[string]types.KeyValue) error {
-	keysList := lo.PartitionBy(lo.Values(keys), func(kv types.KeyValue) string {
+func (d *ScyllaDB) Commit(keys []string) error {
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	kvs := make([]types.KeyValue, len(keys))
+	for i, key := range keys {
+		value, ok := d.cache[key]
+		if !ok {
+			return fmt.Errorf("key %v has not been previously set", key)
+		}
+		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceId: value.WorkspaceId}
+	}
+	keysList := lo.PartitionBy(kvs, func(kv types.KeyValue) string {
 		return kv.WorkspaceId
 	})
-	for _, keys := range keysList {
-		batches := lo.Chunk(keys, d.batchSize)
+	for _, keysPerWorkspace := range keysList {
+		batches := lo.Chunk(keysPerWorkspace, d.batchSize)
 		for _, batch := range batches {
 			scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 			for _, key := range batch {
@@ -63,6 +86,9 @@ func (d *ScyllaDB) Commit(keys map[string]types.KeyValue) error {
 			}
 			if err := d.scylla.ExecuteBatch(scyllaBatch); err != nil {
 				return err
+			}
+			for _, key := range batch {
+				delete(d.cache, key.Key)
 			}
 		}
 	}

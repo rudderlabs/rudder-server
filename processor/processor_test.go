@@ -12,16 +12,11 @@ import (
 	"testing"
 	"time"
 
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -34,6 +29,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -80,7 +76,7 @@ type mockTrackedUsersReporter struct {
 	}
 }
 
-func (m *mockTrackedUsersReporter) ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error {
+func (m *mockTrackedUsersReporter) ReportUsers(_ context.Context, reports []*trackedusers.UsersReport, _ *Tx) error {
 	m.reportCalls = append(m.reportCalls, struct {
 		reportedReports []*trackedusers.UsersReport
 	}{reportedReports: reports})
@@ -2538,7 +2534,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -5543,7 +5539,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:       []string{"1"},
 		reportMetrics:       []*types.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
-		dedupKeys:           map[string]dedupTypes.KeyValue{"1": {}},
+		dedupKeys:           map[string]struct{}{"1": {}},
 		totalEvents:         1,
 		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}},
 	}
@@ -5559,7 +5555,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:       []string{"2"},
 		reportMetrics:       []*types.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
-		dedupKeys:           map[string]dedupTypes.KeyValue{"2": {}},
+		dedupKeys:           map[string]struct{}{"2": {}},
 		totalEvents:         1,
 		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 	}
@@ -5577,7 +5573,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		[]string{"3"},
 		[]*types.PUReportedMetric{{}},
 		map[dupStatKey]int{{sourceID: "1"}: 3},
-		map[string]dedupTypes.KeyValue{"3": {}},
+		map[string]struct{}{"3": {}},
 		1,
 		time.Time{},
 		false,
@@ -5588,7 +5584,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	merged := storeMessage{
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
 		sourceDupStats:        map[dupStatKey]int{},
-		dedupKeys:             map[string]dedupTypes.KeyValue{},
+		dedupKeys:             map[string]struct{}{},
 		start:                 time.UnixMicro(99999999),
 	}
 
@@ -5641,7 +5637,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		routerDestIDs:  []string{"1", "2", "3"},
 		reportMetrics:  []*types.PUReportedMetric{{}, {}, {}},
 		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},
-		dedupKeys:      map[string]dedupTypes.KeyValue{"1": {}, "2": {}, "3": {}},
+		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
 		totalEvents:    3,
 		start:          time.UnixMicro(99999999),
 	})

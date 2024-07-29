@@ -35,37 +35,37 @@ func Test_Dedup(t *testing.T) {
 	defer d.Close()
 
 	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
-		found, _, err := d.Set(types.KeyValue{Key: "a", Value: 1})
+		found, _, err := d.Get(types.KeyValue{Key: "a", Value: 1})
 		require.Nil(t, err)
 		require.Equal(t, true, found)
 
 		// Checking it again should give us the previous value from the cache
-		found, value, err := d.Set(types.KeyValue{Key: "a", Value: 2})
+		found, value, err := d.Get(types.KeyValue{Key: "a", Value: 2})
 		require.Nil(t, err)
 		require.Equal(t, false, found)
 		require.Equal(t, int64(1), value)
 	})
 
 	t.Run("if message is committed, previous value should always return", func(t *testing.T) {
-		found, _, err := d.Set(types.KeyValue{Key: "b", Value: 1})
+		found, _, err := d.Get(types.KeyValue{Key: "b", Value: 1})
 		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err = d.Commit(map[string]types.KeyValue{"a": {Key: "a", Value: 1}})
+		err = d.Commit([]string{"a"})
 		require.NoError(t, err)
 
-		found, value, err := d.Set(types.KeyValue{Key: "b", Value: 2})
+		found, value, err := d.Get(types.KeyValue{Key: "b", Value: 2})
 		require.Nil(t, err)
 		require.Equal(t, false, found)
 		require.Equal(t, int64(1), value)
 	})
 
 	t.Run("committing a messageid not present in cache", func(t *testing.T) {
-		found, _, err := d.Set(types.KeyValue{Key: "c", Value: 1})
+		found, _, err := d.Get(types.KeyValue{Key: "c", Value: 1})
 		require.Nil(t, err)
 		require.Equal(t, true, found)
 
-		err = d.Commit(map[string]types.KeyValue{"d": {Key: "d", Value: 2}})
+		err = d.Commit([]string{"d"})
 		require.NotNil(t, err)
 	})
 }
@@ -85,21 +85,19 @@ func Test_Dedup_Window(t *testing.T) {
 	require.Nil(t, err)
 	defer d.Close()
 
-	found, _, err := d.Set(types.KeyValue{Key: "to be deleted", Value: 1})
+	found, _, err := d.Get(types.KeyValue{Key: "to be deleted", Value: 1})
 	require.Nil(t, err)
 	require.Equal(t, true, found)
 
-	key := "to be deleted"
-	value := types.KeyValue{Key: key, Value: 2}
-	err = d.Commit(map[string]types.KeyValue{key: value})
+	err = d.Commit([]string{"to be deleted"})
 	require.NoError(t, err)
 
-	found, _, err = d.Set(types.KeyValue{Key: "to be deleted", Value: 2})
+	found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 2})
 	require.Nil(t, err)
 	require.Equal(t, false, found)
 
 	require.Eventually(t, func() bool {
-		found, _, err = d.Set(types.KeyValue{Key: "to be deleted", Value: 3})
+		found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 3})
 		require.Nil(t, err)
 		return found
 	}, 2*time.Second, 100*time.Millisecond)
@@ -112,7 +110,6 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
-	os.RemoveAll(dbPath)
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 	d, err := dedup.New(conf, stats.Default)
@@ -120,11 +117,11 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer d.Close()
 
 	size := 105_000
-	messages := map[string]types.KeyValue{}
+	messages := make([]string, size)
 	for i := 0; i < size; i++ {
 		key := uuid.New().String()
-		messages[key] = types.KeyValue{Key: key, Value: int64(i + 1)}
-		_, _, _ = d.Set(messages[key])
+		messages[i] = key
+		_, _, _ = d.Get(types.KeyValue{Key: key, Value: int64(i + 1)})
 	}
 	err = d.Commit(messages)
 	require.NoError(t, err)
@@ -148,22 +145,21 @@ func Benchmark_Dedup(b *testing.B) {
 		batchSize := 1000
 
 		msgIDs := make([]types.KeyValue, batchSize)
-		messages := map[string]types.KeyValue{}
-
+		keys := make([]string, 0)
 		for i := 0; i < b.N; i++ {
 			key := uuid.New().String()
 			msgIDs[i%batchSize] = types.KeyValue{
 				Key:   key,
 				Value: int64(i + 1),
 			}
-			messages[key] = msgIDs[i%batchSize]
+			keys = append(keys, key)
 			if i%batchSize == batchSize-1 || i == b.N-1 {
 				for _, msgID := range msgIDs[:i%batchSize] {
-					_, _, _ = d.Set(msgID)
+					_, _, _ = d.Get(msgID)
 				}
-				err := d.Commit(messages)
+				err := d.Commit(keys)
 				require.NoError(b, err)
-				messages = nil
+				keys = nil
 			}
 		}
 		b.ReportMetric(float64(b.N), "events")

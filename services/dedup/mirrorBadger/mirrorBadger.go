@@ -30,11 +30,11 @@ func (mb *MirrorBadger) Close() {
 	mb.badger.Close()
 }
 
-func (mb *MirrorBadger) Set(kv types.KeyValue) (bool, int64, error) {
-	return mb.badger.Set(kv)
+func (mb *MirrorBadger) Get(kv types.KeyValue) (bool, int64, error) {
+	return mb.badger.Get(kv)
 }
 
-func (mb *MirrorBadger) Commit(keys map[string]types.KeyValue) error {
+func (mb *MirrorBadger) Commit(keys []string) error {
 	_ = mb.scylla.Commit(keys)
 	return mb.badger.Commit(keys)
 }

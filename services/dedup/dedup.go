@@ -48,11 +48,11 @@ func New(conf *config.Config, stats stats.Stats) (Dedup, error) {
 
 // Dedup is the interface for deduplication service
 type Dedup interface {
-	// Set returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
-	Set(kv types.KeyValue) (bool, int64, error)
+	// Get returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
+	Get(kv types.KeyValue) (bool, int64, error)
 
 	// Commit commits a list of previously set keys to the DB
-	Commit(keys map[string]types.KeyValue) error
+	Commit(keys []string) error
 
 	// Close closes the deduplication service
 	Close()

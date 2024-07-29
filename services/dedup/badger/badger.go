@@ -8,7 +8,6 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -180,7 +179,7 @@ type Dedup struct {
 	cache    map[string]int64
 }
 
-func (d *Dedup) Set(kv types.KeyValue) (bool, int64, error) {
+func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 	if previous, found := d.cache[kv.Key]; found {
@@ -196,12 +195,11 @@ func (d *Dedup) Set(kv types.KeyValue) (bool, int64, error) {
 	return !found, previous, nil
 }
 
-func (d *Dedup) Commit(keys map[string]types.KeyValue) error {
+func (d *Dedup) Commit(keys []string) error {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
-
 	kvs := make([]types.KeyValue, len(keys))
-	for i, key := range lo.Keys(keys) {
+	for i, key := range keys {
 		value, ok := d.cache[key]
 		if !ok {
 			return fmt.Errorf("key %v has not been previously set", key)

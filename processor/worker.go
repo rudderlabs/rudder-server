@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -106,7 +104,7 @@ func (w *worker) start() {
 			if firstSubJob {
 				mergedJob = &storeMessage{
 					rsourcesStats:         subJob.rsourcesStats,
-					dedupKeys:             make(map[string]dedupTypes.KeyValue),
+					dedupKeys:             make(map[string]struct{}),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
 					sourceDupStats:        make(map[dupStatKey]int),
 					start:                 subJob.start,
