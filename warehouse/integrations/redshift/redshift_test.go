@@ -1218,6 +1218,77 @@ func TestIntegration(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("Connection timeout using password", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				Config: map[string]interface{}{
+					"host":             rsTestCredentials.Host,
+					"port":             rsTestCredentials.Port,
+					"user":             rsTestCredentials.UserName,
+					"password":         rsTestCredentials.Password,
+					"database":         rsTestCredentials.DbName,
+					"bucketName":       rsTestCredentials.BucketName,
+					"accessKeyID":      rsTestCredentials.AccessKeyID,
+					"accessKey":        rsTestCredentials.AccessKey,
+					"namespace":        namespace,
+					"syncFrequency":    "30",
+					"enableSSE":        false,
+					"useRudderStorage": false,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+					Name:        "RS",
+					DisplayName: "Redshift",
+				},
+				Name:        "redshift-demo",
+				Enabled:     true,
+				RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+				WorkspaceID: workspaceID,
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+		mockCtrl := gomock.NewController(t)
+		uploader := mockuploader.NewMockUploader(mockCtrl)
+
+		t.Run("no timeout", func(t *testing.T) {
+			ctx := context.Background()
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
+		})
+		t.Run("timeout = 0s", func(t *testing.T) {
+			ctx := context.Background()
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			rs.SetConnectionTimeout(0)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
+		})
+		t.Run("0s < timeout < 1s", func(t *testing.T) {
+			ctx := context.Background()
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			rs.SetConnectionTimeout(500 * time.Millisecond)
+			require.Error(t, rs.Setup(ctx, warehouse, uploader))
+		})
+		t.Run("timeout >= 1s", func(t *testing.T) {
+			ctx := context.Background()
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			rs.SetConnectionTimeout(10 * time.Second)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
+		})
+	})
 }
 
 func TestRedshift_ShouldMerge(t *testing.T) {
