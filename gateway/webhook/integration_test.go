@@ -181,10 +181,6 @@ func TestIntegrationWebhook(t *testing.T) {
 	}, time.Millisecond*500, time.Millisecond)
 
 	for i, tc := range testSetup.Cases {
-		if tc.Skip != "" {
-			t.Skip(tc.Skip)
-			continue
-		}
 		sConfig := sourceConfigs[i]
 
 		writeKey := sConfig.WriteKey
@@ -192,6 +188,10 @@ func TestIntegrationWebhook(t *testing.T) {
 		workspaceID := sConfig.WorkspaceID
 
 		t.Run(tc.Name+"/"+tc.Description, func(t *testing.T) {
+			if tc.Skip != "" {
+				t.Skip(tc.Skip)
+				return
+			}
 			t.Logf("writeKey: %s", writeKey)
 			t.Logf("sourceID: %s", sourceID)
 			t.Logf("workspaceID: %s", workspaceID)
