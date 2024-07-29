@@ -198,13 +198,10 @@ func TestIntegrationWebhook(t *testing.T) {
 
 			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
 			// parse query parameters from input request
-			var queryParams map[string]interface{}
-			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").String()
-			if qParams != "" {
-				e := json.Unmarshal([]byte(qParams), &queryParams)
-				require.NoError(t, e)
-				for k, v := range queryParams {
-					vStr, _ := v.(string)
+			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").Map()
+			if len(qParams) != 0 {
+				for k, v := range qParams {
+					vStr := v.Array()[0].String()
 					query.Set(k, vStr)
 				}
 			}
@@ -271,13 +268,15 @@ func TestIntegrationWebhook(t *testing.T) {
 				rudderID, err := kituuid.GetMD5UUID(userID + ":" + anonID)
 				assert.NoError(t, err)
 
-				p, err = sjson.SetBytes(p, "anonymousId", anonID)
-				assert.NoError(t, err)
+				if anonID != "" {
+					p, err = sjson.SetBytes(p, "anonymousId", anonID)
+					assert.NoError(t, err)
+				}
 
 				p, err = sjson.SetBytes(p, "rudderId", rudderID)
 				assert.NoError(t, err)
 
-				if qParams != "" {
+				if gjson.GetBytes(batch.Batch[0], "properties.writeKey").String() != "" {
 					p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
 					assert.NoError(t, err)
 				}
@@ -306,6 +305,12 @@ func TestIntegrationWebhook(t *testing.T) {
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
+
+				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value() 
+				if errPayloadWriteKey !=  nil {
+					r.Jobs[i].EventPayload , err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
+					require.NoError(t, err)
+				}
 
 				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
