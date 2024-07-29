@@ -128,7 +128,7 @@ func NewErrorDetailReporter(
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
 		maxOpenConnections:   maxOpenConnections,
-		stats:                     stats,
+		stats:                stats,
 	}
 }
 
@@ -393,17 +393,17 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					logger.NewErrorField(err),
 				)
 			}
-				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
-					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
-						edr.log.Errorn(
-							`[ Error detail Reporting ]: Error vacuuming error_detail_reports table`,
-							logger.NewErrorField(err),
-						)
-					}
-					vacuumDuration.Since(vacuumStart)
+			if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
+				vaccumStatement := fmt.Sprintf("vaccum full analyze %s;", ErrorDetailReportsTable)
+				if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
+					edr.log.Errorn(
+						`[ Error detail Reporting ]: Error vacuuming error_detail_reports table`,
+						logger.NewErrorField(err),
+					)
 				}
+				vacuumDuration.Since(vacuumStart)
+			}
 		}
-
 
 		mainLoopTimer.Since(loopStart)
 		select {
