@@ -35,7 +35,7 @@ jobs:
         with:
           token: "${{ secrets.PAT }}"
           repository: rudderlabs/rudderstack-operator
-          event-type: release-server-hosted
+          event-type: release-rudder-server
           client-payload: |
             {
                 "version": "${{ steps.extract_version.outputs.version }}",
@@ -48,7 +48,7 @@ jobs:
         with:
           token: "${{ secrets.PAT }}"
           repository: rudderlabs/rudderstack-operator
-          event-type: release-server-hosted
+          event-type: release-rudder-server
           client-payload: |
             {
                 "version": "${{ steps.extract_version.outputs.version }}",

@@ -56,7 +56,7 @@ jobs:
       - name: Extract prerelease version
         shell: bash
         run: |
-          tag_name=$(echo "${{ steps.release.outputs.tag_name }}")
+          tag_name=$(echo "${{ steps.release_action.outputs.tag_name }}")
           version=$(echo "${tag_name#v}")
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
