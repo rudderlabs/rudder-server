@@ -781,7 +781,8 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
 			ID:               destinationJob.Destination.ID,
 		},
-		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
+		Connection: destinationJob.Connection,
+		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()

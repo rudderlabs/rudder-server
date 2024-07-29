@@ -92,6 +92,7 @@ type ProxyRequestParams struct {
 	DestName     string
 	Adapter      transformerProxyAdapter
 	DestInfo     *oauthv2.DestinationInfo
+	Connection   backendconfig.Connection `json:"connection"`
 }
 
 type ProxyRequestResponse struct {
