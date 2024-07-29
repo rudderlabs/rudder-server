@@ -237,6 +237,7 @@ func TestGRPC(t *testing.T) {
 
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
+			lastExecAt := now.Add(-1 * time.Minute)
 
 			for i := 0; i < totalUploads; i++ {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -271,6 +272,23 @@ func TestGRPC(t *testing.T) {
 
 				err = repoTableUploads.Insert(ctx, uploadID, tables)
 				require.NoError(t, err)
+
+				if (i+1)%2 == 0 {
+					err = repoUpload.Update(ctx, uploadID, []repo.UpdateKeyValue{
+						repo.UploadFieldStatus(model.ExportedData),
+						repo.UploadFieldLastExecAt(lastExecAt),
+					})
+					require.NoError(t, err)
+
+					for _, table := range tables {
+						err = repoTableUploads.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
+							Status:       lo.ToPtr(model.TableUploadExported),
+							LastExecTime: lo.ToPtr(lastExecAt),
+							TotalEvents:  lo.ToPtr(int64(10)),
+						})
+						require.NoError(t, err)
+					}
+				}
 			}
 
 			t.Run("GetWHUpload", func(t *testing.T) {
@@ -288,7 +306,7 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, "upload_id should be greater than 0", statusError.Message())
 				})
 
-				t.Run("no sources", func(t *testing.T) {
+				t.Run("unknown workspace", func(t *testing.T) {
 					res, err := grpcClient.GetWHUpload(ctx, &proto.WHUploadRequest{
 						UploadId:    1,
 						WorkspaceId: "unknown_workspace_id",
@@ -315,7 +333,8 @@ func TestGRPC(t *testing.T) {
 					require.Equal(t, codes.NotFound, statusError.Code())
 					require.Equal(t, "no sync found for id 1001", statusError.Message())
 				})
-				t.Run("success", func(t *testing.T) {
+
+				t.Run("success (waiting)", func(t *testing.T) {
 					res, err := grpcClient.GetWHUpload(ctx, &proto.WHUploadRequest{
 						UploadId:    1,
 						WorkspaceId: workspaceID,
@@ -333,7 +352,8 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, firstEventAt.UTC(), res.GetFirstEventAt().AsTime().UTC())
 					require.EqualValues(t, lastEventAt.UTC(), res.GetLastEventAt().AsTime().UTC())
 					require.EqualValues(t, now.UTC(), res.GetNextRetryTime().AsTime().UTC())
-					require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), res.GetDuration())
+					require.Zero(t, res.GetDuration())
+					require.Zero(t, res.GetLastExecAt())
 					require.NotEmpty(t, res.GetTables())
 					require.False(t, res.GetIsArchivedUpload())
 					require.EqualValues(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
@@ -344,21 +364,55 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, 1, table.GetUploadId())
 						require.EqualValues(t, model.TableUploadWaiting, table.GetStatus())
 						require.EqualValues(t, "{}", table.GetError())
-						require.Empty(t, table.GetLastExecAt().AsTime().UTC())
+						require.Zero(t, table.GetLastExecAt())
 						require.Zero(t, table.GetCount())
-						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), table.GetDuration())
+						require.Zero(t, table.GetDuration())
+					}
+				})
+
+				t.Run("success (exported)", func(t *testing.T) {
+					res, err := grpcClient.GetWHUpload(ctx, &proto.WHUploadRequest{
+						UploadId:    2,
+						WorkspaceId: workspaceID,
+					})
+					require.NoError(t, err)
+					require.NotNil(t, res)
+
+					require.EqualValues(t, sourceID, res.GetSourceId())
+					require.EqualValues(t, destinationID, res.GetDestinationId())
+					require.EqualValues(t, destinationType, res.GetDestinationType())
+					require.Equal(t, "{}", res.GetError())
+					require.Zero(t, res.GetAttempt())
+					require.EqualValues(t, model.ExportedData, res.GetStatus())
+					require.EqualValues(t, now.UTC(), res.GetCreatedAt().AsTime().UTC())
+					require.EqualValues(t, firstEventAt.UTC(), res.GetFirstEventAt().AsTime().UTC())
+					require.EqualValues(t, lastEventAt.UTC(), res.GetLastEventAt().AsTime().UTC())
+					require.Zero(t, res.GetNextRetryTime())
+					require.EqualValues(t, now.Sub(lastExecAt)/time.Second, res.GetDuration())
+					require.EqualValues(t, lastExecAt, res.GetLastExecAt().AsTime().UTC())
+					require.NotEmpty(t, res.GetTables())
+					require.False(t, res.GetIsArchivedUpload())
+					require.EqualValues(t, tables, lo.Map(res.GetTables(), func(item *proto.WHTable, index int) string {
+						return item.GetName()
+					}))
+
+					for _, table := range res.GetTables() {
+						require.EqualValues(t, 2, table.GetUploadId())
+						require.EqualValues(t, model.TableUploadExported, table.GetStatus())
+						require.EqualValues(t, "{}", table.GetError())
+						require.EqualValues(t, lastExecAt, table.GetLastExecAt().AsTime().UTC())
+						require.EqualValues(t, 10, table.GetCount())
+						require.EqualValues(t, now.Sub(lastExecAt)/time.Second, table.GetDuration())
 					}
 				})
 			})
 
 			t.Run("GetWHUploads", func(t *testing.T) {
-				t.Run("no sources", func(t *testing.T) {
+				t.Run("unknown workspace", func(t *testing.T) {
 					res, err := grpcClient.GetWHUploads(ctx, &proto.WHUploadsRequest{
-						Limit:         10,
-						Offset:        0,
-						WorkspaceId:   "unknown_workspace_id",
-						SourceId:      "unknown_source_id",
-						DestinationId: "unknown_destination_id",
+						Limit:       10,
+						Offset:      0,
+						WorkspaceId: "unknown_workspace_id",
 					})
 					require.Error(t, err)
 					require.Empty(t, res)
@@ -367,6 +421,22 @@ func TestGRPC(t *testing.T) {
 					require.True(t, ok)
 					require.Equal(t, codes.Unauthenticated, statusError.Code())
 					require.Equal(t, "no sources found for workspace: unknown_workspace_id", statusError.Message())
+				})
+				t.Run("unknown source", func(t *testing.T) {
+					res, err := grpcClient.GetWHUploads(ctx, &proto.WHUploadsRequest{
+						Limit:         10,
+						Offset:        0,
+						WorkspaceId:   workspaceID,
+						SourceId:      "unknown_source_id",
+						DestinationId: destinationID,
+					})
+					require.NoError(t, err)
+					require.NotNil(t, res)
+					require.Len(t, res.GetUploads(), 0)
+					require.NotNil(t, res.GetPagination())
+					require.EqualValues(t, int64(0), res.GetPagination().GetTotal())
+					require.EqualValues(t, int64(10), res.GetPagination().GetLimit())
+					require.EqualValues(t, int64(0), res.GetPagination().GetOffset())
 				})
 				t.Run("invalid limit and offset", func(t *testing.T) {
 					res, err := grpcClient.GetWHUploads(ctx, &proto.WHUploadsRequest{
@@ -382,7 +452,7 @@ func TestGRPC(t *testing.T) {
 					require.EqualValues(t, int64(10), res.GetPagination().GetLimit())
 					require.EqualValues(t, int64(0), res.GetPagination().GetOffset())
 				})
-				t.Run("success", func(t *testing.T) {
+				t.Run("success (waiting)", func(t *testing.T) {
 					res, err := grpcClient.GetWHUploads(ctx, &proto.WHUploadsRequest{
 						Limit:           25,
 						Offset:          6,
@@ -390,13 +460,13 @@ func TestGRPC(t *testing.T) {
 						SourceId:        sourceID,
 						DestinationId:   destinationID,
 						DestinationType: destinationType,
-						Status:          model.Waiting,
+						Status:          "waiting",
 					})
 					require.NoError(t, err)
 					require.NotNil(t, res)
 					require.Len(t, res.GetUploads(), 25)
 					require.NotNil(t, res.GetPagination())
-					require.EqualValues(t, int64(100), res.GetPagination().GetTotal())
+					require.EqualValues(t, int64(50), res.GetPagination().GetTotal())
 					require.EqualValues(t, int64(25), res.GetPagination().GetLimit())
 					require.EqualValues(t, int64(6), res.GetPagination().GetOffset())
 
@@ -411,7 +481,43 @@ func TestGRPC(t *testing.T) {
 						require.EqualValues(t, firstEventAt.UTC(), upload.GetFirstEventAt().AsTime().UTC())
 						require.EqualValues(t, lastEventAt.UTC(), upload.GetLastEventAt().AsTime().UTC())
 						require.EqualValues(t, now.UTC(), upload.GetNextRetryTime().AsTime().UTC())
-						require.EqualValues(t, int32(now.Sub(time.Time{})/time.Second), upload.GetDuration())
+						require.Zero(t, upload.GetLastExecAt())
+						require.Zero(t, upload.GetDuration())
+						require.Empty(t, upload.GetTables())
+						require.False(t, upload.GetIsArchivedUpload())
+					}
+				})
+				t.Run("success (exported)", func(t *testing.T) {
+					res, err := grpcClient.GetWHUploads(ctx, &proto.WHUploadsRequest{
+						Limit:           25,
+						Offset:          6,
+						WorkspaceId:     workspaceID,
+						SourceId:        sourceID,
+						DestinationId:   destinationID,
+						DestinationType: destinationType,
+						Status:          "success",
+					})
+					require.NoError(t, err)
+					require.NotNil(t, res)
+					require.Len(t, res.GetUploads(), 25)
+					require.NotNil(t, res.GetPagination())
+					require.EqualValues(t, int64(50), res.GetPagination().GetTotal())
+					require.EqualValues(t, int64(25), res.GetPagination().GetLimit())
+					require.EqualValues(t, int64(6), res.GetPagination().GetOffset())
+
+					for _, upload := range res.GetUploads() {
+						require.EqualValues(t, sourceID, upload.GetSourceId())
+						require.EqualValues(t, destinationID, upload.GetDestinationId())
+						require.EqualValues(t, destinationType, upload.GetDestinationType())
+						require.Equal(t, "{}", upload.GetError())
+						require.Zero(t, upload.GetAttempt())
+						require.EqualValues(t, model.ExportedData, upload.GetStatus())
+						require.EqualValues(t, now.UTC(), upload.GetCreatedAt().AsTime().UTC())
+						require.EqualValues(t, firstEventAt.UTC(), upload.GetFirstEventAt().AsTime().UTC())
+						require.EqualValues(t, lastEventAt.UTC(), upload.GetLastEventAt().AsTime().UTC())
+						require.Zero(t, upload.GetNextRetryTime())
+						require.EqualValues(t, now.Sub(lastExecAt)/time.Second, upload.GetDuration())
+						require.EqualValues(t, lastExecAt, upload.GetLastExecAt().AsTime().UTC())
 						require.Empty(t, upload.GetTables())
 						require.False(t, upload.GetIsArchivedUpload())
 					}

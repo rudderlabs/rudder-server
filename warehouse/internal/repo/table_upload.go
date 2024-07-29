@@ -381,7 +381,7 @@ func (tu *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.
 	}
 
 	tableUploadInfos := lo.Map(tableUploads, func(item model.TableUpload, index int) model.TableUploadInfo {
-		return model.TableUploadInfo{
+		tuf := model.TableUploadInfo{
 			ID:         item.ID,
 			UploadID:   item.UploadID,
 			Name:       item.TableName,
@@ -389,8 +389,11 @@ func (tu *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.
 			Error:      item.Error,
 			LastExecAt: item.LastExecTime,
 			Count:      item.TotalEvents,
-			Duration:   int64(item.UpdatedAt.Sub(item.LastExecTime) / time.Second),
 		}
+		if !item.LastExecTime.IsZero() {
+			tuf.Duration = int64(item.UpdatedAt.Sub(item.LastExecTime) / time.Second)
+		}
+		return tuf
 	})
 	return tableUploadInfos, nil
 }

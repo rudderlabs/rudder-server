@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.3](https://github.com/rudderlabs/rudder-server/compare/v1.30.2...v1.30.3) (2024-07-29)
+
+
+### Bug Fixes
+
+* syncs dashboard ([#4937](https://github.com/rudderlabs/rudder-server/issues/4937)) ([d22720e](https://github.com/rudderlabs/rudder-server/commit/d22720e681e42e9b029b00898d1075aec322e23f))
+
 ## [1.30.2](https://github.com/rudderlabs/rudder-server/compare/v1.30.1...v1.30.2) (2024-07-24)
 
 
