@@ -49,6 +49,7 @@ type DestinationJobT struct {
 	Message           json.RawMessage            `json:"batchedRequest"`
 	JobMetadataArray  []JobMetadataT             `json:"metadata"` // multiple jobs may be batched in a single message
 	Destination       backendconfig.DestinationT `json:"destination"`
+	Connection        backendconfig.Connection   `json:"connection"`
 	Batched           bool                       `json:"batched"`
 	StatusCode        int                        `json:"statusCode"`
 	Error             string                     `json:"error"`

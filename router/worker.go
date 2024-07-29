@@ -246,6 +246,7 @@ func (w *worker) workLoop() {
 				w.destinationJobs = append(w.destinationJobs, types.DestinationJobT{
 					Message:          job.EventPayload,
 					Destination:      destination,
+					Connection:       connection,
 					JobMetadataArray: []types.JobMetadataT{jobMetadata},
 				})
 				w.processDestinationJobs()

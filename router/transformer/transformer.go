@@ -299,7 +299,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			destinationJobs = []types.DestinationJobT{}
 			for i := range transformMessage.Data {
 				routerJob := &transformMessage.Data[i]
-				resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, StatusCode: statusCode, Error: invalidResponseError}
+				resp := types.DestinationJobT{
+					Message:          routerJob.Message,
+					JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+					Destination:      routerJob.Destination,
+					Connection:       routerJob.Connection,
+					StatusCode:       statusCode,
+					Error:            invalidResponseError,
+				}
 				destinationJobs = append(destinationJobs, resp)
 			}
 		}
@@ -310,7 +317,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 		for i := range transformMessage.Data {
 			routerJob := &transformMessage.Data[i]
-			resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, StatusCode: statusCode, Error: string(respData)}
+			resp := types.DestinationJobT{
+				Message:          routerJob.Message,
+				JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+				Destination:      routerJob.Destination,
+				Connection:       routerJob.Connection,
+				StatusCode:       statusCode,
+				Error:            string(respData),
+			}
 			destinationJobs = append(destinationJobs, resp)
 		}
 	}
