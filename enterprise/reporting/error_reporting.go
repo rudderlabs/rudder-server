@@ -394,7 +394,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				)
 			}
 			if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
-				vaccumStatement := fmt.Sprintf("vaccum full analyze %s;", ErrorDetailReportsTable)
+				vaccumStatement := fmt.Sprintf("vacuum full analyze %s;", ErrorDetailReportsTable)
 				if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
 					edr.log.Errorn(
 						`[ Error detail Reporting ]: Error vacuuming error_detail_reports table`,
