@@ -308,6 +308,11 @@ func RetrieveRecordsFromWarehouse(
 			switch item := item.(type) {
 			case time.Time:
 				return item.Format(time.RFC3339)
+			case string:
+				if t, err := time.Parse(time.RFC3339Nano, item); err == nil {
+					return t.Format(time.RFC3339)
+				}
+				return item
 			default:
 				return cast.ToString(item)
 			}
@@ -381,7 +386,7 @@ func DiscardTestRecords() [][]string {
 		{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
 		{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
 		{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "2022-12-15T06:53:49.640Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "2022-12-15T06:53:49Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
 	}
 }
 

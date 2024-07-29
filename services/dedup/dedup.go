@@ -5,58 +5,14 @@ package dedup
 import (
 	"fmt"
 	"sync"
-	"time"
 
-	"github.com/dgraph-io/badger/v4"
-	"github.com/dgraph-io/badger/v4/options"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/services/dedup/badger"
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
-type OptFn func(*badgerDB)
-
-// DefaultPath returns the default path for the deduplication service's badger DB
-func DefaultPath() string {
-	badgerPathName := "/badgerdbv4"
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
-}
-
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(path string) Dedup {
-	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
-
-	log := logger.NewLogger().Child("dedup")
-	badgerOpts := badger.
-		DefaultOptions(path).
-		WithCompression(options.None).
-		WithIndexCacheSize(16 << 20). // 16mb
-		WithNumGoroutines(1).
-		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
-		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
-		WithBlockCacheSize(0).
-		WithNumVersionsToKeep(1).
-		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
-		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
-
-	db := &badgerDB{
-		stats:  stats.Default,
-		logger: loggerForBadger{log},
-		path:   path,
-		gcDone: make(chan struct{}),
-		close:  make(chan struct{}),
-		window: dedupWindow,
-		opts:   badgerOpts,
-	}
-	db.start()
+func New() Dedup {
+	db := badger.NewBadgerDB(badger.DefaultPath())
 	return &dedup{
 		badgerDB: db,
 		cache:    make(map[string]int64),
@@ -66,7 +22,7 @@ func New(path string) Dedup {
 // Dedup is the interface for deduplication service
 type Dedup interface {
 	// Set returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
-	Set(kv KeyValue) (bool, int64)
+	Set(kv types.KeyValue) (bool, int64, error)
 
 	// Commit commits a list of previously set keys to the DB
 	Commit(keys []string) error
@@ -74,41 +30,40 @@ type Dedup interface {
 	// Close closes the deduplication service
 	Close()
 }
-type KeyValue struct {
-	Key   string
-	Value int64
-}
 
 type dedup struct {
-	badgerDB *badgerDB
+	badgerDB *badger.BadgerDB
 	cacheMu  sync.Mutex
 	cache    map[string]int64
 }
 
-func (d *dedup) Set(kv KeyValue) (bool, int64) {
+func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 	if previous, found := d.cache[kv.Key]; found {
-		return false, previous
+		return false, previous, nil
 	}
-	previous, found := d.badgerDB.Get(kv.Key)
+	previous, found, err := d.badgerDB.Get(kv.Key)
+	if err != nil {
+		return false, 0, err
+	}
 	if !found {
 		d.cache[kv.Key] = kv.Value
 	}
-	return !found, previous
+	return !found, previous, nil
 }
 
 func (d *dedup) Commit(keys []string) error {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 
-	kvs := make([]KeyValue, len(keys))
+	kvs := make([]types.KeyValue, len(keys))
 	for i, key := range keys {
 		value, ok := d.cache[key]
 		if !ok {
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
-		kvs[i] = KeyValue{Key: key, Value: value}
+		kvs[i] = types.KeyValue{Key: key, Value: value}
 	}
 
 	err := d.badgerDB.Set(kvs)
@@ -122,12 +77,4 @@ func (d *dedup) Commit(keys []string) error {
 
 func (d *dedup) Close() {
 	d.badgerDB.Close()
-}
-
-type loggerForBadger struct {
-	logger.Logger
-}
-
-func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
-	l.Warnf(fmt, args...)
 }

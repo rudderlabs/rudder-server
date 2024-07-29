@@ -1,20 +1,24 @@
-package dedup
+package badger
 
 import (
+	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v4/options"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type badgerDB struct {
+type BadgerDB struct {
 	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
@@ -23,12 +27,58 @@ type badgerDB struct {
 	gcDone   chan struct{}
 	path     string
 	opts     badger.Options
+	once     sync.Once
 }
 
-func (d *badgerDB) Get(key string) (int64, bool) {
+// DefaultPath returns the default path for the deduplication service's badger DB
+func DefaultPath() string {
+	badgerPathName := "/badgerdbv4"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
+}
+
+func NewBadgerDB(path string) *BadgerDB {
+	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+
+	log := logger.NewLogger().Child("dedup")
+	badgerOpts := badger.
+		DefaultOptions(path).
+		WithCompression(options.None).
+		WithIndexCacheSize(16 << 20). // 16mb
+		WithNumGoroutines(1).
+		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
+		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
+		WithBlockCacheSize(0).
+		WithNumVersionsToKeep(1).
+		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
+
+	db := &BadgerDB{
+		stats:  stats.Default,
+		logger: loggerForBadger{log},
+		path:   path,
+		gcDone: make(chan struct{}),
+		close:  make(chan struct{}),
+		window: dedupWindow,
+		opts:   badgerOpts,
+	}
+	return db
+}
+
+func (d *BadgerDB) Get(key string) (int64, bool, error) {
 	var payloadSize int64
 	var found bool
-	err := d.badgerDB.View(func(txn *badger.Txn) error {
+	var err error
+	err = d.init()
+	if err != nil {
+		return 0, false, err
+	}
+	err = d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
@@ -40,12 +90,16 @@ func (d *badgerDB) Get(key string) (int64, bool) {
 		return nil
 	})
 	if err != nil && err != badger.ErrKeyNotFound {
-		panic(err)
+		return 0, false, err
 	}
-	return payloadSize, found
+	return payloadSize, found, nil
 }
 
-func (d *badgerDB) Set(kvs []KeyValue) error {
+func (d *BadgerDB) Set(kvs []types.KeyValue) error {
+	err := d.init()
+	if err != nil {
+		return err
+	}
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
@@ -66,26 +120,29 @@ func (d *badgerDB) Set(kvs []KeyValue) error {
 	return txn.Commit()
 }
 
-func (d *badgerDB) Close() {
+func (d *BadgerDB) Close() {
 	close(d.close)
 	<-d.gcDone
 	_ = d.badgerDB.Close()
 }
 
-func (d *badgerDB) start() {
+func (d *BadgerDB) init() error {
 	var err error
 
-	d.badgerDB, err = badger.Open(d.opts)
-	if err != nil {
-		panic(err)
-	}
-	rruntime.Go(func() {
-		d.gcLoop()
-		close(d.gcDone)
+	d.once.Do(func() {
+		d.badgerDB, err = badger.Open(d.opts)
+		if err != nil {
+			return
+		}
+		rruntime.Go(func() {
+			d.gcLoop()
+			close(d.gcDone)
+		})
 	})
+	return err
 }
 
-func (d *badgerDB) gcLoop() {
+func (d *BadgerDB) gcLoop() {
 	for {
 		select {
 		case <-d.close:
@@ -112,4 +169,12 @@ func (d *badgerDB) gcLoop() {
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
 
 	}
+}
+
+type loggerForBadger struct {
+	logger.Logger
+}
+
+func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
+	l.Warnf(fmt, args...)
 }
