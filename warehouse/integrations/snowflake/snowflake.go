@@ -1086,13 +1086,15 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
 	}
 
+	sqlDB := sqlConnectDB.SqlDB()
+
 	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
-	_, err = sqlConnectDB.SqlDB().ExecContext(ctx, alterStatement)
+	_, err = sqlDB.ExecContext(ctx, alterStatement)
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
 	middleware := sqlmw.New(
-		sqlConnectDB.SqlDB(),
+		sqlDB,
 		sqlmw.WithStats(sf.stats),
 		sqlmw.WithLogger(sf.logger),
 		sqlmw.WithKeyAndValues(
