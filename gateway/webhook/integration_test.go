@@ -277,9 +277,10 @@ func TestIntegrationWebhook(t *testing.T) {
 				p, err = sjson.SetBytes(p, "rudderId", rudderID)
 				assert.NoError(t, err)
 
-				// TODO: should figure out when to do this
-				p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
-				assert.NoError(t, err)
+				if qParams != "" {
+					p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
+					assert.NoError(t, err)
+				}
 
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
