@@ -26,21 +26,33 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	destination := asyncDestStruct.Destination
 	textFilePath := asyncDestStruct.FileName
 	destinationID := destination.ID
+	partFileNumber := asyncDestStruct.PartFileNumber
 	destType := destination.DestinationDefinition.Name
 	destConfigJSON, err := json.Marshal(destination.Config)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
-
-	jobRunID := gjson.GetBytes(asyncDestStruct.OriginalJobParameters[0], "source_job_run_id").String()
 	metadata := map[string]any{
 		"destinationID":  destinationID,
-		"sourceJobRunID": jobRunID,
+		"sourceJobRunID": asyncDestStruct.SourceJobRunID,
+		"timestamp":      asyncDestStruct.CreatedAt,
 	}
 
 	result := gjson.ParseBytes(destConfigJSON)
-	uploadFilePath := result.Get("filePath").String()
-	uploadFilePath = getUploadFilePath(uploadFilePath, metadata)
+	// Use same file path prefix for each file per sync
+	uploadFilePath := d.filePathPrefix
+
+	// Generate initial file path for file number 1 per sync
+	if partFileNumber == 1 {
+		uploadFilePath = result.Get("filePath").String()
+		uploadFilePath, err = getUploadFilePath(uploadFilePath, metadata)
+		if err != nil {
+			return generateErrorOutput(fmt.Sprintf("error generating file path: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
+		}
+		d.filePathPrefix = uploadFilePath
+	}
+
+	uploadFilePath = appendFileNumberInFilePath(uploadFilePath, partFileNumber)
 	fileFormat := result.Get("fileFormat").String()
 
 	// Generate temporary file based on the destination's file format
