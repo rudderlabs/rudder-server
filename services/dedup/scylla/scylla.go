@@ -23,8 +23,9 @@ type ScyllaDB struct {
 	batchSize      int
 	createTableMap map[string]struct{}
 
-	cacheMu sync.Mutex
-	cache   map[string]types.KeyValue
+	cacheMu  sync.Mutex
+	cache    map[string]types.KeyValue
+	keyspace string
 }
 
 func (d *ScyllaDB) Close() {
@@ -34,9 +35,10 @@ func (d *ScyllaDB) Close() {
 func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Create the table if it doesn't exist
 	if _, ok := d.createTableMap[kv.WorkspaceId]; !ok {
-		err := d.scylla.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id text PRIMARY KEY, value bigint) WITH bloom_filter_fp_chance = 0.005", kv.WorkspaceId)).Exec()
+		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceId)
+		err := d.scylla.Query(query).Exec()
 		if err != nil {
-			return false, 0, err
+			return false, 0, fmt.Errorf("error creating table %s: %v", kv.WorkspaceId, err)
 		}
 		d.createTableMap[kv.WorkspaceId] = struct{}{}
 	}
@@ -52,12 +54,15 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 
 	// Check if the key exists in the DB
 	var value int64
-	err := d.scylla.Query(fmt.Sprintf("SELECT value FROM %s WHERE id = ?", kv.WorkspaceId), kv.Key).Scan(&value)
+	err := d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceId), kv.Key).Scan(&value)
 	if err != nil && err != gocql.ErrNotFound {
-		return false, 0, err
+		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
-	d.cache[kv.Key] = kv
-	return false, kv.Value, nil
+	found := !(err == gocql.ErrNotFound)
+	if !found {
+		d.cache[kv.Key] = kv
+	}
+	return !found, kv.Value, nil
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {
@@ -80,12 +85,12 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 			for _, key := range batch {
 				scyllaBatch.Entries = append(scyllaBatch.Entries, gocql.BatchEntry{
-					Stmt: fmt.Sprintf("INSERT INTO %s (id) VALUES (?,?) USING TTL %d", key.WorkspaceId, d.ttl),
+					Stmt: fmt.Sprintf("INSERT INTO %s.%s (id,size) VALUES (?,?) USING TTL %d", d.keyspace, key.WorkspaceId, d.ttl),
 					Args: []interface{}{key.Key, key.Value},
 				})
 			}
 			if err := d.scylla.ExecuteBatch(scyllaBatch); err != nil {
-				return err
+				return fmt.Errorf("error committing keys: %v", err)
 			}
 			for _, key := range batch {
 				delete(d.cache, key.Key)
@@ -98,9 +103,8 @@ func (d *ScyllaDB) Commit(keys []string) error {
 func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 	cluster := gocql.NewCluster(conf.GetString("Scylla.Hosts", "localhost:9042"))
 	cluster.Consistency = gocql.Quorum
-	cluster.Keyspace = config.GetString("Scylla.Keyspace", "dedup")
 	cluster.RetryPolicy = &gocql.ExponentialBackoffRetryPolicy{
-		NumRetries: config.GetInt("Scylla.NumRetries", 3),
+		NumRetries: conf.GetInt("Scylla.NumRetries", 3),
 		Min:        conf.GetDuration("Scylla.MinRetry", 100, time.Millisecond),
 		Max:        conf.GetDuration("Scylla.MaxRetry", 2000, time.Second),
 	}
@@ -109,11 +113,15 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ScyllaDB{
-		scylla:    session,
-		conf:      conf,
-		stat:      stats,
-		ttl:       conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
-		batchSize: conf.GetInt("Scylla.BatchSize", 100),
-	}, nil
+	scylla := &ScyllaDB{
+		scylla:         session,
+		conf:           conf,
+		keyspace:       conf.GetString("Scylla.Keyspace", "rudder"),
+		stat:           stats,
+		ttl:            conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
+		batchSize:      conf.GetInt("Scylla.BatchSize", 100),
+		cache:          make(map[string]types.KeyValue),
+		createTableMap: make(map[string]struct{}),
+	}
+	return scylla, nil
 }

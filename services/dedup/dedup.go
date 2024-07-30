@@ -23,7 +23,7 @@ const (
 
 // New creates a new deduplication service. The service needs to be closed after use.
 func New(conf *config.Config, stats stats.Stats) (Dedup, error) {
-	mode := Mode(config.GetString("Dedup.Mode", string(Badger)))
+	mode := Mode(conf.GetString("Dedup.Mode", string(Badger)))
 	switch mode {
 	case Badger:
 		return badger.NewBadgerDB(conf, stats, badger.DefaultPath()), nil

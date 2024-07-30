@@ -4,8 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ory/dockertest/v3"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -13,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/scylla"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/services/dedup"
@@ -21,53 +25,85 @@ import (
 )
 
 func Test_Dedup(t *testing.T) {
-	config.Reset()
-	logger.Reset()
-	misc.Init()
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "Badger",
+		},
+		{
+			name: "Scylla",
+		},
+		{
+			name: "MirrorScylla",
+		},
+		{
+			name: "MirrorBadger",
+		},
+		{
+			name: "Random",
+		},
+	}
 
-	dbPath := os.TempDir() + "/dedup_test"
-	defer func() { _ = os.RemoveAll(dbPath) }()
-	_ = os.RemoveAll(dbPath)
-	conf := config.New()
-	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
-	require.Nil(t, err)
-	defer d.Close()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config.Reset()
+			logger.Reset()
+			misc.Init()
 
-	t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
-		found, _, err := d.Get(types.KeyValue{Key: "a", Value: 1})
-		require.Nil(t, err)
-		require.Equal(t, true, found)
+			dbPath := os.TempDir() + "/dedup_test"
+			defer func() { _ = os.RemoveAll(dbPath) }()
+			_ = os.RemoveAll(dbPath)
+			conf := config.New()
+			t.Setenv("RUDDER_TMPDIR", dbPath)
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+			keySpace := strings.ToUpper(rand.String(5))
+			resource, err := scylla.Setup(pool, t, scylla.WithKeyspace(keySpace))
+			require.NoError(t, err)
+			conf.Set("Scylla.Hosts", resource.URL)
+			conf.Set("Scylla.Keyspace", keySpace)
+			conf.Set("Dedup.Mode", tc.name)
+			d, err := dedup.New(conf, stats.Default)
+			require.Nil(t, err)
+			defer d.Close()
 
-		// Checking it again should give us the previous value from the cache
-		found, value, err := d.Get(types.KeyValue{Key: "a", Value: 2})
-		require.Nil(t, err)
-		require.Equal(t, false, found)
-		require.Equal(t, int64(1), value)
-	})
+			t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
+				found, _, err := d.Get(types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"})
+				require.Nil(t, err)
+				require.Equal(t, true, found)
 
-	t.Run("if message is committed, previous value should always return", func(t *testing.T) {
-		found, _, err := d.Get(types.KeyValue{Key: "b", Value: 1})
-		require.Nil(t, err)
-		require.Equal(t, true, found)
+				// Checking it again should give us the previous value from the cache
+				found, value, err := d.Get(types.KeyValue{Key: "a", Value: 2, WorkspaceId: "test"})
+				require.Nil(t, err)
+				require.Equal(t, false, found)
+				require.Equal(t, int64(1), value)
+			})
 
-		err = d.Commit([]string{"a"})
-		require.NoError(t, err)
+			t.Run("if message is committed, previous value should always return", func(t *testing.T) {
+				found, _, err := d.Get(types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"})
+				require.Nil(t, err)
+				require.Equal(t, true, found)
 
-		found, value, err := d.Get(types.KeyValue{Key: "b", Value: 2})
-		require.Nil(t, err)
-		require.Equal(t, false, found)
-		require.Equal(t, int64(1), value)
-	})
+				err = d.Commit([]string{"a"})
+				require.NoError(t, err)
 
-	t.Run("committing a messageid not present in cache", func(t *testing.T) {
-		found, _, err := d.Get(types.KeyValue{Key: "c", Value: 1})
-		require.Nil(t, err)
-		require.Equal(t, true, found)
+				found, value, err := d.Get(types.KeyValue{Key: "b", Value: 2, WorkspaceId: "test"})
+				require.Nil(t, err)
+				require.Equal(t, false, found)
+				require.Equal(t, int64(1), value)
+			})
 
-		err = d.Commit([]string{"d"})
-		require.NotNil(t, err)
-	})
+			t.Run("committing a messageid not present in cache", func(t *testing.T) {
+				found, _, err := d.Get(types.KeyValue{Key: "c", Value: 1, WorkspaceId: "test"})
+				require.Nil(t, err)
+				require.Equal(t, true, found)
+
+				err = d.Commit([]string{"d"})
+				require.NotNil(t, err)
+			})
+		})
+	}
 }
 
 func Test_Dedup_Window(t *testing.T) {
@@ -85,19 +121,19 @@ func Test_Dedup_Window(t *testing.T) {
 	require.Nil(t, err)
 	defer d.Close()
 
-	found, _, err := d.Get(types.KeyValue{Key: "to be deleted", Value: 1})
+	found, _, err := d.Get(types.KeyValue{Key: "to be deleted", Value: 1, WorkspaceId: "test"})
 	require.Nil(t, err)
 	require.Equal(t, true, found)
 
 	err = d.Commit([]string{"to be deleted"})
 	require.NoError(t, err)
 
-	found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 2})
+	found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 2, WorkspaceId: "test"})
 	require.Nil(t, err)
 	require.Equal(t, false, found)
 
 	require.Eventually(t, func() bool {
-		found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 3})
+		found, _, err = d.Get(types.KeyValue{Key: "to be deleted", Value: 3, WorkspaceId: "test"})
 		require.Nil(t, err)
 		return found
 	}, 2*time.Second, 100*time.Millisecond)
@@ -121,7 +157,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	for i := 0; i < size; i++ {
 		key := uuid.New().String()
 		messages[i] = key
-		_, _, _ = d.Get(types.KeyValue{Key: key, Value: int64(i + 1)})
+		_, _, _ = d.Get(types.KeyValue{Key: key, Value: int64(i + 1), WorkspaceId: "test"})
 	}
 	err = d.Commit(messages)
 	require.NoError(t, err)
@@ -149,8 +185,9 @@ func Benchmark_Dedup(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			key := uuid.New().String()
 			msgIDs[i%batchSize] = types.KeyValue{
-				Key:   key,
-				Value: int64(i + 1),
+				Key:         key,
+				Value:       int64(i + 1),
+				WorkspaceId: "test",
 			}
 			keys = append(keys, key)
 			if i%batchSize == batchSize-1 || i == b.N-1 {

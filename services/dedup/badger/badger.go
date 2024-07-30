@@ -75,12 +75,7 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 func (d *BadgerDB) Get(key string) (int64, bool, error) {
 	var payloadSize int64
 	var found bool
-	var err error
-	err = d.init()
-	if err != nil {
-		return 0, false, err
-	}
-	err = d.badgerDB.View(func(txn *badger.Txn) error {
+	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
@@ -98,10 +93,6 @@ func (d *BadgerDB) Get(key string) (int64, bool, error) {
 }
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
-	err := d.init()
-	if err != nil {
-		return err
-	}
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
@@ -169,7 +160,6 @@ func (d *BadgerDB) gcLoop() {
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge(lsmSize)
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge(vlogSize)
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
-
 	}
 }
 
@@ -182,6 +172,10 @@ type Dedup struct {
 func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
+	err := d.badgerDB.init()
+	if err != nil {
+		return false, 0, err
+	}
 	if previous, found := d.cache[kv.Key]; found {
 		return false, previous, nil
 	}
@@ -198,6 +192,10 @@ func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
 func (d *Dedup) Commit(keys []string) error {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
+	err := d.badgerDB.init()
+	if err != nil {
+		return err
+	}
 	kvs := make([]types.KeyValue, len(keys))
 	for i, key := range keys {
 		value, ok := d.cache[key]
@@ -207,7 +205,7 @@ func (d *Dedup) Commit(keys []string) error {
 		kvs[i] = types.KeyValue{Key: key, Value: value}
 	}
 
-	err := d.badgerDB.Set(kvs)
+	err = d.badgerDB.Set(kvs)
 	if err == nil {
 		for _, kv := range kvs {
 			delete(d.cache, kv.Key)
