@@ -121,6 +121,129 @@
     },
     {
       "config": {
+        "isSampleSource": true,
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "liveEventsConfig": {
+        "eventUpload": false,
+        "eventUploadTS": 1653346591988
+      },
+      "id": "{{.iamSourceID}}",
+      "name": "redshift-iam-integration",
+      "writeKey": "{{.iamWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+      "createdBy": "279Kz3NhcXsUAx2KHnx1HKhdtbk",
+      "workspaceId": "{{.workspaceID}}",
+      "deleted": false,
+      "createdAt": "2022-03-31T11:45:57.339Z",
+      "updatedAt": "2022-05-23T22:56:32.000Z",
+      "destinations": [
+        {
+          "config": {
+            {{.preferAppend}}
+            "database": "{{.database}}",
+            "user": "{{.iamUser}}",
+            "bucketName": "{{.bucketName}}",
+            "accessKeyID": "{{.accessKeyID}}",
+            "accessKey": "{{.accessKey}}",
+            "prefix": "",
+            "namespace": "{{.iamNamespace}}",
+            "syncFrequency": "30",
+            "useIAMForAuth": true,
+            "iamRoleARNForAuth": "{{.iamRoleARNForAuth}}",
+            "clusterId": "{{.clusterID}}",
+            "clusterRegion": "{{.clusterRegion}}",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "{{.iamDestinationID}}",
+          "name": "redshift-iam-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceID}}",
+          "deleted": false,
+          "createdAt": "2022-04-07T09:57:14.783Z",
+          "updatedAt": "2022-05-17T08:16:32.613Z",
+          "revisionId": "{{.iamDestinationID}}",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "port",
+                  "database",
+                  "user",
+                  "useIAMForAuth",
+                  "password",
+                  "iamRoleARNForAuth",
+                  "clusterId",
+                  "clusterRegion",
+                  "bucketName",
+                  "useIAMForAuth",
+                  "accessKeyID",
+                  "accessKey",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+            "name": "RS",
+            "displayName": "Redshift",
+            "category": "warehouse",
+            "createdAt": "2019-12-04T07:17:28.337Z",
+            "updatedAt": "2022-02-08T06:46:22.804Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "sourceDefinition": {
+        "options": null,
+        "id": "1dCzCUAtpWDzNxgGUYzq9sZdZZB",
+        "name": "HTTP",
+        "displayName": "HTTP",
+        "category": "",
+        "createdAt": "2020-06-12T06:35:35.962Z",
+        "updatedAt": "2020-06-12T06:35:35.962Z"
+      },
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
         "config": {
           "row_batch_size": 200,
           "credentials": {

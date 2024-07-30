@@ -1563,7 +1563,7 @@ func TestUploads_SyncsInfo(t *testing.T) {
 			require.Equal(t, uploadInfo.Error, "{}")
 			require.Zero(t, uploadInfo.LastExecAt)
 			require.Equal(t, uploadInfo.NextRetryTime.UTC(), now.UTC())
-			require.Equal(t, uploadInfo.Duration, now.Sub(time.Time{})/time.Second)
+			require.Zero(t, uploadInfo.Duration)
 			require.Zero(t, uploadInfo.Attempt)
 			require.False(t, uploadInfo.IsArchivedUpload)
 		}
@@ -1590,7 +1590,7 @@ func TestUploads_SyncsInfo(t *testing.T) {
 			require.Equal(t, uploadInfo.Error, "{}")
 			require.Zero(t, uploadInfo.LastExecAt)
 			require.Zero(t, uploadInfo.NextRetryTime)
-			require.Equal(t, uploadInfo.Duration, now.Sub(time.Time{})/time.Second)
+			require.Zero(t, uploadInfo.Duration)
 			require.Zero(t, uploadInfo.Attempt)
 			require.True(t, uploadInfo.IsArchivedUpload)
 		}
