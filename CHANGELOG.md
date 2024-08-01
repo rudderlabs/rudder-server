@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.5](https://github.com/rudderlabs/rudder-server/compare/v1.30.4...v1.30.5) (2024-08-01)
+
+
+### Miscellaneous
+
+* sync release v1.30.4 to main branch ([#4956](https://github.com/rudderlabs/rudder-server/issues/4956)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+
 ## [1.30.4](https://github.com/rudderlabs/rudder-server/compare/v1.30.3...v1.30.4) (2024-07-31)
 
 
