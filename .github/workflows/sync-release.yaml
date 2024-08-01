@@ -4,12 +4,14 @@ on:
   pull_request:
     types:
       - closed
+    branches:
+      - "release/*"
 
 jobs:
   sync:
     env:
       GH_TOKEN: ${{ secrets.PAT }}
-    if: "${{ github.event.pull_request.merged && startsWith(github.event.pull_request.base.ref, 'release/') && startsWith(github.event.pull_request.title, 'chore: release') && github.event.pull_request.user.login == 'devops-github-rudderstack' }}"
+    if: "${{ github.event.pull_request.merged && startsWith(github.event.pull_request.title, 'chore: release ')}}"
     runs-on: ubuntu-latest
 
     steps:
@@ -17,12 +19,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: parse commit
         run: |
           MERGE_COMMIT_SHA=$(gh pr view ${{ github.event.pull_request.number }} --json mergeCommit -q .mergeCommit.oid)
           echo "MERGE_COMMIT_SHA=$MERGE_COMMIT_SHA" >> "$GITHUB_ENV"
-      
+
       - name: parse release tag
         run: |
           while [ -n $(git describe --contains $MERGE_COMMIT_SHA && echo "ok" || echo "") ]; do
@@ -32,19 +34,19 @@ jobs:
           done;
           RELEASE_TAG=$(git describe --contains $MERGE_COMMIT_SHA)
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-      
+
       - name: create branch
         run: |
           PR_BRANCH="sync-release-${MERGE_COMMIT_SHA}"
           echo "PR_BRANCH=$PR_BRANCH" >> "$GITHUB_ENV"
           git checkout $MERGE_COMMIT_SHA -b $PR_BRANCH
           git push origin $PR_BRANCH
-      
+
       - name: create pull request for major or minor release
         if: ${{ endsWith(env.RELEASE_TAG, '.0') }}
         run: |
           COMMIT_OVERRIDE=$(git rev-list --reverse --pretty="%s" --cherry-pick --right-only ${PR_BRANCH}...origin/master | grep -v "commit" | grep -v "chore: sync #" || echo "")
-          
+
           echo "# Description" >> body
           echo "" >> body
           echo "Syncing release ${RELEASE_TAG} to main branch" >> body
@@ -56,14 +58,14 @@ jobs:
           echo "BEGIN_COMMIT_OVERRIDE" >> body
           echo "${COMMIT_OVERRIDE}" >> body
           echo "END_COMMIT_OVERRIDE" >> body
-          
+
           gh pr create \
           --title "chore: sync release ${RELEASE_TAG} to main branch" \
           --body "$(cat body)" \
           --base master \
           --head $PR_BRANCH \
           --assignee '${{ github.event.pull_request.merged_by.login }}'
-      
+
       - name: create pull request for patch release
         if: ${{ ! endsWith(env.RELEASE_TAG, '.0') }}
         run: |
@@ -78,7 +80,7 @@ jobs:
           echo "BEGIN_COMMIT_OVERRIDE" >> body
           echo "${COMMIT_OVERRIDE}" >> body
           echo "END_COMMIT_OVERRIDE" >> body
-          
+
           gh pr create \
           --title "chore: sync release ${RELEASE_TAG} to main branch" \
           --body "$(cat body)" \
