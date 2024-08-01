@@ -306,9 +306,9 @@ func TestIntegrationWebhook(t *testing.T) {
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
 
-				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value() 
-				if errPayloadWriteKey !=  nil {
-					r.Jobs[i].EventPayload , err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
+				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value()
+				if errPayloadWriteKey != nil {
+					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
 					require.NoError(t, err)
 				}
 
