@@ -9,9 +9,10 @@ jobs:
     steps:
       - name: Extract branch name
         shell: bash
-        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")" >> $GITHUB_OUTPUT
         id: extract_branch
       - uses: google-github-actions/release-please-action@v3
+        id: release
         with:
           token: ${{ secrets.PAT }}
           pull-request-title-pattern: "chore: release ${version}"
@@ -20,3 +21,36 @@ jobs:
           default-branch: ${{ steps.extract_branch.outputs.branch }}
           changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"chore","section":"Miscellaneous","hidden":false},{"type":"refactor","section":"Miscellaneous","hidden":false},{"type":"test","section":"Miscellaneous","hidden":false},{"type":"doc","section":"Documentation","hidden":false}]'
           bump-minor-pre-major: true
+      - name: Extract release version
+        shell: bash
+        run: |
+          tag_name=$(echo "${{ steps.release.outputs.tag_name }}")
+          version=$(echo "${tag_name#v}")
+          echo "version=${version}" >> $GITHUB_OUTPUT
+        id: extract_version
+      - name: Trigger dispatch event - Enterprise
+        uses: peter-evans/repository-dispatch@v3
+        # release please run 2 times, first for creating the PR and second for creating the release
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        with:
+          token: "${{ secrets.PAT }}"
+          repository: rudderlabs/rudderstack-operator
+          event-type: release-rudder-server
+          client-payload: |
+            {
+                "version": "${{ steps.extract_version.outputs.version }}",
+                "deployment": "enterprise"
+            }
+      - name: Trigger dispatch event - Multitenant
+        uses: peter-evans/repository-dispatch@v3
+        # release please run 2 times, first for creating the PR and second for creating the release
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        with:
+          token: "${{ secrets.PAT }}"
+          repository: rudderlabs/rudderstack-operator
+          event-type: release-rudder-server
+          client-payload: |
+            {
+                "version": "${{ steps.extract_version.outputs.version }}",
+                "deployment": "multitenant"
+            }
