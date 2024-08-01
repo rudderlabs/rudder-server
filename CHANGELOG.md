@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.30.5](https://github.com/rudderlabs/rudder-server/compare/v1.30.4...v1.30.5) (2024-08-01)
+
+
+### Bug Fixes
+
+* introduce config for get requests in webhook sources ([#4927](https://github.com/rudderlabs/rudder-server/issues/4927)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* syncs dashboard ([#4937](https://github.com/rudderlabs/rudder-server/issues/4937)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* type conversion from float64 to int ([#4921](https://github.com/rudderlabs/rudder-server/issues/4921)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+
+
+### Miscellaneous
+
+* release 1.30.0 ([#4910](https://github.com/rudderlabs/rudder-server/issues/4910)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* release 1.30.1 ([#4923](https://github.com/rudderlabs/rudder-server/issues/4923)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* release 1.30.2 ([#4928](https://github.com/rudderlabs/rudder-server/issues/4928)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* release 1.30.3 ([#4943](https://github.com/rudderlabs/rudder-server/issues/4943)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* release 1.30.4 ([#4955](https://github.com/rudderlabs/rudder-server/issues/4955)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+
 ## [1.30.4](https://github.com/rudderlabs/rudder-server/compare/v1.30.3...v1.30.4) (2024-07-31)
 
 
