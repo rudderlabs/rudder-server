@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.4](https://github.com/rudderlabs/rudder-server/compare/v1.30.3...v1.30.4) (2024-07-31)
+
+
+### Bug Fixes
+
+* trigger build with empty commit ([#4954](https://github.com/rudderlabs/rudder-server/issues/4954)) ([48d3bc1](https://github.com/rudderlabs/rudder-server/commit/48d3bc1ac1b831617056708cbf263e0ed623fda8))
+
 ## [1.30.3](https://github.com/rudderlabs/rudder-server/compare/v1.30.2...v1.30.3) (2024-07-29)
 
 
