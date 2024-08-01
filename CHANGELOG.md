@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.31.0](https://github.com/rudderlabs/rudder-server/compare/v1.30.3...v1.31.0) (2024-08-01)
+
+
+### Features
+
+* add file number and same file path prefix in sftp ([#4739](https://github.com/rudderlabs/rudder-server/issues/4739)) ([0a7f3a7](https://github.com/rudderlabs/rudder-server/commit/0a7f3a755fd78e042955bdbc285199dbe218fc7f))
+
+
+### Bug Fixes
+
+* syncs dashboard ([#4937](https://github.com/rudderlabs/rudder-server/issues/4937)) ([2e029f9](https://github.com/rudderlabs/rudder-server/commit/2e029f9f0e0e801d144725238a09c8db2f59cfa3))
+
+
+### Miscellaneous
+
+* **deps:** bump the go-deps group across 1 directory with 7 updates ([#4941](https://github.com/rudderlabs/rudder-server/issues/4941)) ([f4b45e1](https://github.com/rudderlabs/rudder-server/commit/f4b45e1c2d6d1eefea5d8ff8f1d33398249aa7eb))
+* integrate sqlconnect-go for snowflake ([#4936](https://github.com/rudderlabs/rudder-server/issues/4936)) ([5cd301d](https://github.com/rudderlabs/rudder-server/commit/5cd301d044e5a4ead028031e4f6e212b460ce991))
+* temp file cleanup for sftp ([#4931](https://github.com/rudderlabs/rudder-server/issues/4931)) ([c9b0744](https://github.com/rudderlabs/rudder-server/commit/c9b0744818b3511da107da0c462038e8d95e9dd4))
+* temp file cleanup for sftp destination ([c9b0744](https://github.com/rudderlabs/rudder-server/commit/c9b0744818b3511da107da0c462038e8d95e9dd4))
+* trigger release workflow after release ([#4940](https://github.com/rudderlabs/rudder-server/issues/4940)) ([d2d23c9](https://github.com/rudderlabs/rudder-server/commit/d2d23c99cedcbabf546e90dcc54a2863c75e65a9))
+
 ## [1.30.3](https://github.com/rudderlabs/rudder-server/compare/v1.30.2...v1.30.3) (2024-07-29)
 
 
