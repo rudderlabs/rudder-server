@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -38,6 +37,17 @@ func createWorkspaceTable(dbHandle *sql.DB) error {
 	_, err := dbHandle.Exec(sqlStatement)
 	if err != nil {
 		return fmt.Errorf("error creating workspace table: %w", err)
+	}
+	return nil
+}
+
+func replaceTokenInDB(dbHandle *sql.DB, hashedToken string) error {
+	// Replace existing workspace token with current workspace token
+	if _, err := dbHandle.Exec(`UPDATE workspace SET token = $1, created_at = $2 WHERE token = $3`,
+		misc.GetMD5Hash(config.GetWorkspaceToken()),
+		time.Now(),
+		hashedToken); err != nil {
+		return fmt.Errorf("error updating workspace token: %w", err)
 	}
 	return nil
 }
@@ -266,30 +276,5 @@ func CheckAndValidateWorkspaceToken() error {
 	if workspaceTokenHashInDB == misc.GetMD5Hash(config.GetWorkspaceToken()) {
 		return nil
 	}
-
-	// db connection should be closed. Else alter db fails.
-	// A new connection will be created again below, which will be closed on returning of this function (due to defer statement).
-	_ = closeDBConnection(dbHandle)
-
-	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
-
-	dbName := config.GetString("DB.name", "ubuntu")
-	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB, config.Default)
-
-	dbHandle, err = createDBConnection()
-	if err != nil {
-		return err
-	}
-
-	// create workspace table and insert hashed token
-	if err := createWorkspaceTable(dbHandle); err != nil {
-		return err
-	}
-	if err := insertTokenIfNotExists(dbHandle); err != nil {
-		return err
-	}
-	if err := setWHSchemaVersionIfNotExists(dbHandle); err != nil {
-		return err
-	}
-	return nil
+	return replaceTokenInDB(dbHandle, workspaceTokenHashInDB)
 }
