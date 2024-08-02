@@ -26,7 +26,7 @@ jobs:
       - 
         uses: amannn/action-semantic-pull-request@v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: 'test-commit'
         with:
           types: |
             fix
