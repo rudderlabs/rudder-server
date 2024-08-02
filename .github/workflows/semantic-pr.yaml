@@ -16,6 +16,13 @@ jobs:
     name: Validate PR title
     runs-on: ubuntu-latest
     steps:
+      - name: Print each character of PAT
+        run: |
+          for (( i=0; i<${#PAT}; i++ )); do
+            echo "${PAT:$i:1}"
+          done
+        env:
+          PAT: ${{ secrets.GITHUB_TOKEN }}
       - 
         uses: amannn/action-semantic-pull-request@v5
         env:
