@@ -314,8 +314,6 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
 	edr.edReportingRequestLatency = edr.stats.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
 
-	vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
-
 	// In infinite loop
 	// Get Reports
 	// Aggregate
@@ -382,27 +380,8 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			if err != nil {
 				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
 			}
-			vacuumStart := time.Now()
-			var sizeEstimate int64
-			if err := dbHandle.QueryRowContext(
-				ctx,
-				fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ErrorDetailReportsTable),
-			).Scan(&sizeEstimate); err != nil {
-				edr.log.Errorn(
-					fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
-					logger.NewErrorField(err),
-				)
-			}
-			if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
-				vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
-				if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
-					edr.log.Errorn(
-						fmt.Sprintf(`Error vacuuming %s table`, ErrorDetailReportsTable),
-						logger.NewErrorField(err),
-					)
-				}
-				vacuumDuration.Since(vacuumStart)
-			}
+			// vacuum error_reports_details table
+			edr.vacuum(ctx, dbHandle, c)
 		}
 
 		mainLoopTimer.Since(loopStart)
@@ -412,6 +391,33 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 		case <-time.After(edr.mainLoopSleepInterval.Load()):
 		}
 	}
+}
+
+func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c types.SyncerConfig) {
+	tags := edr.getTags(c.Label)
+	vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
+
+	vacuumStart := time.Now()
+	var sizeEstimate int64
+	if err := dbHandle.QueryRowContext(
+		ctx,
+		`SELECT pg_table_size(oid) from pg_class where relname = $1`, ErrorDetailReportsTable,
+	).Scan(&sizeEstimate); err != nil {
+		edr.log.Errorn(
+			fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
+			logger.NewErrorField(err),
+		)
+	}
+	if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
+		vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
+		if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
+			edr.log.Errorn(
+				fmt.Sprintf(`Error vacuuming %s table`, ErrorDetailReportsTable),
+				logger.NewErrorField(err),
+			)
+		}
+	}
+	vacuumDuration.Since(vacuumStart)
 }
 
 func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
