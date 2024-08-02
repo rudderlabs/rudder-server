@@ -395,9 +395,6 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c types.SyncerConfig) {
 	tags := edr.getTags(c.Label)
-	vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
-
-	vacuumStart := time.Now()
 	var sizeEstimate int64
 	if err := dbHandle.QueryRowContext(
 		ctx,
@@ -409,8 +406,8 @@ func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c 
 		)
 	}
 	if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
-        vacuumStart := time.Now()
-        vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
+		vacuumStart := time.Now()
+		vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 		vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
 		if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
 			edr.log.Errorn(
@@ -418,9 +415,8 @@ func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c 
 				logger.NewErrorField(err),
 			)
 		}
-		vacuumDuration.Since(vacuumStart)	
+		vacuumDuration.Since(vacuumStart)
 	}
-	vacuumDuration.Since(vacuumStart)
 }
 
 func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
