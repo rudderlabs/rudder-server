@@ -7,8 +7,9 @@ import (
 
 // defaultManager is the default manager for SFTP
 type defaultManager struct {
-	FileManager sftp.FileManager
-	logger      logger.Logger
+	FileManager    sftp.FileManager
+	logger         logger.Logger
+	filePathPrefix string
 }
 
 type destConfig struct {
@@ -38,7 +39,7 @@ type destConfig struct {
         "mappedToDestination": "true"
     },
     "fields": {
-        "C_NAME": "john doe,
+        "C_NAME": "john doe",
 		"C_EMAIL": "john.doe@gmail.com",
         "identifier": "e440921e-967c-40d0-abb2-8e0090dfc9ff"
     },
