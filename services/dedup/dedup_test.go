@@ -64,7 +64,6 @@ func Test_Dedup(t *testing.T) {
 			conf.Set("Scylla.Hosts", resource.URL)
 			conf.Set("Scylla.Keyspace", keySpace)
 			conf.Set("Dedup.Mode", tc.name)
-			conf.Set("Scylla.DisableInitialHostLookup", "true")
 			d, err := dedup.New(conf, stats.Default)
 			require.Nil(t, err)
 			defer d.Close()

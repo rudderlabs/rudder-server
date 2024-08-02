@@ -109,7 +109,6 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 		Max:        conf.GetDuration("Scylla.MaxRetry", 2000, time.Second),
 	}
 	cluster.Timeout = conf.GetDuration("Scylla.Timeout", 10, time.Second)
-	cluster.DisableInitialHostLookup = conf.GetBool("Scylla.DisableInitialHostLookup", false)
 	session, err := cluster.CreateSession()
 	if err != nil {
 		return nil, err
