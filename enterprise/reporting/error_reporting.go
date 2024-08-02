@@ -389,15 +389,15 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ErrorDetailReportsTable),
 			).Scan(&sizeEstimate); err != nil {
 				edr.log.Errorn(
-					`[ Error detail Reporting ]: Error getting table size estimate`,
+					fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
 					logger.NewErrorField(err),
 				)
 			}
 			if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
-				vaccumStatement := fmt.Sprintf("vacuum full analyze %s;", ErrorDetailReportsTable)
+				vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
 				if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
 					edr.log.Errorn(
-						`[ Error detail Reporting ]: Error vacuuming error_detail_reports table`,
+						fmt.Sprintf(`Error vacuuming %s table`, ErrorDetailReportsTable),
 						logger.NewErrorField(err),
 					)
 				}
