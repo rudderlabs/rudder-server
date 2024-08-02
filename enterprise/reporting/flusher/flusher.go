@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/cenkalti/backoff"
@@ -316,15 +318,15 @@ func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.
 }
 
 func (f *Flusher) vacuum(ctx context.Context) error {
-	vacuumStart := time.Now()
 	var sizeEstimate int64
 	if err := f.db.QueryRowContext(
-		ctx, fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s'`, f.table),
+		ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
 	).Scan(&sizeEstimate); err != nil {
 		return fmt.Errorf("error getting table size %w", err)
 	}
 	if sizeEstimate > f.vacuumThresholdBytes.Load() {
-		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum full analyze %s", f.table)); err != nil {
+		vacuumStart := time.Now()
+		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
 			return fmt.Errorf("error vacuuming table %w", err)
 		}
 		f.vacuumReportsTimer.Since(vacuumStart)
