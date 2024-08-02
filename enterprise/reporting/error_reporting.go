@@ -82,7 +82,8 @@ type ErrorDetailReporter struct {
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
 
-	stats stats.Stats
+	stats  stats.Stats
+	config *config.Config
 }
 
 type errorDetails struct {
@@ -94,16 +95,17 @@ func NewErrorDetailReporter(
 	ctx context.Context,
 	configSubscriber *configSubscriber,
 	stats stats.Stats,
+	conf *config.Config,
 ) *ErrorDetailReporter {
 	tr := &http.Transport{}
-	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
+	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
-	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
-	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
-	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
-	maxOpenConnections := config.GetIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
+	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	mainLoopSleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
+	sleepInterval := conf.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
+	maxConcurrentRequests := conf.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
+	maxOpenConnections := conf.GetIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
@@ -121,14 +123,15 @@ func NewErrorDetailReporter(
 		httpClient:            netClient,
 
 		namespace:  config.GetKubeNamespace(),
-		instanceID: config.GetString("INSTANCE_ID", "1"),
-		region:     config.GetString("region", ""),
+		instanceID: conf.GetString("INSTANCE_ID", "1"),
+		region:     conf.GetString("region", ""),
 
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
 		maxOpenConnections:   maxOpenConnections,
 		stats:                stats,
+		config:               conf,
 	}
 }
 
@@ -148,7 +151,7 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
-	if !config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
+	if !edr.config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
 		return func() {}
 	}
 
@@ -261,7 +264,7 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 		Handle:          dbHandle,
 		MigrationsTable: fmt.Sprintf("%v_migrations", ErrorDetailReportsTable),
 		// TODO: shall we use separate env ?
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: edr.config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
 	err = m.Migrate(ErrorDetailReportsTable)
 	if err != nil {
@@ -405,7 +408,7 @@ func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c 
 			logger.NewErrorField(err),
 		)
 	}
-	if sizeEstimate > config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
+	if sizeEstimate > edr.config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
 		vacuumStart := time.Now()
 		vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 		vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
