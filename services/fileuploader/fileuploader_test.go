@@ -49,7 +49,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 
 	go func() {
 		ready.Done()
-		preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-1")
+		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
 		storageSettings.Done()
 	}()
 
@@ -118,19 +118,19 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
 
-	fm1, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-1")
+	fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
 	Expect(err).To(BeNil())
 	Expect(fm1.Prefix()).To(Equal("fullStoragePrefixWithNoTTL"))
 
-	fm3, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-3")
+	fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
 	Expect(err).To(BeNil())
 	Expect(fm3.Prefix()).To(Equal("defaultPrefixWithStorageTTL"))
 
-	fm0, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-0")
+	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
 	Expect(err).To(Equal(ErrNoStorageForWorkspace))
 	Expect(fm0).To(BeNil())
 
-	fm2, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-2")
+	fm2, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
 	Expect(err).To(Equal(ErrNoStorageForWorkspace))
 	Expect(fm2).To(BeNil())
 
@@ -142,11 +142,11 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 		},
 	))
 
-	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-0")
+	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
 	Expect(err).To(Equal(ErrNoStorageForWorkspace))
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
-	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-2")
+	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
 	Expect(err).To(Equal(ErrNoStorageForWorkspace))
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 
@@ -172,7 +172,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	}
 	require.Eventually(t, func() bool {
 		t.Log("testWorkspaceId-2 uploader not updated yet")
-		_, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-2")
+		_, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
 		return err == nil
 	}, time.Second, 5*time.Millisecond)
 }
@@ -197,8 +197,9 @@ func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
 	})
 
 	p := NewProvider(context.Background(), config)
-	_, err := p.GetStoragePreferences(context.Background(), "testWorkspaceId-1")
-	Expect(err).To(HaveOccurred())
+	ready.Wait()
+	_, err := p.GetFileManager("testWorkspaceId-1")
+	Expect(err).To(Equal(ErrNotSubscribed))
 }
 
 func TestStaticProvider(t *testing.T) {
@@ -220,13 +221,13 @@ func TestStaticProvider(t *testing.T) {
 			Preferences: prefs,
 		},
 	}
-	p := NewStaticProvider(context.Background(), storageSettings)
+	p := NewStaticProvider(storageSettings)
 
-	prefs, err := p.GetStoragePreferences(context.Background(), "testWorkspaceId-1")
+	prefs, err := p.GetStoragePreferences("testWorkspaceId-1")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(prefs))
 
-	_, err = p.GetFileManager(context.Background(), "testWorkspaceId-1")
+	_, err = p.GetFileManager("testWorkspaceId-1")
 	Expect(err).To(BeNil())
 }
 
@@ -234,7 +235,7 @@ func TestDefaultProvider(t *testing.T) {
 	RegisterTestingT(t)
 	d := NewDefaultProvider()
 
-	prefs, err := d.GetStoragePreferences(context.Background(), "")
+	prefs, err := d.GetStoragePreferences("")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
 		ProcErrors:       true,
@@ -244,7 +245,7 @@ func TestDefaultProvider(t *testing.T) {
 		RouterDumps:      true,
 	}))
 
-	_, err = d.GetFileManager(context.Background(), "")
+	_, err = d.GetFileManager("")
 	Expect(err).To(BeNil())
 }
 

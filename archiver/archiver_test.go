@@ -127,7 +127,7 @@ func TestJobsArchival(t *testing.T) {
 		},
 	}
 
-	fileUploaderProvider := fileuploader.NewStaticProvider(ctx, storageSettings)
+	fileUploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 	trigger := make(chan time.Time)
 	archiver := New(
 		jd,
@@ -166,7 +166,7 @@ func TestJobsArchival(t *testing.T) {
 	downloadedJobs := make([]*jobsdb.JobT, 0)
 	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := fileUploaderProvider.GetFileManager(ctx, workspace)
+		fm, err := fileUploaderProvider.GetFileManager(workspace)
 		require.NoError(t, err)
 		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefixByWorkspace[i], 20)
 		files, err := getAllFileNames(fileIter)
@@ -289,7 +289,7 @@ func TestNoQueriesIfDisabled(t *testing.T) {
 
 	arc := New(
 		jd,
-		fileuploader.NewStaticProvider(context.Background(), map[string]fileuploader.StorageSettings{}),
+		fileuploader.NewStaticProvider(map[string]fileuploader.StorageSettings{}),
 		c,
 		stats.Default,
 	)
