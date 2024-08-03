@@ -116,6 +116,7 @@ jobs:
           docker pull trufflesecurity/trufflehog:latest
           docker run --rm -v /tmp:/tmp \
             trufflesecurity/trufflehog:latest \
+            --no-verification \
             filesystem --directory=/tmp/myimage.tar  
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
