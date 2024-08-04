@@ -145,16 +145,6 @@ func getTableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
 	})
 }
 
-func (bq *BigQuery) partitionColumn(workspaceID, destinationID string) string {
-	workspaceKey := "Warehouse.bigquery.partitionColumn." + workspaceID
-	destinationKey := "Warehouse.bigquery.partitionColumn." + workspaceID + "." + destinationID
-
-	if bq.conf.IsSet(destinationKey) {
-		return bq.conf.GetString(destinationKey, "")
-	}
-	return bq.conf.GetString(workspaceKey, "")
-}
-
 func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err error) {
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
 	err = tableRef.Delete(ctx)
