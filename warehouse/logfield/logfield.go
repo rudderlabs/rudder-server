@@ -36,4 +36,5 @@ const (
 	IntervalInHours            = "intervalInHours"
 	StartTime                  = "startTime"
 	EndTime                    = "endTime"
+	ProjectID                  = "projectID"
 )
