@@ -3,19 +3,22 @@ package bigquery_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/samber/lo"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
@@ -153,6 +156,7 @@ func TestIntegration(t *testing.T) {
 			prerequisite                        func(context.Context, testing.TB, *bigquery.Client)
 			customPartitionsEnabledWorkspaceIDs string
 			stagingFilePrefix                   string
+			partitionColumn                     string
 		}{
 			{
 				name:          "Source Job",
@@ -199,7 +203,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
-				name:   "Append mode with custom partition",
+				name:   "Append mode for tracks with custom partition [timestamp(DAY)]",
 				schema: namespace,
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
@@ -233,22 +237,159 @@ func TestIntegration(t *testing.T) {
 							}},
 							TimePartitioning: &bigquery.TimePartitioning{
 								Field: "timestamp",
+								Type:  bigquery.DayPartitioningType,
 							},
 						},
 					)
 					require.NoError(t, err)
 				},
 				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
+				partitionColumn:   "timestamp",
+			},
+			{
+				name:   "Append mode for tracks with custom partition [loaded_at(HOUR)]",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				writeKey:                            writeKey,
+				sourceID:                            sourceID,
+				destinationID:                       destinationID,
+				stagingFilesEventsMap:               stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
+				loadFilesEventsMap:                  loadFilesEventsMap(),
+				tableUploadsEventsMap:               tableUploadsEventsMap(),
+				warehouseEventsMap:                  appendEventsMap(),
+				skipModifiedEvents:                  true,
+				customPartitionsEnabledWorkspaceIDs: workspaceID,
+				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+
+					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
+						Location: "US",
+					})
+					require.NoError(t, err)
+
+					err = db.Dataset(namespace).Table("tracks").Create(
+						context.Background(),
+						&bigquery.TableMetadata{
+							Schema: []*bigquery.FieldSchema{{
+								Name: "loaded_at",
+								Type: bigquery.TimestampFieldType,
+							}},
+							TimePartitioning: &bigquery.TimePartitioning{
+								Field: "loaded_at",
+								Type:  bigquery.HourPartitioningType,
+							},
+						},
+					)
+					require.NoError(t, err)
+				},
+				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
+				partitionColumn:   "loaded_at",
+			},
+			{
+				name:   "Append mode for users with custom partition [timestamp(DAY)]",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				writeKey:                            writeKey,
+				sourceID:                            sourceID,
+				destinationID:                       destinationID,
+				stagingFilesEventsMap:               stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
+				loadFilesEventsMap:                  loadFilesEventsMap(),
+				tableUploadsEventsMap:               tableUploadsEventsMap(),
+				warehouseEventsMap:                  appendEventsMap(),
+				skipModifiedEvents:                  true,
+				customPartitionsEnabledWorkspaceIDs: workspaceID,
+				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+
+					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
+						Location: "US",
+					})
+					require.NoError(t, err)
+
+					err = db.Dataset(namespace).Table("users").Create(
+						context.Background(),
+						&bigquery.TableMetadata{
+							Schema: []*bigquery.FieldSchema{{
+								Name: "timestamp",
+								Type: bigquery.TimestampFieldType,
+							}},
+							TimePartitioning: &bigquery.TimePartitioning{
+								Field: "timestamp",
+								Type:  bigquery.DayPartitioningType,
+							},
+						},
+					)
+					require.NoError(t, err)
+				},
+				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
+				partitionColumn:   "timestamp",
+			},
+			{
+				name:   "Append mode for users with custom partition [loaded_at(HOUR)]",
+				schema: namespace,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				writeKey:                            writeKey,
+				sourceID:                            sourceID,
+				destinationID:                       destinationID,
+				stagingFilesEventsMap:               stagingFilesEventsMap(),
+				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
+				loadFilesEventsMap:                  loadFilesEventsMap(),
+				tableUploadsEventsMap:               tableUploadsEventsMap(),
+				warehouseEventsMap:                  appendEventsMap(),
+				skipModifiedEvents:                  true,
+				customPartitionsEnabledWorkspaceIDs: workspaceID,
+				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
+					t.Helper()
+
+					_ = db.Dataset(namespace).DeleteWithContents(ctx)
+
+					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
+						Location: "US",
+					})
+					require.NoError(t, err)
+
+					err = db.Dataset(namespace).Table("users").Create(
+						context.Background(),
+						&bigquery.TableMetadata{
+							Schema: []*bigquery.FieldSchema{{
+								Name: "loaded_at",
+								Type: bigquery.TimestampFieldType,
+							}},
+							TimePartitioning: &bigquery.TimePartitioning{
+								Field: "loaded_at",
+								Type:  bigquery.HourPartitioningType,
+							},
+						},
+					)
+					require.NoError(t, err)
+				},
+				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
+				partitionColumn:   "loaded_at",
 			},
 		}
 
 		for _, tc := range testcase {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv(
 					"RSERVER_WAREHOUSE_BIGQUERY_CUSTOM_PARTITIONS_ENABLED_WORKSPACE_IDS",
 					tc.customPartitionsEnabledWorkspaceIDs,
 				)
+
+				partitionKey := config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.bigquery.partitionColumn."+workspaceID)
+				t.Setenv(partitionKey, tc.partitionColumn)
+
 				db := bootstrapSvc(t)
 
 				t.Cleanup(func() {
@@ -717,6 +858,184 @@ func TestIntegration(t *testing.T) {
 		})
 	})
 
+	t.Run("Fetch schema", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		namespace := whth.RandSchema(destType)
+
+		ctx := context.Background()
+		db, err := bigquery.NewClient(ctx,
+			bqTestCredentials.ProjectID,
+			option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
+		credentials, err := bqHelper.GetBQTestCredentials()
+		require.NoError(t, err)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		t.Run("should not contain staging like schema", func(t *testing.T) {
+			tableName := "test_table"
+			stagingTableName := warehouseutils.StagingTableName(warehouseutils.BQ, warehouseutils.UsersTable, 127)
+
+			ctrl := gomock.NewController(t)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+
+			bq := whbigquery.New(config.New(), logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			for _, table := range []string{tableName, stagingTableName} {
+				require.NoError(t, db.Dataset(namespace).Table(table).Create(ctx, &bigquery.TableMetadata{
+					Schema: []*bigquery.FieldSchema{
+						{Name: "id", Type: bigquery.StringFieldType},
+					},
+					TimePartitioning: &bigquery.TimePartitioning{
+						Type: bigquery.DayPartitioningType,
+					},
+				}))
+			}
+
+			tables := fetchAllTables(t, ctx, db, namespace)
+			require.Equal(t, []string{stagingTableName, tableName}, tables)
+
+			warehouseSchema, unrecognizedWarehouseSchema, err := bq.FetchSchema(ctx)
+			require.NoError(t, err)
+			require.Empty(t, unrecognizedWarehouseSchema)
+
+			fetchedTables := lo.Keys(warehouseSchema)
+			require.Equal(t, []string{tableName}, fetchedTables)
+		})
+	})
+
+	t.Run("Crash recovery", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
+
+		namespace := whth.RandSchema(destType)
+
+		ctx := context.Background()
+		db, err := bigquery.NewClient(ctx,
+			bqTestCredentials.ProjectID,
+			option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			require.Eventually(t, func() bool {
+				if err := db.Dataset(namespace).DeleteWithContents(ctx); err != nil {
+					t.Logf("error deleting dataset: %v", err)
+					return false
+				}
+				return true
+			},
+				time.Minute,
+				time.Second,
+			)
+		})
+
+		credentials, err := bqHelper.GetBQTestCredentials()
+		require.NoError(t, err)
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: sourceID,
+			},
+			Destination: backendconfig.DestinationT{
+				ID: destinationID,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: workspaceID,
+			Namespace:   namespace,
+		}
+
+		t.Run("should delete staging like table", func(t *testing.T) {
+			tableName := "test_table"
+			stagingTableName := warehouseutils.StagingTableName(warehouseutils.BQ, warehouseutils.UsersTable, 127)
+
+			ctrl := gomock.NewController(t)
+			mockUploader := mockuploader.NewMockUploader(ctrl)
+
+			bq := whbigquery.New(config.New(), logger.NOP)
+			err := bq.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = bq.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			for _, table := range []string{tableName, stagingTableName} {
+				require.NoError(t, db.Dataset(namespace).Table(table).Create(ctx, &bigquery.TableMetadata{
+					Schema: []*bigquery.FieldSchema{
+						{Name: "id", Type: bigquery.StringFieldType},
+					},
+					TimePartitioning: &bigquery.TimePartitioning{
+						Type: bigquery.DayPartitioningType,
+					},
+				}))
+			}
+
+			tables := fetchAllTables(t, ctx, db, namespace)
+			require.Equal(t, []string{stagingTableName, tableName}, tables)
+
+			bq.Cleanup(ctx)
+
+			tables = fetchAllTables(t, ctx, db, namespace)
+			require.Equal(t, []string{tableName}, tables)
+		})
+	})
+
 	t.Run("IsEmpty", func(t *testing.T) {
 		ctx := context.Background()
 		db, err := bigquery.NewClient(ctx,
@@ -843,6 +1162,18 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
+func fetchAllTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) (tables []string) {
+	t.Helper()
+
+	it := db.Dataset(namespace).Tables(ctx)
+	for table, err := it.Next(); !errors.Is(err, iterator.Done); table, err = it.Next() {
+		require.NoError(t, err)
+		tables = append(tables, table.TableID)
+	}
+	sort.Strings(tables)
+	return
+}
+
 func newMockUploader(
 	t testing.TB,
 	loadFiles []warehouseutils.LoadFile,
@@ -912,15 +1243,4 @@ func appendEventsMap() whth.EventsCountMap {
 		"groups":        1,
 		"_groups":       3,
 	}
-}
-
-func TestUnsupportedCredentials(t *testing.T) {
-	credentials := whbigquery.BQCredentials{
-		ProjectID:   "projectId",
-		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
-	}
-
-	_, err := whbigquery.Connect(context.Background(), &credentials)
-	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
 }
