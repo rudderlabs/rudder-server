@@ -240,6 +240,7 @@ func EnhanceWithDefaultEnvs(t testing.TB) {
 	t.Setenv("RSERVER_WAREHOUSE_ENABLE_JITTER_FOR_SYNCS", "false")
 	t.Setenv("RSERVER_WAREHOUSE_ENABLE_IDRESOLUTION", "true")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+	t.Setenv("RSERVER_ADMIN_SERVER_ENABLED", "false")
 	t.Setenv("RUDDER_ADMIN_PASSWORD", "password")
 	t.Setenv("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", "false")
 	t.Setenv("RSERVER_LOGGER_CONSOLE_JSON_FORMAT", "true")

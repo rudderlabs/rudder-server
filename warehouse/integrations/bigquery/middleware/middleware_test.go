@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/bigquery"
+	"google.golang.org/api/option"
+
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
@@ -28,10 +30,11 @@ func TestQueryWrapper(t *testing.T) {
 
 	ctx := context.Background()
 
-	db, err := bigquery.Connect(ctx, &bigquery.BQCredentials{
-		ProjectID:   bqTestCredentials.ProjectID,
-		Credentials: bqTestCredentials.Credentials,
-	})
+	db, err := bigquery.NewClient(
+		ctx,
+		bqTestCredentials.ProjectID,
+		option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+	)
 	require.NoError(t, err)
 
 	testCases := []struct {
