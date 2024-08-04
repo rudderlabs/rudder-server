@@ -26,6 +26,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -37,7 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -336,12 +337,12 @@ func registerTLSConfig(key, certificate string) error {
 
 func (ch *Clickhouse) defaultLogFields() []any {
 	return []any{
-		logfield.SourceID, ch.Warehouse.Source.ID,
-		logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, ch.Warehouse.Destination.ID,
-		logfield.DestinationType, ch.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, ch.Warehouse.WorkspaceID,
-		logfield.Namespace, ch.Namespace,
+		obskit.SourceID(ch.Warehouse.Source.ID),
+		obskit.SourceType(ch.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(ch.Warehouse.Destination.ID),
+		obskit.DestinationType(ch.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(ch.Warehouse.WorkspaceID),
+		obskit.Namespace(ch.Namespace),
 	}
 }
 

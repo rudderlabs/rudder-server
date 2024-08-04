@@ -10,6 +10,8 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -327,7 +329,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
 	if job.config.disableAlter {
 		job.logger.Debugw("skipping alter columns to warehouse",
-			logfield.TableName, tName,
+			logger.NewStringField(logfield.TableName, tName),
 			"columns", columnsMap,
 		)
 		return nil
@@ -721,7 +723,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 		return alteredSchema, fmt.Errorf("update schema: %w", err)
 	}
 
-	job.logger.Infow("starting load for table", logfield.TableName, tName)
+	job.logger.Infow("starting load for table", logger.NewStringField(logfield.TableName, tName))
 
 	status := model.TableUploadExecuting
 	lastExecTime := job.now()

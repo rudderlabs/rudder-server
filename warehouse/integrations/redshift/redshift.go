@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
@@ -278,17 +279,17 @@ func (rs *Redshift) AddColumns(ctx context.Context, tableName string, columnsInf
 		if _, err := rs.DB.ExecContext(ctx, query); err != nil {
 			if CheckAndIgnoreColumnAlreadyExistError(err) {
 				rs.logger.Infow("column already exists",
-					logfield.SourceID, rs.Warehouse.Source.ID,
-					logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-					logfield.DestinationID, rs.Warehouse.Destination.ID,
-					logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-					logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-					logfield.Schema, rs.Namespace,
-					logfield.TableName, tableName,
-					logfield.ColumnName, columnInfo.Name,
-					logfield.ColumnType, columnType,
-					logfield.Error, err.Error(),
-					logfield.Query, query,
+					obskit.SourceID(rs.Warehouse.Source.ID),
+					obskit.SourceType(rs.Warehouse.Source.SourceDefinition.Name),
+					obskit.DestinationID(rs.Warehouse.Destination.ID),
+					obskit.DestinationType(rs.Warehouse.Destination.DestinationDefinition.Name),
+					obskit.WorkspaceID(rs.Warehouse.WorkspaceID),
+					obskit.Namespace(rs.Namespace),
+					logger.NewStringField(logfield.TableName, tableName),
+					logger.NewStringField(logfield.ColumnName, columnInfo.Name),
+					logger.NewStringField(logfield.ColumnType, columnType),
+					obskit.Error(err),
+					logger.NewStringField(logfield.Query, query),
 				)
 				continue
 			}
@@ -456,14 +457,14 @@ func (rs *Redshift) loadTable(
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
 	log := rs.logger.With(
-		logfield.SourceID, rs.Warehouse.Source.ID,
-		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, rs.Warehouse.Destination.ID,
-		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-		logfield.Namespace, rs.Namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.ShouldMerge(tableName),
+		obskit.SourceID(rs.Warehouse.Source.ID),
+		obskit.SourceType(rs.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(rs.Warehouse.Destination.ID),
+		obskit.DestinationType(rs.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(rs.Warehouse.WorkspaceID),
+		obskit.Namespace(rs.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, rs.ShouldMerge(tableName)),
 	)
 	log.Infow("started loading")
 
@@ -737,14 +738,14 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	)
 
 	logFields := []any{
-		logfield.SourceID, rs.Warehouse.Source.ID,
-		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, rs.Warehouse.Destination.ID,
-		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-		logfield.Namespace, rs.Namespace,
-		logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.ShouldMerge(warehouseutils.UsersTable),
-		logfield.TableName, warehouseutils.UsersTable,
+		obskit.SourceID(rs.Warehouse.Source.ID),
+		obskit.SourceType(rs.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(rs.Warehouse.Destination.ID),
+		obskit.DestinationType(rs.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(rs.Warehouse.WorkspaceID),
+		obskit.Namespace(rs.Namespace),
+		logger.NewBoolField(logfield.ShouldMerge, !rs.config.skipComputingUserLatestTraits || rs.ShouldMerge(warehouseutils.UsersTable)),
+		logger.NewStringField(logfield.TableName, warehouseutils.UsersTable),
 	}
 	rs.logger.Infow("started loading for identifies and users tables", logFields...)
 
@@ -850,7 +851,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	if _, err = txn.ExecContext(ctx, query); err != nil {
 		_ = txn.Rollback()
 
-		rs.logger.Warnw("creating staging table for users", append(logFields, logfield.Error, err.Error())...)
+		rs.logger.Warnw("creating staging table for users", append(logFields, obskit.Error(err))...)
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
 			warehouseutils.UsersTable:      fmt.Errorf("creating staging table for users: %w", err),
@@ -871,8 +872,8 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		_ = txn.Rollback()
 
 		rs.logger.Warnw("deleting from users table for dedup", append(logFields,
-			logfield.Query, query,
-			logfield.Error, err.Error(),
+			logger.NewStringField(logfield.Query, query),
+			obskit.Error(err),
 		)...)
 		return map[string]error{
 			warehouseutils.UsersTable: fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err)),
@@ -889,12 +890,14 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		warehouseutils.DoubleQuoteAndJoinByComma(append([]string{"id"}, userColNames...)),
 	)
 
-	rs.logger.Infow("inserting into users table", append(logFields, logfield.Query, query)...)
+	rs.logger.Infow("inserting into users table", append(logFields,
+		logger.NewStringField(logfield.Query, query),
+	)...)
 
 	if _, err = txn.ExecContext(ctx, query); err != nil {
 		_ = txn.Rollback()
 
-		rs.logger.Warnw("failed inserting into users table", append(logFields, logfield.Error, err.Error())...)
+		rs.logger.Warnw("failed inserting into users table", append(logFields, obskit.Error(err))...)
 
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
@@ -905,7 +908,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	if err = txn.Commit(); err != nil {
 		_ = txn.Rollback()
 
-		rs.logger.Warnw("committing transaction for user table", append(logFields, logfield.Error, err.Error())...)
+		rs.logger.Warnw("committing transaction for user table", append(logFields, obskit.Error(err))...)
 
 		return map[string]error{
 			warehouseutils.IdentifiesTable: nil,
@@ -945,12 +948,12 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		sqlmiddleware.WithStats(rs.stats),
 		sqlmiddleware.WithLogger(rs.logger),
 		sqlmiddleware.WithKeyAndValues(
-			logfield.SourceID, rs.Warehouse.Source.ID,
-			logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, rs.Warehouse.Destination.ID,
-			logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-			logfield.Schema, rs.Namespace,
+			obskit.SourceID(rs.Warehouse.Source.ID),
+			obskit.SourceType(rs.Warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(rs.Warehouse.Destination.ID),
+			obskit.DestinationType(rs.Warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(rs.Warehouse.WorkspaceID),
+			obskit.Namespace(rs.Namespace),
 		),
 		sqlmiddleware.WithSlowQueryThreshold(rs.config.slowQueryThreshold),
 		sqlmiddleware.WithQueryTimeout(rs.connectTimeout),
@@ -1303,7 +1306,7 @@ func (rs *Redshift) Cleanup(ctx context.Context) {
 		err := rs.dropDanglingStagingTables(ctx)
 		if err != nil {
 			rs.logger.Errorw("Error dropping dangling staging tables",
-				logfield.Error, err.Error(),
+				obskit.Error(err),
 			)
 		}
 		_ = rs.DB.Close()

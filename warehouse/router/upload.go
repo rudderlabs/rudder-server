@@ -12,9 +12,12 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -140,14 +143,14 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
 
 	log := f.logger.With(
-		logfield.UploadJobID, dto.Upload.ID,
-		logfield.Namespace, dto.Warehouse.Namespace,
-		logfield.SourceID, dto.Warehouse.Source.ID,
-		logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, dto.Warehouse.Destination.ID,
-		logfield.DestinationType, dto.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, dto.Upload.WorkspaceID,
-		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
+		obskit.UploadID(dto.Upload.ID),
+		obskit.Namespace(dto.Warehouse.Namespace),
+		obskit.SourceID(dto.Warehouse.Source.ID),
+		obskit.SourceType(dto.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(dto.Warehouse.Destination.ID),
+		obskit.DestinationType(dto.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(dto.Upload.WorkspaceID),
+		logger.NewBoolField(logfield.UseRudderStorage, dto.Upload.UseRudderStorage),
 	)
 
 	uj := &UploadJob{
@@ -286,15 +289,15 @@ func (job *UploadJob) run() (err error) {
 
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
 		job.logger.Warnw("Error during recovery (dangling staging table cleanup)",
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
-			logfield.Namespace, job.warehouse.Namespace,
-			logfield.Error, err.Error(),
+			obskit.DestinationID(job.warehouse.Destination.ID),
+			obskit.DestinationType(job.warehouse.Destination.DestinationDefinition.Name),
+			obskit.SourceID(job.warehouse.Source.ID),
+			obskit.SourceType(job.warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(job.warehouse.Destination.ID),
+			obskit.DestinationType(job.warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(job.warehouse.WorkspaceID),
+			obskit.Namespace(job.warehouse.Namespace),
+			obskit.Error(err),
 		)
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
@@ -502,7 +505,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	job.logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
 	defer func() {
 		if err != nil {
-			job.logger.Warnw("error setting upload status", logfield.Error, err.Error())
+			job.logger.Warnw("error setting upload status", obskit.Error(err))
 		}
 	}()
 
@@ -598,14 +601,14 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	defer func() {
 		job.logger.Warnw("upload error",
-			logfield.UploadStatus, state,
-			logfield.Error, statusError,
-			logfield.Priority, job.upload.Priority,
-			logfield.Retried, job.upload.Retried,
-			logfield.Attempt, job.upload.Attempts,
-			logfield.LoadFileType, job.upload.LoadFileType,
-			logfield.ErrorMapping, jobErrorType,
-			logfield.DestinationCredsValid, destCredentialsValidations,
+			logger.NewStringField(logfield.UploadStatus, state),
+			obskit.Error(statusError),
+			logger.NewIntField(logfield.Priority, int64(job.upload.Priority)),
+			logger.NewBoolField(logfield.Retried, job.upload.Retried),
+			logger.NewIntField(logfield.Attempt, job.upload.Attempts),
+			logger.NewStringField(logfield.LoadFileType, job.upload.LoadFileType),
+			logger.NewStringField(logfield.ErrorMapping, jobErrorType),
+			logger.NewField(logfield.DestinationCredsValid, destCredentialsValidations),
 		)
 	}()
 

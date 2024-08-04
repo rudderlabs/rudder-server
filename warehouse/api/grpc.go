@@ -186,9 +186,9 @@ func (*GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, 
 func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	g.logger.Infow(
 		"Getting warehouse uploads",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.SourceID, request.SourceId,
-		lf.DestinationID, request.DestinationId,
+		obskit.WorkspaceID(request.WorkspaceId),
+		obskit.SourceID(request.SourceId),
+		obskit.DestinationID(request.DestinationId),
 	)
 
 	limit, offset := request.Limit, request.Offset
@@ -278,8 +278,8 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 
 func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	g.logger.Infow("Getting warehouse upload",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.UploadJobID, request.UploadId,
+		obskit.WorkspaceID(request.WorkspaceId),
+		obskit.UploadID(request.UploadId),
 	)
 
 	if request.UploadId < 1 {
@@ -362,9 +362,9 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 
 func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
 	g.logger.Infow("Triggering warehouse uploads",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.SourceID, request.SourceId,
-		lf.DestinationID, request.DestinationId,
+		obskit.WorkspaceID(request.WorkspaceId),
+		obskit.SourceID(request.SourceId),
+		obskit.DestinationID(request.DestinationId),
 	)
 
 	if request.DestinationId == "" {
@@ -435,8 +435,8 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 
 func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	g.logger.Infow("Triggering warehouse upload",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.UploadJobID, request.UploadId,
+		obskit.WorkspaceID(request.WorkspaceId),
+		obskit.UploadID(request.UploadId),
 	)
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
@@ -485,11 +485,11 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 
 func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	g.logger.Infow("Retrying warehouse syncs",
-		lf.WorkspaceID, req.WorkspaceId,
-		lf.SourceID, req.SourceId,
-		lf.DestinationID, req.DestinationId,
-		lf.DestinationType, req.DestinationType,
-		lf.IntervalInHours, req.IntervalInHours,
+		obskit.WorkspaceID(req.WorkspaceId),
+		obskit.SourceID(req.SourceId),
+		obskit.DestinationID(req.DestinationId),
+		obskit.DestinationType(req.DestinationType),
+		logger.NewIntField(lf.IntervalInHours, req.IntervalInHours),
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -539,11 +539,11 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 
 func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	g.logger.Infow("Count syncs to retry",
-		lf.WorkspaceID, req.WorkspaceId,
-		lf.SourceID, req.SourceId,
-		lf.DestinationID, req.DestinationId,
-		lf.DestinationType, req.DestinationType,
-		lf.IntervalInHours, req.IntervalInHours,
+		obskit.WorkspaceID(req.WorkspaceId),
+		obskit.SourceID(req.SourceId),
+		obskit.DestinationID(req.DestinationId),
+		obskit.DestinationType(req.DestinationType),
+		logger.NewField(lf.IntervalInHours, req.IntervalInHours),
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -835,10 +835,10 @@ func (g *GRPC) RetrieveFailedBatches(
 	req *proto.RetrieveFailedBatchesRequest,
 ) (*proto.RetrieveFailedBatchesResponse, error) {
 	log := g.logger.With(
-		lf.WorkspaceID, req.GetWorkspaceID(),
-		lf.DestinationID, req.GetDestinationID(),
-		lf.StartTime, req.GetStart(),
-		lf.EndTime, req.GetEnd(),
+		obskit.WorkspaceID(req.GetWorkspaceID()),
+		obskit.DestinationID(req.GetDestinationID()),
+		logger.NewStringField(lf.StartTime, req.GetStart()),
+		logger.NewStringField(lf.EndTime, req.GetEnd()),
 	)
 	log.Infow("Retrieving failed batches")
 
@@ -880,7 +880,7 @@ func (g *GRPC) RetrieveFailedBatches(
 		End:           endTime,
 	})
 	if err != nil {
-		log.Warnw("unable to get failed batches", lf.Error, err.Error())
+		log.Warnw("unable to get failed batches", obskit.Error(err))
 
 		return &proto.RetrieveFailedBatchesResponse{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to get failed batches")
@@ -906,13 +906,13 @@ func (g *GRPC) RetryFailedBatches(
 	req *proto.RetryFailedBatchesRequest,
 ) (*proto.RetryFailedBatchesResponse, error) {
 	log := g.logger.With(
-		lf.WorkspaceID, req.GetWorkspaceID(),
-		lf.DestinationID, req.GetDestinationID(),
-		lf.StartTime, req.GetStart(),
-		lf.EndTime, req.GetEnd(),
-		lf.ErrorCategory, req.GetErrorCategory(),
-		lf.SourceID, req.GetSourceID(),
-		lf.Status, req.GetStatus(),
+		obskit.WorkspaceID(req.GetWorkspaceID()),
+		obskit.DestinationID(req.GetDestinationID()),
+		logger.NewStringField(lf.StartTime, req.GetStart()),
+		logger.NewStringField(lf.EndTime, req.GetEnd()),
+		logger.NewStringField(lf.ErrorCategory, req.GetErrorCategory()),
+		obskit.SourceID(req.GetSourceID()),
+		logger.NewStringField(lf.Status, req.GetStatus()),
 	)
 	log.Infow("Retrying failed batches")
 
@@ -961,7 +961,7 @@ func (g *GRPC) RetryFailedBatches(
 		Status:        req.GetStatus(),
 	})
 	if err != nil {
-		log.Warnw("unable to retry failed batches", lf.Error, err.Error())
+		log.Warnw("unable to retry failed batches", obskit.Error(err))
 
 		return &proto.RetryFailedBatchesResponse{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to retry failed batches")
@@ -997,7 +997,7 @@ func (g *GRPC) GetFirstAbortedUploadInContinuousAbortsByDestination(
 	g.logger.Infon(
 		"Getting first aborted uploads in a series of continuous aborts",
 		obskit.WorkspaceID(request.WorkspaceId),
-		logger.NewStringField("startTime", request.Start),
+		logger.NewStringField(lf.StartTime, request.Start),
 	)
 
 	var startTime time.Time

@@ -6,6 +6,8 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
@@ -82,8 +84,8 @@ func (client *Client) logQuery(query *bigquery.Query, elapsed time.Duration) {
 	queryStatement := query.QueryConfig.Q
 
 	keysAndValues := []any{
-		logfield.Query, queryStatement,
-		logfield.QueryExecutionTime, elapsed,
+		logger.NewStringField(logfield.Query, queryStatement),
+		logger.NewDurationField(logfield.QueryExecutionTime, elapsed),
 	}
 	keysAndValues = append(keysAndValues, client.keysAndValues...)
 

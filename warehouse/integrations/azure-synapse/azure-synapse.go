@@ -18,6 +18,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/samber/lo"
@@ -183,12 +185,12 @@ func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
 		sqlmw.WithStats(as.stats),
 		sqlmw.WithLogger(as.logger),
 		sqlmw.WithKeyAndValues([]any{
-			logfield.SourceID, as.Warehouse.Source.ID,
-			logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, as.Warehouse.Destination.ID,
-			logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-			logfield.Namespace, as.Namespace,
+			obskit.SourceID(as.Warehouse.Source.ID),
+			obskit.SourceType(as.Warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(as.Warehouse.Destination.ID),
+			obskit.DestinationType(as.Warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(as.Warehouse.WorkspaceID),
+			obskit.Namespace(as.Namespace),
 		}),
 		sqlmw.WithQueryTimeout(as.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(as.config.slowQueryThreshold),
@@ -226,13 +228,13 @@ func (as *AzureSynapse) loadTable(
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
 	log := as.logger.With(
-		logfield.SourceID, as.Warehouse.Source.ID,
-		logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, as.Warehouse.Destination.ID,
-		logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-		logfield.Namespace, as.Namespace,
-		logfield.TableName, tableName,
+		obskit.SourceID(as.Warehouse.Source.ID),
+		obskit.SourceType(as.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(as.Warehouse.Destination.ID),
+		obskit.DestinationType(as.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(as.Warehouse.WorkspaceID),
+		obskit.Namespace(as.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
 	)
 	log.Infow("started loading")
 
@@ -411,8 +413,8 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 			if value == nil {
 				log.Debugw("found nil value",
-					logfield.ColumnType, valueType,
-					logfield.ColumnName, sortedColumnKeys[index],
+					logger.NewStringField(logfield.ColumnType, valueType),
+					logger.NewStringField(logfield.ColumnName, sortedColumnKeys[index]),
 				)
 
 				finalColumnValues = append(finalColumnValues, nil)
@@ -425,10 +427,10 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 			)
 			if err != nil {
 				log.Warnw("mismatch in datatype",
-					logfield.ColumnType, valueType,
-					logfield.ColumnName, sortedColumnKeys[index],
-					logfield.ColumnValue, value,
-					logfield.Error, err,
+					logger.NewStringField(logfield.ColumnType, valueType),
+					logger.NewStringField(logfield.ColumnName, sortedColumnKeys[index]),
+					logger.NewField(logfield.ColumnValue, value),
+					obskit.Error(err),
 				)
 				finalColumnValues = append(finalColumnValues, nil)
 			} else {
@@ -959,16 +961,13 @@ func (as *AzureSynapse) Cleanup(ctx context.Context) {
 		err := as.dropDanglingStagingTables(ctx)
 		if err != nil {
 			as.logger.Warnw("Error dropping dangling staging tables",
-				logfield.DestinationID, as.Warehouse.Destination.ID,
-				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.SourceID, as.Warehouse.Source.ID,
-				logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, as.Warehouse.Destination.ID,
-				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-				logfield.Namespace, as.Warehouse.Namespace,
-
-				logfield.Error, err,
+				obskit.DestinationID(as.Warehouse.Destination.ID),
+				obskit.DestinationType(as.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.SourceID(as.Warehouse.Source.ID),
+				obskit.SourceType(as.Warehouse.Source.SourceDefinition.Name),
+				obskit.WorkspaceID(as.Warehouse.WorkspaceID),
+				obskit.Namespace(as.Warehouse.Namespace),
+				obskit.Error(err),
 			)
 		}
 		_ = as.DB.Close()

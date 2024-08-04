@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
 	"github.com/stretchr/testify/require"
@@ -81,8 +83,8 @@ func TestQueryWrapper(t *testing.T) {
 			query := db.Query(queryStatement)
 
 			kvs := []any{
-				logfield.Query, queryStatement,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logger.NewStringField(logfield.Query, queryStatement),
+				logger.NewDurationField(logfield.QueryExecutionTime, tc.executionTimeInSec),
 			}
 			kvs = append(kvs, keysAndValues...)
 

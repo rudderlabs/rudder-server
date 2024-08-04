@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -183,12 +183,12 @@ func (pg *Postgres) getNewMiddleWare(db *sql.DB) *sqlmiddleware.DB {
 		sqlmiddleware.WithStats(pg.stats),
 		sqlmiddleware.WithLogger(pg.logger),
 		sqlmiddleware.WithKeyAndValues(
-			logfield.SourceID, pg.Warehouse.Source.ID,
-			logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, pg.Warehouse.Destination.ID,
-			logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-			logfield.Schema, pg.Namespace,
+			obskit.SourceID(pg.Warehouse.Source.ID),
+			obskit.SourceType(pg.Warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(pg.Warehouse.Destination.ID),
+			obskit.DestinationType(pg.Warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(pg.Warehouse.WorkspaceID),
+			obskit.Namespace(pg.Namespace),
 		),
 		sqlmiddleware.WithSlowQueryThreshold(pg.config.slowQueryThreshold),
 		sqlmiddleware.WithQueryTimeout(pg.connectTimeout),

@@ -10,8 +10,11 @@ import (
 
 	"github.com/samber/lo"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -347,13 +350,13 @@ func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 		for columnName := range columnMap {
 			if deprecatedColumnsRegex.MatchString(columnName) {
 				sh.log.Debugw("skipping deprecated column",
-					logfield.SourceID, sh.warehouse.Source.ID,
-					logfield.DestinationID, sh.warehouse.Destination.ID,
-					logfield.DestinationType, sh.warehouse.Destination.DestinationDefinition.Name,
-					logfield.WorkspaceID, sh.warehouse.WorkspaceID,
-					logfield.Namespace, sh.warehouse.Namespace,
-					logfield.TableName, tableName,
-					logfield.ColumnName, columnName,
+					obskit.SourceID(sh.warehouse.Source.ID),
+					obskit.DestinationID(sh.warehouse.Destination.ID),
+					obskit.DestinationType(sh.warehouse.Destination.DestinationDefinition.Name),
+					obskit.WorkspaceID(sh.warehouse.WorkspaceID),
+					obskit.Namespace(sh.warehouse.Namespace),
+					logger.NewStringField(logfield.TableName, tableName),
+					logger.NewStringField(logfield.ColumnName, columnName),
 				)
 				delete(schema[tableName], columnName)
 			}

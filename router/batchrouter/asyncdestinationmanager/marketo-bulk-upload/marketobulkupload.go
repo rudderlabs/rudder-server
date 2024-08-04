@@ -12,15 +12,16 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 type MarketoBulkUploader struct {
@@ -96,9 +97,9 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 
 	if asyncResponse.Error != "" {
 		b.logger.Errorw("[Batch Router] Failed to fetch status for",
-			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			obskit.DestinationType("MARKETO_BULK_UPLOAD"),
 			"body", string(bodyBytes[:512]),
-			lf.Error, asyncResponse.Error,
+			"errpr", asyncResponse.Error,
 		)
 		return common.PollStatusResponse{
 			StatusCode: 500,
@@ -173,9 +174,9 @@ func (b *MarketoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSt
 
 	if failedJobsResponse.Error != "" {
 		b.logger.Errorw("[Batch Router] Failed to fetch status for",
-			lf.DestinationType, "MARKETO_BULK_UPLOAD",
+			obskit.DestinationType("MARKETO_BULK_UPLOAD"),
 			"body", string(failedBodyBytes),
-			lf.Error, failedJobsResponse.Error,
+			"error", failedJobsResponse.Error,
 		)
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,

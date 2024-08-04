@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
@@ -241,12 +242,12 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 		sqlmiddleware.WithStats(d.stats),
 		sqlmiddleware.WithLogger(d.logger),
 		sqlmiddleware.WithKeyAndValues(
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Schema, d.Namespace,
+			obskit.SourceID(d.Warehouse.Source.ID),
+			obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(d.Warehouse.Destination.ID),
+			obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+			obskit.Namespace(d.Namespace),
 		),
 		sqlmiddleware.WithSlowQueryThreshold(d.config.slowQueryThreshold),
 		sqlmiddleware.WithQueryTimeout(d.connectTimeout),
@@ -269,13 +270,13 @@ func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
 		d.logger.Warnw("fetching tables for dropping dangling staging tables",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.Error, err.Error(),
+			obskit.SourceID(d.Warehouse.Source.ID),
+			obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(d.Warehouse.Destination.ID),
+			obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+			obskit.Namespace(d.Namespace),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("fetching tables for dropping dangling staging tables: %w", err)
 	}
@@ -322,14 +323,14 @@ func (d *Deltalake) dropStagingTables(ctx context.Context, stagingTables []strin
 		err := d.dropTable(ctx, stagingTable)
 		if err != nil {
 			d.logger.Warnw("dropping staging table",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.StagingTableName, stagingTable,
-				logfield.Error, err.Error(),
+				obskit.SourceID(d.Warehouse.Source.ID),
+				obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+				obskit.DestinationID(d.Warehouse.Destination.ID),
+				obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+				obskit.Namespace(d.Namespace),
+				logger.NewStringField(logfield.StagingTableName, stagingTable),
+				obskit.Error(err),
 			)
 			return fmt.Errorf("dropping staging table: %w", err)
 		}
@@ -572,15 +573,15 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if len(columnsInfo) == 1 {
 		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
 			d.logger.Infow("column already exists",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.TableName, tableName,
-				logfield.ColumnName, columnsInfo[0].Name,
-				logfield.Error, err.Error(),
+				obskit.SourceID(d.Warehouse.Source.ID),
+				obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+				obskit.DestinationID(d.Warehouse.Destination.ID),
+				obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+				obskit.Namespace(d.Namespace),
+				logger.NewStringField(logfield.TableName, tableName),
+				logger.NewStringField(logfield.ColumnName, columnsInfo[0].Name),
+				obskit.Error(err),
 			)
 			return nil
 		}
@@ -624,14 +625,14 @@ func (d *Deltalake) loadTable(
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
 	log := d.logger.With(
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, d.ShouldMerge(),
+		obskit.SourceID(d.Warehouse.Source.ID),
+		obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(d.Warehouse.Destination.ID),
+		obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+		obskit.Namespace(d.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, d.ShouldMerge()),
 	)
 	log.Infow("started loading")
 
@@ -651,7 +652,7 @@ func (d *Deltalake) loadTable(
 			err := d.dropStagingTables(ctx, []string{stagingTableName})
 			if err != nil {
 				log.Errorw("dropping staging table",
-					logfield.Error, err.Error(),
+					obskit.Error(err),
 				)
 			}
 		}()
@@ -1009,12 +1010,12 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	)
 
 	d.logger.Infow("started loading for identifies and users tables",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
+		obskit.SourceID(d.Warehouse.Source.ID),
+		obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(d.Warehouse.Destination.ID),
+		obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+		obskit.Namespace(d.Namespace),
 	)
 
 	_, identifyStagingTable, err := d.loadTable(ctx, warehouseutils.IdentifiesTable, identifiesSchemaInUpload, identifiesSchemaInWarehouse, true)
@@ -1028,14 +1029,14 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		err := d.dropStagingTables(ctx, []string{identifyStagingTable})
 		if err != nil {
 			d.logger.Warnw("dropped staging table",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.StagingTableName, identifyStagingTable,
-				logfield.Error, err.Error(),
+				obskit.SourceID(d.Warehouse.Source.ID),
+				obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+				obskit.DestinationID(d.Warehouse.Destination.ID),
+				obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+				obskit.Namespace(d.Namespace),
+				logger.NewStringField(logfield.StagingTableName, identifyStagingTable),
+				obskit.Error(err),
 			)
 		}
 	}()
@@ -1114,14 +1115,14 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 		err := d.dropStagingTables(ctx, []string{stagingTableName})
 		if err != nil {
 			d.logger.Warnw("dropped staging table",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.StagingTableName, stagingTableName,
-				logfield.Error, err.Error(),
+				obskit.SourceID(d.Warehouse.Source.ID),
+				obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+				obskit.DestinationID(d.Warehouse.Destination.ID),
+				obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+				obskit.Namespace(d.Namespace),
+				logger.NewStringField(logfield.StagingTableName, stagingTableName),
+				obskit.Error(err),
 			)
 		}
 	}()
@@ -1213,12 +1214,12 @@ func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	}).Count(int(updated))
 
 	d.logger.Infow("completed loading for users and identifies tables",
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
+		obskit.SourceID(d.Warehouse.Source.ID),
+		obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(d.Warehouse.Destination.ID),
+		obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+		obskit.Namespace(d.Namespace),
 	)
 
 	return map[string]error{
@@ -1267,13 +1268,13 @@ func (d *Deltalake) Cleanup(ctx context.Context) {
 		err := d.dropDanglingStagingTables(ctx)
 		if err != nil {
 			d.logger.Warnw("Error dropping dangling staging tables",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.Error, err.Error(),
+				obskit.SourceID(d.Warehouse.Source.ID),
+				obskit.SourceType(d.Warehouse.Source.SourceDefinition.Name),
+				obskit.DestinationID(d.Warehouse.Destination.ID),
+				obskit.DestinationType(d.Warehouse.Destination.DestinationDefinition.Name),
+				obskit.WorkspaceID(d.Warehouse.WorkspaceID),
+				obskit.Namespace(d.Namespace),
+				obskit.Error(err),
 			)
 		}
 		_ = d.DB.Close()

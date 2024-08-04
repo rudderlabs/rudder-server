@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -74,7 +74,7 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
 	if err != nil {
-		job.logger.Errorw(`Getting total rows in load files`, logfield.Error, err)
+		job.logger.Errorw(`Getting total rows in load files`, obskit.Error(err))
 		return 0
 	}
 	return exportedEvents

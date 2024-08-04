@@ -10,6 +10,8 @@ import (
 
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -210,7 +212,7 @@ func (db *DB) WithTx(ctx context.Context, fn func(*Tx) error) error {
 
 	if err = fn(tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			keysAndValues := []any{logfield.Error, fmt.Errorf("executing transaction: %s, rollback: %s", err.Error(), rollbackErr.Error()).Error()}
+			keysAndValues := []any{obskit.Error(fmt.Errorf("executing transaction: %s, rollback: %s", err.Error(), rollbackErr.Error()))}
 			keysAndValues = append(keysAndValues, db.keysAndValues...)
 
 			db.logger.Warnw("failed rollback transaction", keysAndValues...)
@@ -231,8 +233,8 @@ func (db *DB) logQuery(query string, since time.Time) logQ {
 			sanitizedQuery, _ = misc.ReplaceMultiRegex(query, db.secretsRegex)
 
 			keysAndValues = []any{
-				logfield.Query, sanitizedQuery,
-				logfield.QueryExecutionTime, db.since(since),
+				rslogger.NewStringField(logfield.Query, sanitizedQuery),
+				rslogger.NewDurationField(logfield.QueryExecutionTime, db.since(since)),
 			}
 			keysAndValues = append(keysAndValues, db.keysAndValues...)
 		}

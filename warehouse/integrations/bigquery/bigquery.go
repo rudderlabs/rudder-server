@@ -17,6 +17,8 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -145,12 +147,12 @@ func (bq *BigQuery) getMiddleware() *middleware.Client {
 		bq.db,
 		middleware.WithLogger(bq.logger),
 		middleware.WithKeyAndValues(
-			logfield.SourceID, bq.warehouse.Source.ID,
-			logfield.SourceType, bq.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, bq.warehouse.Destination.ID,
-			logfield.DestinationType, bq.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, bq.warehouse.WorkspaceID,
-			logfield.Schema, bq.namespace,
+			obskit.SourceID(bq.warehouse.Source.ID),
+			obskit.SourceType(bq.warehouse.Source.SourceDefinition.Name),
+			obskit.DestinationID(bq.warehouse.Destination.ID),
+			obskit.DestinationType(bq.warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(bq.warehouse.WorkspaceID),
+			obskit.Namespace(bq.namespace),
 		),
 		middleware.WithSlowQueryThreshold(bq.config.slowQueryThreshold),
 	)
@@ -344,14 +346,14 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	*types.LoadTableStats, *loadTableResponse, error,
 ) {
 	log := bq.logger.With(
-		logfield.SourceID, bq.warehouse.Source.ID,
-		logfield.SourceType, bq.warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, bq.warehouse.Destination.ID,
-		logfield.DestinationType, bq.warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, bq.warehouse.WorkspaceID,
-		logfield.Namespace, bq.namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, false, // we don't support merging in BigQuery due to its cost limitations
+		obskit.SourceID(bq.warehouse.Source.ID),
+		obskit.SourceType(bq.warehouse.Source.SourceDefinition.Name),
+		obskit.DestinationID(bq.warehouse.Destination.ID),
+		obskit.DestinationType(bq.warehouse.Destination.DestinationDefinition.Name),
+		obskit.WorkspaceID(bq.warehouse.WorkspaceID),
+		obskit.Namespace(bq.namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, false), // we don't support merging in BigQuery due to its cost limitations
 	)
 	log.Infow("started loading")
 
