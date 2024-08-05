@@ -22,17 +22,10 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 
 	configCh := make(chan pubsub.DataEvent)
 
-	var ready sync.WaitGroup
-	ready.Add(2)
-
-	var storageSettings sync.WaitGroup
-	storageSettings.Add(1)
-
 	config.EXPECT().Subscribe(
 		gomock.Any(),
 		gomock.Eq(backendconfig.TopicBackendConfig),
 	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ready.Done()
 		go func() {
 			<-ctx.Done()
 			close(configCh)
@@ -47,16 +40,10 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	var err error
 	var preferences backendconfig.StoragePreferences
 
-	go func() {
-		ready.Done()
-		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
-		storageSettings.Done()
-	}()
-
 	// When the config backend has not published any event yet
-	ready.Wait()
+	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
-	Expect(err).To(BeNil())
+	Expect(err).To(Equal(ErrNotSubscribed))
 
 	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
 	t.Setenv("JOBS_BACKUP_DEFAULT_PREFIX", "defaultPrefixWithStorageTTL")
@@ -118,37 +105,68 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
 
-	fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
-	Expect(err).To(BeNil())
-	Expect(fm1.Prefix()).To(Equal("fullStoragePrefixWithNoTTL"))
+	require.Eventually(t, func() bool {
+		fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
+		if err != nil {
+			return false
+		}
+		if fm1 == nil || fm1.Prefix() != "fullStoragePrefixWithNoTTL" {
+			return false
+		}
 
-	fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
-	Expect(err).To(BeNil())
-	Expect(fm3.Prefix()).To(Equal("defaultPrefixWithStorageTTL"))
+		fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
+		if err != nil {
+			return false
+		}
+		if fm3 == nil || fm3.Prefix() != "defaultPrefixWithStorageTTL" {
+			return false
+		}
 
-	fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
-	Expect(err).To(Equal(ErrNoStorageForWorkspace))
-	Expect(fm0).To(BeNil())
+		fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
+		if err != ErrNoStorageForWorkspace {
+			return false
+		}
+		if fm0 != nil {
+			return false
+		}
 
-	fm2, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
-	Expect(err).To(Equal(ErrNoStorageForWorkspace))
-	Expect(fm2).To(BeNil())
+		fm2, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
+		if err != ErrNoStorageForWorkspace {
+			return false
+		}
+		if fm2 != nil {
+			return false
+		}
 
-	storageSettings.Wait()
-	Expect(preferences).To(Equal(
-		backendconfig.StoragePreferences{
+		preferences, err := fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
+		if err != nil {
+			return false
+		}
+		if preferences != (backendconfig.StoragePreferences{
 			ProcErrors:   true,
 			GatewayDumps: false,
-		},
-	))
+		}) {
+			return false
+		}
 
-	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
-	Expect(err).To(Equal(ErrNoStorageForWorkspace))
-	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
+		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
+		if err != ErrNoStorageForWorkspace {
+			return false
+		}
+		if preferences != (backendconfig.StoragePreferences{}) {
+			return false
+		}
 
-	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
-	Expect(err).To(Equal(ErrNoStorageForWorkspace))
-	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
+		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
+		if err != ErrNoStorageForWorkspace {
+			return false
+		}
+		if preferences != (backendconfig.StoragePreferences{}) {
+			return false
+		}
+
+		return true
+	}, time.Second, 50*time.Millisecond)
 
 	configCh <- pubsub.DataEvent{
 		Data: map[string]backendconfig.ConfigT{
