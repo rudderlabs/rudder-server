@@ -212,7 +212,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
 			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
 			WHERE
-				_PARTITIONTIME BETWEEN TIMESTAMP_TRUNC(
+				received_at BETWEEN TIMESTAMP_TRUNC(
 					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 24 * 60 * 1000000),
 					DAY,
 					'UTC'
@@ -539,9 +539,15 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		_ = bq.createTableView(ctx, warehouseutils.UsersTable, userColMap)
 	}
 
+	firstEventAt, lastEventAt := bq.uploader.GetFirstLastEvent()
+
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
-	partition := fmt.Sprintf("TIMESTAMP('%s')", identifyLoadTable.partitionDate)
-	identifiesFrom := fmt.Sprintf(`%s WHERE _PARTITIONTIME = %s AND user_id IS NOT NULL %s`, bqIdentifiesTable, partition, loadedAtFilter())
+	identifiesFrom := fmt.Sprintf(`%s WHERE received_at >= '%s' AND received_at <= '%s' AND user_id IS NOT NULL %s`,
+		bqIdentifiesTable,
+		firstEventAt.Format("2006-01-02"),
+		lastEventAt.Add(24*time.Hour).Format("2006-01-02"), // Daily partition handling onlt for now
+		loadedAtFilter(),
+	)
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
@@ -560,7 +566,12 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	)
 	loadUserTableByAppend := func() {
 		bq.logger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
+
 		partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
+		if bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+			partitionedUsersTable = warehouseutils.UsersTable
+		}
+
 		query := bq.db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(partitionedUsersTable)
 		query.WriteDisposition = bigquery.WriteAppend
