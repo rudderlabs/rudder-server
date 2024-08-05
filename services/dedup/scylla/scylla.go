@@ -21,7 +21,8 @@ type ScyllaDB struct {
 	ttl int
 	// Maximum number of keys to commit in a single batch
 	batchSize      int
-	createTableMap map[string]struct{}
+	createTableMu  sync.Mutex
+	createTableMap map[string]*sync.Once
 
 	cacheMu  sync.Mutex
 	cache    map[string]types.KeyValue
@@ -34,13 +35,20 @@ func (d *ScyllaDB) Close() {
 
 func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Create the table if it doesn't exist
-	if _, ok := d.createTableMap[kv.WorkspaceId]; !ok {
+	var err error
+	d.createTableMu.Lock()
+	once, found := d.createTableMap[kv.WorkspaceId]
+	if !found {
+		d.createTableMap[kv.WorkspaceId] = &sync.Once{}
+		once = d.createTableMap[kv.WorkspaceId]
+	}
+	d.createTableMu.Unlock()
+	once.Do(func() {
 		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceId)
-		err := d.scylla.Query(query).Exec()
-		if err != nil {
-			return false, 0, fmt.Errorf("error creating table %s: %v", kv.WorkspaceId, err)
-		}
-		d.createTableMap[kv.WorkspaceId] = struct{}{}
+		err = d.scylla.Query(query).Exec()
+	})
+	if err != nil {
+		return false, 0, fmt.Errorf("error creating table %s: %v", kv.WorkspaceId, err)
 	}
 
 	d.cacheMu.Lock()
@@ -54,15 +62,15 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 
 	// Check if the key exists in the DB
 	var value int64
-	err := d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceId), kv.Key).Scan(&value)
+	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceId), kv.Key).Scan(&value)
 	if err != nil && err != gocql.ErrNotFound {
 		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
-	found := !(err == gocql.ErrNotFound)
-	if !found {
+	exists := !(err == gocql.ErrNotFound)
+	if !exists {
 		d.cache[kv.Key] = kv
 	}
-	return !found, kv.Value, nil
+	return !exists, kv.Value, nil
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {
@@ -121,7 +129,7 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 		ttl:            conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
 		batchSize:      conf.GetInt("Scylla.BatchSize", 100),
 		cache:          make(map[string]types.KeyValue),
-		createTableMap: make(map[string]struct{}),
+		createTableMap: make(map[string]*sync.Once),
 	}
 	return scylla, nil
 }
