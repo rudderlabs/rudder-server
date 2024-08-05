@@ -1,19 +1,17 @@
 package archive_test
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
@@ -186,7 +184,12 @@ func TestArchiver(t *testing.T) {
 				}
 			}
 
-			contents := minioContents(t, ctx, minioResource, prefix)
+			minioContents, err := minioResource.Contents(ctx, prefix)
+			require.NoError(t, err)
+
+			contents := lo.SliceToMap(minioContents, func(item minio.File) (string, string) {
+				return item.Key, item.Content
+			})
 
 			var expectedContents map[string]string
 			jsonTestData(t, "testdata/storage.json", &expectedContents)
@@ -209,32 +212,6 @@ func TestArchiver(t *testing.T) {
 			}
 		})
 	}
-}
-
-func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {
-	contents := make(map[string]string)
-
-	doneCh := make(chan struct{})
-	defer close(doneCh)
-
-	opts := miniogo.ListObjectsOptions{
-		Recursive: true,
-		Prefix:    prefix,
-	}
-	for objInfo := range dest.Client.ListObjects(ctx, dest.BucketName, opts) {
-		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, miniogo.GetObjectOptions{})
-		require.NoError(t, err)
-
-		g, err := gzip.NewReader(o)
-		require.NoError(t, err)
-
-		b, err := io.ReadAll(g)
-		require.NoError(t, err)
-
-		contents[objInfo.Key] = string(b)
-	}
-
-	return contents
 }
 
 func jsonTestData(t require.TestingT, file string, value any) {
