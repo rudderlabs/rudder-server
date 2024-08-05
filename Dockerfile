@@ -13,7 +13,7 @@ ARG RACE_ENABLED=false
 ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
 
-RUN apk add --update make tzdata ca-certificates
+RUN apk add --no-cache --update make tzdata ca-certificates 
 
 WORKDIR /rudder-server
 
@@ -35,6 +35,8 @@ FROM alpine:${ALPINE_VERSION}
 
 RUN apk --no-cache upgrade && \
     apk --no-cache add tzdata ca-certificates postgresql-client curl bash
+
+WORKDIR /
 
 COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .

@@ -100,19 +100,40 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          outputs: type=docker,dest=/tmp/myimage.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run TruffleHog on Docker image
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v /tmp:/tmp \
+            trufflesecurity/trufflehog:latest \
+            --no-verification \
+            filesystem --directory=/tmp/myimage.tar  
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
+        if: success()
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |

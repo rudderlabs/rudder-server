@@ -79,3 +79,8 @@ jobs:
         with:
           version: v1.57.1
           args: -v
+      - name: Lint Dockerfile
+        run: 	docker run --rm -i hadolint/hadolint < Dockerfile
+      - name: Lint Dockerfile
+        run: 	docker run --rm -i hadolint/hadolint < ./suppression-backup-service/Dockerfile
+

@@ -101,6 +101,8 @@ lint: fmt ## Run linters on all go files
 	$(GO) run $(GOLANGCI) run -v
 	$(GO) run $(govulncheck) ./...
 	$(GO) run $(actionlint)
+	docker run --rm -i hadolint/hadolint < Dockerfile
+	docker run --rm -i hadolint/hadolint < ./suppression-backup-service/Dockerfile
 
 .PHONY: fmt
 fmt: install-tools ## Formats all go files
