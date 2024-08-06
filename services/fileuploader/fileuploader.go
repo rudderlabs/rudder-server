@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/samber/lo"
@@ -29,18 +28,22 @@ var (
 
 // Provider is an interface that provides file managers and storage preferences for a given workspace.
 type Provider interface {
-	// Gets a file manager for the given workspace.
-	GetFileManager(workspaceID string) (filemanager.FileManager, error)
-	// Gets the storage preferences for the given workspace.
-	GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error)
+	// GetFileManager gets a file manager for the given workspace.
+	GetFileManager(ctx context.Context, workspaceID string) (filemanager.FileManager, error)
+	// GetStoragePreferences gets the storage preferences for the given workspace.
+	GetStoragePreferences(ctx context.Context, workspaceID string) (backendconfig.StoragePreferences, error)
 }
 
 // NewProvider creates a new provider that updates its storage settings while backend configuration gets updated.
 func NewProvider(ctx context.Context, config backendconfig.BackendConfig) Provider {
 	s := &provider{
+		init:            make(chan struct{}),
+		notSubscribed:   make(chan struct{}),
 		storageSettings: make(map[string]StorageSettings),
 	}
+
 	go s.updateLoop(ctx, config)
+
 	return s
 }
 
@@ -48,8 +51,11 @@ func NewProvider(ctx context.Context, config backendconfig.BackendConfig) Provid
 // Useful for tests.
 func NewStaticProvider(storageSettings map[string]StorageSettings) Provider {
 	s := &provider{
+		init:            make(chan struct{}),
+		notSubscribed:   make(chan struct{}),
 		storageSettings: storageSettings,
 	}
+
 	s.fileManagerMap = make(map[string]func() (filemanager.FileManager, error))
 	for workspaceID, settings := range storageSettings {
 		if settings.Bucket.Type != "" {
@@ -61,7 +67,9 @@ func NewStaticProvider(storageSettings map[string]StorageSettings) Provider {
 			})
 		}
 	}
-	s.subscribed.Store(true)
+
+	close(s.init)
+
 	return s
 }
 
@@ -73,44 +81,71 @@ func NewDefaultProvider() Provider {
 }
 
 type provider struct {
-	subscribed      atomic.Bool
+	init          chan struct{}
+	initOnce      sync.Once
+	notSubscribed chan struct{}
+
 	mu              sync.RWMutex
 	storageSettings map[string]StorageSettings
 	fileManagerMap  map[string]func() (filemanager.FileManager, error)
 }
 
-func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, error) {
-	if !p.subscribed.Load() {
-		return nil, ErrNotSubscribed
+func (p *provider) GetFileManager(ctx context.Context, workspaceID string) (filemanager.FileManager, error) {
+	if err := p.blockUntilInit(ctx); err != nil {
+		return nil, err
 	}
+
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 	fileManager, ok := p.fileManagerMap[workspaceID]
+	p.mu.RUnlock()
 	if !ok {
 		return nil, ErrNoStorageForWorkspace
 	}
 	return fileManager()
 }
 
-func (p *provider) GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error) {
+func (p *provider) GetStoragePreferences(ctx context.Context, workspaceID string) (backendconfig.StoragePreferences, error) {
 	var prefs backendconfig.StoragePreferences
-	if !p.subscribed.Load() {
-		return prefs, ErrNotSubscribed
+	if err := p.blockUntilInit(ctx); err != nil {
+		return prefs, err
 	}
+
 	p.mu.RLock()
-	defer p.mu.RUnlock()
 	settings, ok := p.storageSettings[workspaceID]
+	p.mu.RUnlock()
 	if !ok {
 		return prefs, ErrNoStorageForWorkspace
 	}
 	return settings.Preferences, nil
 }
 
+// blockUntilInit blocks until:
+// - the provider is initialized
+// - the provider is not subscribed to the backend config anymore
+// - the context is done
+// If it has been initialized at least once, we still check if it's not subscribed to the backend config.
+// If that were to happen there might be a small chance of serving stale data.
+func (p *provider) blockUntilInit(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-p.notSubscribed:
+		return ErrNotSubscribed
+	case <-p.init:
+		select {
+		case <-p.notSubscribed:
+			return ErrNotSubscribed
+		default:
+			return nil
+		}
+	}
+}
+
 // updateLoop uses backend config to retrieve & keep up-to-date the storage settings of all workspaces.
 func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.BackendConfig) {
-	ch := backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	defer close(p.notSubscribed)
 
-	for ev := range ch {
+	for ev := range backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig) {
 		p.mu.RLock()
 		currentSettingsMap := lo.Assign(p.storageSettings)
 		currentFileManagerMap := lo.Assign(p.fileManagerMap)
@@ -177,14 +212,16 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 		p.storageSettings = settingsMap
 		p.fileManagerMap = filemanagerMap
 		p.mu.Unlock()
-		p.subscribed.Store(true)
+
+		p.initOnce.Do(func() {
+			close(p.init)
+		})
 	}
-	p.subscribed.Store(false)
 }
 
 type defaultProvider struct{}
 
-func (*defaultProvider) GetFileManager(string) (filemanager.FileManager, error) {
+func (*defaultProvider) GetFileManager(context.Context, string) (filemanager.FileManager, error) {
 	defaultConfig := getDefaultBucket(context.Background(), config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 	return filemanager.New(&filemanager.Settings{
 		Provider: defaultConfig.Type,
@@ -192,7 +229,7 @@ func (*defaultProvider) GetFileManager(string) (filemanager.FileManager, error) 
 	})
 }
 
-func (*defaultProvider) GetStoragePreferences(string) (backendconfig.StoragePreferences, error) {
+func (*defaultProvider) GetStoragePreferences(context.Context, string) (backendconfig.StoragePreferences, error) {
 	return backendconfig.StoragePreferences{
 		ProcErrors:       true,
 		GatewayDumps:     true,
