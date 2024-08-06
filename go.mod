@@ -10,6 +10,7 @@ replace (
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.2
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.12
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
@@ -79,6 +80,7 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.36.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.0
+	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240724120814-87dc97b22230
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.7.4
 	github.com/samber/lo v1.46.0
