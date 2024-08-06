@@ -99,7 +99,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		b.logger.Errorw("[Batch Router] Failed to fetch status for",
 			obskit.DestinationType("MARKETO_BULK_UPLOAD"),
 			"body", string(bodyBytes[:512]),
-			"errpr", asyncResponse.Error,
+			"error", asyncResponse.Error,
 		)
 		return common.PollStatusResponse{
 			StatusCode: 500,

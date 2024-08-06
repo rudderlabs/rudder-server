@@ -410,7 +410,10 @@ func (sf *Snowflake) loadTable(
 		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
 			return item.String()
 		})
-		log.Infow("sample duplicate rows", obskit.UploadID(uploadID), logger.NewField(lf.SampleDuplicateMessages, formattedDuplicateMessages))
+		log.Infow("sample duplicate rows",
+			obskit.UploadID(uploadID),
+			logger.NewField(lf.SampleDuplicateMessages, formattedDuplicateMessages),
+		)
 	}
 
 	log.Infow("merge data into load table")

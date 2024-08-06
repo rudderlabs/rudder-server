@@ -543,7 +543,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 		obskit.SourceID(req.SourceId),
 		obskit.DestinationID(req.DestinationId),
 		obskit.DestinationType(req.DestinationType),
-		logger.NewField(lf.IntervalInHours, req.IntervalInHours),
+		logger.NewIntField(lf.IntervalInHours, req.IntervalInHours),
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
