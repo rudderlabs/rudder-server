@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.31.0](https://github.com/rudderlabs/rudder-server/compare/v1.30.4...v1.31.0) (2024-08-05)
+
+
+### Features
+
+* add file number and same file path prefix in sftp ([#4739](https://github.com/rudderlabs/rudder-server/issues/4739)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* redshift iam support ([#4906](https://github.com/rudderlabs/rudder-server/issues/4906)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+
+
+### Miscellaneous
+
+* add handling for alias events in tracked users report ([#4899](https://github.com/rudderlabs/rudder-server/issues/4899)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* automate server release on hosted with prerelease ([#4915](https://github.com/rudderlabs/rudder-server/issues/4915)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* change mockgen to uber library ([#4909](https://github.com/rudderlabs/rudder-server/issues/4909)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump docker/login-action from 3.1.0 to 3.3.0 ([#4914](https://github.com/rudderlabs/rudder-server/issues/4914)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.54.19 to 1.54.20 in the frequent group ([#4907](https://github.com/rudderlabs/rudder-server/issues/4907)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump the frequent group across 1 directory with 3 updates ([#4917](https://github.com/rudderlabs/rudder-server/issues/4917)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump the go-deps group across 1 directory with 4 updates ([#4912](https://github.com/rudderlabs/rudder-server/issues/4912)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump the go-deps group across 1 directory with 7 updates ([#4941](https://github.com/rudderlabs/rudder-server/issues/4941)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* **deps:** bump the go-deps group across 1 directory with 9 updates ([#4970](https://github.com/rudderlabs/rudder-server/issues/4970)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* integrate sqlconnect-go for databricks ([#4932](https://github.com/rudderlabs/rudder-server/issues/4932)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* integrate sqlconnect-go for snowflake ([#4936](https://github.com/rudderlabs/rudder-server/issues/4936)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* refactor dedup package ([#4913](https://github.com/rudderlabs/rudder-server/issues/4913)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* sync release v1.30.0 to main branch ([#4918](https://github.com/rudderlabs/rudder-server/issues/4918)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* sync release v1.30.4 to main branch ([#4956](https://github.com/rudderlabs/rudder-server/issues/4956)) ([a9c30ae](https://github.com/rudderlabs/rudder-server/commit/a9c30ae201238306902898e019b1a05deea7df70))
+* temp file cleanup for sftp ([#4931](https://github.com/rudderlabs/rudder-server/issues/4931)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* trigger release workflow after release ([#4940](https://github.com/rudderlabs/rudder-server/issues/4940)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+* update sync-release action to run on all release prs ([#4967](https://github.com/rudderlabs/rudder-server/issues/4967)) ([65ad974](https://github.com/rudderlabs/rudder-server/commit/65ad974b444a97f673aedf6788e28b8993d15343))
+
 ## [1.30.4](https://github.com/rudderlabs/rudder-server/compare/v1.30.3...v1.30.4) (2024-07-31)
 
 
