@@ -41,7 +41,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	var preferences backendconfig.StoragePreferences
 
 	// When the config backend has not published any event yet
-	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
+	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-1")
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 	Expect(err).To(Equal(ErrNotSubscribed))
 
@@ -106,7 +106,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		fm1, err := fileUploaderProvider.GetFileManager("testWorkspaceId-1")
+		fm1, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-1")
 		if err != nil {
 			return false
 		}
@@ -114,7 +114,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		fm3, err := fileUploaderProvider.GetFileManager("testWorkspaceId-3")
+		fm3, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-3")
 		if err != nil {
 			return false
 		}
@@ -122,7 +122,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		fm0, err := fileUploaderProvider.GetFileManager("testWorkspaceId-0")
+		fm0, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-0")
 		if err != ErrNoStorageForWorkspace {
 			return false
 		}
@@ -130,7 +130,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		fm2, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
+		fm2, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-2")
 		if err != ErrNoStorageForWorkspace {
 			return false
 		}
@@ -138,7 +138,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		preferences, err := fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
+		preferences, err := fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-1")
 		if err != nil {
 			return false
 		}
@@ -149,7 +149,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
+		preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-0")
 		if err != ErrNoStorageForWorkspace {
 			return false
 		}
@@ -157,7 +157,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 
-		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
+		preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-2")
 		if err != ErrNoStorageForWorkspace {
 			return false
 		}
@@ -190,7 +190,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	}
 	require.Eventually(t, func() bool {
 		t.Log("testWorkspaceId-2 uploader not updated yet")
-		_, err := fileUploaderProvider.GetFileManager("testWorkspaceId-2")
+		_, err := fileUploaderProvider.GetFileManager(ctx, "testWorkspaceId-2")
 		return err == nil
 	}, time.Second, 5*time.Millisecond)
 }
@@ -216,7 +216,7 @@ func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
 
 	p := NewProvider(context.Background(), config)
 	ready.Wait()
-	_, err := p.GetFileManager("testWorkspaceId-1")
+	_, err := p.GetFileManager(context.Background(), "testWorkspaceId-1")
 	Expect(err).To(Equal(ErrNotSubscribed))
 }
 
@@ -241,11 +241,11 @@ func TestStaticProvider(t *testing.T) {
 	}
 	p := NewStaticProvider(storageSettings)
 
-	prefs, err := p.GetStoragePreferences("testWorkspaceId-1")
+	prefs, err := p.GetStoragePreferences(context.Background(), "testWorkspaceId-1")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(prefs))
 
-	_, err = p.GetFileManager("testWorkspaceId-1")
+	_, err = p.GetFileManager(context.Background(), "testWorkspaceId-1")
 	Expect(err).To(BeNil())
 }
 
@@ -253,7 +253,7 @@ func TestDefaultProvider(t *testing.T) {
 	RegisterTestingT(t)
 	d := NewDefaultProvider()
 
-	prefs, err := d.GetStoragePreferences("")
+	prefs, err := d.GetStoragePreferences(context.Background(), "")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
 		ProcErrors:       true,
@@ -263,7 +263,7 @@ func TestDefaultProvider(t *testing.T) {
 		RouterDumps:      true,
 	}))
 
-	_, err = d.GetFileManager("")
+	_, err = d.GetFileManager(context.Background(), "")
 	Expect(err).To(BeNil())
 }
 
