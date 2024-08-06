@@ -45,14 +45,18 @@ import (
 )
 
 type testCredentials struct {
-	Host        string `json:"host"`
-	Port        string `json:"port"`
-	UserName    string `json:"userName"`
-	Password    string `json:"password"`
-	DbName      string `json:"dbName"`
-	BucketName  string `json:"bucketName"`
-	AccessKeyID string `json:"accessKeyID"`
-	AccessKey   string `json:"accessKey"`
+	Host          string `json:"host"`
+	Port          string `json:"port"`
+	UserName      string `json:"userName"`
+	IAMUserName   string `json:"iamUserName"`
+	Password      string `json:"password"`
+	DbName        string `json:"dbName"`
+	BucketName    string `json:"bucketName"`
+	AccessKeyID   string `json:"accessKeyID"`
+	AccessKey     string `json:"accessKey"`
+	IAMRoleARN    string `json:"iamRoleARN"`
+	ClusterID     string `json:"clusterID"`
+	ClusterRegion string `json:"clusterRegion"`
 }
 
 const testKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
@@ -98,10 +102,14 @@ func TestIntegration(t *testing.T) {
 	sourcesSourceID := warehouseutils.RandHex()
 	sourcesDestinationID := warehouseutils.RandHex()
 	sourcesWriteKey := warehouseutils.RandHex()
+	iamSourceID := warehouseutils.RandHex()
+	iamDestinationID := warehouseutils.RandHex()
+	iamWriteKey := warehouseutils.RandHex()
 
 	destType := warehouseutils.RS
 
 	namespace := whth.RandSchema(destType)
+	iamNamespace := whth.RandSchema(destType)
 	sourcesNamespace := whth.RandSchema(destType)
 
 	rsTestCredentials, err := rsTestCredentials()
@@ -133,6 +141,9 @@ func TestIntegration(t *testing.T) {
 			"sourcesSourceID":      sourcesSourceID,
 			"sourcesDestinationID": sourcesDestinationID,
 			"sourcesWriteKey":      sourcesWriteKey,
+			"iamSourceID":          iamSourceID,
+			"iamDestinationID":     iamDestinationID,
+			"iamWriteKey":          iamWriteKey,
 			"host":                 rsTestCredentials.Host,
 			"port":                 rsTestCredentials.Port,
 			"user":                 rsTestCredentials.UserName,
@@ -143,7 +154,12 @@ func TestIntegration(t *testing.T) {
 			"accessKey":            rsTestCredentials.AccessKey,
 			"namespace":            namespace,
 			"sourcesNamespace":     sourcesNamespace,
+			"iamNamespace":         iamNamespace,
 			"preferAppend":         preferAppendStr,
+			"iamUser":              rsTestCredentials.IAMUserName,
+			"iamRoleARNForAuth":    rsTestCredentials.IAMRoleARN,
+			"clusterID":            rsTestCredentials.ClusterID,
+			"clusterRegion":        rsTestCredentials.ClusterRegion,
 		}
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
@@ -216,6 +232,42 @@ func TestIntegration(t *testing.T) {
 				schema:        namespace,
 				sourceID:      sourceID,
 				destinationID: destinationID,
+				warehouseEventsMap2: whth.EventsCountMap{
+					"identifies":    8,
+					"users":         1,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				preferAppend:      th.Ptr(true),
+				stagingFilePrefix: "testdata/upload-job-append-mode",
+				// an empty jobRunID means that the source is not an ETL one
+				// see Uploader.CanAppend()
+				jobRunID:      "",
+				useSameUserID: true,
+			},
+			{
+				name:              "IAM Upload Job",
+				writeKey:          iamWriteKey,
+				schema:            iamNamespace,
+				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				sourceID:          iamSourceID,
+				destinationID:     iamDestinationID,
+				stagingFilePrefix: "testdata/upload-job",
+				jobRunID:          misc.FastUUID().String(),
+			},
+			{
+				name:     "IAM Append Mode",
+				writeKey: iamWriteKey,
+				tables: []string{
+					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				},
+				schema:        iamNamespace,
+				sourceID:      iamSourceID,
+				destinationID: iamDestinationID,
 				warehouseEventsMap2: whth.EventsCountMap{
 					"identifies":    8,
 					"users":         1,
@@ -330,8 +382,6 @@ func TestIntegration(t *testing.T) {
 		}
 
 		for _, tc := range testcase {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
 				bootstrapSvc(t, tc.additionalEnvs, tc.preferAppend)
 
@@ -417,45 +467,89 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
-		t.Cleanup(func() {
-			require.Eventually(t, func() bool {
-				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-					t.Logf("error deleting schema: %v", err)
-					return false
-				}
-				return true
+		testCases := []struct {
+			name        string
+			destination backendconfig.DestinationT
+		}{
+			{
+				name: "With password",
+				destination: backendconfig.DestinationT{
+					ID: destinationID,
+					Config: map[string]interface{}{
+						"host":             rsTestCredentials.Host,
+						"port":             rsTestCredentials.Port,
+						"user":             rsTestCredentials.UserName,
+						"password":         rsTestCredentials.Password,
+						"database":         rsTestCredentials.DbName,
+						"bucketName":       rsTestCredentials.BucketName,
+						"accessKeyID":      rsTestCredentials.AccessKeyID,
+						"accessKey":        rsTestCredentials.AccessKey,
+						"namespace":        namespace,
+						"syncFrequency":    "30",
+						"enableSSE":        false,
+						"useRudderStorage": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+						Name:        "RS",
+						DisplayName: "Redshift",
+					},
+					Name:        "redshift-demo",
+					Enabled:     true,
+					RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+					WorkspaceID: workspaceID,
+				},
 			},
-				time.Minute,
-				time.Second,
-			)
-		})
-
-		dest := backendconfig.DestinationT{
-			ID: destinationID,
-			Config: map[string]interface{}{
-				"host":             rsTestCredentials.Host,
-				"port":             rsTestCredentials.Port,
-				"user":             rsTestCredentials.UserName,
-				"password":         rsTestCredentials.Password,
-				"database":         rsTestCredentials.DbName,
-				"bucketName":       rsTestCredentials.BucketName,
-				"accessKeyID":      rsTestCredentials.AccessKeyID,
-				"accessKey":        rsTestCredentials.AccessKey,
-				"namespace":        namespace,
-				"syncFrequency":    "30",
-				"enableSSE":        false,
-				"useRudderStorage": false,
+			{
+				name: "with IAM Role",
+				destination: backendconfig.DestinationT{
+					ID: destinationID,
+					Config: map[string]interface{}{
+						"user":              rsTestCredentials.IAMUserName,
+						"database":          rsTestCredentials.DbName,
+						"bucketName":        rsTestCredentials.BucketName,
+						"accessKeyID":       rsTestCredentials.AccessKeyID,
+						"accessKey":         rsTestCredentials.AccessKey,
+						"namespace":         iamNamespace,
+						"useIAMForAuth":     true,
+						"iamRoleARNForAuth": rsTestCredentials.IAMRoleARN,
+						"clusterId":         rsTestCredentials.ClusterID,
+						"clusterRegion":     rsTestCredentials.ClusterRegion,
+						"syncFrequency":     "30",
+						"enableSSE":         false,
+						"useRudderStorage":  false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+						Name:        "RS",
+						DisplayName: "Redshift",
+					},
+					Name:        "redshift-demo",
+					Enabled:     true,
+					RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+					WorkspaceID: workspaceID,
+				},
 			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
-				Name:        "RS",
-				DisplayName: "Redshift",
-			},
-			Name:       "redshift-demo",
-			Enabled:    true,
-			RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 		}
-		whth.VerifyConfigurationTest(t, dest)
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Cleanup(func() {
+					require.Eventually(t, func() bool {
+						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.destination.Config["namespace"])); err != nil {
+							t.Logf("error deleting schema: %v", err)
+							return false
+						}
+						return true
+					},
+						time.Minute,
+						time.Second,
+					)
+				})
+
+				whth.VerifyConfigurationTest(t, tc.destination)
+			})
+		}
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
@@ -466,43 +560,671 @@ func TestIntegration(t *testing.T) {
 		)
 
 		namespace := whth.RandSchema(destType)
+		iamNamespace := whth.RandSchema(destType)
 
-		t.Cleanup(func() {
-			require.Eventually(t, func() bool {
-				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-					t.Logf("error deleting schema: %v", err)
-					return false
-				}
-				return true
+		testCases := []struct {
+			name      string
+			warehouse model.Warehouse
+		}{
+			{
+				name: "With password",
+				warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destinationID,
+						Config: map[string]interface{}{
+							"host":             rsTestCredentials.Host,
+							"port":             rsTestCredentials.Port,
+							"user":             rsTestCredentials.UserName,
+							"password":         rsTestCredentials.Password,
+							"database":         rsTestCredentials.DbName,
+							"bucketName":       rsTestCredentials.BucketName,
+							"accessKeyID":      rsTestCredentials.AccessKeyID,
+							"accessKey":        rsTestCredentials.AccessKey,
+							"namespace":        namespace,
+							"syncFrequency":    "30",
+							"enableSSE":        false,
+							"useRudderStorage": false,
+						},
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+							Name:        "RS",
+							DisplayName: "Redshift",
+						},
+						Name:        "redshift-demo",
+						Enabled:     true,
+						RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+						WorkspaceID: workspaceID,
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   namespace,
+				},
 			},
-				time.Minute,
-				time.Second,
-			)
-		})
+			{
+				name: "with IAM Role",
+				warehouse: model.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destinationID,
+						Config: map[string]interface{}{
+							"user":              rsTestCredentials.IAMUserName,
+							"database":          rsTestCredentials.DbName,
+							"bucketName":        rsTestCredentials.BucketName,
+							"accessKeyID":       rsTestCredentials.AccessKeyID,
+							"accessKey":         rsTestCredentials.AccessKey,
+							"namespace":         iamNamespace,
+							"useIAMForAuth":     true,
+							"iamRoleARNForAuth": rsTestCredentials.IAMRoleARN,
+							"clusterId":         rsTestCredentials.ClusterID,
+							"clusterRegion":     rsTestCredentials.ClusterRegion,
+							"syncFrequency":     "30",
+							"enableSSE":         false,
+							"useRudderStorage":  false,
+						},
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+							Name:        "RS",
+							DisplayName: "Redshift",
+						},
+						Name:        "redshift-iam-demo",
+						Enabled:     true,
+						RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+						WorkspaceID: workspaceID,
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   iamNamespace,
+				},
+			},
+		}
 
-		schemaInUpload := model.TableSchema{
-			"test_bool":     "boolean",
-			"test_datetime": "datetime",
-			"test_float":    "float",
-			"test_int":      "int",
-			"test_string":   "string",
-			"id":            "string",
-			"received_at":   "datetime",
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Cleanup(func() {
+					require.Eventually(t, func() bool {
+						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.warehouse.Namespace)); err != nil {
+							t.Logf("error deleting schema: %v", err)
+							return false
+						}
+						return true
+					},
+						time.Minute,
+						time.Second,
+					)
+				})
+
+				warehouse := tc.warehouse
+
+				schemaInUpload := model.TableSchema{
+					"test_bool":     "boolean",
+					"test_datetime": "datetime",
+					"test_float":    "float",
+					"test_int":      "int",
+					"test_string":   "string",
+					"id":            "string",
+					"received_at":   "datetime",
+				}
+				schemaInWarehouse := model.TableSchema{
+					"test_bool":           "boolean",
+					"test_datetime":       "datetime",
+					"test_float":          "float",
+					"test_int":            "int",
+					"test_string":         "string",
+					"id":                  "string",
+					"received_at":         "datetime",
+					"extra_test_bool":     "boolean",
+					"extra_test_datetime": "datetime",
+					"extra_test_float":    "float",
+					"extra_test_int":      "int",
+					"extra_test_string":   "string",
+				}
+
+				fm, err := filemanager.New(&filemanager.Settings{
+					Provider: warehouseutils.S3,
+					Config: map[string]any{
+						"bucketName":     rsTestCredentials.BucketName,
+						"accessKeyID":    rsTestCredentials.AccessKeyID,
+						"accessKey":      rsTestCredentials.AccessKey,
+						"bucketProvider": warehouseutils.S3,
+					},
+				})
+				require.NoError(t, err)
+
+				t.Run("schema does not exists", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "schema_not_exists_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.Error(t, err)
+					require.Nil(t, loadTableStat)
+				})
+				t.Run("table does not exists", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "table_not_exists_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.Error(t, err)
+					require.Nil(t, loadTableStat)
+				})
+				t.Run("merge", func(t *testing.T) {
+					t.Run("without dedup", func(t *testing.T) {
+						ctx := context.Background()
+						tableName := "merge_without_dedup_test_table"
+						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+						appendWarehouse := th.Clone(t, warehouse)
+						appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
+
+						d := redshift.New(config.New(), logger.NOP, stats.NOP)
+						err := d.Setup(ctx, appendWarehouse, mockUploader)
+						require.NoError(t, err)
+
+						err = d.CreateSchema(ctx)
+						require.NoError(t, err)
+
+						err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+						require.NoError(t, err)
+
+						loadTableStat, err := d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						loadTableStat, err = d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						records := whth.RetrieveRecordsFromWarehouse(
+							t,
+							d.DB.DB,
+							fmt.Sprintf(`
+								SELECT
+								  id,
+								  received_at,
+								  test_bool,
+								  test_datetime,
+								  test_float,
+								  test_int,
+								  test_string
+								FROM
+								  %s.%s
+								ORDER BY
+								  id ASC;
+								`,
+								tc.warehouse.Namespace,
+								tableName,
+							),
+						)
+						require.Equal(t, whth.DedupTwiceTestRecords(), records)
+					})
+					t.Run("with dedup", func(t *testing.T) {
+						ctx := context.Background()
+						tableName := "merge_with_dedup_test_table"
+						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+						d := redshift.New(config.New(), logger.NOP, stats.NOP)
+						err := d.Setup(ctx, warehouse, mockUploader)
+						require.NoError(t, err)
+
+						err = d.CreateSchema(ctx)
+						require.NoError(t, err)
+
+						err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+						require.NoError(t, err)
+
+						loadTableStat, err := d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						loadTableStat, err = d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(0))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+						records := whth.RetrieveRecordsFromWarehouse(
+							t,
+							d.DB.DB,
+							fmt.Sprintf(`
+								SELECT
+								  id,
+								  received_at,
+								  test_bool,
+								  test_datetime,
+								  test_float,
+								  test_int,
+								  test_string
+								FROM
+								  %s.%s
+								ORDER BY
+								  id ASC;
+							`,
+								tc.warehouse.Namespace,
+								tableName,
+							),
+						)
+						require.Equal(t, whth.DedupTestRecords(), records)
+					})
+					t.Run("with dedup window", func(t *testing.T) {
+						ctx := context.Background()
+						tableName := "merge_with_dedup_window_test_table"
+						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+						c := config.New()
+						c.Set("Warehouse.redshift.dedupWindow", true)
+						c.Set("Warehouse.redshift.dedupWindowInHours", 999999)
+
+						d := redshift.New(c, logger.NOP, stats.NOP)
+						err := d.Setup(ctx, warehouse, mockUploader)
+						require.NoError(t, err)
+
+						err = d.CreateSchema(ctx)
+						require.NoError(t, err)
+
+						err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+						require.NoError(t, err)
+
+						loadTableStat, err := d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						loadTableStat, err = d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(0))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+						records := whth.RetrieveRecordsFromWarehouse(
+							t,
+							d.DB.DB,
+							fmt.Sprintf(`
+								SELECT
+								  id,
+								  received_at,
+								  test_bool,
+								  test_datetime,
+								  test_float,
+								  test_int,
+								  test_string
+								FROM
+								  %s.%s
+								ORDER BY
+								  id ASC;
+							`,
+								tc.warehouse.Namespace,
+								tableName,
+							),
+						)
+						require.Equal(t, whth.DedupTestRecords(), records)
+					})
+					t.Run("with short dedup window", func(t *testing.T) {
+						ctx := context.Background()
+						tableName := "merge_with_short_dedup_window_test_table"
+						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+						c := config.New()
+						c.Set("Warehouse.redshift.dedupWindow", true)
+						c.Set("Warehouse.redshift.dedupWindowInHours", 0)
+
+						d := redshift.New(c, logger.NOP, stats.NOP)
+						err := d.Setup(ctx, warehouse, mockUploader)
+						require.NoError(t, err)
+
+						err = d.CreateSchema(ctx)
+						require.NoError(t, err)
+
+						err = d.CreateTable(ctx, tableName, schemaInWarehouse)
+						require.NoError(t, err)
+
+						loadTableStat, err := d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						loadTableStat, err = d.LoadTable(ctx, tableName)
+						require.NoError(t, err)
+						require.Equal(t, loadTableStat.RowsInserted, int64(14))
+						require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+						records := whth.RetrieveRecordsFromWarehouse(
+							t,
+							d.DB.DB,
+							fmt.Sprintf(`
+								SELECT
+								  id,
+								  received_at,
+								  test_bool,
+								  test_datetime,
+								  test_float,
+								  test_int,
+								  test_string
+								FROM %s.%s
+								ORDER BY
+								  id;
+							`,
+								tc.warehouse.Namespace,
+								tableName,
+							),
+						)
+						require.Equal(t, whth.DedupTwiceTestRecords(), records)
+					})
+				})
+				t.Run("append", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "append_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					c := config.New()
+					c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{destinationID})
+
+					appendWarehouse := th.Clone(t, warehouse)
+					appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
+
+					rs := redshift.New(c, logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, appendWarehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					loadTableStat, err = rs.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					records := whth.RetrieveRecordsFromWarehouse(
+						t,
+						rs.DB.DB,
+						fmt.Sprintf(`
+							SELECT
+							  id,
+							  received_at,
+							  test_bool,
+							  test_datetime,
+							  test_float,
+							  test_int,
+							  test_string
+							FROM
+							  %q.%q
+							ORDER BY
+							  id;
+						`,
+							tc.warehouse.Namespace,
+							tableName,
+						),
+					)
+					require.Equal(t, records, whth.AppendTestRecords())
+				})
+				t.Run("load file does not exists", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "load_file_not_exists_test_table"
+
+					loadFiles := []warehouseutils.LoadFile{{
+						Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
+					}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.Error(t, err)
+					require.Nil(t, loadTableStat)
+				})
+				t.Run("mismatch in number of columns", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "mismatch_columns_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.Error(t, err)
+					require.Nil(t, loadTableStat)
+				})
+				t.Run("mismatch in schema", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "mismatch_schema_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.Error(t, err)
+					require.Nil(t, loadTableStat)
+				})
+				t.Run("discards", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := warehouseutils.DiscardsTable
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+
+					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(6))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					records := whth.RetrieveRecordsFromWarehouse(
+						t,
+						rs.DB.DB,
+						fmt.Sprintf(`
+							SELECT
+							  column_name,
+							  column_value,
+							  received_at,
+							  row_id,
+							  table_name,
+							  uuid_ts
+							FROM
+							  %q.%q
+							ORDER BY
+							  row_id ASC;
+						`,
+							tc.warehouse.Namespace,
+							tableName,
+						),
+					)
+					require.Equal(t, records, whth.DiscardTestRecords())
+				})
+				t.Run("parquet", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "parquet_test_table"
+
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
+
+					fileStat, err := os.Stat("../testdata/load.parquet")
+					require.NoError(t, err)
+
+					loadFiles := []warehouseutils.LoadFile{{
+						Location: uploadOutput.Location,
+						Metadata: json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, fileStat.Size())),
+					}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err = rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, tableName, schemaInUpload)
+					require.NoError(t, err)
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					records := whth.RetrieveRecordsFromWarehouse(
+						t,
+						rs.DB.DB,
+						fmt.Sprintf(`
+							SELECT
+							  id,
+							  received_at,
+							  test_bool,
+							  test_datetime,
+							  test_float,
+							  test_int,
+							  test_string
+							FROM
+							  %q.%q
+							ORDER BY
+							  id ASC;
+						`,
+							tc.warehouse.Namespace,
+							tableName,
+						),
+					)
+					require.Equal(t, records, whth.SampleTestRecords())
+				})
+				t.Run("crashRecover", func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "crash_recovery_test_table"
+					stgTableName := warehouseutils.StagingTableName(warehouseutils.RS, tableName, 64)
+					mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
+
+					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+					err := rs.Setup(ctx, warehouse, mockUploader)
+					require.NoError(t, err)
+
+					err = rs.CreateSchema(ctx)
+					require.NoError(t, err)
+
+					err = rs.CreateTable(ctx, stgTableName, schemaInWarehouse)
+					require.NoError(t, err)
+
+					tableExists := func(t *testing.T) bool {
+						t.Helper()
+
+						var count int
+						err = rs.DB.DB.QueryRow(`
+							SELECT
+							  count(*)
+							FROM
+							  information_schema.tables
+							WHERE
+							  table_schema = $1
+							  AND table_name = $2;
+						`,
+							tc.warehouse.Namespace,
+							stgTableName,
+						).Scan(&count)
+						require.NoError(t, err)
+
+						return count == 1
+					}
+					require.True(t, tableExists(t))
+
+					err = rs.CrashRecover(ctx)
+					require.NoError(t, err)
+
+					require.False(t, tableExists(t))
+				})
+			})
 		}
-		schemaInWarehouse := model.TableSchema{
-			"test_bool":           "boolean",
-			"test_datetime":       "datetime",
-			"test_float":          "float",
-			"test_int":            "int",
-			"test_string":         "string",
-			"id":                  "string",
-			"received_at":         "datetime",
-			"extra_test_bool":     "boolean",
-			"extra_test_datetime": "datetime",
-			"extra_test_float":    "float",
-			"extra_test_int":      "int",
-			"extra_test_string":   "string",
-		}
+	})
+
+	t.Run("Connection timeout using password", func(t *testing.T) {
+		const (
+			sourceID      = "test_source_id"
+			destinationID = "test_destination_id"
+			workspaceID   = "test_workspace_id"
+		)
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
@@ -510,10 +1232,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Destination: backendconfig.DestinationT{
 				ID: destinationID,
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: destType,
-				},
-				Config: map[string]any{
+				Config: map[string]interface{}{
 					"host":             rsTestCredentials.Host,
 					"port":             rsTestCredentials.Port,
 					"user":             rsTestCredentials.UserName,
@@ -527,513 +1246,47 @@ func TestIntegration(t *testing.T) {
 					"enableSSE":        false,
 					"useRudderStorage": false,
 				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+					Name:        "RS",
+					DisplayName: "Redshift",
+				},
+				Name:        "redshift-demo",
+				Enabled:     true,
+				RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
+				WorkspaceID: workspaceID,
 			},
 			WorkspaceID: workspaceID,
 			Namespace:   namespace,
 		}
+		mockCtrl := gomock.NewController(t)
+		uploader := mockuploader.NewMockUploader(mockCtrl)
 
-		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: warehouseutils.S3,
-			Config: map[string]any{
-				"bucketName":     rsTestCredentials.BucketName,
-				"accessKeyID":    rsTestCredentials.AccessKeyID,
-				"accessKey":      rsTestCredentials.AccessKey,
-				"bucketProvider": warehouseutils.S3,
-			},
-		})
-		require.NoError(t, err)
-
-		t.Run("schema does not exists", func(t *testing.T) {
+		t.Run("no timeout", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := "schema_not_exists_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.Error(t, err)
-			require.Nil(t, loadTableStat)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
 		})
-		t.Run("table does not exists", func(t *testing.T) {
+		t.Run("timeout = 0s", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := "table_not_exists_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.Error(t, err)
-			require.Nil(t, loadTableStat)
+			rs.SetConnectionTimeout(0)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
 		})
-		t.Run("merge", func(t *testing.T) {
-			t.Run("without dedup", func(t *testing.T) {
-				ctx := context.Background()
-				tableName := "merge_without_dedup_test_table"
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
-
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-				appendWarehouse := th.Clone(t, warehouse)
-				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
-
-				d := redshift.New(config.New(), logger.NOP, stats.NOP)
-				err := d.Setup(ctx, appendWarehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = d.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-						  id,
-						  received_at,
-						  test_bool,
-						  test_datetime,
-						  test_float,
-						  test_int,
-						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
-						namespace,
-						tableName,
-					),
-				)
-				require.Equal(t, whth.DedupTwiceTestRecords(), records)
-			})
-			t.Run("with dedup", func(t *testing.T) {
-				ctx := context.Background()
-				tableName := "merge_with_dedup_test_table"
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
-
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-				d := redshift.New(config.New(), logger.NOP, stats.NOP)
-				err := d.Setup(ctx, warehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = d.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(0))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-						  id,
-						  received_at,
-						  test_bool,
-						  test_datetime,
-						  test_float,
-						  test_int,
-						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
-						namespace,
-						tableName,
-					),
-				)
-				require.Equal(t, whth.DedupTestRecords(), records)
-			})
-			t.Run("with dedup window", func(t *testing.T) {
-				ctx := context.Background()
-				tableName := "merge_with_dedup_window_test_table"
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
-
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-				c := config.New()
-				c.Set("Warehouse.redshift.dedupWindow", true)
-				c.Set("Warehouse.redshift.dedupWindowInHours", 999999)
-
-				d := redshift.New(c, logger.NOP, stats.NOP)
-				err := d.Setup(ctx, warehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = d.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(0))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-						  id,
-						  received_at,
-						  test_bool,
-						  test_datetime,
-						  test_float,
-						  test_int,
-						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
-						namespace,
-						tableName,
-					),
-				)
-				require.Equal(t, whth.DedupTestRecords(), records)
-			})
-			t.Run("with short dedup window", func(t *testing.T) {
-				ctx := context.Background()
-				tableName := "merge_with_short_dedup_window_test_table"
-				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
-
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-				c := config.New()
-				c.Set("Warehouse.redshift.dedupWindow", true)
-				c.Set("Warehouse.redshift.dedupWindowInHours", 0)
-
-				d := redshift.New(c, logger.NOP, stats.NOP)
-				err := d.Setup(ctx, warehouse, mockUploader)
-				require.NoError(t, err)
-
-				err = d.CreateSchema(ctx)
-				require.NoError(t, err)
-
-				err = d.CreateTable(ctx, tableName, schemaInWarehouse)
-				require.NoError(t, err)
-
-				loadTableStat, err := d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				loadTableStat, err = d.LoadTable(ctx, tableName)
-				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-				records := whth.RetrieveRecordsFromWarehouse(t, d.DB.DB,
-					fmt.Sprintf(
-						`SELECT
-						  id,
-						  received_at,
-						  test_bool,
-						  test_datetime,
-						  test_float,
-						  test_int,
-						  test_string
-						FROM %s.%s
-						ORDER BY id;`,
-						namespace,
-						tableName,
-					),
-				)
-				require.Equal(t, whth.DedupTwiceTestRecords(), records)
-			})
-		})
-		t.Run("append", func(t *testing.T) {
+		t.Run("0s < timeout < 1s", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := "append_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-			c := config.New()
-			c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{destinationID})
-
-			appendWarehouse := th.Clone(t, warehouse)
-			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
-
-			rs := redshift.New(c, logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, appendWarehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			loadTableStat, err = rs.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			records := whth.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
-				fmt.Sprintf(`
-					SELECT
-					  id,
-					  received_at,
-					  test_bool,
-					  test_datetime,
-					  test_float,
-					  test_int,
-					  test_string
-					FROM
-					  %q.%q
-					ORDER BY
-					  id;
-					`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, whth.AppendTestRecords())
-		})
-		t.Run("load file does not exists", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := "load_file_not_exists_test_table"
-
-			loadFiles := []warehouseutils.LoadFile{{
-				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
-			}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.Error(t, err)
-			require.Nil(t, loadTableStat)
+			rs.SetConnectionTimeout(500 * time.Millisecond)
+			require.Error(t, rs.Setup(ctx, warehouse, uploader))
 		})
-		t.Run("mismatch in number of columns", func(t *testing.T) {
+		t.Run("timeout >= 1s", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := "mismatch_columns_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.Error(t, err)
-			require.Nil(t, loadTableStat)
-		})
-		t.Run("mismatch in schema", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := "mismatch_schema_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
-
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.Error(t, err)
-			require.Nil(t, loadTableStat)
-		})
-		t.Run("discards", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := warehouseutils.DiscardsTable
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
-
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv)
-
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(6))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			records := whth.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
-				fmt.Sprintf(`
-					SELECT
-					  column_name,
-					  column_value,
-					  received_at,
-					  row_id,
-					  table_name,
-					  uuid_ts
-					FROM
-					  %q.%q
-					ORDER BY row_id ASC;
-					`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, whth.DiscardTestRecords())
-		})
-		t.Run("parquet", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := "parquet_test_table"
-
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
-
-			fileStat, err := os.Stat("../testdata/load.parquet")
-			require.NoError(t, err)
-
-			loadFiles := []warehouseutils.LoadFile{{
-				Location: uploadOutput.Location,
-				Metadata: json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, fileStat.Size())),
-			}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
-
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err = rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, tableName, schemaInUpload)
-			require.NoError(t, err)
-
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
-
-			records := whth.RetrieveRecordsFromWarehouse(t, rs.DB.DB,
-				fmt.Sprintf(`
-					SELECT
-					  id,
-					  received_at,
-					  test_bool,
-					  test_datetime,
-					  test_float,
-					  test_int,
-					  test_string
-					FROM
-					  %q.%q
-					ORDER BY
-					  id;
-					`,
-					namespace,
-					tableName,
-				),
-			)
-			require.Equal(t, records, whth.SampleTestRecords())
-		})
-
-		t.Run("crashRecover", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := "crash_recovery_test_table"
-			stgTableName := warehouseutils.StagingTableName(warehouseutils.RS, tableName, 64)
-			mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
-
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			err := rs.Setup(ctx, warehouse, mockUploader)
-			require.NoError(t, err)
-
-			err = rs.CreateSchema(ctx)
-			require.NoError(t, err)
-
-			err = rs.CreateTable(ctx, stgTableName, schemaInWarehouse)
-			require.NoError(t, err)
-
-			tableExists := func(t *testing.T) bool {
-				t.Helper()
-				var count int
-				err = rs.DB.DB.QueryRow(`
-					SELECT count(*)
-					FROM information_schema.tables
-					WHERE table_schema = $1 AND table_name = $2;
-						`,
-					namespace,
-					stgTableName,
-				).Scan(&count)
-				require.NoError(t, err)
-
-				return count == 1
-			}
-			require.True(t, tableExists(t))
-
-			err = rs.CrashRecover(ctx)
-			require.NoError(t, err)
-
-			require.False(t, tableExists(t))
+			rs.SetConnectionTimeout(10 * time.Second)
+			require.NoError(t, rs.Setup(ctx, warehouse, uploader))
+			require.NoError(t, rs.DB.PingContext(ctx))
 		})
 	})
 }
@@ -1170,8 +1423,6 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, redshift.CheckAndIgnoreColumnAlreadyExistError(tc.err))
 		})
@@ -1204,8 +1455,6 @@ func TestRedshift_AlterColumn(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)

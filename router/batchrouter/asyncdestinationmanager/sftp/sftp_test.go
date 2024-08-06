@@ -1,6 +1,7 @@
 package sftp
 
 import (
+	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ var (
 				"username":   "username",
 				"password":   "password",
 				"fileFormat": "csv",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -46,7 +47,7 @@ var (
 				"username":   "username",
 				"password":   "",
 				"fileFormat": "csv",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -60,7 +61,7 @@ var (
 				"username":   "username",
 				"password":   "password",
 				"fileFormat": "txt",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -74,7 +75,7 @@ var (
 				"username":   "username",
 				"password":   "password",
 				"fileFormat": "csv",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -88,7 +89,7 @@ var (
 				"username":   "username",
 				"password":   "password",
 				"fileFormat": "csv",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -102,7 +103,7 @@ var (
 				"username":   "username",
 				"privateKey": "privateKey",
 				"fileFormat": "csv",
-				"filePath":   "/testDir1/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
+				"filePath":   "/tmp/testDir1/{destinationID}_{jobRunID}/file_{YYYY}_{MM}_{DD}_{timestampInSec}.csv",
 			},
 			WorkspaceID: "workspace_id",
 		},
@@ -178,19 +179,48 @@ var _ = Describe("SFTP test", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
 			defaultManager := newDefaultManager(fileManager)
-			fileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(nil)
+			now := time.Now()
+			filePath := fmt.Sprintf("/tmp/testDir1/destination_id_1_someJobRunId_1/file_%d_%02d_%02d_%d_1.csv", now.Year(), now.Month(), now.Day(), now.Unix())
+			fileManager.EXPECT().Upload(gomock.Any(), filePath).Return(nil)
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
+			payload := make(map[int64]stdjson.RawMessage)
+			id := int64(1014)
+			sampleData := map[string]interface{}{
+				"source_job_run_id": "someJobRunId_1",
+			}
+			rawMessage, _ := json.Marshal(sampleData)
+			payload[id] = rawMessage
+
+			id = int64(1016)
+			payload[id] = rawMessage
+
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1014, 1015, 1016, 1017},
-				FileName:        filepath.Join(currentDir, "testdata/uploadDataRecord.txt"),
-				Destination:     &destinations[0],
-				Manager:         manager,
+				ImportingJobIDs:       []int64{1014, 1015, 1016, 1017},
+				FileName:              filePath,
+				Destination:           &destinations[0],
+				Manager:               manager,
+				OriginalJobParameters: payload,
+				CreatedAt:             now,
+				PartFileNumber:        1,
+				SourceJobRunID:        "someJobRunId_1",
 			}
 			expected := common.AsyncUploadOutput{
 				DestinationID:   "destination_id_1",
 				SucceededJobIDs: []int64{1014, 1015, 1016, 1017},
 				SuccessResponse: "File Upload Success",
 			}
+
+			err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm)
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to create temporary directory")
+
+			tempFile, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to create temporary file")
+			defer os.RemoveAll("/tmp/testDir1")
+
+			data := []byte(`{"message":{"action":"insert","fields":{"email":"john@email.com","name":"john"},"messageId":"b6543bc0-f280-4642-8176-4b8d5a1b8fb6","originalTimestamp":"2024-04-20T22:29:37.731+05:30","receivedAt":"2024-04-20T22:29:36.843+05:30","request_ip":"[::1]","rudderId":"853ae90f-0351-424b-973e-a615e6487517","sentAt":"2024-04-20T22:29:37.731+05:30","timestamp":"2024-04-20T22:29:36.842+05:30","type":"record"},"metadata":{"job_id":1}}`)
+			_, err = tempFile.Write(data)
+			Expect(err).ShouldNot(HaveOccurred(), "Failed to write to temporary file")
+
 			received := manager.Upload(&asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
@@ -288,8 +318,10 @@ var _ = Describe("SFTP test", func() {
 			metadata := map[string]any{
 				"destinationID":  "some_destination_id",
 				"sourceJobRunID": "some_source_job_run_id",
+				"timestamp":      now,
 			}
-			received := getUploadFilePath(input, metadata)
+			received, err := getUploadFilePath(input, metadata)
+			Expect(err).To(BeNil())
 			Expect(received).To(Equal(expected))
 		})
 
@@ -297,23 +329,24 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			input := "/path/to/file.txt"
 			expected := "/path/to/file.txt"
-			received := getUploadFilePath(input, nil)
+			received, err := getUploadFilePath(input, nil)
+			Expect(err).To(BeNil())
 			Expect(received).To(Equal(expected))
 		})
 
 		It("TestEmptyInputPath", func() {
 			initSFTP()
 			input := ""
-			expected := ""
-			received := getUploadFilePath(input, nil)
-			Expect(received).To(Equal(expected))
+			_, err := getUploadFilePath(input, nil)
+			Expect(err).To(MatchError("upload file path can not be empty"))
 		})
 
 		It("TestInvalidDynamicVariables", func() {
 			initSFTP()
 			input := "/path/to/{invalid}/file.txt"
 			expected := "/path/to/{invalid}/file.txt"
-			received := getUploadFilePath(input, nil)
+			received, err := getUploadFilePath(input, nil)
+			Expect(err).To(BeNil())
 			Expect(received).To(Equal(expected))
 		})
 	})

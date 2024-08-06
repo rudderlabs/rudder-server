@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -415,7 +416,7 @@ func TestExtractErrorDetails(t *testing.T) {
 		},
 	}
 
-	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
 			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
@@ -599,7 +600,7 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 	configSubscriber := newConfigSubscriber(logger.NOP)
-	ed := NewErrorDetailReporter(context.Background(), configSubscriber)
+	ed := NewErrorDetailReporter(context.Background(), configSubscriber, stats.NOP, config.Default)
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{
