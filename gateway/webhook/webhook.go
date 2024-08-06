@@ -66,6 +66,7 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 
 	config struct {
+		maxReqSize                 config.ValueLoader[int]
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
@@ -332,6 +333,13 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 			if !json.Valid(body) {
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+				continue
+			}
+			if len(body) > bt.webhook.config.maxReqSize.Load() {
+				req.done <- transformerResponse{
+					StatusCode: response.GetErrorStatusCode(response.RequestBodyTooLarge),
+					Err:        response.GetStatus(response.RequestBodyTooLarge),
+				}
 				continue
 			}
 
