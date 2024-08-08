@@ -170,48 +170,60 @@ type Dedup struct {
 }
 
 func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
 	err := d.badgerDB.init()
 	if err != nil {
 		return false, 0, err
 	}
-	if previous, found := d.cache[kv.Key]; found {
+
+	d.cacheMu.Lock()
+	previous, found := d.cache[kv.Key]
+	d.cacheMu.Unlock()
+	if found {
 		return false, previous, nil
 	}
-	previous, found, err := d.badgerDB.Get(kv.Key)
+
+	previous, found, err = d.badgerDB.Get(kv.Key)
 	if err != nil {
 		return false, 0, err
 	}
-	if !found {
+
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	if !found { // still not in the cache, but it's in the DB so let's refresh the cache
 		d.cache[kv.Key] = kv.Value
 	}
+
 	return !found, previous, nil
 }
 
 func (d *Dedup) Commit(keys []string) error {
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
 	err := d.badgerDB.init()
 	if err != nil {
 		return err
 	}
 	kvs := make([]types.KeyValue, len(keys))
+	d.cacheMu.Lock()
 	for i, key := range keys {
 		value, ok := d.cache[key]
 		if !ok {
+			d.cacheMu.Unlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
 		kvs[i] = types.KeyValue{Key: key, Value: value}
 	}
+	d.cacheMu.Unlock()
 
 	err = d.badgerDB.Set(kvs)
-	if err == nil {
-		for _, kv := range kvs {
-			delete(d.cache, kv.Key)
-		}
+	if err != nil {
+		return err
 	}
-	return err
+
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	for _, kv := range kvs {
+		delete(d.cache, kv.Key)
+	}
+	return nil
 }
 
 func (d *Dedup) Close() {

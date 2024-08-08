@@ -1,6 +1,7 @@
 package scylla
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -63,7 +64,7 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Check if the key exists in the DB
 	var value int64
 	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceId), kv.Key).Scan(&value)
-	if err != nil && err != gocql.ErrNotFound {
+	if err != nil && !errors.Is(err, gocql.ErrNotFound) {
 		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
 	exists := !(err == gocql.ErrNotFound)
@@ -75,15 +76,16 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 
 func (d *ScyllaDB) Commit(keys []string) error {
 	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
 	kvs := make([]types.KeyValue, len(keys))
 	for i, key := range keys {
 		value, ok := d.cache[key]
 		if !ok {
+			d.cacheMu.Unlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
 		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceId: value.WorkspaceId}
 	}
+	d.cacheMu.Unlock()
 	keysList := lo.PartitionBy(kvs, func(kv types.KeyValue) string {
 		return kv.WorkspaceId
 	})
@@ -100,9 +102,11 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			if err := d.scylla.ExecuteBatch(scyllaBatch); err != nil {
 				return fmt.Errorf("error committing keys: %v", err)
 			}
+			d.cacheMu.Lock()
 			for _, key := range batch {
 				delete(d.cache, key.Key)
 			}
+			d.cacheMu.Unlock()
 		}
 	}
 	return nil
