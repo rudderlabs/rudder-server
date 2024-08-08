@@ -8,12 +8,11 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/samber/lo"
 
@@ -243,11 +242,11 @@ func (bcm *BackendConfigManager) namespace(ctx context.Context, source backendco
 	namespace, err := bcm.schema.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
 		bcm.logger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-			logfield.Error, err.Error(),
+			obskit.SourceID(source.ID),
+			obskit.DestinationID(destination.ID),
+			obskit.DestinationType(destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(destination.WorkspaceID),
+			obskit.Error(err),
 		)
 		return ""
 	}

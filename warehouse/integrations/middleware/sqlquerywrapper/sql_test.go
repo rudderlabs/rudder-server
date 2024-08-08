@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
@@ -78,8 +79,8 @@ func TestQueryWrapper(t *testing.T) {
 			query := "SELECT 1;"
 
 			kvs := []any{
-				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTime,
+				rslogger.NewStringField(logfield.Query, query),
+				rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 			}
 			kvs = append(kvs, keysAndValues...)
 
@@ -137,12 +138,12 @@ func TestQueryWrapper(t *testing.T) {
 				user := fmt.Sprintf("test_user_%d", uuid.New().ID())
 
 				createKvs := []any{
-					logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-					logfield.QueryExecutionTime, tc.executionTime,
+					rslogger.NewStringField(logfield.Query, fmt.Sprintf("CREATE USER %s;", user)),
+					rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 				}
 				alterKvs := []any{
-					logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-					logfield.QueryExecutionTime, tc.executionTime,
+					rslogger.NewStringField(logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user)),
+					rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 				}
 
 				createKvs = append(createKvs, keysAndValues...)
@@ -190,12 +191,12 @@ func TestQueryWrapper(t *testing.T) {
 						user := fmt.Sprintf("test_user_%d", uuid.New().ID())
 
 						createKvs := []any{
-							logfield.Query, fmt.Sprintf("CREATE USER %s;", user),
-							logfield.QueryExecutionTime, tc.executionTime,
+							rslogger.NewStringField(logfield.Query, fmt.Sprintf("CREATE USER %s;", user)),
+							rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 						}
 						alterKvs := []any{
-							logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user),
-							logfield.QueryExecutionTime, tc.executionTime,
+							rslogger.NewStringField(logfield.Query, fmt.Sprintf("ALTER USER %s WITH PASSWORD '***';", user)),
+							rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 						}
 
 						createKvs = append(createKvs, keysAndValues...)
@@ -244,8 +245,8 @@ func TestQueryWrapper(t *testing.T) {
 			query := "SELECT 1;"
 
 			kvs := []any{
-				logfield.Query, query,
-				logfield.QueryExecutionTime, tc.executionTime,
+				rslogger.NewStringField(logfield.Query, query),
+				rslogger.NewDurationField(logfield.QueryExecutionTime, tc.executionTime),
 			}
 			kvs = append(kvs, keysAndValues...)
 

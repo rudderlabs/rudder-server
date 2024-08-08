@@ -12,7 +12,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -83,11 +86,11 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 	)
 
 	pkgLogger.Infow("validate destination configuration",
-		logfield.DestinationID, destID,
-		logfield.DestinationType, destType,
-		logfield.DestinationRevisionID, dest.RevisionID,
-		logfield.WorkspaceID, dest.WorkspaceID,
-		logfield.DestinationValidationsStep, stepToValidate,
+		obskit.DestinationID(destID),
+		obskit.DestinationType(destType),
+		logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+		obskit.WorkspaceID(dest.WorkspaceID),
+		logger.NewStringField(logfield.DestinationValidationsStep, stepToValidate),
 	)
 
 	// check if req has specified a step in query params
@@ -126,12 +129,12 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 			step.Error = err.Error()
 
 			pkgLogger.Warnw("creating validator",
-				logfield.DestinationID, destID,
-				logfield.DestinationType, destType,
-				logfield.DestinationRevisionID, dest.RevisionID,
-				logfield.WorkspaceID, dest.WorkspaceID,
-				logfield.DestinationValidationsStep, step.Name,
-				logfield.Error, step.Error,
+				obskit.DestinationID(destID),
+				obskit.DestinationType(destType),
+				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+				obskit.WorkspaceID(dest.WorkspaceID),
+				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+				obskit.Error(err),
 			)
 			break
 		}
@@ -146,12 +149,12 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		// if any of steps fails, the whole validation fails
 		if !step.Success {
 			pkgLogger.Warnw("not able to validate destination configuration",
-				logfield.DestinationID, destID,
-				logfield.DestinationType, destType,
-				logfield.DestinationRevisionID, dest.RevisionID,
-				logfield.WorkspaceID, dest.WorkspaceID,
-				logfield.DestinationValidationsStep, step.Name,
-				logfield.Error, step.Error,
+				obskit.DestinationID(destID),
+				obskit.DestinationType(destType),
+				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+				obskit.WorkspaceID(dest.WorkspaceID),
+				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+				"error", step.Error,
 			)
 			break
 		}

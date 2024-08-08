@@ -1,20 +1,11 @@
 package logfield
 
 const (
-	UploadJobID                = "uploadJobID"
 	UploadStatus               = "uploadStatus"
 	UseRudderStorage           = "useRudderStorage"
 	TaskRunID                  = "taskRunID"
-	SourceID                   = "sourceID"
-	SourceType                 = "sourceType"
-	DestinationID              = "destinationID"
-	DestinationType            = "destinationType"
 	DestinationRevisionID      = "destinationRevisionID"
 	DestinationValidationsStep = "step"
-	WorkspaceID                = "workspaceID"
-	Namespace                  = "namespace"
-	Schema                     = "schema"
-	Error                      = "error"
 	Status                     = "status"
 	ErrorCategory              = "errorCategory"
 	TableName                  = "tableName"

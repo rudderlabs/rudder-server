@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"time"
 
-	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
-	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/go-chi/chi/v5"
 	jsoniter "github.com/json-iterator/go"
+
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -118,20 +119,20 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	var payload stagingFileSchema
 	err := json.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
-		api.Logger.Warnw("invalid JSON in request body for processing staging file", lf.Error, err.Error())
+		api.Logger.Warnw("invalid JSON in request body for processing staging file", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	stagingFile, err := mapStagingFile(&payload)
 	if err != nil {
-		api.Logger.Warnw("invalid payload for processing staging file", lf.Error, err.Error())
+		api.Logger.Warnw("invalid payload for processing staging file", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	if api.Multitenant.DegradedWorkspace(stagingFile.WorkspaceID) {
-		api.Logger.Infow("workspace is degraded for processing staging file", lf.WorkspaceID, stagingFile.WorkspaceID)
+		api.Logger.Infow("workspace is degraded for processing staging file", obskit.WorkspaceID(stagingFile.WorkspaceID))
 		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -141,7 +142,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		api.Logger.Errorw("inserting staging file", lf.Error, err.Error())
+		api.Logger.Errorw("inserting staging file", obskit.Error(err))
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return
 	}

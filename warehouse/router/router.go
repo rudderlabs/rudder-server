@@ -14,6 +14,8 @@ import (
 	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -34,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -543,7 +544,7 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 			"destType":      warehouse.Destination.DestinationDefinition.Name,
 		}).Count(1)
 
-		r.logger.Debugw("Skipping upload loop since upload freq not exceeded", logfield.Error, err.Error())
+		r.logger.Debugw("Skipping upload loop since upload freq not exceeded", obskit.Error(err))
 
 		return nil
 	}

@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"sync"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -414,12 +414,12 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
 		if tableUploadsErr != nil {
 			r.logger.Warnw("table uploads exists",
-				logfield.UploadJobID, job.upload.ID,
-				logfield.SourceID, job.upload.SourceID,
-				logfield.DestinationID, job.upload.DestinationID,
-				logfield.DestinationType, job.upload.DestinationType,
-				logfield.WorkspaceID, job.upload.WorkspaceID,
-				logfield.Error, tableUploadsErr.Error(),
+				obskit.UploadID(job.upload.ID),
+				obskit.SourceID(job.upload.SourceID),
+				obskit.DestinationID(job.upload.DestinationID),
+				obskit.DestinationType(job.upload.DestinationType),
+				obskit.WorkspaceID(job.upload.WorkspaceID),
+				obskit.Error(tableUploadsErr),
 			)
 			return
 		}
