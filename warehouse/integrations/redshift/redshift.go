@@ -143,15 +143,15 @@ var dataTypesMapToRudder = map[string]string{
 }
 
 var primaryKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id",
+	warehouseutils.UsersTable:      "id",
+	warehouseutils.IdentifiesTable: "id",
+	warehouseutils.DiscardsTable:   "row_id",
 }
 
 var partitionKeyMap = map[string]string{
-	"users":                      "id",
-	"identifies":                 "id",
-	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
+	warehouseutils.UsersTable:      "id",
+	warehouseutils.IdentifiesTable: "id",
+	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
 
 type Redshift struct {
