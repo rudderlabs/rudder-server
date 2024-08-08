@@ -60,6 +60,48 @@ var sampleBackendConfig = ConfigT{
 	},
 }
 
+var sampleConfigWithConnection = ConfigT{
+	WorkspaceID: sampleWorkspaceID,
+	Sources: []SourceT{
+		{
+			ID:       "1",
+			WriteKey: "d",
+			Enabled:  false,
+		}, {
+			ID:       "2",
+			WriteKey: "d2",
+			Enabled:  false,
+			Destinations: []DestinationT{
+				{
+					ID:                 "d1",
+					Name:               "processor Disabled",
+					IsProcessorEnabled: false,
+				}, {
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+			},
+		},
+	},
+	Connections: map[string]Connection{
+		"1": {
+			SourceID:         "2",
+			DestinationID:    "d1",
+			Enabled:          true,
+			Config:           map[string]interface{}{"key": "value"},
+			ProcessorEnabled: false,
+		},
+		"2": {
+			SourceID:         "2",
+			DestinationID:    "d2",
+			Enabled:          true,
+			Config:           map[string]interface{}{"key2": "value2"},
+			ProcessorEnabled: true,
+		},
+	},
+}
+
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleFilteredSources = ConfigT{
 	Sources: []SourceT{
@@ -262,6 +304,37 @@ func TestConfigUpdate(t *testing.T) {
 		require.True(t, bc.initialized)
 		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleBackendConfig})
+	})
+
+	t.Run("new config with connections", func(t *testing.T) {
+		var (
+			ctrl        = gomock.NewController(t)
+			ctx, cancel = context.WithCancel(context.Background())
+			workspaces  = "foo"
+			cacheStore  = cache.NewMockCache(ctrl)
+		)
+		defer ctrl.Finish()
+		defer cancel()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{workspaces: sampleConfigWithConnection}, nil).Times(1)
+
+		var pubSub pubsub.PublishSubscriber
+		bc := &backendConfigImpl{
+			eb:              &pubSub,
+			workspaceConfig: wc,
+			cache:           cacheStore,
+		}
+		bc.curSourceJSON = map[string]ConfigT{workspaces: sampleBackendConfig2}
+
+		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
+		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
+
+		bc.configUpdate(ctx)
+		require.True(t, bc.initialized)
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
+		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleConfigWithConnection})
+		require.Equal(t, bc.curSourceJSON[workspaces].Connections, sampleConfigWithConnection.Connections)
 	})
 }
 

@@ -90,6 +90,7 @@ type Handle struct {
 	oauth                          oauth.Authorizer
 	destinationsMapMu              sync.RWMutex
 	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionsMap                 map[types.SourceDest]types.Connection
 	isBackendConfigInitialized     bool
 	backendConfigInitialized       chan bool
 	responseQ                      chan workerJobStatus
