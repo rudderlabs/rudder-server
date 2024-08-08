@@ -50,22 +50,29 @@ type marketoPollInputStruct struct {
 	DestConfig map[string]interface{} `json:"config"`
 }
 
+type MarketoAsyncFailedInput struct {
+	Message  map[string]interface{}
+	Metadata struct {
+		JobID int64
+	}
+}
+
+type MarketoAsyncFailedPayload struct {
+	Config   map[string]interface{}
+	Input    []MarketoAsyncFailedInput
+	DestType string
+	ImportId string
+	MetaData common.MetaDataT
+}
+
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	finalPollInput := marketoPollInputStruct{
 		ImportId:   pollInput.ImportId,
 		DestType:   "MARKETO_BULK_UPLOAD",
 		DestConfig: b.destinationConfig,
 	}
-	payload, err := json.Marshal(finalPollInput)
-	if err != nil {
-		b.logger.Errorf("Error in Marshalling Poll Input: %v", err)
-		return common.PollStatusResponse{
-			StatusCode: 500,
-			HasFailed:  true,
-		}
-	}
 
-	pollURL, err := url.JoinPath(b.transformUrl, b.pollUrl)
+	asyncResponse, err := pollHandler(finalPollInput)
 	if err != nil {
 		b.logger.Errorf("Error in preparing poll url: %v", err)
 		return common.PollStatusResponse{
@@ -75,29 +82,10 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		}
 	}
 
-	bodyBytes, transformerConnectionStatus := misc.HTTPCallWithRetryWithTimeout(pollURL, payload, b.timeout)
-	if transformerConnectionStatus != 200 {
-		return common.PollStatusResponse{
-			StatusCode: transformerConnectionStatus,
-			HasFailed:  true,
-			Error:      string(bodyBytes),
-		}
-	}
-	var asyncResponse common.PollStatusResponse
-	err = json.Unmarshal(bodyBytes, &asyncResponse)
-	if err != nil {
-		// needs to be retried
-		b.logger.Errorf("Error in Unmarshalling Poll Response: %v", err)
-		return common.PollStatusResponse{
-			StatusCode: 500,
-			HasFailed:  true,
-		}
-	}
-
 	if asyncResponse.Error != "" {
 		b.logger.Errorw("[Batch Router] Failed to fetch status for",
 			lf.DestinationType, "MARKETO_BULK_UPLOAD",
-			"body", string(bodyBytes[:512]),
+			"body", asyncResponse.Error,
 			lf.Error, asyncResponse.Error,
 		)
 		return common.PollStatusResponse{
@@ -106,25 +94,22 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 			Error:      asyncResponse.Error,
 		}
 	}
-	return asyncResponse
+	return *asyncResponse
 }
 
 func (b *MarketoBulkUploader) generateFailedPayload(jobs []*jobsdb.JobT, importID, destType, csvHeaders string) []byte {
-	var failedPayloadT common.AsyncFailedPayload
-	failedPayloadT.Input = make([]map[string]interface{}, len(jobs))
+	var failedPayloadT MarketoAsyncFailedPayload
+	failedPayloadT.Input = make([]MarketoAsyncFailedInput, len(jobs))
 	failedPayloadT.Config = b.destinationConfig
 	for index, job := range jobs {
-		failedPayloadT.Input[index] = make(map[string]interface{})
 		var message map[string]interface{}
-		metadata := make(map[string]interface{})
 		err := json.Unmarshal([]byte(common.GetTransformedData(job.EventPayload)), &message)
 		if err != nil {
 			b.logger.Errorf("Error in Unmarshalling GetUploadStats Input : %v", err)
 			return nil
 		}
-		metadata["job_id"] = job.JobID
-		failedPayloadT.Input[index]["message"] = message
-		failedPayloadT.Input[index]["metadata"] = metadata
+		failedPayloadT.Input[index].Message = message
+		failedPayloadT.Input[index].Metadata.JobID = job.JobID
 	}
 	failedPayloadT.DestType = strings.ToLower(destType)
 	failedPayloadT.ImportId = importID
