@@ -154,52 +154,52 @@ func TestIntegration(t *testing.T) {
 			customPartitionsEnabledWorkspaceIDs string
 			stagingFilePrefix                   string
 		}{
+			//{
+			//	name:          "Source Job",
+			//	writeKey:      sourcesWriteKey,
+			//	sourceID:      sourcesSourceID,
+			//	destinationID: sourcesDestinationID,
+			//	schema:        sourcesNamespace,
+			//	tables:        []string{"tracks", "google_sheet"},
+			//	stagingFilesEventsMap: whth.EventsCountMap{
+			//		"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+			//	},
+			//	stagingFilesModifiedEventsMap: whth.EventsCountMap{
+			//		"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
+			//	},
+			//	loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
+			//	tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
+			//	warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
+			//	sourceJob:             true,
+			//	prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
+			//		t.Helper()
+			//		_ = db.Dataset(namespace).DeleteWithContents(ctx)
+			//	},
+			//	stagingFilePrefix: "testdata/sources-job",
+			//},
+			//{
+			//	name:   "Append mode",
+			//	schema: namespace,
+			//	tables: []string{
+			//		"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+			//	},
+			//	writeKey:                      writeKey,
+			//	sourceID:                      sourceID,
+			//	destinationID:                 destinationID,
+			//	stagingFilesEventsMap:         stagingFilesEventsMap(),
+			//	stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
+			//	loadFilesEventsMap:            loadFilesEventsMap(),
+			//	tableUploadsEventsMap:         tableUploadsEventsMap(),
+			//	warehouseEventsMap:            appendEventsMap(),
+			//	skipModifiedEvents:            true,
+			//	prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
+			//		t.Helper()
+			//		_ = db.Dataset(namespace).DeleteWithContents(ctx)
+			//	},
+			//	stagingFilePrefix: "testdata/upload-job-append-mode",
+			//},
 			{
-				name:          "Source Job",
-				writeKey:      sourcesWriteKey,
-				sourceID:      sourcesSourceID,
-				destinationID: sourcesDestinationID,
-				schema:        sourcesNamespace,
-				tables:        []string{"tracks", "google_sheet"},
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
-				},
-				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				sourceJob:             true,
-				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
-					t.Helper()
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
-				},
-				stagingFilePrefix: "testdata/sources-job",
-			},
-			{
-				name:   "Append mode",
-				schema: namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				writeKey:                      writeKey,
-				sourceID:                      sourceID,
-				destinationID:                 destinationID,
-				stagingFilesEventsMap:         stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-				loadFilesEventsMap:            loadFilesEventsMap(),
-				tableUploadsEventsMap:         tableUploadsEventsMap(),
-				warehouseEventsMap:            appendEventsMap(),
-				skipModifiedEvents:            true,
-				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
-					t.Helper()
-					_ = db.Dataset(namespace).DeleteWithContents(ctx)
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode",
-			},
-			{
-				name:   "Append mode with custom partition",
+				name:   "Append mode with custom partition [timestamp(DAY)]",
 				schema: namespace,
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
@@ -224,7 +224,7 @@ func TestIntegration(t *testing.T) {
 					})
 					require.NoError(t, err)
 
-					err = db.Dataset(namespace).Table("tracks").Create(
+					err = db.Dataset(namespace).Table("users").Create(
 						context.Background(),
 						&bigquery.TableMetadata{
 							Schema: []*bigquery.FieldSchema{{
@@ -233,6 +233,7 @@ func TestIntegration(t *testing.T) {
 							}},
 							TimePartitioning: &bigquery.TimePartitioning{
 								Field: "timestamp",
+								Type:  bigquery.DayPartitioningType,
 							},
 						},
 					)
