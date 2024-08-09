@@ -51,9 +51,7 @@ func Test_Dedup(t *testing.T) {
 			logger.Reset()
 			misc.Init()
 
-			dbPath := os.TempDir() + "/dedup_test"
-			defer func() { _ = os.RemoveAll(dbPath) }()
-			_ = os.RemoveAll(dbPath)
+			dbPath := t.TempDir()
 			conf := config.New()
 			t.Setenv("RUDDER_TMPDIR", dbPath)
 			pool, err := dockertest.NewPool("")
@@ -70,7 +68,7 @@ func Test_Dedup(t *testing.T) {
 
 			t.Run("if message id is not present in cache and badger db", func(t *testing.T) {
 				found, _, err := d.Get(types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"})
-				require.Nil(t, err)
+				require.NoError(t, err)
 				require.Equal(t, true, found)
 
 				// Checking it again should give us the previous value from the cache

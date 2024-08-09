@@ -1,7 +1,6 @@
 package badger
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,9 +17,7 @@ func Test_Badger(t *testing.T) {
 	logger.Reset()
 	misc.Init()
 
-	dbPath := os.TempDir() + "/dedup_test"
-	defer func() { _ = os.RemoveAll(dbPath) }()
-	_ = os.RemoveAll(dbPath)
+	dbPath := t.TempDir()
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 	badger := NewBadgerDB(conf, stats.NOP, DefaultPath())
@@ -29,23 +26,23 @@ func Test_Badger(t *testing.T) {
 	t.Run("Same messageID should be deduped from badger", func(t *testing.T) {
 		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
 		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
-		found, _, err := badger.Get(key1)
-		require.Nil(t, err)
-		require.True(t, found)
+		notAvailable, _, err := badger.Get(key1)
+		require.NoError(t, err)
+		require.True(t, notAvailable)
 		err = badger.Commit([]string{key1.Key})
 		require.NoError(t, err)
-		found, _, err = badger.Get(key2)
-		require.Nil(t, err)
-		require.False(t, found)
+		notAvailable, _, err = badger.Get(key2)
+		require.NoError(t, err)
+		require.False(t, notAvailable)
 	})
 	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
 		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
 		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
 		found, _, err := badger.Get(key1)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, found)
 		found, _, err = badger.Get(key2)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.False(t, found)
 	})
 }

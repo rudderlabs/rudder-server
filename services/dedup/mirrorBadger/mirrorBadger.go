@@ -31,6 +31,7 @@ func (mb *MirrorBadger) Close() {
 }
 
 func (mb *MirrorBadger) Get(kv types.KeyValue) (bool, int64, error) {
+	_, _, _ = mb.scylla.Get(kv)
 	return mb.badger.Get(kv)
 }
 
