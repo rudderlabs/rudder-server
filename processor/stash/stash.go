@@ -158,8 +158,9 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 
 	errorJobs := make([]ErrorJob, 0)
 
+	ctx := context.Background()
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
-		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
+		preferences, err := st.fileuploader.GetStoragePreferences(ctx, workspaceID)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
 			errorJobs = append(errorJobs, ErrorJob{
@@ -206,13 +207,13 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 	}()
 
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	var mu sync.Mutex
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
-		errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
+		errFileUploader, err := st.fileuploader.GetFileManager(ctx, wrkId)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
 			mu.Lock()

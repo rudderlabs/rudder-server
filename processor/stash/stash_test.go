@@ -142,9 +142,10 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 	errJobs := st.storeErrorsToObjectStorage(jobs)
 	require.Equal(t, uniqueWorkspaces, len(errJobs))
 
+	ctx := context.Background()
 	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := st.fileuploader.GetFileManager(workspace)
+		fm, err := st.fileuploader.GetFileManager(ctx, workspace)
 		require.NoError(t, err)
 		var file []*filemanager.FileInfo
 		require.Eventually(t, func() bool {
@@ -156,7 +157,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 				t.Logf("file list: %+v err: %v", lo.Map(file, func(item *filemanager.FileInfo, _ int) string {
 					return item.Key
 				}), err)
-				fm, err = fileUploaderProvider.GetFileManager(workspace)
+				fm, err = fileUploaderProvider.GetFileManager(ctx, workspace)
 				require.NoError(t, err)
 				return false
 			}
