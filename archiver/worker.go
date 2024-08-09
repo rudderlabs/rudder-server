@@ -3,6 +3,7 @@ package archiver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -70,8 +71,12 @@ start:
 
 	workspaceID := jobs[0].WorkspaceId
 	log := w.log.With("workspaceID", workspaceID)
-	storagePrefs, err := w.storageProvider.GetStoragePreferences(workspaceID)
+	storagePrefs, err := w.storageProvider.GetStoragePreferences(w.lifecycle.ctx, workspaceID)
 	if err != nil {
+		if errors.Is(err, fileuploader.ErrNotSubscribed) {
+			log.Debug("not subscribed to backend config")
+			return false
+		}
 		log.Errorw("failed to fetch storage preferences", "error", err)
 		if err := w.markStatus(
 			jobs,
@@ -174,7 +179,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	}
 	defer func() { _ = os.Remove(filePath) }()
 
-	fileUploader, err := w.storageProvider.GetFileManager(workspaceID)
+	fileUploader, err := w.storageProvider.GetFileManager(w.lifecycle.ctx, workspaceID)
 	if err != nil {
 		return "", fmt.Errorf("no file manager found: %w", err)
 	}
