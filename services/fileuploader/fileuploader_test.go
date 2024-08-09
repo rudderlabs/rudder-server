@@ -41,9 +41,11 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	var preferences backendconfig.StoragePreferences
 
 	// When the config backend has not published any event yet
-	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx, "testWorkspaceId-1")
+	ctx2, cancel2 := context.WithTimeout(ctx, 50*time.Millisecond)
+	preferences, err = fileUploaderProvider.GetStoragePreferences(ctx2, "testWorkspaceId-1")
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
-	Expect(err).To(Equal(ErrNotSubscribed))
+	Expect(err).To(Equal(context.DeadlineExceeded))
+	cancel2()
 
 	t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "S3") // default rudder storage provider
 	t.Setenv("JOBS_BACKUP_DEFAULT_PREFIX", "defaultPrefixWithStorageTTL")
