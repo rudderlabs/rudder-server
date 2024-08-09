@@ -40,26 +40,25 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(path string) *BadgerDB {
-	dedupWindow := config.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
-
-	log := logger.NewLogger().Child("dedup")
+func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
+	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+	log := logger.NewLogger().Child("Dedup")
 	badgerOpts := badger.
 		DefaultOptions(path).
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(config.GetInt("BadgerDB.numMemtable", 5)).
-		WithValueThreshold(config.GetInt64("BadgerDB.valueThreshold", 1048576)).
+		WithNumMemtables(conf.GetInt("BadgerDB.numMemtable", 5)).
+		WithValueThreshold(conf.GetInt64("BadgerDB.valueThreshold", 1048576)).
 		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
-		WithNumLevelZeroTables(config.GetInt("BadgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(config.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(config.GetBool("BadgerDB.syncWrites", false)).
-		WithDetectConflicts(config.GetBool("BadgerDB.detectConflicts", false))
+		WithNumLevelZeroTables(conf.GetInt("BadgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(conf.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(conf.GetBool("BadgerDB.syncWrites", false)).
+		WithDetectConflicts(conf.GetBool("BadgerDB.detectConflicts", false))
 
 	db := &BadgerDB{
-		stats:  stats.Default,
+		stats:  stats,
 		logger: loggerForBadger{log},
 		path:   path,
 		gcDone: make(chan struct{}),
@@ -67,18 +66,16 @@ func NewBadgerDB(path string) *BadgerDB {
 		window: dedupWindow,
 		opts:   badgerOpts,
 	}
-	return db
+	return &Dedup{
+		badgerDB: db,
+		cache:    make(map[string]int64),
+	}
 }
 
 func (d *BadgerDB) Get(key string) (int64, bool, error) {
 	var payloadSize int64
 	var found bool
-	var err error
-	err = d.init()
-	if err != nil {
-		return 0, false, err
-	}
-	err = d.badgerDB.View(func(txn *badger.Txn) error {
+	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
@@ -96,10 +93,6 @@ func (d *BadgerDB) Get(key string) (int64, bool, error) {
 }
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
-	err := d.init()
-	if err != nil {
-		return err
-	}
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)
@@ -167,8 +160,74 @@ func (d *BadgerDB) gcLoop() {
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge(lsmSize)
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge(vlogSize)
 		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
-
 	}
+}
+
+type Dedup struct {
+	badgerDB *BadgerDB
+	cacheMu  sync.Mutex
+	cache    map[string]int64
+}
+
+func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
+	err := d.badgerDB.init()
+	if err != nil {
+		return false, 0, err
+	}
+
+	d.cacheMu.Lock()
+	previous, found := d.cache[kv.Key]
+	d.cacheMu.Unlock()
+	if found {
+		return false, previous, nil
+	}
+
+	previous, found, err = d.badgerDB.Get(kv.Key)
+	if err != nil {
+		return false, 0, err
+	}
+
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	if !found { // still not in the cache, but it's in the DB so let's refresh the cache
+		d.cache[kv.Key] = kv.Value
+	}
+
+	return !found, previous, nil
+}
+
+func (d *Dedup) Commit(keys []string) error {
+	err := d.badgerDB.init()
+	if err != nil {
+		return err
+	}
+	kvs := make([]types.KeyValue, len(keys))
+	d.cacheMu.Lock()
+	for i, key := range keys {
+		value, ok := d.cache[key]
+		if !ok {
+			d.cacheMu.Unlock()
+			return fmt.Errorf("key %v has not been previously set", key)
+		}
+		kvs[i] = types.KeyValue{Key: key, Value: value}
+	}
+	d.cacheMu.Unlock()
+
+	err = d.badgerDB.Set(kvs)
+	if err != nil {
+		return err
+	}
+
+	d.cacheMu.Lock()
+	defer d.cacheMu.Unlock()
+	for _, kv := range kvs {
+		delete(d.cache, kv.Key)
+	}
+	return nil
+}
+
+func (d *Dedup) Close() {
+	d.badgerDB.Close()
 }
 
 type loggerForBadger struct {

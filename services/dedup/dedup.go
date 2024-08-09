@@ -3,78 +3,57 @@
 package dedup
 
 import (
-	"fmt"
-	"sync"
-
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
+	"github.com/rudderlabs/rudder-server/services/dedup/mirrorBadger"
+	"github.com/rudderlabs/rudder-server/services/dedup/mirrorScylla"
+	"github.com/rudderlabs/rudder-server/services/dedup/scylla"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
+type Mode string
+
+const (
+	Badger       Mode = "Badger"
+	Scylla       Mode = "Scylla"
+	MirrorScylla Mode = "MirrorScylla"
+	MirrorBadger Mode = "MirrorBadger"
+)
+
 // New creates a new deduplication service. The service needs to be closed after use.
-func New() Dedup {
-	db := badger.NewBadgerDB(badger.DefaultPath())
-	return &dedup{
-		badgerDB: db,
-		cache:    make(map[string]int64),
+func New(conf *config.Config, stats stats.Stats) (Dedup, error) {
+	mode := Mode(conf.GetString("Dedup.Mode", string(Badger)))
+	switch mode {
+	case Badger:
+		return badger.NewBadgerDB(conf, stats, badger.DefaultPath()), nil
+	case Scylla:
+		scylla, err := scylla.New(conf, stats)
+		if err != nil {
+			return nil, err
+		}
+		return scylla, nil
+	case MirrorScylla:
+		// Writes happen to both
+		// Read only from Scylla
+		return mirrorScylla.NewMirrorScylla(conf, stats)
+	case MirrorBadger:
+		// Writes happen to both
+		// Read only from Badger
+		return mirrorBadger.NewMirrorBadger(conf, stats)
+	default:
+		return badger.NewBadgerDB(conf, stats, badger.DefaultPath()), nil
 	}
 }
 
 // Dedup is the interface for deduplication service
 type Dedup interface {
-	// Set returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
-	Set(kv types.KeyValue) (bool, int64, error)
+	// Get returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
+	Get(kv types.KeyValue) (bool, int64, error)
 
 	// Commit commits a list of previously set keys to the DB
 	Commit(keys []string) error
 
 	// Close closes the deduplication service
 	Close()
-}
-
-type dedup struct {
-	badgerDB *badger.BadgerDB
-	cacheMu  sync.Mutex
-	cache    map[string]int64
-}
-
-func (d *dedup) Set(kv types.KeyValue) (bool, int64, error) {
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
-	if previous, found := d.cache[kv.Key]; found {
-		return false, previous, nil
-	}
-	previous, found, err := d.badgerDB.Get(kv.Key)
-	if err != nil {
-		return false, 0, err
-	}
-	if !found {
-		d.cache[kv.Key] = kv.Value
-	}
-	return !found, previous, nil
-}
-
-func (d *dedup) Commit(keys []string) error {
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
-
-	kvs := make([]types.KeyValue, len(keys))
-	for i, key := range keys {
-		value, ok := d.cache[key]
-		if !ok {
-			return fmt.Errorf("key %v has not been previously set", key)
-		}
-		kvs[i] = types.KeyValue{Key: key, Value: value}
-	}
-
-	err := d.badgerDB.Set(kvs)
-	if err == nil {
-		for _, kv := range kvs {
-			delete(d.cache, kv.Key)
-		}
-	}
-	return err
-}
-
-func (d *dedup) Close() {
-	d.badgerDB.Close()
 }

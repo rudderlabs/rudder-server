@@ -12,14 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -32,6 +29,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -78,7 +76,7 @@ type mockTrackedUsersReporter struct {
 	}
 }
 
-func (m *mockTrackedUsersReporter) ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error {
+func (m *mockTrackedUsersReporter) ReportUsers(_ context.Context, reports []*trackedusers.UsersReport, _ *Tx) error {
 	m.reportCalls = append(m.reportCalls, struct {
 		reportedReports []*trackedusers.UsersReport
 	}{reportedReports: reports})
@@ -1874,7 +1872,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1893,6 +1891,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1905,7 +1904,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1924,6 +1923,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1941,7 +1941,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1960,6 +1960,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -2533,7 +2534,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -3044,7 +3045,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3063,7 +3064,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
-
+			Expect(err).To(BeNil())
 			setMainLoopTimeout(processor, 1*time.Second)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -3103,7 +3104,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3122,6 +3123,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			defer processor.Shutdown()
 
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
@@ -5111,7 +5113,7 @@ func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 
 func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
 	setDisableDedupFeature(processor, enableDedup)
-	processor.Setup(
+	err := processor.Setup(
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
@@ -5130,6 +5132,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
 	)
+	Expect(err).To(BeNil())
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
 }
