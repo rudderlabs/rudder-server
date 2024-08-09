@@ -1,7 +1,6 @@
 package batchrouter
 
 import (
-	"compress/gzip"
 	"context"
 	jsonb "encoding/json"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 
@@ -36,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -652,39 +651,20 @@ func TestBatchRouter(t *testing.T) {
 	defer batchrouter.Shutdown()
 
 	require.Eventually(t, func() bool {
-		return len(minioContents(t, context.Background(), minioResource, "")) == len(bcs)
+		minioContents, err := minioResource.Contents(context.Background(), "")
+		if err != nil {
+			t.Logf("error getting minio contents: %v", err)
+			return false
+		}
+		return len(minioContents) == len(bcs)
 	}, 5*time.Second, 200*time.Millisecond)
 
-	filenames := lo.Map(
-		lo.Keys(minioContents(t, context.Background(), minioResource, "")),
-		func(k string, _ int) string { return path.Dir(k) },
-	)
+	minioContents, err := minioResource.Contents(context.Background(), "")
+	require.NoError(t, err)
+
+	filenames := lo.Map(minioContents, func(k minio.File, _ int) string {
+		return path.Dir(k.Key)
+	})
 
 	require.ElementsMatch(t, filePrefixes, filenames)
-}
-
-func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {
-	contents := make(map[string]string)
-
-	doneCh := make(chan struct{})
-	defer close(doneCh)
-
-	opts := miniogo.ListObjectsOptions{
-		Recursive: true,
-		Prefix:    prefix,
-	}
-	for objInfo := range dest.Client.ListObjects(ctx, dest.BucketName, opts) {
-		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, miniogo.GetObjectOptions{})
-		require.NoError(t, err)
-
-		g, err := gzip.NewReader(o)
-		require.NoError(t, err)
-
-		b, err := io.ReadAll(g)
-		require.NoError(t, err)
-
-		contents[objInfo.Key] = string(b)
-	}
-
-	return contents
 }
