@@ -231,7 +231,7 @@ func EnhanceWithDefaultEnvs(t testing.TB) {
 	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", jobsDBPassword)
 	t.Setenv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	t.Setenv("GO_ENV", "production")
-	t.Setenv("LOG_LEVEL", "INFO")
+	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("INSTANCE_ID", "1")
 	t.Setenv("ALERT_PROVIDER", "pagerduty")
 	t.Setenv("CONFIG_PATH", "../../../config/config.yaml")
