@@ -49,6 +49,12 @@ func Test_MirrorBadger(t *testing.T) {
 		found, _, err = mirrorBadger.Get(key2)
 		require.Nil(t, err)
 		require.False(t, found)
+		found, _, err = mirrorBadger.scylla.Get(key1)
+		require.Nil(t, err)
+		require.False(t, found)
+		found, _, err = mirrorBadger.badger.Get(key1)
+		require.Nil(t, err)
+		require.False(t, found)
 	})
 	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
 		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}

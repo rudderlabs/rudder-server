@@ -173,10 +173,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		// support of array type in params is handled if the
 		// response from transformers are "," separated
 		queryParams := req.URL.Query()
-		for key, val := range requestQueryParams { // list := strings.Split(valString, ",")
-			// for _, listItem := range list {
-			// 	queryParams.Add(key, fmt.Sprint(listItem))
-			// }
+		for key, val := range requestQueryParams {
 			formattedVal := handleQueryParam(val)
 			queryParams.Add(key, formattedVal)
 		}
@@ -195,7 +192,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
-				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make %q request for URL : %q. Error: %s`, requestMethod, postInfo.URL, err.Error())),
+				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make %q request for URL : %q. Error: %v`, requestMethod, postInfo.URL, err)),
 			}
 		}
 
@@ -205,7 +202,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   resp.StatusCode,
-				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %s`, postInfo.URL, err.Error())),
+				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err)),
 			}
 		}
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
