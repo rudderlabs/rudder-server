@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -104,6 +106,7 @@ func TestIntegration(t *testing.T) {
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 	testhelper.EnhanceWithDefaultEnvs(t)
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)

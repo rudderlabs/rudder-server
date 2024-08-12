@@ -2,6 +2,7 @@ package backendconfigtest
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -31,6 +32,12 @@ type DestinationBuilder struct {
 // WithID sets the ID of the destination
 func (b *DestinationBuilder) WithID(id string) *DestinationBuilder {
 	b.v.ID = id
+	return b
+}
+
+// WithRevisionID sets the revision ID of the destination
+func (b *DestinationBuilder) WithRevisionID(revisionID string) *DestinationBuilder {
+	b.v.RevisionID = revisionID
 	return b
 }
 
