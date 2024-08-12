@@ -164,6 +164,7 @@ func TestIntegration(t *testing.T) {
 		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
 
 		whth.EnhanceWithDefaultEnvs(t)
+		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))

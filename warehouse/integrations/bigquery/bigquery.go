@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -42,6 +42,7 @@ type BigQuery struct {
 	uploader  warehouseutils.Uploader
 	conf      *config.Config
 	logger    logger.Logger
+	now       func() time.Time
 
 	config struct {
 		setUsersLoadPartitionFirstEventFilter bool
@@ -123,6 +124,7 @@ func New(conf *config.Config, log logger.Logger) *BigQuery {
 
 	bq.conf = conf
 	bq.logger = log.Child("integrations").Child("bigquery")
+	bq.now = timeutil.Now
 
 	bq.config.setUsersLoadPartitionFirstEventFilter = conf.GetBool("Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter", true)
 	bq.config.customPartitionsEnabled = conf.GetBool("Warehouse.bigquery.customPartitionsEnabled", false)
@@ -145,21 +147,72 @@ func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err erro
 	return
 }
 
+// CreateTable creates a table in BigQuery with the provided schema
+// It also creates a view for the table to deduplicate the data
+// If custom partitioning is enabled, it creates a table with custom partitioning based on the partition column and type only if the partition column exists in the schema. Otherwise, it creates a table with ingestion-time partitioning
 func (bq *BigQuery) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) error {
-	bq.logger.Infon("Creating table",
+	log := bq.logger.Withn(
 		logger.NewStringField(logfield.ProjectID, bq.projectID),
 		obskit.Namespace(bq.namespace),
 		logger.NewStringField(logfield.TableName, tableName),
 	)
+	log.Infon("Creating table")
+
 	sampleSchema := getTableSchema(columnMap)
-	metaData := &bigquery.TableMetadata{
-		Schema: sampleSchema,
-		TimePartitioning: &bigquery.TimePartitioning{
+
+	partitionColumn := bq.partitionColumn()
+	partitionType := bq.partitionType()
+
+	var timePartitioning *bigquery.TimePartitioning
+	if partitionColumn == "" || partitionType == "" {
+		timePartitioning = &bigquery.TimePartitioning{
 			Type: bigquery.DayPartitioningType,
-		},
+		}
+	} else {
+		if err := bq.checkValidPartitionColumn(partitionColumn); err != nil {
+			return fmt.Errorf("check valid partition column: %w", err)
+		}
+		bqPartitionType, err := bq.bigqueryPartitionType(partitionType)
+		if err != nil {
+			return fmt.Errorf("bigquery partition type: %w", err)
+		}
+
+		// If partition column is _PARTITIONTIME and partition type is not empty, then we only set the partition type
+		if partitionColumn == "_PARTITIONTIME" {
+			timePartitioning = &bigquery.TimePartitioning{
+				Type: bqPartitionType,
+			}
+		} else {
+			// Checking if the partition column exists in the schema, because in case of
+			// 1. rudder_discards: we only have timestamp column.
+			// 2. rudder_identity_merge_rules: we don't have any column.
+			// 3. rudder_identity_mappings: we don't have any column.
+			_, ok := columnMap[partitionColumn]
+			if ok {
+				log.Infon("Creating table: Partition column found in schema",
+					logger.NewStringField("partitionColumn", partitionColumn),
+					logger.NewStringField("partitionType", partitionType),
+				)
+				timePartitioning = &bigquery.TimePartitioning{
+					Field: partitionColumn,
+					Type:  bqPartitionType,
+				}
+			} else {
+				log.Warnn("Creating table: Partition column not found in schema",
+					logger.NewStringField("partitionColumn", partitionColumn),
+					logger.NewStringField("partitionType", partitionType),
+				)
+				timePartitioning = &bigquery.TimePartitioning{
+					Type: bigquery.DayPartitioningType,
+				}
+			}
+		}
 	}
-	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err := tableRef.Create(ctx, metaData)
+
+	err := bq.db.Dataset(bq.namespace).Table(tableName).Create(ctx, &bigquery.TableMetadata{
+		Schema:           sampleSchema,
+		TimePartitioning: timePartitioning,
+	})
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return fmt.Errorf("create table: %w", err)
 	}
@@ -176,6 +229,8 @@ func (bq *BigQuery) DropTable(ctx context.Context, tableName string) error {
 	return bq.DeleteTable(ctx, tableName+"_view")
 }
 
+// createTableView creates a view for the table to deduplicate the data
+// If custom partition is enabled, it creates a view with the partition column and type. Otherwise, it creates a view with ingestion-time partitioning
 func (bq *BigQuery) createTableView(ctx context.Context, tableName string, columnMap model.TableSchema) error {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
@@ -187,10 +242,52 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		viewOrderByStmt = " ORDER BY loaded_at DESC "
 	}
 
-	partitionColumn := "_PARTITIONTIME"
-	if column := bq.partitionColumn(bq.warehouse.WorkspaceID, bq.warehouse.Destination.ID); column != "" {
-		partitionColumn = column
+	var (
+		columnToQuery string
+		granularity   string
+	)
+
+	partitionColumn := bq.partitionColumn()
+	partitionType := bq.partitionType()
+
+	if partitionColumn == "" || partitionType == "" {
+		columnToQuery = "_PARTITIONTIME"
+		granularity = "DAY"
+	} else {
+		if err := bq.checkValidPartitionColumn(partitionColumn); err != nil {
+			return fmt.Errorf("check valid partition column: %w", err)
+		}
+		bqPartitionType, err := bq.bigqueryPartitionType(partitionType)
+		if err != nil {
+			return fmt.Errorf("bigquery partition type: %w", err)
+		}
+
+		if partitionColumn == "_PARTITIONTIME" {
+			columnToQuery = "_PARTITIONTIME"
+			granularity = string(bqPartitionType)
+		} else {
+			_, ok := columnMap[partitionColumn]
+			if ok {
+				bq.logger.Infon("Creating view: Partition column found in schema",
+					logger.NewStringField("partitionColumn", partitionColumn),
+				)
+				columnToQuery = partitionColumn
+				granularity = string(bqPartitionType)
+			} else {
+				bq.logger.Warnn("Creating view: Partition column not found in schema",
+					logger.NewStringField("partitionColumn", partitionColumn),
+				)
+				columnToQuery = "_PARTITIONTIME"
+				granularity = "DAY"
+			}
+		}
 	}
+
+	bq.logger.Infon("Creating view",
+		logger.NewStringField("view", tableName+"_view"),
+		logger.NewStringField("partitionColumn", partitionColumn),
+		logger.NewStringField("partitionKey", partitionKey),
+	)
 
 	// assuming it has field named id upon which dedup is done in view
 	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
@@ -198,12 +295,12 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
 			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
 			WHERE
-				` + partitionColumn + ` BETWEEN TIMESTAMP_TRUNC(
+				` + columnToQuery + ` BETWEEN TIMESTAMP_TRUNC(
 					TIMESTAMP_MICROS(UNIX_MICROS(CURRENT_TIMESTAMP()) - 60 * 60 * 24 * 60 * 1000000),
-					DAY,
+					` + granularity + `,
 					'UTC'
 				)
-				AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), DAY, 'UTC')
+				AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), ` + granularity + `, 'UTC')
 		)
 		WHERE __row_number = 1`
 	metaData := &bigquery.TableMetadata{
@@ -338,10 +435,6 @@ func (bq *BigQuery) DeleteBy(ctx context.Context, tableNames []string, params wa
 	return nil
 }
 
-func partitionedTable(tableName, partitionDate string) string {
-	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
-}
-
 func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	*types.LoadTableStats, *loadTableResponse, error,
 ) {
@@ -411,14 +504,16 @@ func (bq *BigQuery) loadTableByAppend(
 	gcsRef *bigquery.GCSReference,
 	log logger.Logger,
 ) (*types.LoadTableStats, *loadTableResponse, error) {
-	partitionDate := time.Now().Format("2006-01-02")
+	partitionDate, err := bq.partitionDate()
+	if err != nil {
+		return nil, nil, fmt.Errorf("partition date: %w", err)
+	}
 
-	outputTable := partitionedTable(
-		tableName,
-		partitionDate,
-	)
-	if bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+	var outputTable string
+	if bq.avoidPartitionDecorator() {
 		outputTable = tableName
+	} else {
+		outputTable = partitionedTable(tableName, partitionDate)
 	}
 
 	log.Infon("loading data into main table")
@@ -572,9 +667,11 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	)
 
 	log.Infon("Loading data")
-	partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
-	if bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+	var partitionedUsersTable string
+	if bq.avoidPartitionDecorator() {
 		partitionedUsersTable = warehouseutils.UsersTable
+	} else {
+		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
 	}
 
 	query := bq.db.Query(sqlStatement)
@@ -1105,7 +1202,7 @@ func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	outputTable := partitionedTable(tableName, time.Now().Format("2006-01-02"))
+	outputTable := partitionedTable(tableName, bq.now().Format("2006-01-02"))
 	loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(ctx)

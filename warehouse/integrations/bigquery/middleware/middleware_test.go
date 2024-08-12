@@ -22,6 +22,9 @@ import (
 
 func TestQueryWrapper(t *testing.T) {
 	if _, exists := os.LookupEnv(bqHelper.TestKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", bqHelper.TestKey)
+		}
 		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
@@ -60,11 +63,7 @@ func TestQueryWrapper(t *testing.T) {
 	)
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
