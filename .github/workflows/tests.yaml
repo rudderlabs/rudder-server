@@ -12,15 +12,11 @@ concurrency:
 jobs:
   integration:
     name: Integration
-    runs-on: 'ubuntu-20.04'
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         FEATURES: [ oss ,enterprise ]
     steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,7 +38,7 @@ jobs:
           RSERVER_ENABLE_MULTITENANCY: false
   warehouse-integration:
     name: Warehouse Integration
-    runs-on: 'ubuntu-20.04'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -67,10 +63,6 @@ jobs:
           - package: warehouse/integrations/snowflake
             destination: snowflake
     steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Go
@@ -107,12 +99,8 @@ jobs:
           path: coverage.txt
   unit:
     name: Unit
-    runs-on: 'ubuntu-20.04'
+    runs-on: ubuntu-latest
     steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -127,7 +115,7 @@ jobs:
           path: coverage.txt
   package-unit:
     name: Package Unit
-    runs-on: 'ubuntu-20.04'
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -154,10 +142,6 @@ jobs:
             exclude: services/rsources
 
     steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -186,7 +170,7 @@ jobs:
           path: coverage.txt
   coverage:
     name: Coverage
-    runs-on: 'ubuntu-20.04'
+    runs-on: ubuntu-latest
     needs:
       - warehouse-integration
       - unit
