@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -105,9 +106,8 @@ func TestIntegrationWebhook(t *testing.T) {
 		application        app.App
 	)
 
-	transformerURL := "http://localhost:9090"
-	isLocal := config.GetBool("WEBHOOK_INTEGRATION_TEST_LOCAL", false)
-	if transformerContainer.TransformerURL != "" && !isLocal {
+	transformerURL, ok := os.LookupEnv("TEST_OVERRIDE_TRANSFORMER_URL")
+	if !ok {
 		transformerURL = transformerContainer.TransformerURL
 	}
 
@@ -209,9 +209,9 @@ func TestIntegrationWebhook(t *testing.T) {
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
-			method := http.MethodPost
-			if tc.Input.Request.Method == "GET" {
-				method = http.MethodGet
+			method := tc.Input.Request.Method
+			if method == "" {
+				method = http.MethodPost
 			}
 			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
