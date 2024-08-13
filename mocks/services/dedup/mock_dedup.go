@@ -65,18 +65,18 @@ func (mr *MockDedupMockRecorder) Commit(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockDedup)(nil).Commit), arg0)
 }
 
-// Set mocks base method.
-func (m *MockDedup) Set(arg0 types.KeyValue) (bool, int64, error) {
+// Get mocks base method.
+func (m *MockDedup) Get(arg0 types.KeyValue) (bool, int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Set", arg0)
+	ret := m.ctrl.Call(m, "Get", arg0)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(int64)
 	ret2, _ := ret[2].(error)
 	return ret0, ret1, ret2
 }
 
-// Set indicates an expected call of Set.
-func (mr *MockDedupMockRecorder) Set(arg0 any) *gomock.Call {
+// Get indicates an expected call of Get.
+func (mr *MockDedupMockRecorder) Get(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockDedup)(nil).Set), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), arg0)
 }
