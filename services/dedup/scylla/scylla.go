@@ -38,18 +38,18 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Create the table if it doesn't exist
 	var err error
 	d.createTableMu.Lock()
-	once, found := d.createTableMap[kv.WorkspaceId]
+	once, found := d.createTableMap[kv.WorkspaceID]
 	if !found {
-		d.createTableMap[kv.WorkspaceId] = &sync.Once{}
-		once = d.createTableMap[kv.WorkspaceId]
+		d.createTableMap[kv.WorkspaceID] = &sync.Once{}
+		once = d.createTableMap[kv.WorkspaceID]
 	}
 	d.createTableMu.Unlock()
 	once.Do(func() {
-		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceId)
+		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceID)
 		err = d.scylla.Query(query).Exec()
 	})
 	if err != nil {
-		return false, 0, fmt.Errorf("error creating table %s: %v", kv.WorkspaceId, err)
+		return false, 0, fmt.Errorf("creating table %s: %v", kv.WorkspaceID, err)
 	}
 
 	d.cacheMu.Lock()
@@ -63,7 +63,7 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 
 	// Check if the key exists in the DB
 	var value int64
-	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceId), kv.Key).Scan(&value)
+	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceID), kv.Key).Scan(&value)
 	if err != nil && !errors.Is(err, gocql.ErrNotFound) {
 		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
@@ -83,11 +83,11 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			d.cacheMu.Unlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
-		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceId: value.WorkspaceId}
+		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceID: value.WorkspaceID}
 	}
 	d.cacheMu.Unlock()
 	keysList := lo.PartitionBy(kvs, func(kv types.KeyValue) string {
-		return kv.WorkspaceId
+		return kv.WorkspaceID
 	})
 	for _, keysPerWorkspace := range keysList {
 		batches := lo.Chunk(keysPerWorkspace, d.batchSize)
@@ -95,7 +95,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 			for _, key := range batch {
 				scyllaBatch.Entries = append(scyllaBatch.Entries, gocql.BatchEntry{
-					Stmt: fmt.Sprintf("INSERT INTO %s.%s (id,size) VALUES (?,?) USING TTL %d", d.keyspace, key.WorkspaceId, d.ttl),
+					Stmt: fmt.Sprintf("INSERT INTO %s.%s (id,size) VALUES (?,?) USING TTL %d", d.keyspace, key.WorkspaceID, d.ttl),
 					Args: []interface{}{key.Key, key.Value},
 				})
 			}

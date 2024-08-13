@@ -24,8 +24,8 @@ func Test_Badger(t *testing.T) {
 	require.NotNil(t, badger)
 	defer badger.Close()
 	t.Run("Same messageID should be deduped from badger", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
 		notAvailable, _, err := badger.Get(key1)
 		require.NoError(t, err)
 		require.True(t, notAvailable)
@@ -36,8 +36,8 @@ func Test_Badger(t *testing.T) {
 		require.False(t, notAvailable)
 	})
 	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
 		found, _, err := badger.Get(key1)
 		require.NoError(t, err)
 		require.True(t, found)

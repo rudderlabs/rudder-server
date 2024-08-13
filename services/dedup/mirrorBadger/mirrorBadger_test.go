@@ -22,7 +22,7 @@ func Test_MirrorBadger(t *testing.T) {
 	logger.Reset()
 	misc.Init()
 
-	dbPath := os.TempDir() + "/dedup_test"
+	dbPath := t.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	_ = os.RemoveAll(dbPath)
 	conf := config.New()
@@ -39,8 +39,8 @@ func Test_MirrorBadger(t *testing.T) {
 	require.NotNil(t, mirrorBadger)
 	defer mirrorBadger.Close()
 	t.Run("Same messageID should be deduped from badger", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
 		found, _, err := mirrorBadger.Get(key1)
 		require.Nil(t, err)
 		require.True(t, found)
@@ -57,8 +57,8 @@ func Test_MirrorBadger(t *testing.T) {
 		require.False(t, found)
 	})
 	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
 		found, _, err := mirrorBadger.Get(key1)
 		require.Nil(t, err)
 		require.True(t, found)

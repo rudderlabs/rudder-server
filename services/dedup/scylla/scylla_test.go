@@ -28,8 +28,8 @@ func Test_Scylla(t *testing.T) {
 	require.NotNil(t, scylla)
 	defer scylla.Close()
 	t.Run("Same messageID should not be deduped for different workspace", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test1"}
-		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test2"}
+		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test1"}
+		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test2"}
 		found, _, err := scylla.Get(key1)
 		require.Nil(t, err)
 		require.True(t, found)
@@ -42,25 +42,25 @@ func Test_Scylla(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("Same messageID should be deduped for same workspace", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
 		found, _, err := scylla.Get(key1)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, found)
 		err = scylla.Commit([]string{key1.Key})
 		require.NoError(t, err)
 		found, _, err = scylla.Get(key2)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.False(t, found)
 	})
 	t.Run("Same messageID should be deduped for same workspace from cache", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
-		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceId: "test"}
+		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
 		found, _, err := scylla.Get(key1)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.True(t, found)
 		found, _, err = scylla.Get(key2)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.False(t, found)
 	})
 }

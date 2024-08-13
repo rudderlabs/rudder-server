@@ -11,6 +11,7 @@ import (
 type MirrorScylla struct {
 	badger *badger.Dedup
 	scylla *scylla.ScyllaDB
+	stat   stats.Stats
 }
 
 func NewMirrorScylla(conf *config.Config, stats stats.Stats) (*MirrorScylla, error) {
@@ -20,6 +21,7 @@ func NewMirrorScylla(conf *config.Config, stats stats.Stats) (*MirrorScylla, err
 		return nil, err
 	}
 	return &MirrorScylla{
+		stat:   stats,
 		badger: badger,
 		scylla: scylla,
 	}, nil
@@ -31,7 +33,10 @@ func (ms *MirrorScylla) Close() {
 }
 
 func (ms *MirrorScylla) Get(kv types.KeyValue) (bool, int64, error) {
-	_, _, _ = ms.badger.Get(kv)
+	_, _, err := ms.badger.Get(kv)
+	if err != nil {
+		ms.stat.NewTaggedStat("dedup_mirror_scylla_get_error", stats.CountType, stats.Tags{}).Increment()
+	}
 	return ms.scylla.Get(kv)
 }
 
