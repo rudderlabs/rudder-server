@@ -8,12 +8,12 @@ FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG VERSION
 ARG REVISION
 ARG COMMIT_HASH
-ARG ENTERPRISE_TOKEN
+ARG ENTERPRISE_BUILD=false
 ARG RACE_ENABLED=false
 ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
 
-RUN apk add --no-cache --update make tzdata ca-certificates 
+RUN apk add --no-cache --update make=4.4.1-r2 tzdata=2024a-r1 ca-certificates=20240705-r0 
 
 WORKDIR /rudder-server
 
@@ -23,10 +23,11 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-
-RUN BUILD_DATE=$(date "+%F,%T") \
+RUN --mount=type=secret,id=ENTERPRISE_TOKEN \
+    ENTERPRISE_TOKEN=$(cat /run/secrets/ENTERPRISE_TOKEN) \
+    BUILD_DATE=$(date "+%F,%T") \
     LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} -X main.enterpriseToken=${ENTERPRISE_TOKEN} " \
-    make build
+    make build  
 
 RUN go build -o devtool ./cmd/devtool/
 RUN go build -o rudder-cli ./cmd/rudder-cli/
@@ -34,9 +35,11 @@ RUN go build -o rudder-cli ./cmd/rudder-cli/
 FROM alpine:${ALPINE_VERSION}
 
 RUN apk --no-cache upgrade && \
-    apk --no-cache add tzdata ca-certificates postgresql-client curl bash
+    apk --no-cache add tzdata=2024a-r1 ca-certificates=20240705-r0 curl=8.9.0-r0 bash=5.2.26-r0
 
 WORKDIR /
+
+USER 1001
 
 COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
