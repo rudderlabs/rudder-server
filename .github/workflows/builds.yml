@@ -215,6 +215,7 @@ jobs:
             VERSION=${{ needs.docker-ent-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
+          secrets: |
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
