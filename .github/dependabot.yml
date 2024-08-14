@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
     groups:
@@ -13,15 +13,19 @@ updates:
       go-deps:
         patterns:
           - "*"
+        exclude-patterns:
+          - "github.com/aws/aws-sdk-go"
+          - "google.golang.org/api"
+          - "cloud.google.com/go/*"
         update-types:
           - "minor"
           - "patch"
   - package-ecosystem: "github-actions"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
   - package-ecosystem: "docker"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
     groups:
