@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,7 +70,7 @@ func TestKafkaBatching(t *testing.T) {
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaTopic, kafkaContainer.Ports[0])
+		return waitForKafka(kafkaCtx, t, kafkaTopic, kafkaContainer.Brokers[0])
 	})
 	group.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t)
@@ -87,10 +88,13 @@ func TestKafkaBatching(t *testing.T) {
 
 	writeKey := rand.String(27)
 	workspaceID := rand.String(27)
+	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
+	require.NoError(t, err)
 	marshalledWorkspaces := th.FillTemplateAndReturn(t, "testdata/backend_config.json", map[string]string{
 		"writeKey":    writeKey,
 		"workspaceId": workspaceID,
-		"kafkaPort":   kafkaContainer.Ports[0],
+		"kafkaHost":   kafkaHost,
+		"kafkaPort":   kafkaPort,
 		"kafkaTopic":  kafkaTopic,
 	})
 	require.NoError(t, err)
@@ -220,7 +224,7 @@ func TestKafkaBatching(t *testing.T) {
 		sendEventsToGateway(t, httpPort, writeKey, fmt.Sprintf("msg_%d", i))
 	}
 
-	c, err := kafkaClient.New("tcp", []string{"localhost:" + kafkaContainer.Ports[0]}, kafkaClient.Config{
+	c, err := kafkaClient.New("tcp", kafkaContainer.Brokers, kafkaClient.Config{
 		ClientID: t.Name(),
 	})
 	require.NoError(t, err)
@@ -398,8 +402,8 @@ func sendEvent(t testing.TB, httpPort int, payload *strings.Reader, callType, wr
 	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
-func waitForKafka(ctx context.Context, t testing.TB, topic, port string) (err error) {
-	tc := testutil.New("tcp", "localhost:"+port)
+func waitForKafka(ctx context.Context, t testing.TB, topic, address string) (err error) {
+	tc := testutil.New("tcp", address)
 	for {
 		select {
 		case <-ctx.Done():

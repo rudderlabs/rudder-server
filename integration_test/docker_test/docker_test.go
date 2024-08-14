@@ -11,6 +11,7 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -206,7 +207,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
+		kafkaHost := kafkaContainer.Brokers[0]
 
 		// Create new consumer
 		tc := testutil.New("tcp", kafkaHost)
@@ -291,7 +292,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
+		return waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0])
 	})
 	containersGroup.Go(func() (err error) {
 		redisContainer, err = redis.Setup(containersCtx, pool, t)
@@ -343,6 +344,9 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
+	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
+	require.NoError(t, err)
+
 	writeKey = rand.String(27)
 	workspaceID = rand.String(27)
 	mapWorkspaceConfig := map[string]any{
@@ -354,8 +358,10 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"address":                      redisContainer.Addr,
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
+
+		"kafkaPort": kafkaPort,
+		"kafkaHost": kafkaHost,
 	}
-	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Ports[0]
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
@@ -818,8 +824,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 	return messages, errors
 }
 
-func waitForKafka(ctx context.Context, t *testing.T, port string) error {
-	kafkaHost := "localhost:" + port
+func waitForKafka(ctx context.Context, t *testing.T, kafkaHost string) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	for {
 		select {

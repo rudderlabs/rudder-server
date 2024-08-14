@@ -504,8 +504,8 @@ func setup(t testing.TB) testConfig {
 	postgresResource, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
-	zipkinURL := "http://localhost:" + zipkinResource.Port + "/api/v2/spans"
-	zipkinTracesURL := "http://localhost:" + zipkinResource.Port + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
+	zipkinURL := zipkinResource.URL + "/api/v2/spans"
+	zipkinTracesURL := zipkinResource.URL + "/api/v2/traces?limit=100&serviceName=" + app.EMBEDDED
 
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)

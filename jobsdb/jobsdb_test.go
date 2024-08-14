@@ -1508,6 +1508,7 @@ type testingT interface {
 	FailNow()
 	Setenv(key, value string)
 	Log(...interface{})
+	Logf(format string, args ...interface{})
 	Cleanup(func())
 	Failed() bool
 }
