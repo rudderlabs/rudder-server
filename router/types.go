@@ -13,10 +13,11 @@ import (
 )
 
 type workerJobStatus struct {
-	userID string
-	worker *worker
-	job    *jobsdb.JobT
-	status *jobsdb.JobStatusT
+	userID  string
+	worker  *worker
+	job     *jobsdb.JobT
+	status  *jobsdb.JobStatusT
+	payload json.RawMessage
 }
 
 type HandleDestOAuthRespParams struct {

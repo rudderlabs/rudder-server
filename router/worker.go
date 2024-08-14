@@ -112,7 +112,13 @@ func (w *worker) workLoop() {
 				// Enhancing job parameter with the drain reason.
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", abortReason)
-				w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
+				w.rt.responseQ <- workerJobStatus{
+					userID:  userID,
+					worker:  w,
+					job:     job,
+					status:  &status,
+					payload: job.EventPayload,
+				}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    w.rt.destType,
 					"destId":      parameters.DestinationID,
@@ -589,7 +595,7 @@ func (w *worker) processDestinationJobs() {
 				respStatusCode := http.StatusInternalServerError
 				var respBody string
 				if !w.rt.enableBatching {
-					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
+					respBody = "skipping sending to destination because previous job (of user) in batch failed."
 				}
 				respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 				errorAt = routerutils.ERROR_AT_TF
@@ -970,6 +976,15 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 	}
 
+	inputPayload := payload
+	switch errorAt {
+	case routerutils.ERROR_AT_TF:
+		inputPayload = destinationJobMetadata.JobT.EventPayload
+		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "failureStage", "RudderStack Transformation Error")
+	default: // includes ERROR_AT_DEL, ERROR_AT_CUST
+		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "failureStage", "Destination Error")
+	}
+
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "content-type", respContentType)
 
@@ -979,47 +994,59 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 			status.JobState = jobsdb.Filtered.State
 		}
 		w.logger.Debugf("sending success status to response")
-		w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: status}
+		w.rt.responseQ <- workerJobStatus{
+			userID:  destinationJobMetadata.UserID,
+			worker:  w,
+			job:     destinationJobMetadata.JobT,
+			status:  status,
+			payload: inputPayload,
+		}
+		return
+	}
+	// Saving payload to DB only
+	// 1. if job failed and
+	// 2. if router job undergoes batching or dest transform.
+	if payload != nil && (w.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
+		if w.rt.reloadableConfig.savePayloadOnError.Load() {
+			status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
+		}
+	}
+	// the job failed
+	w.logger.Debugf("Job failed to send, analyzing...")
+
+	if isJobTerminated(respStatusCode) {
+		status.JobState = jobsdb.Aborted.State
+		w.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.WorkspaceId, status.ErrorCode, errorAt)
+		destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
+		destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
 	} else {
-		// Saving payload to DB only
-		// 1. if job failed and
-		// 2. if router job undergoes batching or dest transform.
-		if payload != nil && (w.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-			if w.rt.reloadableConfig.savePayloadOnError.Load() {
-				status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
+		status.JobState = jobsdb.Failed.State
+		if !w.rt.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
+			status.RetryTime = status.ExecTime.Add(nextAttemptAfter(status.AttemptNum, w.rt.reloadableConfig.minRetryBackoff.Load(), w.rt.reloadableConfig.maxRetryBackoff.Load()))
+		}
+	}
+
+	if w.rt.guaranteeUserEventOrder {
+		if status.JobState == jobsdb.Failed.State {
+
+			orderKey := eventorder.BarrierKey{
+				UserID:        destinationJobMetadata.UserID,
+				DestinationID: destinationJobMetadata.DestinationID,
+				WorkspaceID:   destinationJobMetadata.WorkspaceID,
+			}
+			w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
+			if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
+				panic(err)
 			}
 		}
-		// the job failed
-		w.logger.Debugf("Job failed to send, analyzing...")
-
-		if isJobTerminated(respStatusCode) {
-			status.JobState = jobsdb.Aborted.State
-			w.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.WorkspaceId, status.ErrorCode, errorAt)
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
-			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
-		} else {
-			status.JobState = jobsdb.Failed.State
-			if !w.rt.retryLimitReached(status) { // don't delay retry time if retry limit is reached, so that the job can be aborted immediately on the next loop
-				status.RetryTime = status.ExecTime.Add(nextAttemptAfter(status.AttemptNum, w.rt.reloadableConfig.minRetryBackoff.Load(), w.rt.reloadableConfig.maxRetryBackoff.Load()))
-			}
-		}
-
-		if w.rt.guaranteeUserEventOrder {
-			if status.JobState == jobsdb.Failed.State {
-
-				orderKey := eventorder.BarrierKey{
-					UserID:        destinationJobMetadata.UserID,
-					DestinationID: destinationJobMetadata.DestinationID,
-					WorkspaceID:   destinationJobMetadata.WorkspaceID,
-				}
-				w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
-				if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
-					panic(err)
-				}
-			}
-		}
-		w.logger.Debugf("sending failed/aborted state as response")
-		w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: status}
+	}
+	w.logger.Debugf("sending failed/aborted state as response")
+	w.rt.responseQ <- workerJobStatus{
+		userID:  destinationJobMetadata.UserID,
+		worker:  w,
+		job:     destinationJobMetadata.JobT,
+		status:  status,
+		payload: inputPayload,
 	}
 }
 
