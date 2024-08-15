@@ -1525,6 +1525,7 @@ func startPostgres(t testingT) *postgres.Resource {
 	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_USER", postgresContainer.User)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	initJobsDB()
 	return postgresContainer

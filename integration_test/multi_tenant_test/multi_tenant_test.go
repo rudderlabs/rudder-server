@@ -160,6 +160,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
+			"JOBS_DB_HOST="+postgresContainer.Host,
 			"JOBS_DB_PORT="+postgresContainer.Port,
 			"JOBS_DB_USER="+postgresContainer.User,
 			"JOBS_DB_DB_NAME="+postgresContainer.Database,

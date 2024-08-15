@@ -159,6 +159,7 @@ func TestKafkaBatching(t *testing.T) {
 			"INSTANCE_ID="+serverInstanceID,
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
+			"JOBS_DB_HOST="+postgresContainer.Host,
 			"JOBS_DB_PORT="+postgresContainer.Port,
 			"JOBS_DB_USER="+postgresContainer.User,
 			"JOBS_DB_DB_NAME="+postgresContainer.Database,

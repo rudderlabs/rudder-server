@@ -86,7 +86,7 @@
         },
         {
           "config": {
-            "host": "localhost",
+            "host": "{{.postgresHost}}",
             "database": "jobsdb",
             "user": "rudder",
             "password": "password",

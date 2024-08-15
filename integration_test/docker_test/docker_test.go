@@ -320,7 +320,9 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		t.Log("INFO: No .env file found.")
 	}
 
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
@@ -354,14 +356,15 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"disableDestinationwebhookUrl": disableDestinationWebhookURL,
 		"writeKey":                     writeKey,
 		"workspaceId":                  workspaceID,
+		"postgresHost":                 postgresContainer.Host,
 		"postgresPort":                 postgresContainer.Port,
 		"address":                      redisContainer.Addr,
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
-
-		"kafkaPort": kafkaPort,
-		"kafkaHost": kafkaHost,
+		"kafkaPort":                    kafkaPort,
+		"kafkaHost":                    kafkaHost,
 	}
+	t.Logf("workspace config: %v", mapWorkspaceConfig)
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,

@@ -1135,10 +1135,8 @@ github.com/rudderlabs/compose-test v0.1.3 h1:uyep6jDCIF737sfv4zIaMsKRQKX95IDz5Xb
 github.com/rudderlabs/compose-test v0.1.3/go.mod h1:tuvS1eQdSfwOYv1qwyVAcpdJxPLQXJgy5xGDd/9XmMg=
 github.com/rudderlabs/parquet-go v0.0.2 h1:ZXRdZdimB0PdJtmxeSSxfI0fDQ3kZjwzBxRi6Ut1J8k=
 github.com/rudderlabs/parquet-go v0.0.2/go.mod h1:g6guum7o8uhj/uNhunnt7bw5Vabu/goI5i21/3fnxWQ=
-github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240814130401-18f837be2a3b h1:rRgt/0Ak5hf9r0MYvmd6uE/Tid1Oa7hN9QJIuRXTBfk=
-github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240814130401-18f837be2a3b/go.mod h1:Sqyf/kUQ/8fhf4PEtGDQl/Fl2A3aHlIOL3jQW5V9hKQ=
-github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240814191934-071330bee24d h1:YBBsuUPC2WKIphMqPTVhNQbpP5zRWvuoxrppXaapaeE=
-github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240814191934-071330bee24d/go.mod h1:Sqyf/kUQ/8fhf4PEtGDQl/Fl2A3aHlIOL3jQW5V9hKQ=
+github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240815115115-a8ba2828f313 h1:BLrKXHOVYrcHe4xvQP9aF0Y4v5pOKKwl9zaZ9ezh+B0=
+github.com/rudderlabs/rudder-go-kit v0.36.3-0.20240815115115-a8ba2828f313/go.mod h1:Sqyf/kUQ/8fhf4PEtGDQl/Fl2A3aHlIOL3jQW5V9hKQ=
 github.com/rudderlabs/rudder-observability-kit v0.0.3 h1:vZtuZRkGX+6rjaeKtxxFE2YYP6QlmAcVcgecTOjvz+Q=
 github.com/rudderlabs/rudder-observability-kit v0.0.3/go.mod h1:6UjAh3H6rkE0fFLh7z8ZGQEQbKtUkRfhWOf/OUhfqW8=
 github.com/rudderlabs/rudder-schemas v0.5.0 h1:+140Amou92sB4ZXwsX3jgRIdjNfERJJgYOx0bcUkxzg=
