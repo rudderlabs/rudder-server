@@ -160,6 +160,8 @@ func TestTransformer(t *testing.T) {
 		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
 		tr.config.failOnError = config.SingleValueLoader(true)
 
+		tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
+
 		tr.config.maxRetry = config.SingleValueLoader(1)
 
 		tc := []struct {
@@ -326,6 +328,7 @@ func TestTransformer(t *testing.T) {
 				tr.config.maxRetry = config.SingleValueLoader(tc.retries)
 				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(tc.failOnUserTransformTimeout)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+				tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
@@ -386,6 +389,7 @@ func TestTransformer(t *testing.T) {
 		tr.conf = config.Default
 		tr.client = srv.Client()
 		tr.config.maxRetry = config.SingleValueLoader(1)
+		tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
 		tr.config.timeoutDuration = 1 * time.Second
 		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
 		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
@@ -520,6 +524,7 @@ func TestTransformer(t *testing.T) {
 				tr.config.failOnError = config.SingleValueLoader(tc.failOnError)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 				tr.config.timeoutDuration = 1 * time.Second
+				tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
@@ -620,6 +625,7 @@ func TestTransformer(t *testing.T) {
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 				tr.config.maxRetry = config.SingleValueLoader(1)
 				tr.config.timeoutDuration = 1 * time.Second
+				tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
 
 				if tc.expectPanic {
 					require.Panics(t, func() {
