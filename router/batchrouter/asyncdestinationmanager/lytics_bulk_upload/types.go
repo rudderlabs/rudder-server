@@ -1,8 +1,10 @@
 package lyticsBulkUpload
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"io"
+	"os"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -41,11 +43,30 @@ type HttpRequestData struct {
 	ContentType   string
 }
 
-type Record struct {
+type ActionFileInfo struct {
+	Action           string
+	CSVWriter        *csv.Writer
+	CSVFilePath      string
+	SuccessfulJobIDs []int64
+	FailedJobIDs     []int64
+	FileSize         int64
+	EventCount       int64
+	File             *os.File
+}
+
+type Message struct {
 	Action   string          `json:"action"`
 	Type     string          `json:"type"`
 	Channel  string          `json:"channel"`
 	Fields   json.RawMessage `json:"fields"`
 	RecordId string          `json:"recordId"`
 	Context  json.RawMessage `json:"context"`
+}
+type Metadata struct {
+	JobID int64 `json:"job_id"`
+}
+
+type Data struct {
+	Message  Message  `json:"message"`
+	Metadata Metadata `json:"metadata"`
 }
