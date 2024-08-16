@@ -21,7 +21,6 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
-	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -30,6 +29,7 @@ import (
 	client "github.com/rudderlabs/rudder-go-kit/kafkaclient"
 	"github.com/rudderlabs/rudder-go-kit/kafkaclient/testutil"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker"
 	dockerKafka "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -172,7 +172,6 @@ func TestNewProducer(t *testing.T) {
 			"port":     kafkaPort,
 		}
 		dest := backendconfig.DestinationT{Config: destConfig}
-
 		p, err := NewProducer(&dest, common.Opts{})
 		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
 		require.NoError(t, err)
@@ -196,7 +195,7 @@ func TestNewProducer(t *testing.T) {
 		require.NoError(t, err)
 
 		// Start shared Docker network
-		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "kafka_network"})
+		network, err := docker.CreateNetwork(pool, t, "kafka_network")
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
@@ -372,17 +371,12 @@ func TestAIOKafka(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	kafkaNetwork, err := pool.CreateNetwork("kafka_network_" + misc.FastUUID().String())
+	kafkaNetwork, err := docker.CreateNetwork(pool, t, "kafka_network")
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := pool.RemoveNetwork(kafkaNetwork); err != nil {
-			t.Logf("Error while removing Docker network: %v", err)
-		}
-	})
 
 	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t},
 		dockerKafka.WithBrokers(1),
-		dockerKafka.WithNetwork(kafkaNetwork.Network),
+		dockerKafka.WithNetwork(kafkaNetwork),
 	)
 	require.NoError(t, err)
 
@@ -416,7 +410,7 @@ func TestAIOKafka(t *testing.T) {
 
 	consumerContainer, err := pool.BuildAndRunWithOptions("./testdata/aiokafka/Dockerfile", &dockertest.RunOptions{
 		Name:      fmt.Sprintf("aiokafka-%s", misc.FastUUID().String()),
-		NetworkID: kafkaNetwork.Network.ID,
+		NetworkID: kafkaNetwork.ID,
 		Cmd:       []string{"tail", "-f", "/dev/null"},
 	})
 	require.NoError(t, err)
