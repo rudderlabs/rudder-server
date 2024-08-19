@@ -172,6 +172,7 @@ type handle struct {
 		maxRetry                   config.ValueLoader[int]
 		failOnUserTransformTimeout config.ValueLoader[bool]
 		failOnError                config.ValueLoader[bool]
+		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
 
 		destTransformationURL string
 		userTransformationURL string
@@ -202,6 +203,8 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
+
+	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -366,6 +369,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	// endless retry if transformer-control plane connection is down
 	endlessBackoff := backoff.NewExponentialBackOff()
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
+	endlessBackoff.MaxInterval = trans.config.maxRetryBackoffInterval.Load()
 
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
@@ -439,6 +443,9 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		resp       *http.Response
 		respData   []byte
 	)
+	retryStrategy := backoff.NewExponentialBackOff()
+	// MaxInterval caps the RetryInterval
+	retryStrategy.MaxInterval = trans.config.maxRetryBackoffInterval.Load()
 
 	err := backoff.RetryNotify(
 		func() error {
@@ -473,7 +480,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
-		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
+		backoff.WithMaxRetries(retryStrategy, uint64(trans.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
 			trans.logger.Warnn(
