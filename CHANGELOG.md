@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.32.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.31.0...v1.32.0-rc.1) (2024-08-19)
+
+
+### Features
+
+* introduce scylla dedup ([#4922](https://github.com/rudderlabs/rudder-server/issues/4922)) ([31a033d](https://github.com/rudderlabs/rudder-server/commit/31a033dd470471226c9153534cc79fd09af92bb9))
+
+
+### Bug Fixes
+
+* new FileManager for every object storage operation ([#4930](https://github.com/rudderlabs/rudder-server/issues/4930)) ([2572016](https://github.com/rudderlabs/rudder-server/commit/25720169bc602bc9999c04010aae736f7daec485))
+* replace gocql/gocql with scylladb/gocql in go.mod ([#4987](https://github.com/rudderlabs/rudder-server/issues/4987)) ([29bccb9](https://github.com/rudderlabs/rudder-server/commit/29bccb9cf1cad47c521ee7dc007a2a3f86722ba0))
+* vaccum handling in error detail reports table ([#4945](https://github.com/rudderlabs/rudder-server/issues/4945)) ([e9da649](https://github.com/rudderlabs/rudder-server/commit/e9da649b21f80b9333ce87da91480bd5cdee0067))
+* webhook source integration tests ([#4942](https://github.com/rudderlabs/rudder-server/issues/4942)) ([e2fe003](https://github.com/rudderlabs/rudder-server/commit/e2fe00343905a74ef9cd61516b5f319b2fa34712))
+
+
+### Miscellaneous
+
+* cleanup duplicate minio contents ([#4983](https://github.com/rudderlabs/rudder-server/issues/4983)) ([e5293b8](https://github.com/rudderlabs/rudder-server/commit/e5293b83cee35c4aab1a87a9e930673250f8f5a8))
+* **deps:** bump the go-deps group across 1 directory with 9 updates ([#4970](https://github.com/rudderlabs/rudder-server/issues/4970)) ([e9da649](https://github.com/rudderlabs/rudder-server/commit/e9da649b21f80b9333ce87da91480bd5cdee0067))
+* enforce max limit for webhook ([#4975](https://github.com/rudderlabs/rudder-server/issues/4975)) ([377887a](https://github.com/rudderlabs/rudder-server/commit/377887a7c03afa55528bcf4087cf15afbb62196d))
+* load testcases from rudder-transformer ([#4902](https://github.com/rudderlabs/rudder-server/issues/4902)) ([1c2f8db](https://github.com/rudderlabs/rudder-server/commit/1c2f8db093aff0296fac201ccf9688d0be9f4745))
+* store anonymous ids in userID hll to optimise storage ([#4988](https://github.com/rudderlabs/rudder-server/issues/4988)) ([4777e68](https://github.com/rudderlabs/rudder-server/commit/4777e682ed94c6df18db2ab2736ef447eb31b4db))
+* update destination id label to be consistent with other modules ([#4992](https://github.com/rudderlabs/rudder-server/issues/4992)) ([eae14f8](https://github.com/rudderlabs/rudder-server/commit/eae14f83dafa5a65524a0bf5745b4022f8e265a7))
+* update sync-release action to run on all release prs ([#4967](https://github.com/rudderlabs/rudder-server/issues/4967)) ([e9da649](https://github.com/rudderlabs/rudder-server/commit/e9da649b21f80b9333ce87da91480bd5cdee0067))
+* vacuum tracked_users_reports table ([#4948](https://github.com/rudderlabs/rudder-server/issues/4948)) ([ce5a009](https://github.com/rudderlabs/rudder-server/commit/ce5a009408d2108dc743fd9a27d155438448907a))
+
 ## [1.31.0](https://github.com/rudderlabs/rudder-server/compare/v1.30.4...v1.31.0) (2024-08-05)
 
 
