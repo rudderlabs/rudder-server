@@ -169,6 +169,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	if err != nil {
 		return "", fmt.Errorf("create gz writer: %w", err)
 	}
+	defer func() { _ = os.Remove(filePath) }()
 
 	for _, job := range jobs {
 		j, err := marshalJob(job)
@@ -184,7 +185,6 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	if err := gzWriter.Close(); err != nil {
 		return "", fmt.Errorf("close writer: %w", err)
 	}
-	defer func() { _ = os.Remove(filePath) }()
 
 	fileUploader, err := w.storageProvider.GetFileManager(w.lifecycle.ctx, workspaceID)
 	if err != nil {
