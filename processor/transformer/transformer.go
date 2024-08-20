@@ -552,6 +552,7 @@ func trackLongRunningTransformation(ctx context.Context, stage string, timeout t
 			log.Errorw("Long running transformation detected",
 				"stage", stage,
 				"duration", time.Since(start).String())
+			return // ensure the loop terminates after logging
 		}
 	}
 }
