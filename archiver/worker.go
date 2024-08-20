@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -155,13 +156,19 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 	workspaceID := jobs[0].WorkspaceId
 
-	gzWriter := fileuploader.NewGzMultiFileWriter()
 	filePath := path.Join(
 		lo.Must(misc.CreateTMPDIR()),
 		"rudder-backups",
 		w.sourceID,
 		fmt.Sprintf("%d_%d_%s_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID, uuid.NewString()),
 	)
+	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+		return "", fmt.Errorf("creating gz file %q: mkdir error: %w", filePath, err)
+	}
+	gzWriter, err := misc.CreateGZ(filePath)
+	if err != nil {
+		return "", fmt.Errorf("create gz writer: %w", err)
+	}
 
 	for _, job := range jobs {
 		j, err := marshalJob(job)
@@ -169,7 +176,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 			_ = gzWriter.Close()
 			return "", fmt.Errorf("marshal job: %w", err)
 		}
-		if _, err := gzWriter.Write(filePath, append(j, '\n')); err != nil {
+		if _, err := gzWriter.Write(append(j, '\n')); err != nil {
 			_ = gzWriter.Close()
 			return "", fmt.Errorf("write to file: %w", err)
 		}
