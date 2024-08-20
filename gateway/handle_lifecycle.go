@@ -14,7 +14,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/rs/cors"
@@ -36,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -150,23 +150,23 @@ func (gw *Handle) Setup(
 	gw.initUserWebRequestWorkers()
 	gw.backendConfigInitialisedChan = make(chan struct{})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		gw.backendConfigSubscriber(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		gw.runUserWebRequestWorkers(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		gw.userWorkerRequestBatcher()
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		gw.initDBWriterWorkers(ctx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		gw.collectMetrics(ctx)
 		return nil
 	}))
@@ -266,7 +266,7 @@ func (gw *Handle) initDBWriterWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < gw.conf.maxDBWriterProcess; i++ {
 		gw.logger.Debug("DB Writer Worker Started", i)
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			gw.dbWriterWorkerProcess()
 			return nil
 		}))
@@ -479,7 +479,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	}
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(gw.conf.webPort),
-		Handler:           c.Handler(bugsnag.Handler(srvMux)),
+		Handler:           c.Handler(srvMux),
 		ReadTimeout:       gw.conf.ReadTimeout,
 		ReadHeaderTimeout: gw.conf.ReadHeaderTimeout,
 		WriteTimeout:      gw.conf.WriteTimeout,

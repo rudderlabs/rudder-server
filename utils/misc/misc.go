@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	"unicode"
 
 	"github.com/araddon/dateparse"
-	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
 	"github.com/tidwall/sjson"
@@ -794,49 +792,6 @@ func GetWarehouseURL() (url string) {
 		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
 	}
 	return
-}
-
-func WithBugsnagForWarehouse(fn func() error) func() error {
-	return func() error {
-		ctx := bugsnag.StartSession(context.Background())
-		defer BugsnagNotify(ctx, "Warehouse")()
-		return fn()
-	}
-}
-
-func BugsnagNotify(ctx context.Context, team string) func() {
-	return func() {
-		if r := recover(); r != nil {
-			notifyOnce.Do(func() {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					},
-					"Team": {
-						"Name": team,
-					},
-				})
-				pkgLogger.Fatalw("Panic detected. Application will crash.",
-					"stack", string(debug.Stack()),
-					"panic", r,
-					"team", team,
-					"goRoutines", runtime.NumGoroutine(),
-					"version", bugsnag.Config.AppVersion,
-					"releaseStage", bugsnag.Config.ReleaseStage,
-				)
-				logger.Sync()
-				panic(r)
-			})
-		}
-	}
-}
-
-func WithBugsnag(fn func() error) func() error {
-	return func() error {
-		ctx := bugsnag.StartSession(context.Background())
-		defer BugsnagNotify(ctx, "Core")()
-		return fn()
-	}
 }
 
 // MergeMaps merging with one level of nesting.

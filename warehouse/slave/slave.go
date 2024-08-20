@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -72,14 +73,14 @@ func (s *Slave) SetupSlave(ctx context.Context) error {
 	for workerIdx := 0; workerIdx <= s.config.noOfSlaveWorkerRoutines.Load()-1; workerIdx++ {
 		idx := workerIdx
 
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.WrapperForWarehouse(func() error {
 			slaveWorker := newWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx)
 			slaveWorker.start(gCtx, jobNotificationChannel, slaveID)
 			return nil
 		}))
 	}
 
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.WrapperForWarehouse(func() error {
 		return s.notifier.RunMaintenance(gCtx)
 	}))
 

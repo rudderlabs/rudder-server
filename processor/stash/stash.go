@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -121,7 +122,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
 	for i := 0; i < st.config.noOfErrStashWorkers.Load(); i++ {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			for jobs := range st.errProcessQ {
 				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
@@ -227,7 +228,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			mu.Unlock()
 			continue
 		}
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
