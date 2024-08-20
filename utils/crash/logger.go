@@ -1,6 +1,7 @@
 package crash
 
 import (
+	"net/http"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -15,6 +16,7 @@ type PanicLogger struct {
 	opts PanicWrapperOpts
 }
 
+// UsingLogger uses the provided logger to log panics.
 func UsingLogger(logger logger.Logger, opts PanicWrapperOpts) *PanicLogger {
 	return &PanicLogger{
 		logger: logger.Child("panic"),
@@ -22,6 +24,8 @@ func UsingLogger(logger logger.Logger, opts PanicWrapperOpts) *PanicLogger {
 	}
 }
 
+// Notify returns a function that should be deferred to capture panics.
+// It will do a Fatal log with the stack trace and panic value.
 func (p *PanicLogger) Notify(team string) func() {
 	return func() {
 		if r := recover(); r != nil {
@@ -36,8 +40,18 @@ func (p *PanicLogger) Notify(team string) func() {
 					"appType", p.opts.AppType,
 				)
 				logger.Sync()
-				panic(r)
 			})
+			panic(r)
 		}
 	}
+}
+
+// Handler creates an http Handler that captures any panics that
+// happen. It then repanics so that the default http Server panic handler can
+// handle the panic too.
+func (p *PanicLogger) Handler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer p.Notify("")()
+		h.ServeHTTP(w, r)
+	})
 }

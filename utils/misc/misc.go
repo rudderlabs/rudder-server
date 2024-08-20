@@ -39,7 +39,6 @@ import (
 
 var (
 	reservedFolderPaths []*RFP
-	notifyOnce          sync.Once
 
 	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
 	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)

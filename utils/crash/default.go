@@ -1,6 +1,8 @@
 package crash
 
 import (
+	"net/http"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -8,6 +10,7 @@ var Default panicHandler = &NOOP{}
 
 type panicHandler interface {
 	Notify(team string) func()
+	Handler(h http.Handler) http.Handler
 }
 
 type PanicWrapperOpts struct {
@@ -36,4 +39,8 @@ func Wrapper(fn func() error) func() error {
 
 func Notify(team string) func() {
 	return Default.Notify(team)
+}
+
+func Handler(h http.Handler) http.Handler {
+	return Default.Handler(h)
 }
