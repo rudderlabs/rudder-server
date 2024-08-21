@@ -41,6 +41,7 @@ type HttpRequestData struct {
 	Authorization string
 	Endpoint      string
 	ContentType   string
+	Method        string
 }
 
 type ActionFileInfo struct {

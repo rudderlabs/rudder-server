@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	stdjson "encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
-
-	// jsoniter "github.com/json-iterator/go"
 
 	"github.com/tidwall/gjson"
 
@@ -22,35 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
-
-var (
-	// json        = jsoniter.ConfigCompatibleWithStandardLibrary
-	idClientMap = map[string]string{
-		"ClientId": "CLIENT_ID",
-		"Yclid":    "YCLID",
-		"UserId":   "USER_ID",
-	}
-)
-
-type lyticsBulkUploadMessageBody struct {
-	ClientID any     `json:"ClientId"`
-	YclID    any     `json:"Yclid"`
-	UserID   any     `json:"UserId"`
-	Target   string  `json:"Target"`
-	DateTime string  `json:"DateTime"`
-	Price    float64 `json:"Price"`
-	Currency string  `json:"Currency"`
-}
-
-type lyticsBulkUploadMessage struct {
-	Message lyticsBulkUploadMessageBody `json:"message"`
-}
-
-type idStruct struct {
-	id         string
-	clientType string
-	headerName string
-}
 
 func NewLyticsBulkUploader(destinationName, authorization, baseEndpoint string) *LyticsBulkUploader {
 	return &LyticsBulkUploader{
@@ -96,54 +65,21 @@ func (ym *LyticsBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) commo
 	return common.GetUploadStatsResponse{}
 }
 
-// func copyDataIntoBuffer(csvFilePath string) (*bytes.Buffer, *multipart.Writer, error) {
-// 	payload := &bytes.Buffer{}
-// 	writer := multipart.NewWriter(payload)
-// 	file, openFileErr := os.Open(csvFilePath)
-// 	if openFileErr != nil {
-// 		return nil, nil, openFileErr
-// 	}
-// 	defer func() { _ = file.Close() }()
-// 	part, createFormFileErr := writer.CreateFormFile("file", filepath.Base(csvFilePath))
-// 	if createFormFileErr != nil {
-// 		return nil, nil, createFormFileErr
-// 	}
-// 	_, copyFileErr := io.Copy(part, file)
-// 	if copyFileErr != nil {
-// 		return nil, nil, copyFileErr
-// 	}
-// 	closeWriterErr := writer.Close()
-// 	if closeWriterErr != nil {
-// 		return nil, nil, closeWriterErr
-// 	}
-
-// 	return payload, writer, nil
-// }
-
-func (ym *LyticsBulkUploader) generateErrorOutput(errorString string, err error, importingJobIds []int64) common.AsyncUploadOutput {
-	eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": ym.destinationInfo.DefinitionName,
-	})
-	eventsAbortedStat.Count(len(importingJobIds))
-	return common.AsyncUploadOutput{
-		AbortCount:    len(importingJobIds),
-		DestinationID: ym.destinationInfo.ID,
-		AbortJobIDs:   importingJobIds,
-		AbortReason:   fmt.Sprintf("%s %v", errorString, err.Error()),
-	}
-}
-
 func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
 // Helper function to retrieve the value of RudderProperty from uploadData
-func getUploadDataValue(uploadData UploadData, rudderProperty string) (string, bool) {
-	// Assuming uploadData is a map or has a method to retrieve a value by property name
-	// Modify this function based on the actual structure of uploadData
-	if value, exists := uploadData[rudderProperty]; exists {
-		return value, true
+func getUploadDataValue(uploadData []byte, rudderProperty string) (string, bool) {
+	var data map[string]interface{}
+	if err := json.Unmarshal(uploadData, &data); err != nil {
+		return "", false
+	}
+
+	if value, exists := data[rudderProperty]; exists {
+		if strValue, ok := value.(string); ok {
+			return strValue, true
+		}
 	}
 	return "", false
 }
@@ -160,13 +96,19 @@ func (b *LyticsBulkUploader) populateZipFile(actionFile *ActionFileInfo, streamT
 			propertyMap[mapping.RudderProperty] = mapping.LyticsProperty
 		}
 
+		// Unmarshal Fields into a slice of json.RawMessage
+		var fields []json.RawMessage
+		if err := json.Unmarshal(data.Message.Fields, &fields); err != nil {
+			return err
+		}
+
 		// Initialize an empty CSV row
 		csvRow := []string{}
 
 		// Populate the CSV row based on streamTraitsMapping
 		for _, mapping := range streamTraitsMapping {
 			found := false
-			for _, uploadData := range data.Message.Fields {
+			for _, uploadData := range fields {
 				if value, exists := getUploadDataValue(uploadData, mapping.RudderProperty); exists {
 					csvRow = append(csvRow, value)
 					found = true
@@ -276,20 +218,41 @@ func convertGjsonToStreamTraitMapping(result gjson.Result) ([]StreamTraitMapping
 	return mappings, nil
 }
 
+func (e *LyticsBulkUploader) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
+	req, err := http.NewRequest(data.Method, data.Endpoint, data.Body)
+	if err != nil {
+		return nil, 500, err
+	}
+	req.Header.Add("Authorization", data.Authorization)
+	req.Header.Add("content-type", data.ContentType)
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, 500, err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, 500, err
+	}
+	return body, res.StatusCode, err
+}
+
 func (e *LyticsBulkUploader) UploadBulkFile(data *HttpRequestData, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
-	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/data"
+	data.Endpoint = data.Endpoint
 	data.Method = http.MethodPost
-	data.ContentType = "text/csv"
+	data.ContentType = "application/csv"
 	data.Body = file
 	_, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
 		return err
 	}
-	if statusCode != 204 {
+	if statusCode != 200 {
 		return fmt.Errorf("Upload failed with status code: %d", statusCode)
 	}
 	return nil
@@ -301,11 +264,21 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	filePath := asyncDestStruct.FileName
 	destConfig, err := json.Marshal(destination.Config)
 	if err != nil {
-		return b.generateErrorOutput("Error while marshalling destination config. ", err, asyncDestStruct.ImportingJobIDs)
+		// return b.generateErrorOutput("Error while marshalling destination config. ", err, asyncDestStruct.ImportingJobIDs,asyncDestStruct.Destination.ID )
+		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+			"module":   "batch_router",
+			"destType": b.destName,
+		})
+		eventsAbortedStat.Count(len(asyncDestStruct.ImportingJobIDs))
+		return common.AsyncUploadOutput{
+			AbortCount:    len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: asyncDestStruct.Destination.ID,
+			AbortJobIDs:   asyncDestStruct.ImportingJobIDs,
+			AbortReason:   fmt.Sprintf("%s %v", "Error while marshalling destination config", err.Error()),
+		}
 	}
 	var failedJobs []int64
 	var successJobs []int64
-	var importIds []string
 	var errors []string
 
 	destConfigJson := string(destConfig)
@@ -327,9 +300,8 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
-	// for _, actionFile := range actionFiles.CSVFilePath {
+
 	uploadRetryableStat.Count(len(actionFiles.FailedJobIDs))
-	// urlResp, err := b.service.GetBulkUploadUrl()
 	if err != nil {
 		b.logger.Error("Error in getting bulk upload url: %w", err)
 		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
@@ -341,15 +313,18 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		"destType": b.destName,
 	})
 
+	uploadDataData := HttpRequestData{
+		Endpoint:      b.baseEndpoint,
+		Authorization: b.authorization,
+	}
+
 	startTime := time.Now()
-	uploadBulkFileResp, errorDuringUpload := b.UploadBulkFile(b.baseEndpoint, b.authorization, actionFiles.CSVFilePath)
+	errorDuringUpload := b.UploadBulkFile(&uploadDataData, actionFiles.CSVFilePath)
 	uploadTimeStat.Since(startTime)
 
 	if errorDuringUpload != nil {
 		b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
-		errors = append(errors, fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFiles.Action, errorDuringUpload))
-
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
 		if err != nil {
@@ -357,33 +332,20 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		}
 	}
 
-	importIds = append(importIds, uploadBulkFileResp.RequestId)
 	failedJobs = append(failedJobs, actionFiles.FailedJobIDs...)
 	successJobs = append(successJobs, actionFiles.SuccessfulJobIDs...)
-	// }
 
-	var parameters common.ImportParameters
-	parameters.ImportId = strings.Join(importIds, commaSeparator)
-	importParameters, err := stdjson.Marshal(parameters)
-	if err != nil {
-		b.logger.Error("Errored in Marshalling parameters" + err.Error())
-	}
-	allErrors := router_utils.EnhanceJSON([]byte(`{}`), "error", strings.Join(errors, commaSeparator))
-
-	// for _, actionFile := range actionFiles {
 	err = os.Remove(actionFiles.CSVFilePath)
 	if err != nil {
 		b.logger.Error("Error in removing zip file: %v", err)
 	}
-	// }
 
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     successJobs,
-		FailedJobIDs:        append(asyncDestStruct.FailedJobIDs, failedJobs...),
-		FailedReason:        string(allErrors),
-		ImportingParameters: importParameters,
-		ImportingCount:      len(successJobs),
-		FailedCount:         len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
-		DestinationID:       destination.ID,
+		ImportingJobIDs: successJobs,
+		FailedJobIDs:    append(asyncDestStruct.FailedJobIDs, failedJobs...),
+		FailedReason:    fmt.Sprintf("unable to upload the data. "+"%v", err),
+		ImportingCount:  len(successJobs),
+		FailedCount:     len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
+		DestinationID:   destination.ID,
 	}
 }
