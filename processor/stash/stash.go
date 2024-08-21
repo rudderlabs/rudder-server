@@ -201,6 +201,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 				panic(err)
 			}
 			if _, err := writer.Write(append(rawJob, newline...)); err != nil {
+				_ = writer.Close()
 				panic(err)
 			}
 		})

@@ -25,7 +25,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/tidwall/gjson"
@@ -129,29 +128,35 @@ func (m *fileMigrator) uploadFile(ctx context.Context, jobs []*newFileFormat, so
 	firstJobCreatedAt := jobs[0].CreatedAt.UTC()
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 
-	gzWriter := fileuploader.NewGzMultiFileWriter()
 	localFilePath := path.Join(
 		lo.Must(misc.CreateTMPDIR()),
 		"rudder-backups",
 		sourceId,
 		fmt.Sprintf("%d_%d_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceId),
 	)
+	if err := os.MkdirAll(filepath.Dir(localFilePath), os.ModePerm); err != nil {
+		return (fmt.Errorf("creating gz file %q: mkdir error: %w", localFilePath, err))
+	}
+	writer, err := misc.CreateGZ(localFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to create gz writer: %w", err)
+	}
+	defer func() { _ = os.Remove(localFilePath) }()
 
 	for _, job := range jobs {
 		jobBytes, err := json.Marshal(job)
 		if err != nil {
-			_ = gzWriter.Close()
+			_ = writer.Close()
 			return fmt.Errorf("failed to marshal job: %w", err)
 		}
-		if _, err := gzWriter.Write(localFilePath, append(jobBytes, '\n')); err != nil {
-			_ = gzWriter.Close()
+		if _, err := writer.Write(append(jobBytes, '\n')); err != nil {
+			_ = writer.Close()
 			return fmt.Errorf("write to local file failed: %w", err)
 		}
 	}
-	if err := gzWriter.Close(); err != nil {
+	if err := writer.Close(); err != nil {
 		return fmt.Errorf("failed to close writer: %w", err)
 	}
-	defer func() { _ = os.Remove(localFilePath) }()
 
 	localFile, err := os.Open(localFilePath)
 	if err != nil {
