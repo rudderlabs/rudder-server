@@ -4,13 +4,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 )
 
 func TestNotify(t *testing.T) {
-
 	t.Run("capture panic", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		logger := mock_logger.NewMockLogger(ctrl)
@@ -40,7 +40,6 @@ func TestNotify(t *testing.T) {
 
 		ph.Notify("team")()
 	})
-
 }
 
 func TestHandler(t *testing.T) {

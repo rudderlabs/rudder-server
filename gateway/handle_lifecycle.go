@@ -479,7 +479,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	}
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(gw.conf.webPort),
-		Handler:           c.Handler(srvMux),
+		Handler:           c.Handler(crash.Handler(srvMux)),
 		ReadTimeout:       gw.conf.ReadTimeout,
 		ReadHeaderTimeout: gw.conf.ReadHeaderTimeout,
 		WriteTimeout:      gw.conf.WriteTimeout,

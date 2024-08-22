@@ -350,7 +350,7 @@ func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Han
 	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(a.config.http.webPort),
-		Handler:           srvMux,
+		Handler:           crash.Handler(srvMux),
 		ReadTimeout:       a.config.http.ReadTimeout,
 		ReadHeaderTimeout: a.config.http.ReadHeaderTimeout,
 		WriteTimeout:      a.config.http.WriteTimeout,

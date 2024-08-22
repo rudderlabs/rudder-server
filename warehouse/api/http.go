@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -146,7 +147,7 @@ func (a *Api) Start(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(a.config.webPort)),
-		Handler:           srvMux,
+		Handler:           crash.Handler(srvMux),
 		ReadHeaderTimeout: a.config.readerHeaderTimeout,
 	}
 	return kithttputil.ListenAndServe(ctx, srv)
