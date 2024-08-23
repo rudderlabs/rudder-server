@@ -130,6 +130,7 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		job.timerStat("event_delivery_time",
 			warehouseutils.Tag{Name: "tableName", Value: capturedTableName},
 			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
+			warehouseutils.Tag{Name: "sourceCategory", Value: job.warehouse.Source.SourceDefinition.Category},
 		).Since(firstEventAt)
 	}
 }
