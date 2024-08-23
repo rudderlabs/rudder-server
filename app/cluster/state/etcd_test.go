@@ -8,13 +8,11 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	etcd "go.etcd.io/etcd/client/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -29,16 +27,13 @@ func Test_Ping(t *testing.T) {
 func Test_ServerMode(t *testing.T) {
 	Init()
 
-	var etcdClient *etcd.Client
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	cleaner := &testhelper.Cleanup{}
-	defer cleaner.Run()
-
 	etcdRes, err := thEtcd.Setup(pool, t)
 	require.NoError(t, err)
+
+	etcdClient := etcdRes.Client
 
 	t.Run("ping", func(t *testing.T) {
 		em := state.ETCDManager{
