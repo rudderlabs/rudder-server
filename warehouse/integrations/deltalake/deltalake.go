@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
@@ -228,7 +230,11 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}
 
+	log := d.logger.Withn(logger.NewStringField("id", uuid.NewString()))
+	start := time.Now()
+	log.Infon("connecting to databricks")
 	sqlConnectDB, err := sqlconnect.NewDB("databricks", credentialsJSON)
+	log.Infon("connected to databricks", logger.NewDurationField("duration", time.Since(start)))
 	if err != nil {
 		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
 	}
