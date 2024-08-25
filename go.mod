@@ -13,7 +13,6 @@ replace (
 	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.2
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.12
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
-	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
 	golang.org/x/crypto => golang.org/x/crypto v0.23.0
 	golang.org/x/image => golang.org/x/image v0.16.0
 	golang.org/x/net => golang.org/x/net v0.25.0
@@ -99,7 +98,7 @@ require (
 	github.com/trinodb/trino-go-client v0.315.0
 	github.com/urfave/cli/v2 v2.27.3
 	github.com/viney-shih/go-lock v1.1.2
-	github.com/xitongsys/parquet-go v1.5.1
+	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20240122235623-d6294584ab18
 	go.etcd.io/etcd/api/v3 v3.5.15
 	go.etcd.io/etcd/client/v3 v3.5.15
@@ -206,7 +205,6 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
-	github.com/goccy/go-reflect v1.2.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
