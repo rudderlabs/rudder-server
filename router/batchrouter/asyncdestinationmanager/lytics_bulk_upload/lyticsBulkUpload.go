@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -19,6 +21,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func NewLyticsBulkUploader(destinationName, authorization, baseEndpoint string) *LyticsBulkUploader {
@@ -56,32 +59,22 @@ func NewManager(destination *backendconfig.DestinationT) (*LyticsBulkUploader, e
 }
 
 // Poll return a success response for the poll request every time by default
-func (ym *LyticsBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
-	return common.PollStatusResponse{}
+func (b *LyticsBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
+	return common.PollStatusResponse{
+		StatusCode: http.StatusOK,
+		Complete:   true,
+	}
 }
 
 // GetUploadStats return a success response for the getUploadStats request every time by default
-func (ym *LyticsBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	return common.GetUploadStatsResponse{}
+func (b *LyticsBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common.GetUploadStatsResponse {
+	return common.GetUploadStatsResponse{
+		StatusCode: http.StatusOK,
+	}
 }
 
 func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
-}
-
-// Helper function to retrieve the value of RudderProperty from uploadData
-func getUploadDataValue(uploadData []byte, rudderProperty string) (string, bool) {
-	var data map[string]interface{}
-	if err := json.Unmarshal(uploadData, &data); err != nil {
-		return "", false
-	}
-
-	if value, exists := data[rudderProperty]; exists {
-		if strValue, ok := value.(string); ok {
-			return strValue, true
-		}
-	}
-	return "", false
+	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
 func (b *LyticsBulkUploader) populateZipFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {
@@ -96,35 +89,48 @@ func (b *LyticsBulkUploader) populateZipFile(actionFile *ActionFileInfo, streamT
 			propertyMap[mapping.RudderProperty] = mapping.LyticsProperty
 		}
 
-		// Unmarshal Fields into a slice of json.RawMessage
-		var fields []json.RawMessage
-		if err := json.Unmarshal(data.Message.Fields, &fields); err != nil {
+		// Unmarshal Properties into a map of json.RawMessage
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data.Message.Properties, &fields); err != nil {
 			return err
 		}
 
 		// Initialize an empty CSV row
-		csvRow := []string{}
+		csvRow := make([]string, len(streamTraitsMapping))
 
 		// Populate the CSV row based on streamTraitsMapping
-		for _, mapping := range streamTraitsMapping {
-			found := false
-			for _, uploadData := range fields {
-				if value, exists := getUploadDataValue(uploadData, mapping.RudderProperty); exists {
-					csvRow = append(csvRow, value)
-					found = true
-					break
+		for i, mapping := range streamTraitsMapping {
+			if value, exists := fields[mapping.RudderProperty]; exists {
+				// Convert the json.RawMessage value to a string
+				var valueStr string
+				if err := json.Unmarshal(value, &valueStr); err == nil {
+					csvRow[i] = valueStr
+				} else {
+					csvRow[i] = string(value)
 				}
-			}
-			if !found {
-				// Append an empty string if the RudderProperty is not found in uploadData
-				csvRow = append(csvRow, "")
+			} else {
+				// Append an empty string if the RudderProperty is not found in fields
+				csvRow[i] = ""
 			}
 		}
 
-		err := actionFile.CSVWriter.Write(csvRow)
-		if err != nil {
+		// Write the CSV header only once
+		if actionFile.EventCount == 1 {
+			headers := make([]string, len(streamTraitsMapping))
+			for i, mapping := range streamTraitsMapping {
+				headers[i] = mapping.LyticsProperty
+			}
+			if err := actionFile.CSVWriter.Write(headers); err != nil {
+				return err
+			}
+		}
+
+		// Write the CSV row
+		if err := actionFile.CSVWriter.Write(csvRow); err != nil {
 			return err
 		}
+
+		actionFile.CSVWriter.Flush()
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
 		actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
@@ -132,9 +138,10 @@ func (b *LyticsBulkUploader) populateZipFile(actionFile *ActionFileInfo, streamT
 	return nil
 }
 
-func createCSVWriter(filePath string) (*ActionFileInfo, error) {
+func createCSVWriter(fileName string) (*ActionFileInfo, error) {
+
 	// Open or create the file where the CSV will be written
-	file, err := os.Create(filePath)
+	file, err := os.Create(fileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file: %v", err)
 	}
@@ -142,23 +149,46 @@ func createCSVWriter(filePath string) (*ActionFileInfo, error) {
 	// Create a new CSV writer using the file
 	csvWriter := csv.NewWriter(file)
 
-	// Return the ActionFileInfo struct with the CSV writer and file
+	// Return the ActionFileInfo struct with the CSV writer, file, and file path
 	return &ActionFileInfo{
-		CSVWriter: csvWriter,
-		File:      file,
+		CSVWriter:   csvWriter,
+		File:        file,
+		CSVFilePath: fileName,
 	}, nil
 }
 
-func (b *LyticsBulkUploader) createCSVFile(filePath string, streamTraitsMapping []StreamTraitMapping) (*ActionFileInfo, error) {
-	// Call the createCSVWriter function to initialize the CSV writer
-	actionFile, err := createCSVWriter(filePath)
+func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraitsMapping []StreamTraitMapping) (*ActionFileInfo, error) {
+	// Create a temporary directory using misc.CreateTMPDIR
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %v", err)
+	}
+
+	// Define a local directory name within the temp directory
+	localTmpDirName := fmt.Sprintf("/%s/", misc.RudderAsyncDestinationLogs)
+
+	// Combine the temporary directory with the local directory name and generate a unique file path
+	path := filepath.Join(tmpDirPath, localTmpDirName, uuid.NewString())
+	csvFilePath := fmt.Sprintf("%v.csv", path)
+
+	// Initialize the CSV writer with the generated file path
+	actionFile, err := createCSVWriter(csvFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer actionFile.File.Close() // Ensure the file is closed when done
 
-	// Create a new scanner using the file in actionFile
-	scanner := bufio.NewScanner(actionFile.File)
+	// Store the CSV file path in the ActionFileInfo struct
+	actionFile.CSVFilePath = csvFilePath
+
+	// Create a scanner to read the existing file line by line
+	existingFile, err := os.Open(existingFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open existing file: %v", err)
+	}
+	defer existingFile.Close()
+
+	scanner := bufio.NewScanner(existingFile)
 	scanner.Buffer(nil, 50000*1024) // Adjust the buffer size if necessary
 
 	for scanner.Scan() {
@@ -176,7 +206,7 @@ func (b *LyticsBulkUploader) createCSVFile(filePath string, streamTraitsMapping 
 				"module":   "batch_router",
 				"destType": b.destName,
 			})
-		payloadSizeStat.Observe(float64(len(data.Message.Fields)))
+		payloadSizeStat.Observe(float64(len(data.Message.Properties)))
 
 		// Populate the CSV file and collect success/failure job IDs
 		err := b.populateZipFile(actionFile, streamTraitsMapping, line, data)
@@ -193,7 +223,7 @@ func (b *LyticsBulkUploader) createCSVFile(filePath string, streamTraitsMapping 
 	}
 
 	// After processing, calculate the final file size
-	fileInfo, err := os.Stat(filePath)
+	fileInfo, err := os.Stat(actionFile.CSVFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve file info: %v", err)
 	}
@@ -260,11 +290,9 @@ func (e *LyticsBulkUploader) UploadBulkFile(data *HttpRequestData, filePath stri
 
 func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	// startTime := time.Now()
 	filePath := asyncDestStruct.FileName
 	destConfig, err := json.Marshal(destination.Config)
 	if err != nil {
-		// return b.generateErrorOutput("Error while marshalling destination config. ", err, asyncDestStruct.ImportingJobIDs,asyncDestStruct.Destination.ID )
 		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
@@ -279,13 +307,17 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	var failedJobs []int64
 	var successJobs []int64
-	var errors []string
 
 	destConfigJson := string(destConfig)
 	// Convert gjson.Result to []StreamTraitMapping
 	streamTraitsMapping, err := convertGjsonToStreamTraitMapping(gjson.Get(destConfigJson, "streamTraitsMapping"))
 	if err != nil {
-		// ßreturn nil, fmt.Errorf("failed to convert streamTraitsMapping: %v", err)
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+			FailedReason:  fmt.Sprintf("failed to convert streamTraitsMapping: %v", err.Error()),
+			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+			DestinationID: destination.ID,
+		}
 	}
 	actionFiles, err := b.createCSVFile(filePath, streamTraitsMapping)
 	if err != nil {
@@ -302,11 +334,6 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	})
 
 	uploadRetryableStat.Count(len(actionFiles.FailedJobIDs))
-	if err != nil {
-		b.logger.Error("Error in getting bulk upload url: %w", err)
-		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
-		errors = append(errors, fmt.Sprintf("%s:error in getting bulk upload url: %s", actionFiles.Action, err.Error()))
-	}
 
 	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
@@ -328,7 +355,12 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
 		if err != nil {
-			b.logger.Error("Error in removing zip file: %v", err)
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
+				FailedReason:  fmt.Sprintf("Error in removing zip file: %v", err.Error()),
+				FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+				DestinationID: destination.ID,
+			}
 		}
 	}
 
@@ -343,7 +375,6 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	return common.AsyncUploadOutput{
 		ImportingJobIDs: successJobs,
 		FailedJobIDs:    append(asyncDestStruct.FailedJobIDs, failedJobs...),
-		FailedReason:    fmt.Sprintf("unable to upload the data. "+"%v", err),
 		ImportingCount:  len(successJobs),
 		FailedCount:     len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
 		DestinationID:   destination.ID,

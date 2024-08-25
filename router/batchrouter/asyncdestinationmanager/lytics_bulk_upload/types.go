@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -56,13 +57,15 @@ type ActionFileInfo struct {
 }
 
 type Message struct {
-	Action   string          `json:"action"`
-	Type     string          `json:"type"`
-	Channel  string          `json:"channel"`
-	Fields   json.RawMessage `json:"fields"`
-	RecordId string          `json:"recordId"`
-	Context  json.RawMessage `json:"context"`
+	UserID      string          `json:"userId"`
+	AnonymousID string          `json:"anonymousId"`
+	Event       string          `json:"event"`
+	Properties  json.RawMessage `json:"properties"`
+	Traits      json.RawMessage `json:"traits"`
+	Context     json.RawMessage `json:"context"`
+	Timestamp   time.Time       `json:"timestamp"`
 }
+
 type Metadata struct {
 	JobID int64 `json:"job_id"`
 }
