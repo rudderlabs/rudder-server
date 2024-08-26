@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -163,6 +165,22 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 }
 
+func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
+	// for monitoring reports pileups
+	reportingLag := edr.stats.NewTaggedStat(
+		"error_detail_reports_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
+	)
+	for {
+		lag := time.Since(lastReportedAtTime.Load())
+		reportingLag.Gauge(lag.Seconds())
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Minute):
+		}
+	}
+}
+
 func (edr *ErrorDetailReporter) GetSyncer(syncerKey string) *types.SyncSource {
 	edr.syncersMu.RLock()
 	defer edr.syncersMu.RUnlock()
@@ -199,6 +217,10 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
+		if !edr.IsPIIReportingDisabled(workspaceID) {
+			edr.log.Debugf("PII setting is disabled for workspaceId: %s", workspaceID)
+			return nil
+		}
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
 		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
 
@@ -248,9 +270,8 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 	return nil
 }
 
-func (*ErrorDetailReporter) IsPIIReportingDisabled(_ string) bool {
-	// Since we don't see the necessity for error detail reporting, we are implementing a kind of NOOP method
-	return false
+func (ed *ErrorDetailReporter) IsPIIReportingDisabled(workspaceID string) bool {
+	return ed.configSubscriber.IsPIIReportingDisabled(workspaceID)
 }
 
 func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
@@ -317,82 +338,97 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
 	edr.edReportingRequestLatency = edr.stats.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
 
-	// In infinite loop
-	// Get Reports
-	// Aggregate
-	// Send in a separate go-routine
-	// Delete in a separate go-routine
-	for {
-		if ctx.Err() != nil {
-			edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-			return
-		}
-		requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
-		loopStart := time.Now()
-		currentMs := time.Now().UTC().Unix() / 60
+	var lastReportedAtTime atomic.Time
+	lastReportedAtTime.Store(time.Now())
 
-		getReportsStart := time.Now()
-		reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
-		getReportsTimer.Since(getReportsStart)
-		getReportsSize.Observe(float64(len(reports)))
+	g, ctx := errgroup.WithContext(ctx)
 
-		if len(reports) == 0 {
-			select {
-			case <-ctx.Done():
+	g.Go(func() error {
+		return edr.emitLagMetric(ctx, c, &lastReportedAtTime)
+	})
+
+	g.Go(func() error {
+		// In infinite loop
+		// Get Reports
+		// Aggregate
+		// Send in a separate go-routine
+		// Delete in a separate go-routine
+		for {
+			if ctx.Err() != nil {
 				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-				return
-			case <-time.After(edr.sleepInterval.Load()):
+				return ctx.Err()
 			}
-			continue
-		}
-
-		aggregationStart := time.Now()
-		metrics := edr.aggregate(reports)
-		aggregateTimer.Since(aggregationStart)
-		getAggregatedReportsSize.Observe(float64(len(metrics)))
-
-		errGroup, errCtx := errgroup.WithContext(ctx)
-		for _, metric := range metrics {
-			metricToSend := metric
-			requestChan <- struct{}{}
-			if errCtx.Err() != nil {
-				// if any of errGroup's goroutines fail - don't send anymore requests for this batch
-				break
-			}
-			errGroup.Go(func() error {
-				err := edr.sendMetric(errCtx, c.Label, metricToSend)
-				if err != nil {
-					edr.log.Error("Error while sending to Reporting service:", err)
+			requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
+			loopStart := time.Now()
+			currentMs := time.Now().UTC().Unix() / 60
+	
+			getReportsStart := time.Now()
+			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
+			getReportsTimer.Since(getReportsStart)
+			getReportsSize.Observe(float64(len(reports)))
+	
+			if len(reports) == 0 {
+				select {
+				case <-ctx.Done():
+					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return nil
+				case <-time.After(edr.sleepInterval.Load()):
 				}
-				<-requestChan
-				return err
-			})
-		}
-
-		err := errGroup.Wait()
-		if err == nil {
-			// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
-			dbHandle, err := edr.getDBHandle(c.ConnInfo)
-			if err != nil {
-				edr.log.Errorf("error reports deletion getDbhandle failed: %v", err)
 				continue
 			}
-			deleteReportsStart := time.Now()
-			_, err = dbHandle.ExecContext(ctx, `DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
-			errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
-			if err != nil {
-				edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+	
+			aggregationStart := time.Now()
+			metrics := edr.aggregate(reports)
+			aggregateTimer.Since(aggregationStart)
+			getAggregatedReportsSize.Observe(float64(len(metrics)))
+	
+			errGroup, errCtx := errgroup.WithContext(ctx)
+			for _, metric := range metrics {
+				metricToSend := metric
+				requestChan <- struct{}{}
+				if errCtx.Err() != nil {
+					// if any of errGroup's goroutines fail - don't send anymore requests for this batch
+					break
+				}
+				errGroup.Go(func() error {
+					err := edr.sendMetric(errCtx, c.Label, metricToSend)
+					if err != nil {
+						edr.log.Error("Error while sending to Reporting service:", err)
+					}
+					<-requestChan
+					return err
+				})
 			}
-			// vacuum error_reports_details table
-			edr.vacuum(ctx, dbHandle, c)
-		}
 
-		mainLoopTimer.Since(loopStart)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(edr.mainLoopSleepInterval.Load()):
+			err := errGroup.Wait()
+			if err == nil {
+				// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
+				dbHandle, err := edr.getDBHandle(c.ConnInfo)
+				if err != nil {
+					edr.log.Errorf("error reports deletion getDbhandle failed: %v", err)
+					continue
+				}
+				deleteReportsStart := time.Now()
+				_, err = dbHandle.ExecContext(ctx, `DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
+				errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
+				if err != nil {
+					edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+				}
+				// vacuum error_reports_details table
+				edr.vacuum(ctx, dbHandle, c)
+			}
+
+			mainLoopTimer.Since(loopStart)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(edr.mainLoopSleepInterval.Load()):
+			}
 		}
+	})
+	err := g.Wait()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		panic(err)
 	}
 }
 
