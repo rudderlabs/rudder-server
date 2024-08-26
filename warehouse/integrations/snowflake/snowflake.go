@@ -35,19 +35,6 @@ import (
 )
 
 const (
-	configKeyStorageIntegration   = "storageIntegration"
-	configKeyAccount              = "account"
-	configKeyWarehouse            = "warehouse"
-	configKeyDatabase             = "database"
-	configKeyUser                 = "user"
-	configKeyRole                 = "role"
-	configKeyPassword             = "password"
-	configKeyUseKeyPairAuth       = "useKeyPairAuth"
-	configKeyPrivateKey           = "privateKey"
-	configKeyPrivateKeyPassphrase = "privateKeyPassphrase"
-)
-
-const (
 	provider       = whutils.SNOWFLAKE
 	tableNameLimit = 127
 )
@@ -157,6 +144,7 @@ type Snowflake struct {
 	Warehouse      model.Warehouse
 	Uploader       whutils.Uploader
 	connectTimeout time.Duration
+	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
 
@@ -175,6 +163,7 @@ type Snowflake struct {
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf := &Snowflake{
+		conf:   conf,
 		logger: log.Child("integrations").Child("snowflake"),
 		stats:  stat,
 	}
@@ -284,11 +273,11 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *Snowflake) authString() string {
 	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && whutils.GetConfigValue(configKeyStorageIntegration, sf.Warehouse) == "") {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, whutils.GetConfigValue(configKeyStorageIntegration, sf.Warehouse))
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
 	}
 	return auth
 }
@@ -1048,15 +1037,15 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 
 func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB, error) {
 	var (
-		account              = whutils.GetConfigValue(configKeyAccount, sf.Warehouse)
-		warehouse            = whutils.GetConfigValue(configKeyWarehouse, sf.Warehouse)
-		database             = whutils.GetConfigValue(configKeyDatabase, sf.Warehouse)
-		user                 = whutils.GetConfigValue(configKeyUser, sf.Warehouse)
-		role                 = whutils.GetConfigValue(configKeyRole, sf.Warehouse)
-		password             = whutils.GetConfigValue(configKeyPassword, sf.Warehouse)
-		useKeyPairAuth       = whutils.ReadAsBool(configKeyUseKeyPairAuth, sf.Warehouse.Destination.Config)
-		privateKey           = whutils.GetConfigValue(configKeyPrivateKey, sf.Warehouse)
-		privateKeyPassphrase = whutils.GetConfigValue(configKeyPrivateKeyPassphrase, sf.Warehouse)
+		account              = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.AccountSetting)
+		warehouse            = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.WarehouseSetting)
+		database             = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.DatabaseSetting)
+		user                 = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.UserSetting)
+		role                 = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.RoleSetting)
+		password             = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PasswordSetting)
+		useKeyPairAuth       = sf.Warehouse.GetBoolDestinationConfig(model.UseKeyPairAuthSetting)
+		privateKey           = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PrivateKeySetting)
+		privateKeyPassphrase = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PrivateKeyPassphraseSetting)
 		schemaName           = opts.schemaName
 		timeout              = sf.connectTimeout
 	)

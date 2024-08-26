@@ -37,15 +37,15 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	}
 
 	// gets exclude window start time and end time
-	excludeWindow := whutils.GetConfigValueAsMap(whutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindow := warehouse.GetMapDestinationConfig(model.ExcludeWindowSetting)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
 
 	if checkCurrentTimeExistsInExcludeWindow(r.now().UTC(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false, fmt.Errorf("exclude window: current time exists in exclude window")
 	}
 
-	syncFrequency := whutils.GetConfigValue(whutils.SyncFrequency, warehouse)
-	syncStartAt := whutils.GetConfigValue(whutils.SyncStartAt, warehouse)
+	syncFrequency := warehouse.GetStringDestinationConfig(r.conf, model.SyncFrequencySetting)
+	syncStartAt := warehouse.GetStringDestinationConfig(r.conf, model.SyncStartAtSetting)
 	if syncFrequency == "" || syncStartAt == "" {
 		if r.uploadFrequencyExceeded(warehouse, syncFrequency) {
 			return true, nil

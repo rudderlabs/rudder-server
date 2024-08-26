@@ -74,9 +74,6 @@ const (
 	DiscardsTable           = "rudder_discards"
 	IdentityMergeRulesTable = "rudder_identity_merge_rules"
 	IdentityMappingsTable   = "rudder_identity_mappings"
-	SyncFrequency           = "syncFrequency"
-	SyncStartAt             = "syncStartAt"
-	ExcludeWindow           = "excludeWindow"
 	ExcludeWindowStartTime  = "excludeWindowStartTime"
 	ExcludeWindowEndTime    = "excludeWindowEndTime"
 )
@@ -119,15 +116,6 @@ const (
 	AWS   = "AWS"
 	GCP   = "GCP"
 	AZURE = "AZURE"
-)
-
-const (
-	AWSAccessKey         = "accessKey"
-	AWSAccessSecret      = "accessKeyID"
-	AWSBucketNameConfig  = "bucketName"
-	AWSS3Prefix          = "prefix"
-	MinioAccessKeyID     = "accessKeyID"
-	MinioSecretAccessKey = "secretAccessKey"
 )
 
 var (
@@ -585,40 +573,6 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	}
 	provider, _ := c["bucketProvider"].(string)
 	return provider
-}
-
-func GetConfigValue(key string, warehouse model.Warehouse) (val string) {
-	configKey := fmt.Sprintf("Warehouse.pipeline.%s.%s.%s", warehouse.Source.ID, warehouse.Destination.ID, key)
-	if config.IsSet(configKey) {
-		return config.GetString(configKey, "")
-	}
-	destConfig := warehouse.Destination.Config
-	if destConfig[key] != nil {
-		val, _ = destConfig[key].(string)
-	}
-	return val
-}
-
-func GetConfigValueBoolString(key string, warehouse model.Warehouse) string {
-	destConfig := warehouse.Destination.Config
-	if destConfig[key] != nil {
-		if val, ok := destConfig[key].(bool); ok {
-			if val {
-				return "true"
-			}
-		}
-	}
-	return "false"
-}
-
-func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]interface{} {
-	value := map[string]interface{}{}
-	if config[key] != nil {
-		if val, ok := config[key].(map[string]interface{}); ok {
-			return val
-		}
-	}
-	return value
 }
 
 func SortColumnKeysFromColumnMap(columnMap model.TableSchema) []string {
