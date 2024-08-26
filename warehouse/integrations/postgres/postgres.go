@@ -29,12 +29,6 @@ import (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
 	verifyCA = "verify-ca"
 )
 
@@ -119,6 +113,7 @@ type Postgres struct {
 	Warehouse          model.Warehouse
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
+	conf               *config.Config
 	logger             logger.Logger
 	stats              stats.Stats
 	LoadFileDownloader downloader.Downloader
@@ -162,6 +157,7 @@ var partitionKeyMap = map[string]string{
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg := &Postgres{}
 
+	pg.conf = conf
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
@@ -242,13 +238,13 @@ func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
 }
 
 func (pg *Postgres) getConnectionCredentials() credentials {
-	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
+	sslMode := pg.Warehouse.GetStringDestinationConfig(pg.conf, model.SSLModeSetting)
 	creds := credentials{
-		host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
-		database: warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, pg.Warehouse),
-		password: warehouseutils.GetConfigValue(password, pg.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		host:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.HostSetting),
+		database: pg.Warehouse.GetStringDestinationConfig(pg.conf, model.DatabaseSetting),
+		user:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.UserSetting),
+		password: pg.Warehouse.GetStringDestinationConfig(pg.conf, model.PasswordSetting),
+		port:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.PortSetting),
 		sslMode:  sslMode,
 		sslDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.connectTimeout,
