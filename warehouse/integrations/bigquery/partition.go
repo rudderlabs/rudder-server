@@ -8,7 +8,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 var (
@@ -57,11 +57,11 @@ func (bq *BigQuery) isTimeUnitPartitionColumn() bool {
 }
 
 func (bq *BigQuery) partitionColumn() string {
-	return whutils.GetConfigValue(configKeyPartitionColumn, bq.warehouse)
+	return bq.warehouse.GetStringDestinationConfig(bq.conf, model.PartitionColumnSetting)
 }
 
 func (bq *BigQuery) partitionType() string {
-	return whutils.GetConfigValue(configKeyPartitionType, bq.warehouse)
+	return bq.warehouse.GetStringDestinationConfig(bq.conf, model.PartitionTypeSetting)
 }
 
 func (bq *BigQuery) checkValidPartitionColumn(partitionColumn string) error {

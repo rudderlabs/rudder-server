@@ -35,6 +35,8 @@ var (
 	ProjectSetting                DestinationConfigSetting = destConfSetting("project")
 	CredentialsSetting            DestinationConfigSetting = destConfSetting("credentials")
 	LocationSetting               DestinationConfigSetting = destConfSetting("location")
+	PartitionColumnSetting        DestinationConfigSetting = destConfSetting("partitionColumn")
+	PartitionTypeSetting          DestinationConfigSetting = destConfSetting("partitionType")
 	CACertificateSetting          DestinationConfigSetting = destConfSetting("caCertificate")
 	ClusterSetting                DestinationConfigSetting = destConfSetting("cluster")
 	AWSAccessKeySetting           DestinationConfigSetting = destConfSetting("accessKey")

@@ -739,7 +739,7 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 	var (
 		projectID   = bq.projectID
-		credentials = bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting),
+		credentials = bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting)
 	)
 
 	bq.logger.Infon("Connecting to BigQuery", logger.NewStringField(projectID, projectID))
