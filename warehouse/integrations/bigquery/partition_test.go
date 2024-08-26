@@ -34,7 +34,7 @@ func TestBigQuery_CheckValidPartitionColumn(t *testing.T) {
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						configKeyPartitionColumn: tc.key,
+						"partitionColumn": tc.key,
 					},
 				},
 			}
@@ -73,7 +73,7 @@ func TestBigQuery_BigqueryPartitionType(t *testing.T) {
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						configKeyPartitionType: tc.key,
+						"partitionType": tc.key,
 					},
 				},
 			}
@@ -104,7 +104,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		{
 			name: "hour partition type",
 			config: map[string]interface{}{
-				configKeyPartitionType: "hour",
+				"partitionType": "hour",
 			},
 			expectedPartition: "2023-04-05T06",
 			expectedError:     nil,
@@ -112,7 +112,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		{
 			name: "day partition type",
 			config: map[string]interface{}{
-				configKeyPartitionType: "day",
+				"partitionType": "day",
 			},
 			expectedPartition: "2023-04-05",
 			expectedError:     nil,
@@ -120,7 +120,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		{
 			name: "month partition type",
 			config: map[string]interface{}{
-				configKeyPartitionType: "month",
+				"partitionType": "month",
 			},
 			expectedPartition: "2023-04",
 			expectedError:     nil,
@@ -128,7 +128,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		{
 			name: "year partition type",
 			config: map[string]interface{}{
-				configKeyPartitionType: "year",
+				"partitionType": "year",
 			},
 			expectedPartition: "2023",
 			expectedError:     nil,
@@ -136,7 +136,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		{
 			name: "unsupported partition type",
 			config: map[string]interface{}{
-				configKeyPartitionType: "invalid",
+				"partitionType": "invalid",
 			},
 			expectedPartition: "",
 			expectedError:     errPartitionTypeNotSupported,
