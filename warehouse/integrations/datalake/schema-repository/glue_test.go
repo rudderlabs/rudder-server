@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -15,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -121,7 +124,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			ctx := context.Background()
 
-			g, err := NewGlueSchemaRepository(warehouse, logger.NOP)
+			g, err := NewGlueSchemaRepository(config.New(), logger.NOP, warehouse)
 			require.NoError(t, err)
 
 			t.Logf("Creating schema %s", testNamespace)

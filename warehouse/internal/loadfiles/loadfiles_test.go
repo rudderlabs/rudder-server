@@ -8,7 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -470,8 +473,9 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			t.Parallel()
 
 			timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
-			got := loadfiles.GetLoadFilePrefix(timeWindow, tc.warehouse)
-			require.Equal(t, got, tc.expected)
+			lf := loadfiles.LoadFileGenerator{}
+			lf.Conf = config.New()
+			require.Equal(t, lf.GetLoadFilePrefix(timeWindow, tc.warehouse), tc.expected)
 		})
 	}
 }
