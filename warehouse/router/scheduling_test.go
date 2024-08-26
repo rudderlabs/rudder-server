@@ -93,6 +93,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				r := Router{}
+				r.conf = config.New()
 				r.createUploadAlways = &atomic.Bool{}
 				r.scheduledTimesCache = make(map[string][]int)
 				require.Equal(t, tc.expectedPrevScheduledTime, r.prevScheduledTime(tc.syncFrequency, tc.syncStartAt, tc.currTime))
@@ -196,6 +197,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			r := Router{}
+			r.conf = config.New()
 			r.triggerStore = &sync.Map{}
 			r.triggerStore.Store(w.Identifier, struct{}{})
 			r.createUploadAlways = &atomic.Bool{}
@@ -213,6 +215,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				}
 
 				r := Router{}
+				r.conf = config.New()
 				r.config.uploadFreqInS = config.SingleValueLoader(int64(1800))
 				r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 				r.triggerStore = &sync.Map{}
@@ -232,6 +235,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				now := time.Now()
 
 				r := Router{}
+				r.conf = config.New()
 				r.now = func() time.Time {
 					return now
 				}
@@ -257,6 +261,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				now := time.Now()
 
 				r := Router{}
+				r.conf = config.New()
 				r.now = func() time.Time {
 					return now
 				}
@@ -289,6 +294,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			r := Router{}
+			r.conf = config.New()
 			r.triggerStore = &sync.Map{}
 			r.createUploadAlways = &atomic.Bool{}
 			r.scheduledTimesCache = make(map[string][]int)
@@ -313,6 +319,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			now := time.Now()
 
 			r := Router{}
+			r.conf = config.New()
 			r.now = func() time.Time {
 				return now
 			}
@@ -341,6 +348,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			now := time.Now()
 
 			r := Router{}
+			r.conf = config.New()
 			r.now = func() time.Time {
 				return now
 			}
@@ -436,6 +444,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					}
 
 					r := Router{}
+					r.conf = config.New()
 					r.triggerStore = &sync.Map{}
 					r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(false)
 					r.createJobMarkerMap = make(map[string]time.Time)
