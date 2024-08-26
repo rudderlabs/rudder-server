@@ -361,12 +361,12 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
 			loopStart := time.Now()
 			currentMs := time.Now().UTC().Unix() / 60
-	
+
 			getReportsStart := time.Now()
 			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
 			getReportsTimer.Since(getReportsStart)
 			getReportsSize.Observe(float64(len(reports)))
-	
+
 			if len(reports) == 0 {
 				select {
 				case <-ctx.Done():
@@ -376,12 +376,12 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				}
 				continue
 			}
-	
+
 			aggregationStart := time.Now()
 			metrics := edr.aggregate(reports)
 			aggregateTimer.Since(aggregationStart)
 			getAggregatedReportsSize.Observe(float64(len(metrics)))
-	
+
 			errGroup, errCtx := errgroup.WithContext(ctx)
 			for _, metric := range metrics {
 				metricToSend := metric
