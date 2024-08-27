@@ -2,30 +2,20 @@ package googlepubsub
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/testhelper"
-)
-
-var (
-	hold       bool
-	testConfig TestConfig
 )
 
 const (
@@ -34,6 +24,13 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	testConfig, err := SetupTestGooglePubSub(pool, t)
+	require.NoError(t, err)
+
 	config := map[string]interface{}{
 		"ProjectId": projectId,
 		"EventToTopicMap": []map[string]string{
@@ -80,49 +77,6 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
-}
-
-func TestMain(m *testing.M) {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
-
-	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	pool.MaxWait = 2 * time.Minute
-	if err != nil {
-		log.Printf("Could not connect to docker: %s", err)
-		return -1
-	}
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
-	config, err := SetupTestGooglePubSub(pool, cleanup)
-	if err != nil {
-		log.Printf("Could not start google pubsub service: %s", err)
-		return -1
-	}
-	testConfig = *config
-	code := m.Run()
-	blockOnHold()
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
 }
 
 type cleaner interface {

@@ -83,7 +83,7 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: make test-warehouse package=${{ matrix.package }}
+        run: FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}

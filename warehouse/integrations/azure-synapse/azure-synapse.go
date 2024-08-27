@@ -43,15 +43,6 @@ import (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
-)
-
-const (
 	stringLengthLimit = 512
 	provider          = warehouseutils.AzureSynapse
 	tableNameLimit    = 127
@@ -103,6 +94,7 @@ type AzureSynapse struct {
 	LoadFileDownLoader downloader.Downloader
 
 	stats  stats.Stats
+	conf   *config.Config
 	logger logger.Logger
 
 	config struct {
@@ -136,6 +128,7 @@ var partitionKeyMap = map[string]string{
 func New(conf *config.Config, log logger.Logger, stats stats.Stats) *AzureSynapse {
 	az := &AzureSynapse{
 		stats:  stats,
+		conf:   conf,
 		logger: log.Child("integrations").Child("synapse"),
 	}
 
@@ -198,12 +191,12 @@ func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
 
 func (as *AzureSynapse) connectionCredentials() *credentials {
 	return &credentials{
-		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, as.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, as.Warehouse),
-		password: warehouseutils.GetConfigValue(password, as.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
+		host:     as.Warehouse.GetStringDestinationConfig(as.conf, model.HostSetting),
+		dbName:   as.Warehouse.GetStringDestinationConfig(as.conf, model.DatabaseSetting),
+		user:     as.Warehouse.GetStringDestinationConfig(as.conf, model.UserSetting),
+		password: as.Warehouse.GetStringDestinationConfig(as.conf, model.PasswordSetting),
+		port:     as.Warehouse.GetStringDestinationConfig(as.conf, model.PortSetting),
+		sslMode:  as.Warehouse.GetStringDestinationConfig(as.conf, model.SSLModeSetting),
 		timeout:  as.connectTimeout,
 	}
 }

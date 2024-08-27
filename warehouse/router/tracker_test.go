@@ -154,6 +154,7 @@ func TestRouter_Track(t *testing.T) {
 			}
 
 			handle := Router{
+				conf:     config.New(),
 				destType: destType,
 				now: func() time.Time {
 					return now
