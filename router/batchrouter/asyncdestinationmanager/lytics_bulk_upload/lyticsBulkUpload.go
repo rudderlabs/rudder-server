@@ -213,9 +213,6 @@ func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 		err := b.PopulateCsvFile(actionFile, streamTraitsMapping, line, data)
 		if err != nil {
 			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
-		} else {
-			actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
-			actionFile.EventCount++
 		}
 	}
 
