@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -156,7 +157,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	jobsPerWorkspace := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
 		return job.WorkspaceId
 	})
-	writerMap := make(map[string]misc.GZipWriter)
+	writerMap := make(map[string]string)
 
 	errorJobs := make([]ErrorJob, 0)
 
@@ -164,7 +165,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(ctx, workspaceID)
 		if err != nil {
-			st.logger.Errorn("Skipping Storing errors for workspace since no storage preferences are found", logger.NewStringField("workspaceID", workspaceID))
+			st.logger.Errorn("Skipping Storing errors for workspace since no storage preferences are found", obskit.WorkspaceID(workspaceID))
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{
@@ -185,7 +186,18 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			})
 			continue
 		}
-		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
+		path := filepath.Join(
+			tmpDirPath,
+			localTmpDirName,
+			fmt.Sprintf(
+				"%v.%v.%v.%v.%v.json.gz",
+				time.Now().Unix(),
+				config.GetString("INSTANCE_ID", "1"),
+				fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID),
+				uuid,
+				workspaceID,
+			),
+		)
 		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
 			panic(fmt.Errorf("creating gz file %q: mkdir error: %w", path, err))
 		}
@@ -193,7 +205,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		if err != nil {
 			panic(err)
 		}
-		writerMap[workspaceID] = writer
+		writerMap[workspaceID] = path
 		newline := []byte("\n")
 		lo.ForEach(jobsForWorkspace, func(job *jobsdb.JobT, _ int) {
 			rawJob, err := json.Marshal(job)
@@ -211,14 +223,14 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	}
 
 	defer func() {
-		for _, writer := range writerMap {
-			_ = os.Remove(writer.File.Name())
+		for _, path := range writerMap {
+			_ = os.Remove(path)
 		}
 	}()
 
 	g, ctx := kitsync.NewEagerGroup(ctx, config.GetInt("Processor.errorBackupWorkers", 100))
 	var mu sync.Mutex
-	for workspaceID, writer := range writerMap {
+	for workspaceID, path := range writerMap {
 		errFileUploader, err := st.fileuploader.GetFileManager(ctx, workspaceID)
 		if err != nil {
 			st.logger.Errorn("Skipping Storing errors for workspace since no file manager is found", logger.NewStringField("workspaceID", workspaceID))
@@ -236,15 +248,15 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			continue
 		}
 		g.Go(misc.WithBugsnag(func() error {
-			outputFile, err := os.Open(writer.File.Name())
+			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
 			uploadOutput, err := errFileUploader.Upload(ctx, outputFile, prefixes...)
-			st.logger.Infon("Uploaded error logs for workspaceId", 
-			    logger.NewStringField("location", uploadOutput.Location), 
-			    logger.NewStringField("workspaceID", workspaceID)
+			st.logger.Infon("Uploaded error logs for workspaceId",
+				logger.NewStringField("location", uploadOutput.Location),
+				obskit.WorkspaceID(workspaceID),
 			)
 			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{
