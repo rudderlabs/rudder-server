@@ -125,6 +125,10 @@ func TestHttpClientDoSuccess(t *testing.T) {
 	resp, err := mockHttpClient.Do(req)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedResp, resp)
+
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
 }
 
 func TestPollerPollSuccess(t *testing.T) {

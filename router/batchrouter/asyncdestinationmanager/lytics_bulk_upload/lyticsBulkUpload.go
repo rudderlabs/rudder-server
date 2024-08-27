@@ -233,7 +233,7 @@ func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 	return actionFile, nil
 }
 
-func convertGjsonToStreamTraitMapping(result gjson.Result) ([]StreamTraitMapping, error) {
+func convertGjsonToStreamTraitMapping(result gjson.Result) []StreamTraitMapping {
 	var mappings []StreamTraitMapping
 
 	// Iterate through the array in the result
@@ -246,7 +246,7 @@ func convertGjsonToStreamTraitMapping(result gjson.Result) ([]StreamTraitMapping
 		return true // Continue iteration
 	})
 
-	return mappings, nil
+	return mappings
 }
 
 func (e *LyticsBulkUploader) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
@@ -310,7 +310,7 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	var successJobs []int64
 
 	destConfigJson := string(destConfig)
-	streamTraitsMapping, err := convertGjsonToStreamTraitMapping(gjson.Get(destConfigJson, "streamTraitsMapping"))
+	streamTraitsMapping := convertGjsonToStreamTraitMapping(gjson.Get(destConfigJson, "streamTraitsMapping"))
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
