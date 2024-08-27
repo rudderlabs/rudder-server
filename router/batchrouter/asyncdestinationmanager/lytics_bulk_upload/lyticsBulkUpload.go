@@ -276,7 +276,7 @@ func (e *LyticsBulkUploader) UploadBulkFile(data *HttpRequestData, filePath stri
 	if err != nil {
 		return err
 	}
-	data.Endpoint = data.Endpoint
+
 	data.Method = http.MethodPost
 	data.ContentType = "application/csv"
 	data.Body = file
