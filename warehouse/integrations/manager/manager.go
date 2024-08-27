@@ -76,7 +76,7 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 	case warehouseutils.AzureSynapse:
 		return azuresynapse.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
-		return datalake.New(logger), nil
+		return datalake.New(conf, logger), nil
 	case warehouseutils.DELTALAKE:
 		return deltalake.New(conf, logger, stats), nil
 	}
@@ -101,7 +101,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 	case warehouseutils.AzureSynapse:
 		return azuresynapse.New(conf, logger, stats), nil
 	case warehouseutils.S3Datalake, warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
-		return datalake.New(logger), nil
+		return datalake.New(conf, logger), nil
 	case warehouseutils.DELTALAKE:
 		return deltalake.New(conf, logger, stats), nil
 	}

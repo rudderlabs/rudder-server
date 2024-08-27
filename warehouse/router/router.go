@@ -164,6 +164,7 @@ func New(
 		db:                   r.db,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
+			Conf:               r.conf,
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,
 			StageRepo:          r.stagingRepo,

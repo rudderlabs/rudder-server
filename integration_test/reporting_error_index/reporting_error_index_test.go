@@ -728,6 +728,7 @@ func runRudderServer(
 ) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
+	config.Set("DB.host", postgresContainer.Host)
 	config.Set("DB.port", postgresContainer.Port)
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)

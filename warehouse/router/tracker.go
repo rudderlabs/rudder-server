@@ -105,13 +105,13 @@ func (r *Router) Track(
 		return nil
 	}
 
-	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindow := warehouse.GetMapDestinationConfig(model.ExcludeWindowSetting)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
 	if checkCurrentTimeExistsInExcludeWindow(now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return nil
 	}
 
-	if sf := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, *warehouse); sf != "" {
+	if sf := warehouse.GetStringDestinationConfig(r.conf, model.SyncFrequencySetting); sf != "" {
 		syncFrequency = sf
 	}
 	if value, err := strconv.Atoi(syncFrequency); err == nil {
