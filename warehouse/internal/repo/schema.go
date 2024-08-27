@@ -23,6 +23,7 @@ const whSchemaTableColumns = `
    	destination_id,
 	destination_type,
 	schema,
+	schema_compressed,
    	created_at,
    	updated_at
 `
@@ -51,34 +52,39 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
+	schemaCompressed, err := warehouseutils.Compress(schemaPayload)
+	if err != nil {
+		return id, fmt.Errorf("compressing schema: %w", err)
+	}
+
 	err = sh.db.QueryRowContext(ctx, `
 		INSERT INTO `+whSchemaTableName+` (
 		  wh_upload_id, source_id, namespace, destination_id,
-		  destination_type, schema, created_at,
+		  destination_type, schema, schema_compressed, created_at,
 		  updated_at
 		)
 		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (
+		  ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (
 			source_id, destination_id, namespace
 		  ) DO
 		UPDATE
 		SET
-		  schema = $6,
-		  updated_at = $7 RETURNING id;
+		  schema_compressed = $7,
+		  updated_at = $8 RETURNING id;
 `,
 		whSchema.UploadID,
 		whSchema.SourceID,
 		whSchema.Namespace,
 		whSchema.DestinationID,
 		whSchema.DestinationType,
-		schemaPayload,
+		"{}",
+		schemaCompressed,
 		now.UTC(),
 		now.UTC(),
 	).Scan(&id)
 	if err != nil {
 		return id, fmt.Errorf("inserting schema: %w", err)
 	}
-
 	return id, nil
 }
 
@@ -120,8 +126,9 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var (
-			whSchema            model.WHSchema
-			schemaPayloadRawRaw []byte
+			whSchema                   model.WHSchema
+			schemaPayloadRaw           []byte
+			schemaCompressedPayloadRaw []byte
 		)
 		err := rows.Scan(
 			&whSchema.ID,
@@ -130,7 +137,8 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 			&whSchema.Namespace,
 			&whSchema.DestinationID,
 			&whSchema.DestinationType,
-			&schemaPayloadRawRaw,
+			&schemaPayloadRaw,
+			&schemaCompressedPayloadRaw,
 			&whSchema.CreatedAt,
 			&whSchema.UpdatedAt,
 		)
@@ -142,9 +150,22 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 		whSchema.UpdatedAt = whSchema.UpdatedAt.UTC()
 
 		var schemaPayload model.Schema
-		err = json.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal schemaPayload: %w", err)
+		if len(schemaCompressedPayloadRaw) > 0 {
+			var schemaCompressedPayload []byte
+			schemaCompressedPayload, err = warehouseutils.Decompress(schemaCompressedPayloadRaw)
+			if err != nil {
+				return nil, fmt.Errorf("decompressing schema: %w", err)
+			}
+
+			err = json.Unmarshal(schemaCompressedPayload, &schemaPayload)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal schemaPayload: %w", err)
+			}
+		} else {
+			err = json.Unmarshal(schemaPayloadRaw, &schemaPayload)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal schemaPayload: %w", err)
+			}
 		}
 
 		whSchema.Schema = schemaPayload
@@ -215,7 +236,8 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 			WHERE
 				(source_id, destination_id) IN (` + strings.Join(sourceIDDestinationIDPairs, ", ") + `)
 			AND
-				schema::text <> '{}'::text
+				(schema::text <> '{}'::text OR schema_compressed IS NOT NULL)
+
 			GROUP BY source_id, destination_id
 		)`
 	rows, err := sh.db.QueryContext(
