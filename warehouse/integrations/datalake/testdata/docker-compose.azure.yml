@@ -12,9 +12,3 @@ services:
       test: nc -z 0.0.0.0 10000 || exit 1
       interval: 1s
       retries: 25
-
-  gcs:
-    image: fsouza/fake-gcs-server:latest
-    ports:
-      - "4443"
-    command: [ "-scheme", "http", "-location", "us-east-1", "-backend", "memory" ]

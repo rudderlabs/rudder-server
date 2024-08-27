@@ -147,7 +147,7 @@ func (s *SUT) Start(t *testing.T) {
 	if err := godotenv.Load("../../testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
 	}
-
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
