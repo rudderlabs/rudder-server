@@ -64,6 +64,7 @@ func (b *LyticsBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse 
 		StatusCode: http.StatusOK,
 		Complete:   true,
 	}
+	// return common.PollStatusResponse{}
 }
 
 // GetUploadStats return a success response for the getUploadStats request every time by default
@@ -71,6 +72,7 @@ func (b *LyticsBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common
 	return common.GetUploadStatsResponse{
 		StatusCode: http.StatusOK,
 	}
+	// return common.GetUploadStatsResponse{}
 }
 
 func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {

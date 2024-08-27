@@ -4,10 +4,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 type LyticsBulkUploader struct {
@@ -73,4 +75,20 @@ type Metadata struct {
 type Data struct {
 	Message  Message  `json:"message"`
 	Metadata Metadata `json:"metadata"`
+}
+
+type Uploader interface {
+	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
+}
+
+type Poller interface {
+	Poll(input common.AsyncPoll) common.PollStatusResponse
+}
+
+type UploadStats interface {
+	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
+}
+
+type HttpClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
