@@ -141,7 +141,6 @@ func (b *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamT
 }
 
 func createCSVWriter(fileName string) (*ActionFileInfo, error) {
-
 	// Open or create the file where the CSV will be written
 	file, err := os.Create(fileName)
 	if err != nil {

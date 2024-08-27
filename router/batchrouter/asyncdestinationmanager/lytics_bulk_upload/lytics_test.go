@@ -7,11 +7,12 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocks "github.com/rudderlabs/rudder-server/mocks/router/lytics_bulk_upload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	lyticsBulkUpload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload"
-	"github.com/stretchr/testify/assert"
 )
 
 var destination = &backendconfig.DestinationT{
