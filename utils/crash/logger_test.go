@@ -18,7 +18,7 @@ func TestNotify(t *testing.T) {
 
 		ph := UsingLogger(logger, PanicWrapperOpts{})
 
-		logger.EXPECT().Fatalw("Panic detected. Application will crash.", gomock.Any()).Times(1)
+		logger.EXPECT().Fataln("Panic detected. Application will crash.", gomock.Any()).Times(1)
 		require.Panics(t, func() {
 			defer ph.Notify("team")()
 			panic("test")
@@ -50,7 +50,7 @@ func TestHandler(t *testing.T) {
 
 		ph := UsingLogger(logger, PanicWrapperOpts{})
 
-		logger.EXPECT().Fatalw("Panic detected. Application will crash.", gomock.Any()).Times(1)
+		logger.EXPECT().Fataln("Panic detected. Application will crash.", gomock.Any()).Times(1)
 		require.Panics(t, func() {
 			ph.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				panic("test")
