@@ -1,6 +1,7 @@
 package lyticsBulkUpload
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"io"
@@ -79,6 +80,8 @@ type Data struct {
 
 type Uploader interface {
 	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
+	UploadBulkFile(ctx context.Context, filePath string) (bool, error)
+	PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error
 }
 
 type Poller interface {

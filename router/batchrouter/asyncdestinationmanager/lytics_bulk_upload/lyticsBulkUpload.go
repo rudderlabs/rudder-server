@@ -79,7 +79,7 @@ func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (b *LyticsBulkUploader) populateZipFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {
+func (b *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
 	if newFileSize < b.fileSizeLimit {
 		actionFile.FileSize = newFileSize
@@ -211,7 +211,7 @@ func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 		payloadSizeStat.Observe(float64(len(data.Message.Properties)))
 
 		// Populate the CSV file and collect success/failure job IDs
-		err := b.populateZipFile(actionFile, streamTraitsMapping, line, data)
+		err := b.PopulateCsvFile(actionFile, streamTraitsMapping, line, data)
 		if err != nil {
 			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 		} else {
@@ -311,7 +311,6 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	var successJobs []int64
 
 	destConfigJson := string(destConfig)
-	// Convert gjson.Result to []StreamTraitMapping
 	streamTraitsMapping, err := convertGjsonToStreamTraitMapping(gjson.Get(destConfigJson, "streamTraitsMapping"))
 	if err != nil {
 		return common.AsyncUploadOutput{

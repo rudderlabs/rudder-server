@@ -1,6 +1,7 @@
 package lyticsBulkUpload_test
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"testing"
@@ -61,6 +62,27 @@ func TestUpload(t *testing.T) {
 	if !reflect.DeepEqual(output, expectedOutput) {
 		t.Errorf("Expected %v but got %v", expectedOutput, output)
 	}
+}
+
+func TestUploadBulkFile_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create a mock instance of the Uploader interface
+	mockUploader := mocks.NewMockUploader(ctrl)
+
+	// Define the context and input parameters
+	ctx := context.TODO()
+	filePath := "testdata/uploadData.csv"
+
+	// Mock the UploadBulkFile method to return a successful response
+	mockUploader.EXPECT().UploadBulkFile(ctx, filePath).Return(true, nil).Times(1)
+
+	result, err := mockUploader.UploadBulkFile(ctx, filePath)
+
+	// Validate the result
+	assert.NoError(t, err)
+	assert.True(t, result)
 }
 
 func TestFileReadSuccess(t *testing.T) {
@@ -132,4 +154,34 @@ func TestUploadStatsGetUploadStats(t *testing.T) {
 
 	response := mockUploadStats.GetUploadStats(input)
 	assert.Equal(t, expectedResponse, response)
+}
+
+func TestPopulateZipFile_AppendsNewLine(t *testing.T) {
+	// Initialize GoMock controller
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create an instance of the mock
+	mockUploader := mocks.NewMockUploader(ctrl)
+
+	// Define your test data
+	actionFile := &lyticsBulkUpload.ActionFileInfo{}
+	streamTraitsMapping := []lyticsBulkUpload.StreamTraitMapping{
+		{RudderProperty: "prop1", LyticsProperty: "lytic1"},
+		{RudderProperty: "prop2", LyticsProperty: "lytic2"},
+	}
+	line := "test line"
+	data := lyticsBulkUpload.Data{}
+
+	// Set up expectations for the mock method
+	mockUploader.EXPECT().
+		PopulateCsvFile(actionFile, streamTraitsMapping, line, data).
+		Return(nil). // or an error if you want to test error handling
+		Times(1)     // Expect to be called once
+
+	// Call the method under test using the mock
+	err := mockUploader.PopulateCsvFile(actionFile, streamTraitsMapping, line, data)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
 }

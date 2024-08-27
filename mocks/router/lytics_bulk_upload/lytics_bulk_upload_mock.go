@@ -5,11 +5,13 @@
 package mocks
 
 import (
+	context "context"
 	http "net/http"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
 	common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	lyticsBulkUpload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload"
 )
 
 // MockUploader is a mock of Uploader interface.
@@ -35,6 +37,20 @@ func (m *MockUploader) EXPECT() *MockUploaderMockRecorder {
 	return m.recorder
 }
 
+// PopulateCsvFile mocks base method.
+func (m *MockUploader) PopulateCsvFile(arg0 *lyticsBulkUpload.ActionFileInfo, arg1 []lyticsBulkUpload.StreamTraitMapping, arg2 string, arg3 lyticsBulkUpload.Data) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PopulateCsvFile", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PopulateCsvFile indicates an expected call of PopulateCsvFile.
+func (mr *MockUploaderMockRecorder) PopulateCsvFile(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PopulateCsvFile", reflect.TypeOf((*MockUploader)(nil).PopulateCsvFile), arg0, arg1, arg2, arg3)
+}
+
 // Upload mocks base method.
 func (m *MockUploader) Upload(arg0 *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.ctrl.T.Helper()
@@ -47,6 +63,21 @@ func (m *MockUploader) Upload(arg0 *common.AsyncDestinationStruct) common.AsyncU
 func (mr *MockUploaderMockRecorder) Upload(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Upload", reflect.TypeOf((*MockUploader)(nil).Upload), arg0)
+}
+
+// UploadBulkFile mocks base method.
+func (m *MockUploader) UploadBulkFile(arg0 context.Context, arg1 string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadBulkFile", arg0, arg1)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadBulkFile indicates an expected call of UploadBulkFile.
+func (mr *MockUploaderMockRecorder) UploadBulkFile(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadBulkFile", reflect.TypeOf((*MockUploader)(nil).UploadBulkFile), arg0, arg1)
 }
 
 // MockHttpClient is a mock of HttpClient interface.
