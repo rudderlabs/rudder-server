@@ -273,7 +273,7 @@ func getXHeaders(req *http.Request) map[string]string {
 	xHeaders := make(map[string]string)
 	for key, values := range req.Header {
 		lowerCaseKey := strings.ToLower(key)
-		if strings.HasPrefix(lowerCaseKey, "x-") && lowerCaseKey != "x-forwarded-for" {
+		if !strings.HasPrefix(lowerCaseKey, "x-forwarded-") && strings.HasPrefix(lowerCaseKey, "x-") {
 			xHeaders[key] = strings.Join(values, ",")
 		}
 	}
