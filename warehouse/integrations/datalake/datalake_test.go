@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +18,10 @@ import (
 
 	"github.com/rudderlabs/compose-test/compose"
 
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
@@ -27,18 +29,11 @@ import (
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	_ "github.com/trinodb/trino-go-client/trino"
 )
@@ -48,130 +43,47 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{
-		"testdata/docker-compose.yml",
-		"testdata/docker-compose.trino.yml",
-		"testdata/docker-compose.spark.yml",
-		"../testdata/docker-compose.jobsdb.yml",
-		"../testdata/docker-compose.minio.yml",
-	}))
-	c.Start(context.Background())
-
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
-
-	jobsDBPort := c.Port("jobsDb", 5432)
-	minioPort := c.Port("minio", 9000)
-	azurePort := c.Port("azure", 10000)
-	gcsPort := c.Port("gcs", 4443)
-	trinoPort := c.Port("trino", 8080)
-
-	httpPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	workspaceID := warehouseutils.RandHex()
-	azWriteKey := warehouseutils.RandHex()
-	azDestinationID := warehouseutils.RandHex()
-	azSourceID := warehouseutils.RandHex()
-	s3WriteKey := warehouseutils.RandHex()
-	s3DestinationID := warehouseutils.RandHex()
-	s3SourceID := warehouseutils.RandHex()
-	gcsWriteKey := warehouseutils.RandHex()
-	gcsDestinationID := warehouseutils.RandHex()
-	gcsSourceID := warehouseutils.RandHex()
+	whutils.Init()
 
 	azContainerName := "azure-datalake-test"
 	s3BucketName := "some-bucket"
 	gcsBucketName := "gcs-datalake-test"
 	azAccountName := "MYACCESSKEY"
 	azAccountKey := "TVlTRUNSRVRLRVk="
-	azEndPoint := fmt.Sprintf("localhost:%d", azurePort)
 	s3Region := "us-east-1"
 	s3AccessKeyID := "MYACCESSKEY"
 	s3AccessKey := "MYSECRETKEY"
-	s3EndPoint := fmt.Sprintf("localhost:%d", minioPort)
-	gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", gcsPort)
-
-	accessKeyID := "MYACCESSKEY"
-	secretAccessKey := "MYSECRETKEY"
-
-	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-	templateConfigurations := map[string]any{
-		"workspaceID":      workspaceID,
-		"azWriteKey":       azWriteKey,
-		"azDestinationID":  azDestinationID,
-		"azSourceID":       azSourceID,
-		"s3WriteKey":       s3WriteKey,
-		"s3DestinationID":  s3DestinationID,
-		"s3SourceID":       s3SourceID,
-		"gcsWriteKey":      gcsWriteKey,
-		"gcsDestinationID": gcsDestinationID,
-		"gcsSourceID":      gcsSourceID,
-		"azContainerName":  azContainerName,
-		"azAccountName":    azAccountName,
-		"azAccountKey":     azAccountKey,
-		"azEndpoint":       azEndPoint,
-		"s3BucketName":     s3BucketName,
-		"s3Region":         s3Region,
-		"s3AccessKeyID":    s3AccessKeyID,
-		"s3AccessKey":      s3AccessKey,
-		"s3EndPoint":       s3EndPoint,
-		"gcsBucketName":    gcsBucketName,
-		"gcsEndPoint":      gcsEndPoint,
-	}
-
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-	testhelper.EnhanceWithDefaultEnvs(t)
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
-	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
-	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
-	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-	t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", gcsPort))
-	t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
-
-	svcDone := make(chan struct{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		r := runner.New(runner.ReleaseInfo{})
-		_ = r.Run(ctx, []string{"dataLake-integration-test"})
-
-		close(svcDone)
-	}()
-	t.Cleanup(func() { <-svcDone })
-
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
 
 	t.Run("Events flow", func(t *testing.T) {
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml", "testdata/docker-compose.gcs.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
+		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
 		testCases := []struct {
 			name              string
-			writeKey          string
 			tables            []string
-			sourceID          string
-			destinationID     string
 			destType          string
 			conf              map[string]interface{}
-			prerequisite      func(t testing.TB)
+			prerequisite      func(t testing.TB, ctx context.Context)
 			stagingFilePrefix string
+			configOverride    map[string]any
 		}{
 			{
-				name:          "S3Datalake",
-				writeKey:      s3WriteKey,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      s3SourceID,
-				destinationID: s3DestinationID,
-				destType:      warehouseutils.S3Datalake,
+				name:     "S3Datalake",
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				destType: whutils.S3Datalake,
 				conf: map[string]interface{}{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
@@ -184,18 +96,25 @@ func TestIntegration(t *testing.T) {
 					"prefix":           "some-prefix",
 					"syncFrequency":    "30",
 				},
-				prerequisite: func(t testing.TB) {
+				prerequisite: func(t testing.TB, ctx context.Context) {
 					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
 				stagingFilePrefix: "testdata/upload-job-s3-datalake",
+				configOverride: map[string]any{
+					"region":           s3Region,
+					"bucketName":       s3BucketName,
+					"accessKeyID":      s3AccessKeyID,
+					"accessKey":        s3AccessKey,
+					"endPoint":         s3EndPoint,
+					"enableSSE":        false,
+					"s3ForcePathStyle": true,
+					"disableSSL":       true,
+				},
 			},
 			{
-				name:          "GCSDatalake",
-				writeKey:      gcsWriteKey,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
-				sourceID:      gcsSourceID,
-				destinationID: gcsDestinationID,
-				destType:      warehouseutils.GCSDatalake,
+				name:     "GCSDatalake",
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+				destType: whutils.GCSDatalake,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
@@ -204,18 +123,21 @@ func TestIntegration(t *testing.T) {
 					"jsonReads":     true,
 					"syncFrequency": "30",
 				},
-				prerequisite: func(t testing.TB) {
+				prerequisite: func(t testing.TB, ctx context.Context) {
 					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 				},
 				stagingFilePrefix: "testdata/upload-job-gcs-datalake",
+				configOverride: map[string]any{
+					"bucketName": gcsBucketName,
+					"endPoint":   gcsEndPoint,
+					"disableSSL": true,
+					"jsonReads":  true,
+				},
 			},
 			{
-				name:          "AzureDatalake",
-				writeKey:      azWriteKey,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      azSourceID,
-				destinationID: azDestinationID,
-				destType:      warehouseutils.AzureDatalake,
+				name:     "AzureDatalake",
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				destType: whutils.AzureDatalake,
 				conf: map[string]interface{}{
 					"containerName":  azContainerName,
 					"prefix":         "",
@@ -227,48 +149,89 @@ func TestIntegration(t *testing.T) {
 					"disableSSL":     true,
 				},
 				stagingFilePrefix: "testdata/upload-job-azure-datalake",
+				configOverride: map[string]any{
+					"containerName":  azContainerName,
+					"accountName":    azAccountName,
+					"accountKey":     azAccountKey,
+					"endPoint":       azEndPoint,
+					"forcePathStyle": true,
+					"disableSSL":     true,
+				},
 			},
 		}
 
-		jobsDB := testhelper.JobsDB(t, jobsDBPort)
-
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(tc.destType)
+				)
+
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(tc.destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("syncFrequency", "30")
+				for k, v := range tc.configOverride {
+					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+				}
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destinationBuilder.Build()).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", c.Port("gcs", 4443)))
+				t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				ctx := context.Background()
+
 				if tc.prerequisite != nil {
-					tc.prerequisite(t)
+					tc.prerequisite(t, ctx)
 				}
 
 				t.Log("verifying test case 1")
-				ts1 := testhelper.TestConfig{
-					WriteKey:        tc.writeKey,
+				ts1 := whth.TestConfig{
+					WriteKey:        writeKey,
+					Schema:          namespace,
 					Tables:          tc.tables,
-					SourceID:        tc.sourceID,
-					DestinationID:   tc.destinationID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
-					UserID:          testhelper.GetUserId(tc.destType),
+					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
 					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				ts2 := testhelper.TestConfig{
-					WriteKey:        tc.writeKey,
+				ts2 := whth.TestConfig{
+					WriteKey:        writeKey,
+					Schema:          namespace,
 					Tables:          tc.tables,
-					SourceID:        tc.sourceID,
-					DestinationID:   tc.destinationID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
 					DestinationType: tc.destType,
 					Config:          tc.conf,
 					WorkspaceID:     workspaceID,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
-					UserID:          testhelper.GetUserId(tc.destType),
+					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
 					StagingFilePath: tc.stagingFilePrefix + ".staging-2.json",
 				}
@@ -277,11 +240,179 @@ func TestIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("S3 DataLake Validation", func(t *testing.T) {
+	t.Run("Validations", func(t *testing.T) {
+		t.Run("S3 DataLake", func(t *testing.T) {
+			c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.minio.yml"}))
+			c.Start(context.Background())
+
+			s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+			ctx := context.Background()
+			namespace := whth.RandSchema(whutils.S3Datalake)
+
+			createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+
+			dest := backendconfig.DestinationT{
+				ID: "test_destination_id",
+				Config: map[string]interface{}{
+					"region":           s3Region,
+					"bucketName":       s3BucketName,
+					"accessKeyID":      s3AccessKeyID,
+					"accessKey":        s3AccessKey,
+					"endPoint":         s3EndPoint,
+					"namespace":        namespace,
+					"enableSSE":        false,
+					"s3ForcePathStyle": true,
+					"disableSSL":       true,
+					"prefix":           "some-prefix",
+					"syncFrequency":    "30",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "1xAu2vuR0scUwkBivf6VhqwWgcS",
+					Name:        "S3_DATALAKE",
+					DisplayName: "S3 Datalake",
+				},
+				Name:       "s3-datalake-demo",
+				Enabled:    true,
+				RevisionID: "29HgOWobnr0RYZLpaSwPINb2987",
+			}
+			whth.VerifyConfigurationTest(t, dest)
+		})
+
+		t.Run("GCS DataLake", func(t *testing.T) {
+			c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.gcs.yml"}))
+			c.Start(context.Background())
+
+			gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
+
+			ctx := context.Background()
+			namespace := whth.RandSchema(whutils.GCSDatalake)
+
+			t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", c.Port("gcs", 4443)))
+			t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
+
+			createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
+
+			dest := backendconfig.DestinationT{
+				ID: "test_destination_id",
+				Config: map[string]interface{}{
+					"bucketName":    gcsBucketName,
+					"prefix":        "",
+					"endPoint":      gcsEndPoint,
+					"namespace":     namespace,
+					"disableSSL":    true,
+					"jsonReads":     true,
+					"syncFrequency": "30",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "20lzWVRwzEimkq87sNQuz1or2GA",
+					Name:        "GCS_DATALAKE",
+					DisplayName: "Google Cloud Storage Datalake",
+				},
+				Name:       "gcs-datalake-demo",
+				Enabled:    true,
+				RevisionID: "29HgOWobnr0RYZpLASwPINb2987",
+			}
+			whth.VerifyConfigurationTest(t, dest)
+		})
+
+		t.Run("Azure DataLake", func(t *testing.T) {
+			c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml"}))
+			c.Start(context.Background())
+
+			azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
+
+			namespace := whth.RandSchema(whutils.AzureDatalake)
+
+			dest := backendconfig.DestinationT{
+				ID: "test_destination_id",
+				Config: map[string]interface{}{
+					"containerName":  azContainerName,
+					"prefix":         "",
+					"accountName":    azAccountName,
+					"accountKey":     azAccountKey,
+					"endPoint":       azEndPoint,
+					"namespace":      namespace,
+					"syncFrequency":  "30",
+					"forcePathStyle": true,
+					"disableSSL":     true,
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "20lzXg0c5kCBRxGoOoKjCSyZ3AC",
+					Name:        "AZURE_DATALAKE",
+					DisplayName: "Azure Datalake",
+				},
+				Name:       "azure-datalake-demo",
+				Enabled:    true,
+				RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
+			}
+			whth.VerifyConfigurationTest(t, dest)
+		})
+	})
+
+	t.Run("Trino", func(t *testing.T) {
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.trino.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		destType := whutils.S3Datalake
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		ctx := context.Background()
+		sourceID := whutils.RandHex()
+		destinationID := whutils.RandHex()
+		writeKey := whutils.RandHex()
+		namespace := whth.RandSchema(destType)
+
+		workspaceConfig := backendconfigtest.NewConfigBuilder().
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithID(sourceID).
+					WithWriteKey(writeKey).
+					WithWorkspaceID(workspaceID).
+					WithConnection(
+						backendconfigtest.NewDestinationBuilder(destType).
+							WithID(destinationID).
+							WithRevisionID(destinationID).
+							WithConfigOption("namespace", namespace).
+							WithConfigOption("syncFrequency", "30").
+							WithConfigOption("region", s3Region).
+							WithConfigOption("bucketName", s3BucketName).
+							WithConfigOption("accessKeyID", s3AccessKeyID).
+							WithConfigOption("accessKey", s3AccessKey).
+							WithConfigOption("endPoint", s3EndPoint).
+							WithConfigOption("enableSSE", false).
+							WithConfigOption("s3ForcePathStyle", true).
+							WithConfigOption("disableSSL", true).
+							WithConfigOption("prefix", "some-prefix").Build(),
+					).
+					Build(),
+			).
+			WithWorkspaceID(workspaceID).
+			Build()
+
+		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
 		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
-		dest := backendconfig.DestinationT{
-			ID: s3DestinationID,
+		ts := whth.TestConfig{
+			WriteKey:              writeKey,
+			Schema:                namespace,
+			Tables:                []string{"tracks"},
+			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
+			LoadFilesEventsMap:    map[string]int{"tracks": 8},
+			TableUploadsEventsMap: map[string]int{"tracks": 8},
+			WarehouseEventsMap:    map[string]int{"tracks": 8},
+			SourceID:              sourceID,
+			DestinationID:         destinationID,
+			DestinationType:       destType,
 			Config: map[string]interface{}{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
@@ -294,74 +425,23 @@ func TestIntegration(t *testing.T) {
 				"prefix":           "some-prefix",
 				"syncFrequency":    "30",
 			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "1xAu2vuR0scUwkBivf6VhqwWgcS",
-				Name:        "S3_DATALAKE",
-				DisplayName: "S3 Datalake",
-			},
-			Name:       "s3-datalake-demo",
-			Enabled:    true,
-			RevisionID: "29HgOWobnr0RYZLpaSwPINb2987",
+			WorkspaceID:     workspaceID,
+			JobsDB:          jobsDB,
+			HTTPPort:        httpPort,
+			UserID:          whth.GetUserId(destType),
+			SkipWarehouse:   true,
+			StagingFilePath: "testdata/trino.staging.json",
 		}
-		testhelper.VerifyConfigurationTest(t, dest)
-	})
+		ts.VerifyEvents(t)
 
-	t.Run("GCS DataLake Validation", func(t *testing.T) {
-		createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
-
-		dest := backendconfig.DestinationT{
-			ID: gcsDestinationID,
-			Config: map[string]interface{}{
-				"bucketName":    gcsBucketName,
-				"prefix":        "",
-				"endPoint":      gcsEndPoint,
-				"disableSSL":    true,
-				"jsonReads":     true,
-				"syncFrequency": "30",
-			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "20lzWVRwzEimkq87sNQuz1or2GA",
-				Name:        "GCS_DATALAKE",
-				DisplayName: "Google Cloud Storage Datalake",
-			},
-			Name:       "gcs-datalake-demo",
-			Enabled:    true,
-			RevisionID: "29HgOWobnr0RYZpLASwPINb2987",
-		}
-		testhelper.VerifyConfigurationTest(t, dest)
-	})
-
-	t.Run("Azure DataLake Validation", func(t *testing.T) {
-		dest := backendconfig.DestinationT{
-			ID: azDestinationID,
-			Config: map[string]interface{}{
-				"containerName":  azContainerName,
-				"prefix":         "",
-				"accountName":    azAccountName,
-				"accountKey":     azAccountKey,
-				"endPoint":       azEndPoint,
-				"syncFrequency":  "30",
-				"forcePathStyle": true,
-				"disableSSL":     true,
-			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "20lzXg0c5kCBRxGoOoKjCSyZ3AC",
-				Name:        "AZURE_DATALAKE",
-				DisplayName: "Azure Datalake",
-			},
-			Name:       "azure-datalake-demo",
-			Enabled:    true,
-			RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
-		}
-		testhelper.VerifyConfigurationTest(t, dest)
-	})
-
-	t.Run("Trino", func(t *testing.T) {
 		dsn := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_use_column_index=true",
-			trinoPort,
+			c.Port("trino", 8080),
 		)
 		db, err := sql.Open("trino", dsn)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = db.Close()
+		})
 
 		require.Eventually(t, func() bool {
 			_, err := db.ExecContext(ctx, `SELECT 1`)
@@ -370,7 +450,6 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			100*time.Millisecond,
 		)
-
 		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
 				CREATE SCHEMA IF NOT EXISTS minio.rudderstack WITH (
@@ -385,7 +464,6 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-
 		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
 				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
@@ -409,7 +487,7 @@ func TestIntegration(t *testing.T) {
 					uuid_ts TIMESTAMP
 				)
 				WITH (
-					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/',
+					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/',
 					format = 'PARQUET'
 				)
 			`)
@@ -424,7 +502,6 @@ func TestIntegration(t *testing.T) {
 		)
 
 		var count int64
-
 		require.Eventually(t, func() bool {
 			err := db.QueryRowContext(ctx, `
 				select
@@ -450,7 +527,7 @@ func TestIntegration(t *testing.T) {
 				from
 					minio.rudderstack.tracks
 				where
-					context_destination_id = '`+s3DestinationID+`'
+					context_destination_id = '`+destinationID+`'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -465,6 +542,89 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Spark", func(t *testing.T) {
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.spark.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		destType := whutils.S3Datalake
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		ctx := context.Background()
+		sourceID := whutils.RandHex()
+		destinationID := whutils.RandHex()
+		writeKey := whutils.RandHex()
+		namespace := whth.RandSchema(destType)
+
+		workspaceConfig := backendconfigtest.NewConfigBuilder().
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithID(sourceID).
+					WithWriteKey(writeKey).
+					WithWorkspaceID(workspaceID).
+					WithConnection(
+						backendconfigtest.NewDestinationBuilder(destType).
+							WithID(destinationID).
+							WithRevisionID(destinationID).
+							WithConfigOption("namespace", namespace).
+							WithConfigOption("syncFrequency", "30").
+							WithConfigOption("region", s3Region).
+							WithConfigOption("bucketName", s3BucketName).
+							WithConfigOption("accessKeyID", s3AccessKeyID).
+							WithConfigOption("accessKey", s3AccessKey).
+							WithConfigOption("endPoint", s3EndPoint).
+							WithConfigOption("enableSSE", false).
+							WithConfigOption("s3ForcePathStyle", true).
+							WithConfigOption("disableSSL", true).
+							WithConfigOption("prefix", "some-prefix").Build(),
+					).
+					Build(),
+			).
+			WithWorkspaceID(workspaceID).
+			Build()
+
+		whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+
+		ts := whth.TestConfig{
+			WriteKey:              writeKey,
+			Schema:                namespace,
+			Tables:                []string{"tracks"},
+			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
+			LoadFilesEventsMap:    map[string]int{"tracks": 8},
+			TableUploadsEventsMap: map[string]int{"tracks": 8},
+			WarehouseEventsMap:    map[string]int{"tracks": 8},
+			SourceID:              sourceID,
+			DestinationID:         destinationID,
+			DestinationType:       destType,
+			Config: map[string]interface{}{
+				"region":           s3Region,
+				"bucketName":       s3BucketName,
+				"accessKeyID":      s3AccessKeyID,
+				"accessKey":        s3AccessKey,
+				"endPoint":         s3EndPoint,
+				"enableSSE":        false,
+				"s3ForcePathStyle": true,
+				"disableSSL":       true,
+				"prefix":           "some-prefix",
+				"syncFrequency":    "30",
+			},
+			WorkspaceID:     workspaceID,
+			JobsDB:          jobsDB,
+			HTTPPort:        httpPort,
+			UserID:          whth.GetUserId(destType),
+			SkipWarehouse:   true,
+			StagingFilePath: "testdata/spark.staging.json",
+		}
+		ts.VerifyEvents(t)
+
 		_ = c.Exec(ctx,
 			"spark-master",
 			"spark-sql",
@@ -490,7 +650,7 @@ func TestIntegration(t *testing.T) {
 			  	uuid_ts timestamp
 			)
 			STORED AS PARQUET
-			location "s3a://some-bucket/some-prefix/rudder-datalake/s_3_datalake_integration/tracks/2023/05/12/04/";
+			location "s3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/";
 		`,
 			"-S",
 		)
@@ -521,7 +681,7 @@ func TestIntegration(t *testing.T) {
 				from
 					tracks
 				where
-					context_destination_id = '`+s3DestinationID+`';
+					context_destination_id = '`+destinationID+`';
 			`,
 			"-S",
 		)

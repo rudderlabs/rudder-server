@@ -206,6 +206,10 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 		_ = jobsDB.Close()
 	})
 
+	t.Cleanup(func() {
+		_ = jobsDB.Close()
+	})
+
 	return jobsDB
 }
 

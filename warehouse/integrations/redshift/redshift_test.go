@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -29,10 +28,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -40,7 +37,7 @@ import (
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
@@ -64,7 +61,7 @@ const testKey = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 func rsTestCredentials() (*testCredentials, error) {
 	cred, exists := os.LookupEnv(testKey)
 	if !exists {
-		return nil, errors.New("redshift test credentials not found")
+		return nil, fmt.Errorf("missing redshift test credentials")
 	}
 
 	var credentials testCredentials
@@ -80,127 +77,35 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", testKey)
+		}
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
-	c.Start(context.Background())
-
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
+	whutils.Init()
 
-	jobsDBPort := c.Port("jobsDb", 5432)
+	destType := whutils.RS
 
-	httpPort, err := kithelper.GetFreePort()
+	credentials, err := rsTestCredentials()
 	require.NoError(t, err)
-
-	workspaceID := warehouseutils.RandHex()
-	sourceID := warehouseutils.RandHex()
-	destinationID := warehouseutils.RandHex()
-	writeKey := warehouseutils.RandHex()
-	sourcesSourceID := warehouseutils.RandHex()
-	sourcesDestinationID := warehouseutils.RandHex()
-	sourcesWriteKey := warehouseutils.RandHex()
-	iamSourceID := warehouseutils.RandHex()
-	iamDestinationID := warehouseutils.RandHex()
-	iamWriteKey := warehouseutils.RandHex()
-
-	destType := warehouseutils.RS
-
-	namespace := whth.RandSchema(destType)
-	iamNamespace := whth.RandSchema(destType)
-	sourcesNamespace := whth.RandSchema(destType)
-
-	rsTestCredentials, err := rsTestCredentials()
-	require.NoError(t, err)
-
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		rsTestCredentials.UserName,
-		rsTestCredentials.Password,
-		rsTestCredentials.Host,
-		rsTestCredentials.Port,
-		rsTestCredentials.DbName,
-	)
-
-	db, err := sql.Open("postgres", dsn)
-	require.NoError(t, err)
-	require.NoError(t, db.Ping())
-
-	bootstrapSvc := func(t testing.TB, additionalEnvs map[string]string, preferAppend *bool) {
-		var preferAppendStr string
-		if preferAppend != nil {
-			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
-		}
-
-		templateConfigurations := map[string]any{
-			"workspaceID":          workspaceID,
-			"sourceID":             sourceID,
-			"destinationID":        destinationID,
-			"writeKey":             writeKey,
-			"sourcesSourceID":      sourcesSourceID,
-			"sourcesDestinationID": sourcesDestinationID,
-			"sourcesWriteKey":      sourcesWriteKey,
-			"iamSourceID":          iamSourceID,
-			"iamDestinationID":     iamDestinationID,
-			"iamWriteKey":          iamWriteKey,
-			"host":                 rsTestCredentials.Host,
-			"port":                 rsTestCredentials.Port,
-			"user":                 rsTestCredentials.UserName,
-			"password":             rsTestCredentials.Password,
-			"database":             rsTestCredentials.DbName,
-			"bucketName":           rsTestCredentials.BucketName,
-			"accessKeyID":          rsTestCredentials.AccessKeyID,
-			"accessKey":            rsTestCredentials.AccessKey,
-			"namespace":            namespace,
-			"sourcesNamespace":     sourcesNamespace,
-			"iamNamespace":         iamNamespace,
-			"preferAppend":         preferAppendStr,
-			"iamUser":              rsTestCredentials.IAMUserName,
-			"iamRoleARNForAuth":    rsTestCredentials.IAMRoleARN,
-			"clusterID":            rsTestCredentials.ClusterID,
-			"clusterRegion":        rsTestCredentials.ClusterRegion,
-		}
-		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-		whth.EnhanceWithDefaultEnvs(t)
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-		t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
-		t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_SLOW_QUERY_THRESHOLD", "0s")
-		for envKey, envValue := range additionalEnvs {
-			t.Setenv(envKey, envValue)
-		}
-
-		svcDone := make(chan struct{})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			r := runner.New(runner.ReleaseInfo{})
-			_ = r.Run(ctx, []string{"redshift-integration-test"})
-
-			close(svcDone)
-		}()
-		t.Cleanup(func() { <-svcDone })
-		t.Cleanup(cancel)
-
-		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-		health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
-	}
 
 	t.Run("Events flow", func(t *testing.T) {
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testcase := []struct {
 			name                  string
-			writeKey              string
-			schema                string
-			sourceID              string
-			destinationID         string
 			tables                []string
 			stagingFilesEventsMap whth.EventsCountMap
 			loadFilesEventsMap    whth.EventsCountMap
@@ -209,30 +114,28 @@ func TestIntegration(t *testing.T) {
 			warehouseEventsMap2   whth.EventsCountMap
 			sourceJob             bool
 			stagingFilePrefix     string
-			preferAppend          *bool
 			jobRunID              string
 			useSameUserID         bool
-			additionalEnvs        map[string]string
+			additionalEnvs        func(destinationID string) map[string]string
+			configOverride        map[string]any
 		}{
 			{
 				name:              "Upload Job",
-				writeKey:          writeKey,
-				schema:            namespace,
 				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:          sourceID,
-				destinationID:     destinationID,
 				stagingFilePrefix: "testdata/upload-job",
 				jobRunID:          misc.FastUUID().String(),
+				configOverride: map[string]any{
+					"host":     credentials.Host,
+					"port":     credentials.Port,
+					"user":     credentials.UserName,
+					"password": credentials.Password,
+				},
 			},
 			{
-				name:     "Append Mode",
-				writeKey: writeKey,
+				name: "Append Mode",
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
 				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
 				warehouseEventsMap2: whth.EventsCountMap{
 					"identifies":    8,
 					"users":         1,
@@ -243,32 +146,37 @@ func TestIntegration(t *testing.T) {
 					"aliases":       8,
 					"groups":        8,
 				},
-				preferAppend:      th.Ptr(true),
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				jobRunID:      "",
 				useSameUserID: true,
+				configOverride: map[string]any{
+					"preferAppend": true,
+					"host":         credentials.Host,
+					"port":         credentials.Port,
+					"user":         credentials.UserName,
+					"password":     credentials.Password,
+				},
 			},
 			{
 				name:              "IAM Upload Job",
-				writeKey:          iamWriteKey,
-				schema:            iamNamespace,
 				tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:          iamSourceID,
-				destinationID:     iamDestinationID,
 				stagingFilePrefix: "testdata/upload-job",
 				jobRunID:          misc.FastUUID().String(),
+				configOverride: map[string]any{
+					"useIAMForAuth":     true,
+					"user":              credentials.IAMUserName,
+					"iamRoleARNForAuth": credentials.IAMRoleARN,
+					"clusterId":         credentials.ClusterID,
+					"clusterRegion":     credentials.ClusterRegion,
+				},
 			},
 			{
-				name:     "IAM Append Mode",
-				writeKey: iamWriteKey,
+				name: "IAM Append Mode",
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
 				},
-				schema:        iamNamespace,
-				sourceID:      iamSourceID,
-				destinationID: iamDestinationID,
 				warehouseEventsMap2: whth.EventsCountMap{
 					"identifies":    8,
 					"users":         1,
@@ -279,22 +187,25 @@ func TestIntegration(t *testing.T) {
 					"aliases":       8,
 					"groups":        8,
 				},
-				preferAppend:      th.Ptr(true),
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				jobRunID:      "",
 				useSameUserID: true,
+				configOverride: map[string]any{
+					"preferAppend":      true,
+					"useIAMForAuth":     true,
+					"user":              credentials.IAMUserName,
+					"iamRoleARNForAuth": credentials.IAMRoleARN,
+					"clusterId":         credentials.ClusterID,
+					"clusterRegion":     credentials.ClusterRegion,
+				},
 			},
 			{
-				name:     "Undefined preferAppend",
-				writeKey: writeKey,
+				name: "Undefined preferAppend",
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
 				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
 				warehouseEventsMap2: whth.EventsCountMap{
 					// let's use the same data as "testdata/upload-job-append-mode"
 					// but then for the 2nd sync we expect 4 for each table instead of 8 due to the merge
@@ -307,22 +218,23 @@ func TestIntegration(t *testing.T) {
 					"aliases":       4,
 					"groups":        4,
 				},
-				preferAppend:      nil, // not defined in backend config
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				jobRunID:      "",
 				useSameUserID: true,
+				configOverride: map[string]any{
+					"host":     credentials.Host,
+					"port":     credentials.Port,
+					"user":     credentials.UserName,
+					"password": credentials.Password,
+				},
 			},
 			{
-				name:     "Append Users",
-				writeKey: writeKey,
+				name: "Append Users",
 				tables: []string{
 					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
 				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
 				warehouseEventsMap: whth.EventsCountMap{
 					// In the first sync we get 4 events for each table, 1 for users
 					"identifies":    4,
@@ -350,24 +262,28 @@ func TestIntegration(t *testing.T) {
 					"aliases":       4,
 					"groups":        4,
 				},
-				preferAppend:      th.Ptr(true),
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 				// we set the jobRunID to make sure the uploader says we cannot append!
 				// same behaviour as redshift, see hyperverge users use case
 				jobRunID:      misc.FastUUID().String(),
 				useSameUserID: true,
-				additionalEnvs: map[string]string{
-					"RSERVER_WAREHOUSE_REDSHIFT_SKIP_DEDUP_DESTINATION_IDS":        destinationID,
-					"RSERVER_WAREHOUSE_REDSHIFT_SKIP_COMPUTING_USER_LATEST_TRAITS": "true",
+				additionalEnvs: func(destinationID string) map[string]string {
+					return map[string]string{
+						"RSERVER_WAREHOUSE_REDSHIFT_SKIP_DEDUP_DESTINATION_IDS":        destinationID,
+						"RSERVER_WAREHOUSE_REDSHIFT_SKIP_COMPUTING_USER_LATEST_TRAITS": "true",
+					}
+				},
+				configOverride: map[string]any{
+					"preferAppend": true,
+					"host":         credentials.Host,
+					"port":         credentials.Port,
+					"user":         credentials.UserName,
+					"password":     credentials.Password,
 				},
 			},
 			{
 				name:                  "Source Job",
-				writeKey:              sourcesWriteKey,
-				schema:                sourcesNamespace,
 				tables:                []string{"tracks", "google_sheet"},
-				sourceID:              sourcesSourceID,
-				destinationID:         sourcesDestinationID,
 				stagingFilesEventsMap: whth.SourcesStagingFilesEventsMap(),
 				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
 				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
@@ -379,24 +295,71 @@ func TestIntegration(t *testing.T) {
 				sourceJob:         true,
 				stagingFilePrefix: "testdata/sources-job",
 				jobRunID:          misc.FastUUID().String(),
+				configOverride: map[string]any{
+					"host":     credentials.Host,
+					"port":     credentials.Port,
+					"user":     credentials.UserName,
+					"password": credentials.Password,
+				},
 			},
 		}
 
 		for _, tc := range testcase {
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.additionalEnvs, tc.preferAppend)
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
 
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("database", credentials.DbName).
+					WithConfigOption("bucketName", credentials.BucketName).
+					WithConfigOption("accessKeyID", credentials.AccessKeyID).
+					WithConfigOption("accessKey", credentials.AccessKey).
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("enableSSE", false).
+					WithConfigOption("useRudderStorage", false).
+					WithConfigOption("syncFrequency", "30")
+				for k, v := range tc.configOverride {
+					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+				}
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destinationBuilder.Build()).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_ENABLE_DELETE_BY_JOBS", "true")
+				t.Setenv("RSERVER_WAREHOUSE_REDSHIFT_SLOW_QUERY_THRESHOLD", "0s")
+				if tc.additionalEnvs != nil {
+					for envKey, envValue := range tc.additionalEnvs(destinationID) {
+						t.Setenv(envKey, envValue)
+					}
+				}
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					credentials.UserName, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+				)
+				db, err := sql.Open("postgres", dsn)
+				require.NoError(t, err)
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() { _ = db.Close() })
 				t.Cleanup(func() {
-					require.Eventually(t, func() bool {
-						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema)); err != nil {
-							t.Logf("error deleting schema: %v", err)
-							return false
-						}
-						return true
-					},
-						time.Minute,
-						time.Second,
-					)
+					dropSchema(t, db, namespace)
 				})
 
 				sqlClient := &client.Client{
@@ -405,20 +368,20 @@ func TestIntegration(t *testing.T) {
 				}
 
 				conf := map[string]any{
-					"bucketName":       rsTestCredentials.BucketName,
-					"accessKeyID":      rsTestCredentials.AccessKeyID,
-					"accessKey":        rsTestCredentials.AccessKey,
+					"bucketName":       credentials.BucketName,
+					"accessKeyID":      credentials.AccessKeyID,
+					"accessKey":        credentials.AccessKey,
 					"enableSSE":        false,
 					"useRudderStorage": false,
 				}
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
+					WriteKey:              writeKey,
+					Schema:                namespace,
 					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
+					SourceID:              sourceID,
+					DestinationID:         destinationID,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
@@ -438,11 +401,11 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying test case 2")
 				ts2 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
+					WriteKey:              writeKey,
+					Schema:                namespace,
 					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
+					SourceID:              sourceID,
+					DestinationID:         destinationID,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
 					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
@@ -468,6 +431,17 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		namespace := whth.RandSchema(destType)
+		iamNamespace := whth.RandSchema(destType)
+
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			credentials.UserName, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+		)
+		db, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
+
 		testCases := []struct {
 			name        string
 			destination backendconfig.DestinationT
@@ -475,16 +449,16 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "With password",
 				destination: backendconfig.DestinationT{
-					ID: destinationID,
+					ID: "test_destination_id",
 					Config: map[string]interface{}{
-						"host":             rsTestCredentials.Host,
-						"port":             rsTestCredentials.Port,
-						"user":             rsTestCredentials.UserName,
-						"password":         rsTestCredentials.Password,
-						"database":         rsTestCredentials.DbName,
-						"bucketName":       rsTestCredentials.BucketName,
-						"accessKeyID":      rsTestCredentials.AccessKeyID,
-						"accessKey":        rsTestCredentials.AccessKey,
+						"host":             credentials.Host,
+						"port":             credentials.Port,
+						"user":             credentials.UserName,
+						"password":         credentials.Password,
+						"database":         credentials.DbName,
+						"bucketName":       credentials.BucketName,
+						"accessKeyID":      credentials.AccessKeyID,
+						"accessKey":        credentials.AccessKey,
 						"namespace":        namespace,
 						"syncFrequency":    "30",
 						"enableSSE":        false,
@@ -498,24 +472,24 @@ func TestIntegration(t *testing.T) {
 					Name:        "redshift-demo",
 					Enabled:     true,
 					RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
-					WorkspaceID: workspaceID,
+					WorkspaceID: "test_workspace_id",
 				},
 			},
 			{
 				name: "with IAM Role",
 				destination: backendconfig.DestinationT{
-					ID: destinationID,
+					ID: "test_destination_id",
 					Config: map[string]interface{}{
-						"user":              rsTestCredentials.IAMUserName,
-						"database":          rsTestCredentials.DbName,
-						"bucketName":        rsTestCredentials.BucketName,
-						"accessKeyID":       rsTestCredentials.AccessKeyID,
-						"accessKey":         rsTestCredentials.AccessKey,
+						"user":              credentials.IAMUserName,
+						"database":          credentials.DbName,
+						"bucketName":        credentials.BucketName,
+						"accessKeyID":       credentials.AccessKeyID,
+						"accessKey":         credentials.AccessKey,
 						"namespace":         iamNamespace,
 						"useIAMForAuth":     true,
-						"iamRoleARNForAuth": rsTestCredentials.IAMRoleARN,
-						"clusterId":         rsTestCredentials.ClusterID,
-						"clusterRegion":     rsTestCredentials.ClusterRegion,
+						"iamRoleARNForAuth": credentials.IAMRoleARN,
+						"clusterId":         credentials.ClusterID,
+						"clusterRegion":     credentials.ClusterRegion,
 						"syncFrequency":     "30",
 						"enableSSE":         false,
 						"useRudderStorage":  false,
@@ -528,7 +502,7 @@ func TestIntegration(t *testing.T) {
 					Name:        "redshift-demo",
 					Enabled:     true,
 					RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
-					WorkspaceID: workspaceID,
+					WorkspaceID: "test_workspace_id",
 				},
 			},
 		}
@@ -536,16 +510,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Cleanup(func() {
-					require.Eventually(t, func() bool {
-						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.destination.Config["namespace"])); err != nil {
-							t.Logf("error deleting schema: %v", err)
-							return false
-						}
-						return true
-					},
-						time.Minute,
-						time.Second,
-					)
+					dropSchema(t, db, tc.destination.Config["namespace"].(string))
 				})
 
 				whth.VerifyConfigurationTest(t, tc.destination)
@@ -554,14 +519,16 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
-
 		namespace := whth.RandSchema(destType)
 		iamNamespace := whth.RandSchema(destType)
+
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			credentials.UserName, credentials.Password, credentials.Host, credentials.Port, credentials.DbName,
+		)
+		db, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
 
 		testCases := []struct {
 			name      string
@@ -571,19 +538,19 @@ func TestIntegration(t *testing.T) {
 				name: "With password",
 				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
-						ID: sourceID,
+						ID: "test_source_id",
 					},
 					Destination: backendconfig.DestinationT{
-						ID: destinationID,
+						ID: "test_destination_id",
 						Config: map[string]interface{}{
-							"host":             rsTestCredentials.Host,
-							"port":             rsTestCredentials.Port,
-							"user":             rsTestCredentials.UserName,
-							"password":         rsTestCredentials.Password,
-							"database":         rsTestCredentials.DbName,
-							"bucketName":       rsTestCredentials.BucketName,
-							"accessKeyID":      rsTestCredentials.AccessKeyID,
-							"accessKey":        rsTestCredentials.AccessKey,
+							"host":             credentials.Host,
+							"port":             credentials.Port,
+							"user":             credentials.UserName,
+							"password":         credentials.Password,
+							"database":         credentials.DbName,
+							"bucketName":       credentials.BucketName,
+							"accessKeyID":      credentials.AccessKeyID,
+							"accessKey":        credentials.AccessKey,
 							"namespace":        namespace,
 							"syncFrequency":    "30",
 							"enableSSE":        false,
@@ -597,9 +564,9 @@ func TestIntegration(t *testing.T) {
 						Name:        "redshift-demo",
 						Enabled:     true,
 						RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
-						WorkspaceID: workspaceID,
+						WorkspaceID: "test_workspace_id",
 					},
-					WorkspaceID: workspaceID,
+					WorkspaceID: "test_workspace_id",
 					Namespace:   namespace,
 				},
 			},
@@ -607,21 +574,21 @@ func TestIntegration(t *testing.T) {
 				name: "with IAM Role",
 				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
-						ID: sourceID,
+						ID: "test_source_id",
 					},
 					Destination: backendconfig.DestinationT{
-						ID: destinationID,
+						ID: "test_destination_id",
 						Config: map[string]interface{}{
-							"user":              rsTestCredentials.IAMUserName,
-							"database":          rsTestCredentials.DbName,
-							"bucketName":        rsTestCredentials.BucketName,
-							"accessKeyID":       rsTestCredentials.AccessKeyID,
-							"accessKey":         rsTestCredentials.AccessKey,
+							"user":              credentials.IAMUserName,
+							"database":          credentials.DbName,
+							"bucketName":        credentials.BucketName,
+							"accessKeyID":       credentials.AccessKeyID,
+							"accessKey":         credentials.AccessKey,
 							"namespace":         iamNamespace,
 							"useIAMForAuth":     true,
-							"iamRoleARNForAuth": rsTestCredentials.IAMRoleARN,
-							"clusterId":         rsTestCredentials.ClusterID,
-							"clusterRegion":     rsTestCredentials.ClusterRegion,
+							"iamRoleARNForAuth": credentials.IAMRoleARN,
+							"clusterId":         credentials.ClusterID,
+							"clusterRegion":     credentials.ClusterRegion,
 							"syncFrequency":     "30",
 							"enableSSE":         false,
 							"useRudderStorage":  false,
@@ -634,9 +601,9 @@ func TestIntegration(t *testing.T) {
 						Name:        "redshift-iam-demo",
 						Enabled:     true,
 						RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
-						WorkspaceID: workspaceID,
+						WorkspaceID: "test_workspace_id",
 					},
-					WorkspaceID: workspaceID,
+					WorkspaceID: "test_workspace_id",
 					Namespace:   iamNamespace,
 				},
 			},
@@ -645,16 +612,7 @@ func TestIntegration(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Cleanup(func() {
-					require.Eventually(t, func() bool {
-						if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.warehouse.Namespace)); err != nil {
-							t.Logf("error deleting schema: %v", err)
-							return false
-						}
-						return true
-					},
-						time.Minute,
-						time.Second,
-					)
+					dropSchema(t, db, tc.warehouse.Namespace)
 				})
 
 				warehouse := tc.warehouse
@@ -684,12 +642,12 @@ func TestIntegration(t *testing.T) {
 				}
 
 				fm, err := filemanager.New(&filemanager.Settings{
-					Provider: warehouseutils.S3,
+					Provider: whutils.S3,
 					Config: map[string]any{
-						"bucketName":     rsTestCredentials.BucketName,
-						"accessKeyID":    rsTestCredentials.AccessKeyID,
-						"accessKey":      rsTestCredentials.AccessKey,
-						"bucketProvider": warehouseutils.S3,
+						"bucketName":     credentials.BucketName,
+						"accessKeyID":    credentials.AccessKeyID,
+						"accessKey":      credentials.AccessKey,
+						"bucketProvider": whutils.S3,
 					},
 				})
 				require.NoError(t, err)
@@ -700,8 +658,8 @@ func TestIntegration(t *testing.T) {
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -717,8 +675,8 @@ func TestIntegration(t *testing.T) {
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -737,8 +695,8 @@ func TestIntegration(t *testing.T) {
 						tableName := "merge_without_dedup_test_table"
 						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+						loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 						appendWarehouse := th.Clone(t, warehouse)
 						appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -791,8 +749,8 @@ func TestIntegration(t *testing.T) {
 						tableName := "merge_with_dedup_test_table"
 						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+						loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 						d := redshift.New(config.New(), logger.NOP, stats.NOP)
 						err := d.Setup(ctx, warehouse, mockUploader)
@@ -842,8 +800,8 @@ func TestIntegration(t *testing.T) {
 						tableName := "merge_with_dedup_window_test_table"
 						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+						loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 						c := config.New()
 						c.Set("Warehouse.redshift.dedupWindow", true)
@@ -897,8 +855,8 @@ func TestIntegration(t *testing.T) {
 						tableName := "merge_with_short_dedup_window_test_table"
 						uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-						loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+						loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+						mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 						c := config.New()
 						c.Set("Warehouse.redshift.dedupWindow", true)
@@ -953,11 +911,11 @@ func TestIntegration(t *testing.T) {
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					c := config.New()
-					c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{destinationID})
+					c.Set("Warehouse.redshift.skipDedupDestinationIDs", []string{"test_destination_id"})
 
 					appendWarehouse := th.Clone(t, warehouse)
 					appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -1009,10 +967,10 @@ func TestIntegration(t *testing.T) {
 					ctx := context.Background()
 					tableName := "load_file_not_exists_test_table"
 
-					loadFiles := []warehouseutils.LoadFile{{
+					loadFiles := []whutils.LoadFile{{
 						Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
 					}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -1034,8 +992,8 @@ func TestIntegration(t *testing.T) {
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -1057,8 +1015,8 @@ func TestIntegration(t *testing.T) {
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -1076,12 +1034,12 @@ func TestIntegration(t *testing.T) {
 				})
 				t.Run("discards", func(t *testing.T) {
 					ctx := context.Background()
-					tableName := warehouseutils.DiscardsTable
+					tableName := whutils.DiscardsTable
 
 					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
-					loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv)
+					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+					mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -1090,7 +1048,7 @@ func TestIntegration(t *testing.T) {
 					err = rs.CreateSchema(ctx)
 					require.NoError(t, err)
 
-					err = rs.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+					err = rs.CreateTable(ctx, tableName, whutils.DiscardsSchema)
 					require.NoError(t, err)
 
 					loadTableStat, err := rs.LoadTable(ctx, tableName)
@@ -1129,11 +1087,11 @@ func TestIntegration(t *testing.T) {
 					fileStat, err := os.Stat("../testdata/load.parquet")
 					require.NoError(t, err)
 
-					loadFiles := []warehouseutils.LoadFile{{
+					loadFiles := []whutils.LoadFile{{
 						Location: uploadOutput.Location,
 						Metadata: json.RawMessage(fmt.Sprintf(`{"content_length": %d}`, fileStat.Size())),
 					}}
-					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInUpload, whutils.LoadFileTypeParquet)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err = rs.Setup(ctx, warehouse, mockUploader)
@@ -1176,8 +1134,8 @@ func TestIntegration(t *testing.T) {
 				t.Run("crashRecover", func(t *testing.T) {
 					ctx := context.Background()
 					tableName := "crash_recovery_test_table"
-					stgTableName := warehouseutils.StagingTableName(warehouseutils.RS, tableName, 64)
-					mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, warehouseutils.LoadFileTypeParquet)
+					stgTableName := whutils.StagingTableName(destType, tableName, 64)
+					mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, whutils.LoadFileTypeParquet)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 					err := rs.Setup(ctx, warehouse, mockUploader)
@@ -1221,27 +1179,23 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Connection timeout using password", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
+		namespace := whth.RandSchema(destType)
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				Config: map[string]interface{}{
-					"host":             rsTestCredentials.Host,
-					"port":             rsTestCredentials.Port,
-					"user":             rsTestCredentials.UserName,
-					"password":         rsTestCredentials.Password,
-					"database":         rsTestCredentials.DbName,
-					"bucketName":       rsTestCredentials.BucketName,
-					"accessKeyID":      rsTestCredentials.AccessKeyID,
-					"accessKey":        rsTestCredentials.AccessKey,
+					"host":             credentials.Host,
+					"port":             credentials.Port,
+					"user":             credentials.UserName,
+					"password":         credentials.Password,
+					"database":         credentials.DbName,
+					"bucketName":       credentials.BucketName,
+					"accessKeyID":      credentials.AccessKeyID,
+					"accessKey":        credentials.AccessKey,
 					"namespace":        namespace,
 					"syncFrequency":    "30",
 					"enableSSE":        false,
@@ -1255,9 +1209,9 @@ func TestIntegration(t *testing.T) {
 				Name:        "redshift-demo",
 				Enabled:     true,
 				RevisionID:  "29HgOWobrn0RYZLpaSwPIbN2987",
-				WorkspaceID: workspaceID,
+				WorkspaceID: "test_workspace_id",
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 		mockCtrl := gomock.NewController(t)
@@ -1290,6 +1244,24 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, rs.DB.PingContext(ctx))
 		})
 	})
+}
+
+func dropSchema(t *testing.T, db *sql.DB, namespace string) {
+	t.Helper()
+	t.Log("dropping schema", namespace)
+
+	require.Eventually(t,
+		func() bool {
+			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+			if err != nil {
+				t.Logf("error deleting schema %q: %v", namespace, err)
+				return false
+			}
+			return true
+		},
+		time.Minute,
+		time.Second,
+	)
 }
 
 func TestRedshift_ShouldMerge(t *testing.T) {
@@ -1540,19 +1512,19 @@ func TestRedshift_AlterColumn(t *testing.T) {
 
 func newMockUploader(
 	t testing.TB,
-	loadFiles []warehouseutils.LoadFile,
+	loadFiles []whutils.LoadFile,
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
 	loadFileType string,
-) warehouseutils.Uploader {
+) whutils.Uploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
 	mockUploader := mockuploader.NewMockUploader(ctrl)
 	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+		func(ctx context.Context, options whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
 			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()

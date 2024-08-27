@@ -22,7 +22,7 @@ func BootstrapSvc(t *testing.T, workspaceConfig backendconfig.ConfigT, httpPort,
 		bcServer.Close()
 	})
 
-	EnhanceWithDefaultEnvs(t)
+	enhanceWithDefaultEnvs(t)
 
 	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
@@ -48,7 +48,7 @@ func BootstrapSvc(t *testing.T, workspaceConfig backendconfig.ConfigT, httpPort,
 	)
 }
 
-func EnhanceWithDefaultEnvs(t testing.TB) {
+func enhanceWithDefaultEnvs(t testing.TB) {
 	t.Setenv("JOBS_DB_HOST", jobsDBHost)
 	t.Setenv("JOBS_DB_NAME", jobsDBDatabase)
 	t.Setenv("JOBS_DB_DB_NAME", jobsDBDatabase)

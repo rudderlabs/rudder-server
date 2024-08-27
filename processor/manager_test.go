@@ -2,13 +2,7 @@ package processor
 
 import (
 	"context"
-	"database/sql"
-	"flag"
-	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 
@@ -24,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -39,87 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
-
-var (
-	hold  bool
-	db    *sql.DB
-	dbDsn = "root@tcp(127.0.0.1:3306)/service"
-)
-
-func TestMain(m *testing.M) {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
-
-	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Printf("Could not connect to docker: %s", err)
-		return 1
-	}
-
-	database := "jobsdb"
-	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "15-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
-	if err != nil {
-		log.Printf("Could not start resource: %s", err)
-		return 1
-	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s", err)
-		}
-	}()
-
-	dbDsn = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	log.Println("DB_DSN:", dbDsn)
-	_ = os.Setenv("JOBS_DB_DB_NAME", database)
-	_ = os.Setenv("JOBS_DB_HOST", "localhost")
-	_ = os.Setenv("JOBS_DB_NAME", "jobsdb")
-	_ = os.Setenv("JOBS_DB_USER", "rudder")
-	_ = os.Setenv("JOBS_DB_PASSWORD", "password")
-	_ = os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", dbDsn)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		log.Printf("Could not connect to docker: %s", err)
-		return 1
-	}
-
-	code := m.Run()
-	blockOnHold()
-
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	log.Println("Test on hold, before cleanup")
-	log.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
-}
 
 func initJobsDB() {
 	config.Reset()
@@ -144,6 +58,22 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 }
 
 func TestProcessorManager(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	if err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	resourcePostgres, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	t.Log("DB_DSN:", resourcePostgres.DBDsn)
+	t.Setenv("JOBS_DB_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_HOST", resourcePostgres.Host)
+	t.Setenv("JOBS_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_USER", resourcePostgres.User)
+	t.Setenv("JOBS_DB_PASSWORD", resourcePostgres.Password)
+	t.Setenv("JOBS_DB_PORT", resourcePostgres.Port)
+
 	initJobsDB()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)

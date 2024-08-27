@@ -7,6 +7,8 @@ import (
 	stdbigquery "cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
@@ -31,6 +33,7 @@ func TestBigQuery_CheckValidPartitionColumn(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			bq := &BigQuery{}
+			bq.conf = config.New()
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
@@ -70,6 +73,7 @@ func TestBigQuery_BigqueryPartitionType(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			bq := &BigQuery{}
+			bq.conf = config.New()
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
@@ -145,6 +149,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			bq := &BigQuery{}
+			bq.conf = config.New()
 			bq.now = func() time.Time {
 				return time.Date(2023, 4, 5, 6, 7, 8, 9, time.UTC)
 			}

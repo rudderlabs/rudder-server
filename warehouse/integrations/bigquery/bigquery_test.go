@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -127,7 +126,7 @@ func TestIntegration(t *testing.T) {
 						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
 					}
 
-					verifyEventsInView(t, ctx, db, namespace, whth.EventsCountMap{
+					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -168,7 +167,7 @@ func TestIntegration(t *testing.T) {
 						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
 					}
 
-					verifyEventsInView(t, ctx, db, namespace, whth.EventsCountMap{
+					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -213,7 +212,7 @@ func TestIntegration(t *testing.T) {
 						require.Equal(t, bigquery.HourPartitioningType, table.TimePartitioning.Type)
 					}
 
-					verifyEventsInView(t, ctx, db, namespace, whth.EventsCountMap{
+					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -258,7 +257,7 @@ func TestIntegration(t *testing.T) {
 						require.Equal(t, bigquery.MonthPartitioningType, table.TimePartitioning.Type)
 					}
 
-					verifyEventsInView(t, ctx, db, namespace, whth.EventsCountMap{
+					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -303,7 +302,7 @@ func TestIntegration(t *testing.T) {
 						require.Equal(t, bigquery.YearPartitioningType, table.TimePartitioning.Type)
 					}
 
-					verifyEventsInView(t, ctx, db, namespace, whth.EventsCountMap{
+					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
 						"identifies":    1,
 						"users":         1,
 						"tracks":        1,
@@ -1283,27 +1282,13 @@ func TestIntegration(t *testing.T) {
 	})
 }
 
-func dropSchema(t *testing.T, db *bigquery.Client, namespace string) {
-	t.Helper()
-	t.Log("Dropping schema", namespace)
-
-	require.Eventually(t, func() bool {
-		if err := db.Dataset(namespace).DeleteWithContents(context.Background()); err != nil {
-			t.Logf("error deleting dataset: %v", err)
-			return false
-		}
-		return true
-	},
-		time.Minute,
-		time.Second,
-	)
-}
-
-func listTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) (tables []*bigquery.TableMetadata) {
+func listTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) []*bigquery.TableMetadata {
 	t.Helper()
 	t.Log("Listing tables in namespace", namespace)
 
 	it := db.Dataset(namespace).Tables(ctx)
+
+	var tables []*bigquery.TableMetadata
 	for table, err := it.Next(); !errors.Is(err, iterator.Done); table, err = it.Next() {
 		require.NoError(t, err)
 
@@ -1313,35 +1298,10 @@ func listTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespac
 		metadata.Name = table.TableID
 		tables = append(tables, metadata)
 	}
-	tables = lo.Filter(tables, func(item *bigquery.TableMetadata, index int) bool {
+
+	return lo.Filter(tables, func(item *bigquery.TableMetadata, index int) bool {
 		return item.Type == "TABLE"
 	})
-
-	sort.SliceStable(tables, func(i, j int) bool {
-		return tables[i].Name < tables[j].Name
-	})
-	return
-}
-
-func verifyEventsInView(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string, expectedEvents whth.EventsCountMap) {
-	t.Helper()
-	t.Log("Verifying events in view in namespace", namespace)
-
-	for table, expectedCount := range expectedEvents {
-		view := fmt.Sprintf("%s_view", table)
-		query := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, namespace, view)
-
-		t.Logf("checking view %s", view)
-
-		it, err := db.Query(query).Read(ctx)
-		require.NoError(t, err)
-
-		var row []bigquery.Value
-		err = it.Next(&row)
-		require.NoError(t, err)
-		require.Len(t, row, 1)
-		require.EqualValues(t, expectedCount, row[0])
-	}
 }
 
 func listPartitions(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) (partitions []lo.Tuple2[string, string]) {
@@ -1357,20 +1317,63 @@ func listPartitions(t testing.TB, ctx context.Context, db *bigquery.Client, name
 
 	for {
 		var row []bigquery.Value
-		err := it.Next(&row)
-		if err != nil {
+
+		if err = it.Next(&row); err != nil {
 			if errors.Is(err, iterator.Done) {
 				break
 			}
 			require.NoError(t, err)
 		}
+		require.Len(t, row, 2)
+
+		tableName, tableNameOK := row[0].(string)
+		require.True(t, tableNameOK)
+		partitionID, partitionIDOK := row[1].(string)
+		require.True(t, partitionIDOK)
 
 		partitions = append(partitions, lo.Tuple2[string, string]{
-			A: row[0].(string),
-			B: row[1].(string),
+			A: tableName,
+			B: partitionID,
 		})
 	}
 	return
+}
+
+func verifyEventsUsingView(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string, expectedEvents whth.EventsCountMap) {
+	t.Helper()
+	t.Log("Verifying events in view in namespace", namespace)
+
+	for table, count := range expectedEvents {
+		view := fmt.Sprintf("%s_view", table)
+		query := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s;`, namespace, view)
+
+		t.Logf("checking view %s", view)
+
+		it, err := db.Query(query).Read(ctx)
+		require.NoError(t, err)
+
+		var row []bigquery.Value
+		err = it.Next(&row)
+		require.NoError(t, err)
+		require.Len(t, row, 1)
+		require.EqualValues(t, count, row[0])
+	}
+}
+
+func dropSchema(t *testing.T, db *bigquery.Client, namespace string) {
+	t.Helper()
+	t.Log("Dropping schema", namespace)
+
+	require.Eventually(t, func() bool {
+		if err := db.Dataset(namespace).DeleteWithContents(context.Background()); err != nil {
+			t.Logf("error deleting dataset: %v", err)
+			return false
+		}
+		return true
+	},
+		time.Minute,
+		time.Second,
+	)
 }
 
 func newMockUploader(
