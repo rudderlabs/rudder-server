@@ -181,7 +181,25 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          push: false
+          tags: myimage:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/myimage.tar
+
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v /tmp:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/myimage.tar \
+            --only-verified
       - name: Build and push
+        if: success()
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -195,12 +213,6 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-      - name: Run TruffleHog on Docker image
-        run: |
-          docker pull trufflesecurity/trufflehog:latest
-          for tag in ${{ matrix.build-config.tags }}; do
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock trufflesecurity/trufflehog:latest docker --image $tag
-          done
 
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
