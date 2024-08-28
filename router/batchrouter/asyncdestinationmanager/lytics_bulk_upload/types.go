@@ -21,6 +21,7 @@ type LyticsBulkUploader struct {
 	baseEndpoint  string
 	fileSizeLimit int64
 	jobToCSVMap   map[int64]int64
+	service       LyticsService
 }
 
 type DestinationConfig struct {
@@ -87,4 +88,9 @@ type Uploader interface {
 
 type HttpClient interface {
 	Do(req *http.Request) (*http.Response, error)
+}
+
+type LyticsService interface {
+	UploadBulkFile(data *HttpRequestData, filePath string) error
+	MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error)
 }
