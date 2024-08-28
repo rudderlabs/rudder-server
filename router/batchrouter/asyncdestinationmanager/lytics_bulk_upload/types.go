@@ -3,12 +3,12 @@ package lyticsBulkUpload
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -60,13 +60,13 @@ type ActionFileInfo struct {
 }
 
 type Message struct {
-	UserID      string          `json:"userId"`
-	AnonymousID string          `json:"anonymousId"`
-	Event       string          `json:"event"`
-	Properties  json.RawMessage `json:"properties"`
-	Traits      json.RawMessage `json:"traits"`
-	Context     json.RawMessage `json:"context"`
-	Timestamp   time.Time       `json:"timestamp"`
+	UserID      string              `json:"userId"`
+	AnonymousID string              `json:"anonymousId"`
+	Event       string              `json:"event"`
+	Properties  jsoniter.RawMessage `json:"properties"`
+	Traits      jsoniter.RawMessage `json:"traits"`
+	Context     jsoniter.RawMessage `json:"context"`
+	Timestamp   time.Time           `json:"timestamp"`
 }
 
 type Metadata struct {
