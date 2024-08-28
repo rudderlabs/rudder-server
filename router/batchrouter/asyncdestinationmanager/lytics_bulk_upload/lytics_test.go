@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocks "github.com/rudderlabs/rudder-server/mocks/router/lytics_bulk_upload"
@@ -129,36 +129,6 @@ func TestHttpClientDoSuccess(t *testing.T) {
 	if resp.Body != nil {
 		defer resp.Body.Close()
 	}
-}
-
-func TestPollerPollSuccess(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockPoller := mocks.NewMockPoller(ctrl)
-
-	expectedResponse := common.PollStatusResponse{Complete: true}
-	pollInput := common.AsyncPoll{}
-
-	mockPoller.EXPECT().Poll(pollInput).Return(expectedResponse).Times(1)
-
-	response := mockPoller.Poll(pollInput)
-	assert.Equal(t, expectedResponse, response)
-}
-
-func TestUploadStatsGetUploadStats(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockUploadStats := mocks.NewMockUploadStats(ctrl)
-
-	expectedResponse := common.GetUploadStatsResponse{StatusCode: 200}
-	input := common.GetUploadStatsInput{}
-
-	mockUploadStats.EXPECT().GetUploadStats(input).Return(expectedResponse).Times(1)
-
-	response := mockUploadStats.GetUploadStats(input)
-	assert.Equal(t, expectedResponse, response)
 }
 
 func TestPopulateZipFile_AppendsNewLine(t *testing.T) {

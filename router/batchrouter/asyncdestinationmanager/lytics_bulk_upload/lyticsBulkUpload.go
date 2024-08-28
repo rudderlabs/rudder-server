@@ -24,7 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func NewLyticsBulkUploader(destinationName, authorization, baseEndpoint string) *LyticsBulkUploader {
+func NewLyticsBulkUploader(destinationName, authorization, baseEndpoint string) common.AsyncUploadAndTransformManager {
 	return &LyticsBulkUploader{
 		destName:      destinationName,
 		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Lytics").Child("LyticsBulkUploader"),
@@ -35,7 +35,7 @@ func NewLyticsBulkUploader(destinationName, authorization, baseEndpoint string) 
 	}
 }
 
-func NewManager(destination *backendconfig.DestinationT) (*LyticsBulkUploader, error) {
+func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -55,24 +55,7 @@ func NewManager(destination *backendconfig.DestinationT) (*LyticsBulkUploader, e
 		unableToGetBaseEndpointStat.Count(1)
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
 	}
-	return NewLyticsBulkUploader(destName, destConfig.LyticsApiKey, baseEndpoint), nil
-}
-
-// Poll return a success response for the poll request every time by default
-func (b *LyticsBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
-	return common.PollStatusResponse{
-		StatusCode: http.StatusOK,
-		Complete:   true,
-	}
-	// return common.PollStatusResponse{}
-}
-
-// GetUploadStats return a success response for the getUploadStats request every time by default
-func (b *LyticsBulkUploader) GetUploadStats(_ common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	return common.GetUploadStatsResponse{
-		StatusCode: http.StatusOK,
-	}
-	// return common.GetUploadStatsResponse{}
+	return common.SimpleAsyncDestinationManager{UploaderAndTransformer: NewLyticsBulkUploader(destName, destConfig.LyticsApiKey, baseEndpoint)}, nil
 }
 
 func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {

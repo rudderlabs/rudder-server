@@ -9,6 +9,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -82,14 +83,6 @@ type Uploader interface {
 	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
 	UploadBulkFile(ctx context.Context, filePath string) (bool, error)
 	PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error
-}
-
-type Poller interface {
-	Poll(input common.AsyncPoll) common.PollStatusResponse
-}
-
-type UploadStats interface {
-	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
 }
 
 type HttpClient interface {
