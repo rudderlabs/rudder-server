@@ -195,6 +195,13 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
+      - name: Run TruffleHog on Docker image
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          for tag in ${{ matrix.build-config.tags }}; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock trufflesecurity/trufflehog:latest docker --image $tag
+          done
+
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
