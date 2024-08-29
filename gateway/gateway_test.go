@@ -16,26 +16,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
-
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
-
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -53,6 +49,7 @@ import (
 	mocksrcdebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -1707,26 +1704,67 @@ var _ = Describe("Gateway", func() {
 			srcDebugger           *mocksrcdebugger.MockSourceDebugger
 		)
 
-		createInternalBatchPayload := func(userID, sourceID string) []byte {
+		type internalBatchPayloadConfig struct {
+			compressionSettings string
+			overwriteValidData  string
+		}
+
+		withCompressionSettings := func(compressionSettings string) func(*internalBatchPayloadConfig) {
+			return func(c *internalBatchPayloadConfig) {
+				c.compressionSettings = compressionSettings
+			}
+		}
+
+		withOverwriteValidData := func(overwriteValidData string) func(*internalBatchPayloadConfig) {
+			return func(c *internalBatchPayloadConfig) {
+				c.overwriteValidData = overwriteValidData
+			}
+		}
+
+		createInternalBatchPayload := func(userID, sourceID string, opts ...func(*internalBatchPayloadConfig)) []byte {
+			var conf internalBatchPayloadConfig
+			for _, opt := range opts {
+				opt(&conf)
+			}
+
 			validData := fmt.Sprintf(
 				`{"userId":%q,"data":{"string":"valid-json","nested":{"child":1}},%s}`,
 				userID, sdkContext,
 			)
+
+			compression := ""
+			if conf.compressionSettings != "" {
+				compression = conf.compressionSettings
+				algo, level, err := compress.DeserializeSettings(compression)
+				if err == nil {
+					compressor, err := compress.New(algo, level)
+					Expect(err).To(BeNil())
+					compressedData, err := compressor.Compress([]byte(validData))
+					Expect(err).To(BeNil())
+					validData = string(compressedData)
+				}
+			}
+
+			if conf.overwriteValidData != "" {
+				validData = conf.overwriteValidData
+			}
+
 			internalBatchPayload := fmt.Sprintf(`[{
-			"properties": {
-				"messageID": "messageID",
-				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
-				"workspaceID": %q,
-				"userID": %q,
-				"sourceID": %q,
-				"sourceJobRunID": "sourceJobRunID",
-				"sourceTaskRunID": "sourceTaskRunID",
-				"receivedAt": "2024-01-01T01:01:01.000000001Z",
-				"requestIP": "1.1.1.1",
-				"traceID": "traceID"
-			},
-			"payload": %s
-			}]`, WorkspaceID, userID, sourceID, validData)
+				"properties": {
+					"messageID": "messageID",
+					"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+					"workspaceID": %q,
+					"userID": %q,
+					"sourceID": %q,
+					"sourceJobRunID": "sourceJobRunID",
+					"sourceTaskRunID": "sourceTaskRunID",
+					"receivedAt": "2024-01-01T01:01:01.000000001Z",
+					"requestIP": "1.1.1.1",
+					"traceID": "traceID",
+					"compression": "%s"
+				},
+				"payload": %s
+			}]`, WorkspaceID, userID, sourceID, compression, validData)
 			return []byte(internalBatchPayload)
 		}
 
@@ -1737,20 +1775,20 @@ var _ = Describe("Gateway", func() {
 			)
 			internalBatchPayload := func() string {
 				return fmt.Sprintf(`{
-			"properties": {
-				"messageID": %q,
-				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
-				"workspaceID": %q,
-				"userID": %q,
-				"sourceID": %q,
-				"sourceJobRunID": "sourceJobRunID",
-				"sourceTaskRunID": "sourceTaskRunID",
-				"receivedAt": "2024-01-01T01:01:01.000000001Z",
-				"requestIP": "1.1.1.1",
-				"traceID": "traceID"
-			},
-			"payload": %s
-			}`, uuid.NewString(), workspaceID, userID, sourceID, validData)
+					"properties": {
+						"messageID": %q,
+						"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+						"workspaceID": %q,
+						"userID": %q,
+						"sourceID": %q,
+						"sourceJobRunID": "sourceJobRunID",
+						"sourceTaskRunID": "sourceTaskRunID",
+						"receivedAt": "2024-01-01T01:01:01.000000001Z",
+						"requestIP": "1.1.1.1",
+						"traceID": "traceID"
+					},
+					"payload": %s
+				}`, uuid.NewString(), workspaceID, userID, sourceID, validData)
 			}
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
@@ -1913,6 +1951,44 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
+		})
+
+		It("request has compressed message", func() {
+			srcDebugger.EXPECT().RecordEvent(WriteKeyEnabled, gomock.Any()).Times(1)
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1)
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled, withCompressionSettings("1:4"))
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(err).To(BeNil())
+			Expect(http.StatusOK, resp.StatusCode)
+		})
+
+		It("request has compressed message with invalid settings", func() {
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled, withCompressionSettings("123:456"))
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidStreamMessage))
+		})
+
+		It("request has compressed message with invalid payload", func() {
+			payload := createInternalBatchPayload(NormalUserID, SourceIDEnabled,
+				withCompressionSettings("1:4"), // these are valid compression settings
+				withOverwriteValidData("invalid compressed data"),
+			)
+			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer(payload))
+			Expect(err).To(BeNil())
+			resp, err := client.Do(req)
+			Expect(http.StatusBadRequest, resp.StatusCode)
+			respData, err := io.ReadAll(resp.Body)
+			defer httputil.CloseResponse(resp)
+			Expect(err).To(BeNil())
+			Expect(string(respData)).Should(ContainSubstring(response.InvalidStreamMessage))
 		})
 	})
 
