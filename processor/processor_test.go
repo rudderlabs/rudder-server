@@ -984,6 +984,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 					},
 				},
 			)
+			Expect(err).To(BeNil())
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
