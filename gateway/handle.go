@@ -12,24 +12,22 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/google/uuid"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/compress"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -95,6 +93,9 @@ type Handle struct {
 
 	backendConfigInitialised bool
 	inFlightRequests         *sync.WaitGroup
+
+	compressors   map[string]*compress.Compressor
+	compressorsMu sync.Mutex
 
 	trackCounterMu    sync.Mutex // protects trackSuccessCount and trackFailureCount
 	trackSuccessCount int
@@ -775,6 +776,19 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	jobs = make([]*jobsdb.JobT, 0, len(messages))
 
 	for _, msg := range messages {
+		if msg.Properties.Compression != "" {
+			compressor, err := gw.getCompressor(msg.Properties.Compression)
+			if err != nil {
+				gw.logger.Errorn("invalid compression settings in request", obskit.Error(err))
+				return nil, errors.New(response.InvalidStreamMessage)
+			}
+			msg.Payload, err = compressor.Decompress(msg.Payload)
+			if err != nil {
+				gw.logger.Errorn("failed to decompress message", obskit.Error(err))
+				return nil, errors.New(response.InvalidStreamMessage)
+			}
+		}
+
 		err := gw.streamMsgValidator(&msg)
 		if err != nil {
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
@@ -865,6 +879,24 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return jobs, nil
+}
+
+func (gw *Handle) getCompressor(settings string) (*compress.Compressor, error) {
+	gw.compressorsMu.Lock()
+	defer gw.compressorsMu.Unlock()
+	if compressor, ok := gw.compressors[settings]; ok {
+		return compressor, nil
+	}
+	algo, level, err := compress.DeserializeSettings(settings)
+	if err != nil {
+		return nil, err
+	}
+	compressor, err := compress.New(algo, level)
+	if err != nil {
+		return nil, err
+	}
+	gw.compressors[settings] = compressor
+	return compressor, nil
 }
 
 func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {
