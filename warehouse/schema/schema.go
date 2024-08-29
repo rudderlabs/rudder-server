@@ -8,16 +8,22 @@ import (
 	"slices"
 	"sync"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // deprecatedColumnsRegex
 // This regex is used to identify deprecated columns in the warehouse
@@ -54,6 +60,10 @@ type Schema struct {
 	schemaInWarehouseMu             sync.RWMutex
 	unrecognizedSchemaInWarehouse   model.Schema
 	unrecognizedSchemaInWarehouseMu sync.RWMutex
+
+	stats struct {
+		schemaSize stats.Histogram
+	}
 }
 
 func New(
@@ -61,8 +71,9 @@ func New(
 	warehouse model.Warehouse,
 	conf *config.Config,
 	logger logger.Logger,
+	statsFactory stats.Stats,
 ) *Schema {
-	return &Schema{
+	s := &Schema{
 		warehouse:                        warehouse,
 		schemaRepo:                       repo.NewWHSchemas(db),
 		stagingFileRepo:                  repo.NewStagingFiles(db),
@@ -71,6 +82,14 @@ func New(
 		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
+	s.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
+		"module":        "warehouse",
+		"workspaceId":   warehouse.WorkspaceID,
+		"destType":      warehouse.Destination.DestinationDefinition.Name,
+		"sourceId":      warehouse.Source.ID,
+		"destinationId": warehouse.Destination.ID,
+	})
+	return s
 }
 
 // ConsolidateStagingFilesUsingLocalSchema
@@ -247,7 +266,13 @@ func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadID int64, updated
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
 func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
-	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
+	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
+	if err != nil {
+		return fmt.Errorf("marshaling schema: %w", err)
+	}
+	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
+
+	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
