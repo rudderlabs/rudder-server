@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
@@ -56,11 +57,13 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
 	// Parse all query params from sources mentioned in this list
 	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
+	// Maximum request size to gateway
+	webhook.config.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
 		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
-			return item, struct{}{}
+			return strings.ToLower(item), struct{}{}
 		},
 	)
 

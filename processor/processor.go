@@ -381,7 +381,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
-) {
+) error {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
@@ -615,7 +615,11 @@ func (proc *Handle) Setup(
 		})
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New()
+		var err error
+		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
+		if err != nil {
+			return err
+		}
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -644,6 +648,7 @@ func (proc *Handle) Setup(
 	}))
 
 	proc.crashRecover()
+	return nil
 }
 
 func (proc *Handle) setupReloadableVars() {
@@ -1726,7 +1731,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize})
+				ok, previousSize, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceID: batchEvent.WorkspaceId})
 				if err != nil {
 					panic(err)
 				}

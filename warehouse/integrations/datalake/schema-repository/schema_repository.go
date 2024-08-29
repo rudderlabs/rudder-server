@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -44,14 +45,14 @@ type SchemaRepository interface {
 }
 
 func UseGlue(w *model.Warehouse) bool {
-	glueConfig := warehouseutils.GetConfigValueBoolString(useGlueConfig, *w)
+	glueConfig := w.GetBoolDestinationConfig(model.UseGlueSetting)
 	hasAWSRegion := misc.HasAWSRegionInConfig(w.Destination.Config)
-	return glueConfig == "true" && hasAWSRegion
+	return glueConfig && hasAWSRegion
 }
 
-func NewSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader, logger logger.Logger) (SchemaRepository, error) {
+func NewSchemaRepository(conf *config.Config, logger logger.Logger, wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
 	if UseGlue(&wh) {
-		return NewGlueSchemaRepository(wh, logger)
+		return NewGlueSchemaRepository(conf, logger, wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }

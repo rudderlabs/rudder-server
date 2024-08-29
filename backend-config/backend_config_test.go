@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
@@ -473,42 +474,18 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not connect to docker: %s\n", err)
 	}
-	database := "jobsdb"
-	resourcePostgres, err := pool.Run("postgres", "15-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
+	resourcePostgres, err := postgres.Setup(pool, t)
 	if err != nil {
 		t.Fatalf("Could not start resource: %s\n", err)
 	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			t.Fatalf("Could not purge resource: %s \n", err)
-		}
-	}()
-	port := resourcePostgres.GetPort("5432/tcp")
-	DB_DSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
-	fmt.Println("DB_DSN:", DB_DSN)
-	t.Setenv("JOBS_DB_DB_NAME", database)
-	t.Setenv("JOBS_DB_HOST", "localhost")
-	t.Setenv("JOBS_DB_NAME", database)
-	t.Setenv("JOBS_DB_USER", "rudder")
-	t.Setenv("JOBS_DB_PASSWORD", "password")
-	t.Setenv("JOBS_DB_PORT", port)
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	var db *sql.DB
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", DB_DSN)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		t.Fatalf("Could not connect to docker: %s\n", err)
-	}
-
+	t.Logf("DB_DSN: %s", resourcePostgres.DBDsn)
+	t.Setenv("JOBS_DB_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_HOST", resourcePostgres.Host)
+	t.Setenv("JOBS_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_USER", resourcePostgres.User)
+	t.Setenv("JOBS_DB_PASSWORD", resourcePostgres.Password)
+	t.Setenv("JOBS_DB_PORT", resourcePostgres.Port)
+	db := resourcePostgres.DB
 	t.Run("initialize from cache when a call to control plane fails", func(t *testing.T) {
 		var (
 			ctrl        = gomock.NewController(t)

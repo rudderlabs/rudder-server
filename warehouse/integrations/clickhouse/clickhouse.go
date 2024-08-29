@@ -42,15 +42,6 @@ import (
 )
 
 const (
-	host           = "host"
-	dbName         = "database"
-	user           = "user"
-	password       = "password"
-	port           = "port"
-	secure         = "secure"
-	skipVerify     = "skipVerify"
-	caCertificate  = "caCertificate"
-	cluster        = "cluster"
 	partitionField = "received_at"
 )
 
@@ -144,6 +135,7 @@ type Clickhouse struct {
 	connectTimeout     time.Duration
 	LoadFileDownloader downloader.Downloader
 
+	conf   *config.Config
 	logger logger.Logger
 	stats  stats.Stats
 
@@ -220,6 +212,7 @@ func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch := &Clickhouse{}
 
+	ch.conf = conf
 	ch.logger = log.Child("integrations").Child("clickhouse")
 	ch.stats = stat
 
@@ -302,17 +295,17 @@ func (ch *Clickhouse) connectToClickhouse(includeDBInConn bool) (*sqlmw.DB, erro
 // Each destination will have separate tls config, hence using destination id as tlsName
 func (ch *Clickhouse) connectionCredentials() (*credentials, error) {
 	credentials := &credentials{
-		host:       warehouseutils.GetConfigValue(host, ch.Warehouse),
-		database:   warehouseutils.GetConfigValue(dbName, ch.Warehouse),
-		user:       warehouseutils.GetConfigValue(user, ch.Warehouse),
-		password:   warehouseutils.GetConfigValue(password, ch.Warehouse),
-		port:       warehouseutils.GetConfigValue(port, ch.Warehouse),
-		secure:     warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
-		skipVerify: warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
+		host:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.HostSetting),
+		database:   ch.Warehouse.GetStringDestinationConfig(ch.conf, model.DatabaseSetting),
+		user:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.UserSetting),
+		password:   ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PasswordSetting),
+		port:       ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PortSetting),
+		secure:     strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SecureSetting)),
+		skipVerify: strconv.FormatBool(ch.Warehouse.GetBoolDestinationConfig(model.SkipVerifySetting)),
 		timeout:    ch.connectTimeout,
 	}
 
-	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
+	certificate := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.CACertificateSetting)
 	if strings.TrimSpace(certificate) != "" {
 		if err := registerTLSConfig(ch.Warehouse.Destination.ID, certificate); err != nil {
 			return nil, fmt.Errorf("registering tls config: %w", err)
@@ -559,10 +552,10 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 
 func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err error) {
 	if ch.ObjectStorage == warehouseutils.S3 {
-		return warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, ch.Warehouse), warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, ch.Warehouse), nil
+		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessSecretSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.AWSAccessKeySetting), nil
 	}
 	if ch.ObjectStorage == warehouseutils.MINIO {
-		return warehouseutils.GetConfigValue(warehouseutils.MinioAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(warehouseutils.MinioSecretAccessKey, ch.Warehouse), nil
+		return ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioAccessKeyIDSetting), ch.Warehouse.GetStringDestinationConfig(ch.conf, model.MinioSecretAccessKeySetting), nil
 	}
 	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }
@@ -802,7 +795,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 	clusterClause := ""
 	engine := "AggregatingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -844,7 +837,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse)
+	cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -932,7 +925,7 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 }
 
 func (ch *Clickhouse) clusterClause() string {
-	if cluster := warehouseutils.GetConfigValue(cluster, ch.Warehouse); len(strings.TrimSpace(cluster)) > 0 {
+	if cluster := ch.Warehouse.GetStringDestinationConfig(ch.conf, model.ClusterSetting); len(strings.TrimSpace(cluster)) > 0 {
 		return fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
 	return ""

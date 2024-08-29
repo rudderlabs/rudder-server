@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -34,12 +36,14 @@ type Datalake struct {
 	SchemaRepository schemarepository.SchemaRepository
 	Warehouse        model.Warehouse
 	Uploader         warehouseutils.Uploader
+	conf             *config.Config
 	logger           logger.Logger
 }
 
-func New(log logger.Logger) *Datalake {
+func New(conf *config.Config, log logger.Logger) *Datalake {
 	d := &Datalake{}
 
+	d.conf = conf
 	d.logger = log.Child("integrations").Child("datalake")
 
 	return d
@@ -49,7 +53,7 @@ func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader 
 	d.Warehouse = warehouse
 	d.Uploader = uploader
 
-	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.Warehouse, d.Uploader, d.logger)
+	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.conf, d.logger, d.Warehouse, d.Uploader)
 
 	return err
 }

@@ -31,19 +31,6 @@ import (
 )
 
 const (
-	configKeyHost                   = "host"
-	configKeyPort                   = "port"
-	configKeyPath                   = "path"
-	configKeyToken                  = "token"
-	configKeyCatalog                = "catalog"
-	configKeyUseSTSTokens           = "useSTSTokens"
-	configKeyEnableExternalLocation = "enableExternalLocation"
-	configKeyExternalLocation       = "externalLocation"
-	configKeyAWSAccessKey           = warehouseutils.AWSAccessKey
-	configKeyAWSAccessSecret        = warehouseutils.AWSAccessSecret
-)
-
-const (
 	provider       = warehouseutils.DELTALAKE
 	tableNameLimit = 127 // Maximum table name length in rudder-transformer
 )
@@ -140,6 +127,7 @@ type Deltalake struct {
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
 	connectTimeout time.Duration
+	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
 
@@ -157,6 +145,7 @@ type Deltalake struct {
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl := &Deltalake{}
 
+	dl.conf = conf
 	dl.logger = log.Child("integration").Child("deltalake")
 	dl.stats = stat
 
@@ -195,11 +184,11 @@ func (d *Deltalake) Setup(_ context.Context, warehouse model.Warehouse, uploader
 // connect connects to the warehouse
 func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	var (
-		host       = warehouseutils.GetConfigValue(configKeyHost, d.Warehouse)
-		portString = warehouseutils.GetConfigValue(configKeyPort, d.Warehouse)
-		path       = warehouseutils.GetConfigValue(configKeyPath, d.Warehouse)
-		token      = warehouseutils.GetConfigValue(configKeyToken, d.Warehouse)
-		catalog    = warehouseutils.GetConfigValue(configKeyCatalog, d.Warehouse)
+		host       = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
+		portString = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
+		path       = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
+		token      = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
+		catalog    = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
 		timeout    = d.connectTimeout
 	)
 
@@ -537,10 +526,10 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 
 // tableLocationQuery returns the location query for the table.
 func (d *Deltalake) tableLocationQuery(tableName string) string {
-	enableExternalLocation := warehouseutils.GetConfigValueBoolString(configKeyEnableExternalLocation, d.Warehouse)
-	externalLocation := warehouseutils.GetConfigValue(configKeyExternalLocation, d.Warehouse)
+	enableExternalLocation := d.Warehouse.GetBoolDestinationConfig(model.EnableExternalLocationSetting)
+	externalLocation := d.Warehouse.GetStringDestinationConfig(d.conf, model.ExternalLocationSetting)
 
-	if enableExternalLocation != "true" || externalLocation == "" {
+	if enableExternalLocation || externalLocation == "" {
 		return ""
 	}
 
@@ -975,7 +964,7 @@ func (d *Deltalake) authQuery() (string, error) {
 // canUseAuth returns true if the warehouse is configured to use RudderObjectStorage or STS tokens
 func (d *Deltalake) canUseAuth() bool {
 	canUseRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(d.Warehouse.Destination.Config)
-	canUseSTSTokens := warehouseutils.GetConfigValueBoolString(configKeyUseSTSTokens, d.Warehouse) == "true"
+	canUseSTSTokens := d.Warehouse.GetBoolDestinationConfig(model.UseSTSTokensSetting)
 
 	return canUseRudderStorage || canUseSTSTokens
 }
@@ -993,8 +982,8 @@ func (d *Deltalake) getLoadFolder(location string) string {
 
 // hasAWSCredentials returns true if the warehouse is configured to use AWS credentials
 func (d *Deltalake) hasAWSCredentials() bool {
-	awsAccessKey := warehouseutils.GetConfigValue(configKeyAWSAccessKey, d.Warehouse)
-	awsSecretKey := warehouseutils.GetConfigValue(configKeyAWSAccessSecret, d.Warehouse)
+	awsAccessKey := d.Warehouse.GetStringDestinationConfig(d.conf, model.AWSAccessKeySetting)
+	awsSecretKey := d.Warehouse.GetStringDestinationConfig(d.conf, model.AWSAccessSecretSetting)
 
 	return awsAccessKey != "" && awsSecretKey != ""
 }

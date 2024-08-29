@@ -88,18 +88,6 @@ var errorsMappings = []model.JobError{
 }
 
 const (
-	configKeyHost              = "host"
-	configKeyPort              = "port"
-	configKeyDatabase          = "database"
-	configKeyUser              = "user"
-	configKeyPassword          = "password"
-	configKeyUseIAMForAuth     = "useIAMForAuth"
-	configKeyIAMRoleARNForAuth = "iamRoleARNForAuth"
-	configKeyClusterID         = "clusterId"
-	configKeyClusterRegion     = "clusterRegion"
-)
-
-const (
 	rudderStringLength = 512
 	provider           = warehouseutils.RS
 	tableNameLimit     = 127
@@ -964,16 +952,16 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 }
 
 func (rs *Redshift) useIAMForAuth() bool {
-	return warehouseutils.ReadAsBool(configKeyUseIAMForAuth, rs.Warehouse.Destination.Config)
+	return rs.Warehouse.GetBoolDestinationConfig(model.UseIAMForAuthSetting)
 }
 
 func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 	var (
-		database          = warehouseutils.GetConfigValue(configKeyDatabase, rs.Warehouse)
-		user              = warehouseutils.GetConfigValue(configKeyUser, rs.Warehouse)
-		iamRoleARNForAuth = warehouseutils.GetConfigValue(configKeyIAMRoleARNForAuth, rs.Warehouse)
-		clusterID         = warehouseutils.GetConfigValue(configKeyClusterID, rs.Warehouse)
-		clusterRegion     = warehouseutils.GetConfigValue(configKeyClusterRegion, rs.Warehouse)
+		database          = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.DatabaseSetting)
+		user              = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.UserSetting)
+		iamRoleARNForAuth = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.IAMRoleARNForAuthSetting)
+		clusterID         = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterIDSetting)
+		clusterRegion     = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterRegionSetting)
 		timeout           = rs.connectTimeout
 	)
 
@@ -1002,11 +990,11 @@ func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 
 func (rs *Redshift) connectUsingPassword() (*sql.DB, error) {
 	var (
-		host       = warehouseutils.GetConfigValue(configKeyHost, rs.Warehouse)
-		port       = warehouseutils.GetConfigValue(configKeyPort, rs.Warehouse)
-		database   = warehouseutils.GetConfigValue(configKeyDatabase, rs.Warehouse)
-		user       = warehouseutils.GetConfigValue(configKeyUser, rs.Warehouse)
-		password   = warehouseutils.GetConfigValue(configKeyPassword, rs.Warehouse)
+		host       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.HostSetting)
+		port       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.PortSetting)
+		database   = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.DatabaseSetting)
+		user       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.UserSetting)
+		password   = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.PasswordSetting)
 		timeout    = rs.connectTimeout
 		tunnelInfo = tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config)
 	)
