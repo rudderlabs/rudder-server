@@ -19,7 +19,7 @@ type LyticsServiceImpl struct {
 	BulkApi string
 }
 
-func (e *LyticsServiceImpl) getBulkApi(destConfig DestinationConfig) *LyticsServiceImpl {
+func (u *LyticsServiceImpl) getBulkApi(destConfig DestinationConfig) *LyticsServiceImpl {
 	return &LyticsServiceImpl{
 		BulkApi: fmt.Sprintf("https://bulk.lytics.io/collect/bulk/%s?timestamp_field=%s", destConfig.LyticsStreamName, destConfig.TimestampField),
 	}
@@ -29,7 +29,7 @@ func (*LyticsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (e *LyticsServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
+func (u *LyticsServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error) {
 	req, err := http.NewRequest(data.Method, data.Endpoint, data.Body)
 	if err != nil {
 		return nil, 500, err
@@ -50,7 +50,7 @@ func (e *LyticsServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, int,
 	return body, res.StatusCode, err
 }
 
-func (e *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath string) error {
+func (u *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -59,7 +59,7 @@ func (e *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath strin
 	data.Method = http.MethodPost
 	data.ContentType = "application/csv"
 	data.Body = file
-	_, statusCode, err := e.MakeHTTPRequest(data)
+	_, statusCode, err := u.MakeHTTPRequest(data)
 	if err != nil {
 		return err
 	}
@@ -69,14 +69,14 @@ func (e *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath strin
 	return nil
 }
 
-func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
 	destConfig, err := jsoniter.Marshal(destination.Config)
 	if err != nil {
 		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
-			"destType": b.destName,
+			"destType": u.destName,
 		})
 		eventsAbortedStat.Count(len(asyncDestStruct.ImportingJobIDs))
 		return common.AsyncUploadOutput{
@@ -99,7 +99,7 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 			DestinationID: destination.ID,
 		}
 	}
-	actionFiles, err := b.createCSVFile(filePath, streamTraitsMapping)
+	actionFiles, err := u.createCSVFile(filePath, streamTraitsMapping)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, asyncDestStruct.ImportingJobIDs...),
@@ -110,27 +110,27 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
 		"module":   "batch_router",
-		"destType": b.destName,
+		"destType": u.destName,
 	})
 
 	uploadRetryableStat.Count(len(actionFiles.FailedJobIDs))
 
 	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
-		"destType": b.destName,
+		"destType": u.destName,
 	})
 
-	uploadDataData := HttpRequestData{
-		Endpoint:      b.baseEndpoint,
-		Authorization: b.authorization,
+	uploadData := HttpRequestData{
+		Endpoint:      u.baseEndpoint,
+		Authorization: u.authorization,
 	}
 
 	startTime := time.Now()
-	errorDuringUpload := b.service.UploadBulkFile(&uploadDataData, actionFiles.CSVFilePath)
+	errorDuringUpload := u.service.UploadBulkFile(&uploadData, actionFiles.CSVFilePath)
 	uploadTimeStat.Since(startTime)
 
 	if errorDuringUpload != nil {
-		b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
+		u.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
@@ -156,7 +156,7 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 
 	err = os.Remove(actionFiles.CSVFilePath)
 	if err != nil {
-		b.logger.Error("Error in removing zip file: %v", err)
+		u.logger.Error("Error in removing zip file: %v", err)
 	}
 
 	return common.AsyncUploadOutput{

@@ -15,9 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (b *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {
+func (u *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
-	if newFileSize < b.fileSizeLimit {
+	if newFileSize < u.fileSizeLimit {
 		actionFile.FileSize = newFileSize
 		actionFile.EventCount += 1
 
@@ -112,7 +112,7 @@ func createCSVWriter(fileName string) (*ActionFileInfo, error) {
 	}, nil
 }
 
-func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraitsMapping []StreamTraitMapping) (*ActionFileInfo, error) {
+func (u *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraitsMapping []StreamTraitMapping) (*ActionFileInfo, error) {
 	// Create a temporary directory using misc.CreateTMPDIR
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -159,12 +159,12 @@ func (b *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType,
 			map[string]string{
 				"module":   "batch_router",
-				"destType": b.destName,
+				"destType": u.destName,
 			})
 		payloadSizeStat.Observe(float64(len(data.Message.Properties)))
 
 		// Populate the CSV file and collect success/failure job IDs
-		err := b.PopulateCsvFile(actionFile, streamTraitsMapping, line, data)
+		err := u.PopulateCsvFile(actionFile, streamTraitsMapping, line, data)
 		if err != nil {
 			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 		}
