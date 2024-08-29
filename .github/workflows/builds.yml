@@ -107,8 +107,26 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Build image (no-push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          push: false
+          tags: local-rudder-server:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/local-rudder-server.tar
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v /tmp:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/local-rudder-server.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
         uses: docker/build-push-action@v6
+        if: success()
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
@@ -181,23 +199,23 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build image
+      - name: Build image 
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: false
-          tags: myimage:${{ github.sha }}
-          outputs: type=docker,dest=/tmp/myimage.tar
-
+          tags: local-rudder-server:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/local-rudder-server.tar
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
           docker run --rm -v /tmp:/tmp \
             trufflesecurity/trufflehog:latest \
-            docker --image file:///tmp/myimage.tar \
-            --only-verified
+            docker --image file:///tmp/local-rudder-server.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
         if: success()
         uses: docker/build-push-action@v6
