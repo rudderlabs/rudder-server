@@ -141,6 +141,13 @@ func (b *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 				FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
 				DestinationID: destination.ID,
 			}
+		} else {
+			return common.AsyncUploadOutput{
+				FailedJobIDs:  failedJobs,
+				FailedReason:  fmt.Sprintf("error in uploading the bulk file: %v", errorDuringUpload.Error()),
+				FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(asyncDestStruct.ImportingJobIDs),
+				DestinationID: destination.ID,
+			}
 		}
 	}
 

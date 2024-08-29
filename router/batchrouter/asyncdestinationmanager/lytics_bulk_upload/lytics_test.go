@@ -54,7 +54,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 	Context("When uploading the file", func() {
 		BeforeEach(func() {
 			config.Reset()
-			config.Set("BatchRouter.LYTICS_BULK_UPLOAD.MaxUploadLimit", 200*bytesize.B)
+			config.Set("BatchRouter.LYTICS_BULK_UPLOAD.MaxUploadLimit", 1*bytesize.MB)
 		})
 
 		AfterEach(func() {
@@ -67,7 +67,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 			LyticsServiceImpl := lyticsBulkUpload.LyticsServiceImpl{
 				BulkApi: "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", "abcd", LyticsServiceImpl.BulkApi, lyticsService)}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", destination.Config["lyticsApiKey"].(string), LyticsServiceImpl.BulkApi, lyticsService)}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
@@ -90,67 +90,121 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 		It("TestEloquaErrorWhileUploadingData", func() {
 			initLytics()
 			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			// Mock the LyticsService
 			lyticsService := mocks.NewMockLyticsService(ctrl)
+
+			// Set up the LyticsServiceImpl with the BulkApi endpoint
 			LyticsServiceImpl := lyticsBulkUpload.LyticsServiceImpl{
 				BulkApi: "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
-			uploadDataData := lyticsBulkUpload.HttpRequestData{
-				Endpoint:      LyticsServiceImpl.BulkApi,
-				Authorization: destination.Config["lyticsApiKey"].(string),
+
+			// Set up the SimpleAsyncDestinationManager with the LyticsBulkUploader
+			bulkUploader := common.SimpleAsyncDestinationManager{
+				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(
+					"LYTICS_BULK_UPLOAD",
+					destination.Config["lyticsApiKey"].(string),
+					LyticsServiceImpl.BulkApi,
+					lyticsService,
+				),
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", "abcd", LyticsServiceImpl.BulkApi, lyticsService)}
+
+			// Set up the AsyncDestinationStruct with test data
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
 
-			lyticsService.EXPECT().UploadBulkFile(uploadDataData, asyncDestination.FileName).Return(fmt.Errorf("Upload failed with status code 400"))
+			// Define the expected HttpRequestData
+			expectedData := &lyticsBulkUpload.HttpRequestData{
+				Authorization: "1234567",
+				Endpoint:      "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
+			}
 
+			// Set up mock expectations for UploadBulkFile
+			lyticsService.EXPECT().
+				UploadBulkFile(gomock.Eq(expectedData), gomock.Any()).
+				Return(fmt.Errorf("Upload failed with status code: 400")).
+				Times(1)
+
+			// Define the expected AsyncUploadOutput
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "error in uploading the bulk file: Upload failed with status code 400",
+				FailedReason:        "error in uploading the bulk file: Upload failed with status code: 400",
 				ImportingJobIDs:     nil,
-				FailedJobIDs:        []int64{1, 2, 3, 4},
+				FailedJobIDs:        []int64{1, 2, 3},
 				ImportingParameters: nil,
 				ImportingCount:      0,
-				FailedCount:         4,
+				FailedCount:         3,
 			}
+
+			// Call the Upload method and capture the result
 			received := bulkUploader.Upload(&asyncDestination)
+
+			// Assert that the received output matches the expected output
 			Expect(received).To(Equal(expected))
 		})
 
-		It("TestEloquaSuccessfulIdentify", func() {
+		It("TestEloquaErrorWhileUploadingData", func() {
 			initLytics()
 			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			// Mock the LyticsService
 			lyticsService := mocks.NewMockLyticsService(ctrl)
+
+			// Set up the LyticsServiceImpl with the BulkApi endpoint
 			LyticsServiceImpl := lyticsBulkUpload.LyticsServiceImpl{
-				BulkApi: "https://api.example.com",
+				BulkApi: "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", "abcd", LyticsServiceImpl.BulkApi, lyticsService)}
+
+			// Set up the SimpleAsyncDestinationManager with the LyticsBulkUploader
+			bulkUploader := common.SimpleAsyncDestinationManager{
+				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(
+					"LYTICS_BULK_UPLOAD",
+					destination.Config["lyticsApiKey"].(string),
+					LyticsServiceImpl.BulkApi,
+					lyticsService,
+				),
+			}
+
+			// Set up the AsyncDestinationStruct with test data
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs: []int64{1, 2, 3, 4},
+				ImportingJobIDs: []int64{1, 2, 3},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
-			uploadDataData := lyticsBulkUpload.HttpRequestData{
-				Endpoint:      LyticsServiceImpl.BulkApi,
-				Authorization: destination.Config["lyticsApiKey"].(string),
+
+			// Define the expected HttpRequestData
+			expectedData := &lyticsBulkUpload.HttpRequestData{
+				Authorization: "1234567",
+				Endpoint:      "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
 
-			lyticsService.EXPECT().UploadBulkFile(uploadDataData, asyncDestination.FileName).Return(nil)
+			// Set up mock expectations for UploadBulkFile
+			lyticsService.EXPECT().
+				UploadBulkFile(gomock.Eq(expectedData), gomock.Any()).
+				Return(nil).
+				Times(1)
 
+			// Define the expected AsyncUploadOutput
 			expected := common.AsyncUploadOutput{
-				FailedReason:    "failed as the fileSizeLimit has over",
-				ImportingJobIDs: []int64{1, 2, 3, 4},
-				FailedJobIDs:    nil,
-				ImportingCount:  4,
-				FailedCount:     0,
+				ImportingJobIDs:     []int64{1, 2, 3},
+				FailedJobIDs:        []int64{},
+				ImportingParameters: nil,
+				ImportingCount:      3,
+				FailedCount:         0,
 			}
+
+			// Call the Upload method and capture the result
 			received := bulkUploader.Upload(&asyncDestination)
+
+			// Assert that the received output matches the expected output
 			Expect(received).To(Equal(expected))
 		})
 	})

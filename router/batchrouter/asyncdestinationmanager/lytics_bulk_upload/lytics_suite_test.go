@@ -9,5 +9,5 @@ import (
 
 func TestLyticsbulkupload(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Klaviyobulkupload Suite")
+	RunSpecs(t, "lytics_bulk_upload Suite")
 }
