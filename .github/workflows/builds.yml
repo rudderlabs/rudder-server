@@ -292,6 +292,23 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build image (no-push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          push: false
+          tags: local-rudder-server:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/suppression-backup-service.tar
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v /tmp:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/suppression-backup-service.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
