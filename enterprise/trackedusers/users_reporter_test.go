@@ -56,34 +56,29 @@ var (
 		}
 	}
 	prepareUserReport = func(t *testing.T, sourceID, workspaceID string, noOfUserIDs, noOfAnnID, noOfIdentifiedAnnID int) *UsersReport {
-		userIDHll, _ := hll.NewHll(hllSettings)
-		annIDHll, _ := hll.NewHll(hllSettings)
-		identifiedAnnIDHll, _ := hll.NewHll(hllSettings)
+		trackedIdentifiersHll, _ := hll.NewHll(hllSettings)
+		mergedIdentifiersHll, _ := hll.NewHll(hllSettings)
 		for i := 0; i < noOfUserIDs; i++ {
-			userIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
+			trackedIdentifiersHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
 		for i := 0; i < noOfAnnID; i++ {
-			userIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
+			trackedIdentifiersHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
 		for i := 0; i < noOfIdentifiedAnnID; i++ {
-			identifiedAnnIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
+			mergedIdentifiersHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
 		report := &UsersReport{
-			WorkspaceID:              workspaceID,
-			SourceID:                 sourceID,
-			UserIDHll:                &userIDHll,
-			AnonymousIDHll:           &annIDHll,
-			IdentifiedAnonymousIDHll: &identifiedAnnIDHll,
+			WorkspaceID:           workspaceID,
+			SourceID:              sourceID,
+			TrackedIdentifiersHll: &trackedIdentifiersHll,
+			MergedIdentifiersHll:  &mergedIdentifiersHll,
 		}
 
 		if noOfUserIDs == 0 {
-			report.UserIDHll = nil
-		}
-		if noOfAnnID == 0 {
-			report.AnonymousIDHll = nil
+			report.TrackedIdentifiersHll = nil
 		}
 		if noOfIdentifiedAnnID == 0 {
-			report.IdentifiedAnonymousIDHll = nil
+			report.MergedIdentifiersHll = nil
 		}
 		return report
 	}
@@ -112,7 +107,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
@@ -121,8 +116,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id_1"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -148,7 +142,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -159,8 +153,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -175,15 +168,14 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -208,7 +200,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -219,8 +211,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -236,15 +227,14 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -269,7 +259,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -280,8 +270,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -296,15 +285,14 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -326,7 +314,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -334,20 +322,18 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll:           nil,
-						IdentifiedAnonymousIDHll: nil,
+						MergedIdentifiersHll: nil,
 					},
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll:           nil,
-						IdentifiedAnonymousIDHll: nil,
+						MergedIdentifiersHll: nil,
 					},
 				},
 			},
@@ -363,7 +349,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -371,20 +357,18 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll:           nil,
-						IdentifiedAnonymousIDHll: nil,
+						MergedIdentifiersHll: nil,
 					},
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll:           nil,
-						IdentifiedAnonymousIDHll: nil,
+						MergedIdentifiersHll: nil,
 					},
 				},
 			},
@@ -406,7 +390,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
@@ -417,8 +401,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -433,15 +416,14 @@ func TestUniqueUsersReporter(t *testing.T) {
 					{
 						WorkspaceID: sampleWorkspaceID2,
 						SourceID:    sampleSourceID,
-						UserIDHll: func() *hll.Hll {
+						TrackedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
-						AnonymousIDHll: nil,
-						IdentifiedAnonymousIDHll: func() *hll.Hll {
+						MergedIdentifiersHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
 							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
@@ -544,32 +526,27 @@ func TestUniqueUsersReporter(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, tx.Commit())
 
-				rows, err := postgresContainer.DB.Query("SELECT workspace_id, source_id, userid_hll, anonymousid_hll, identified_anonymousid_hll, reported_at FROM tracked_users_reports")
+				rows, err := postgresContainer.DB.Query("SELECT workspace_id, source_id, tracked_identifiers_hll, merged_identifiers_hll, reported_at FROM tracked_users_reports")
 				require.NoError(t, err)
 				require.NoError(t, rows.Err())
 				defer func() { _ = rows.Close() }()
 				var entry UsersReport
 				entries := make([]UsersReport, 0)
 				for rows.Next() {
-					var userIDHllStr, annIDHllStr, combHllStr string
+					var userIDHllStr, combHllStr string
 					var reportedTime time.Time
-					err = rows.Scan(&entry.WorkspaceID, &entry.SourceID, &userIDHllStr, &annIDHllStr, &combHllStr, &reportedTime)
+					err = rows.Scan(&entry.WorkspaceID, &entry.SourceID, &userIDHllStr, &combHllStr, &reportedTime)
 					require.NoError(t, err)
 					userHllBytes, err := hex.DecodeString(userIDHllStr)
 					require.NoError(t, err)
 					userHll, err := hll.FromBytes(userHllBytes)
 					require.NoError(t, err)
-					entry.UserIDHll = &userHll
-					annIDHllBytes, err := hex.DecodeString(annIDHllStr)
-					require.NoError(t, err)
-					annHll, err := hll.FromBytes(annIDHllBytes)
-					require.NoError(t, err)
-					entry.AnonymousIDHll = &annHll
+					entry.TrackedIdentifiersHll = &userHll
 					combineHllBytes, err := hex.DecodeString(combHllStr)
 					require.NoError(t, err)
 					combHll, err := hll.FromBytes(combineHllBytes)
 					require.NoError(t, err)
-					entry.IdentifiedAnonymousIDHll = &combHll
+					entry.MergedIdentifiersHll = &combHll
 					entries = append(entries, entry)
 					require.Equal(t, fixedTime, reportedTime)
 				}
@@ -578,9 +555,8 @@ func TestUniqueUsersReporter(t *testing.T) {
 					if result[e.WorkspaceID] == nil {
 						result[e.WorkspaceID] = make(map[string]int)
 					}
-					result[e.WorkspaceID][e.SourceID] += int(e.UserIDHll.Cardinality())
-					result[e.WorkspaceID][e.SourceID] += int(e.AnonymousIDHll.Cardinality())
-					result[e.WorkspaceID][e.SourceID] -= int(e.IdentifiedAnonymousIDHll.Cardinality())
+					result[e.WorkspaceID][e.SourceID] += int(e.TrackedIdentifiersHll.Cardinality())
+					result[e.WorkspaceID][e.SourceID] -= int(e.MergedIdentifiersHll.Cardinality())
 				}
 				require.Equal(t, tc.trackedUsers, result)
 			})

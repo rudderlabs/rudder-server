@@ -64,7 +64,6 @@ type mockReportingServer struct {
 	Server *httptest.Server
 	hllMap map[string]map[string]struct {
 		userIDHll          *hll.Hll
-		anonIDHll          *hll.Hll
 		identifiedUsersHll *hll.Hll
 	}
 	hllMapMutex sync.RWMutex
@@ -74,7 +73,6 @@ func newMockReportingServer() *mockReportingServer {
 	whr := mockReportingServer{
 		hllMap: make(map[string]map[string]struct {
 			userIDHll          *hll.Hll
-			anonIDHll          *hll.Hll
 			identifiedUsersHll *hll.Hll
 		}),
 	}
@@ -109,13 +107,12 @@ func newMockReportingServer() *mockReportingServer {
 			if whr.hllMap[e.WorkspaceID] == nil {
 				whr.hllMap[e.WorkspaceID] = make(map[string]struct {
 					userIDHll          *hll.Hll
-					anonIDHll          *hll.Hll
 					identifiedUsersHll *hll.Hll
 				})
 			}
 			cardinalityMap := whr.hllMap[e.WorkspaceID][e.SourceID]
-			var userHllBytes, annIDHllBytes, combineHllBytes []byte
-			var userHll, annHll, combHll hll.Hll
+			var userHllBytes, combineHllBytes []byte
+			var userHll, combHll hll.Hll
 			userHllBytes, err = hex.DecodeString(e.UserIDHLLHex)
 			if err != nil {
 				return
@@ -129,18 +126,8 @@ func newMockReportingServer() *mockReportingServer {
 			} else {
 				cardinalityMap.userIDHll.Union(userHll)
 			}
-			annIDHllBytes, err = hex.DecodeString(e.AnonymousIDHLLHex)
 			if err != nil {
 				return
-			}
-			annHll, err := hll.FromBytes(annIDHllBytes)
-			if err != nil {
-				return
-			}
-			if cardinalityMap.anonIDHll == nil {
-				cardinalityMap.anonIDHll = &annHll
-			} else {
-				cardinalityMap.anonIDHll.Union(annHll)
 			}
 			combineHllBytes, err = hex.DecodeString(e.IdentifiedAnonymousIDHLLHex)
 			if err != nil {
@@ -169,38 +156,31 @@ func (m *mockReportingServer) Close() {
 
 func (m *mockReportingServer) getCardinalityFromReportingServer() map[string]map[string]struct {
 	userIDCount          int
-	anonIDCount          int
 	identifiedUsersCount int
 } {
 	m.hllMapMutex.RLock()
 	defer m.hllMapMutex.RUnlock()
 	return lo.MapEntries(m.hllMap, func(workspaceID string, mp map[string]struct {
 		userIDHll          *hll.Hll
-		anonIDHll          *hll.Hll
 		identifiedUsersHll *hll.Hll
 	}) (string, map[string]struct {
 		userIDCount          int
-		anonIDCount          int
 		identifiedUsersCount int
 	},
 	) {
 		return workspaceID, lo.MapEntries(mp, func(sourceID string, value struct {
 			userIDHll          *hll.Hll
-			anonIDHll          *hll.Hll
 			identifiedUsersHll *hll.Hll
 		}) (string, struct {
 			userIDCount          int
-			anonIDCount          int
 			identifiedUsersCount int
 		},
 		) {
 			return sourceID, struct {
 				userIDCount          int
-				anonIDCount          int
 				identifiedUsersCount int
 			}{
 				userIDCount:          int(value.userIDHll.Cardinality()),
-				anonIDCount:          int(value.anonIDHll.Cardinality()),
 				identifiedUsersCount: int(value.identifiedUsersHll.Cardinality()),
 			}
 		})
@@ -248,7 +228,6 @@ func TestTrackedUsersReporting(t *testing.T) {
 
 	cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
 	require.Equal(t, 4, cardinalityMap[workspaceID][sourceID].userIDCount)
-	require.Equal(t, 0, cardinalityMap[workspaceID][sourceID].anonIDCount)
 	require.Equal(t, 3, cardinalityMap[workspaceID][sourceID].identifiedUsersCount)
 	cancel()
 	require.NoError(t, wg.Wait())

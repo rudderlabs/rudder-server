@@ -27,9 +27,8 @@ import (
 )
 
 const (
-	idTypeUserID                = "userID"
-	idTypeAnonymousID           = "anonymousID"
-	idTypeIdentifiedAnonymousID = "identifiedAnonymousID"
+	idTypeTrackedIdentifier = "trackedIdentifiers"
+	idTypeMergedIdentifier  = "mergedIdentifiers"
 
 	// changing this will be non backwards compatible
 	murmurSeed = 123
@@ -40,11 +39,10 @@ const (
 )
 
 type UsersReport struct {
-	WorkspaceID              string
-	SourceID                 string
-	UserIDHll                *hll.Hll
-	AnonymousIDHll           *hll.Hll
-	IdentifiedAnonymousIDHll *hll.Hll
+	WorkspaceID           string
+	SourceID              string
+	TrackedIdentifiersHll *hll.Hll
+	MergedIdentifiersHll  *hll.Hll
 }
 
 // UsersReporter is interface to report unique users from reports
@@ -134,16 +132,16 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		}
 
 		if userID != "" {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], userID, idTypeUserID)
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], userID, idTypeTrackedIdentifier)
 		}
 
 		if anonymousID != "" && userID != anonymousID {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeUserID)
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeTrackedIdentifier)
 		}
 
 		if userID != "" && anonymousID != "" && userID != anonymousID {
 			combinedUserIDAnonymousID := combineUserIDAnonymousID(userID, anonymousID)
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeIdentifiedAnonymousID)
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeMergedIdentifier)
 		}
 
 		// for alias event we will be adding previousId to identifiedAnonymousID hll,
@@ -159,7 +157,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		if eventType == eventTypeAlias {
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
 			if previousID != "" && previousID != userID && previousID != anonymousID {
-				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
+				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeMergedIdentifier)
 			}
 		}
 	}
@@ -173,11 +171,10 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
 		reports = append(reports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
 			return &UsersReport{
-				WorkspaceID:              workspaceID,
-				SourceID:                 sourceID,
-				UserIDHll:                userIdTypeMap[idTypeUserID],
-				AnonymousIDHll:           userIdTypeMap[idTypeAnonymousID],
-				IdentifiedAnonymousIDHll: userIdTypeMap[idTypeIdentifiedAnonymousID],
+				WorkspaceID:           workspaceID,
+				SourceID:              sourceID,
+				TrackedIdentifiersHll: userIdTypeMap[idTypeTrackedIdentifier],
+				MergedIdentifiersHll:  userIdTypeMap[idTypeMergedIdentifier],
 			}
 		})...)
 	}
@@ -193,9 +190,8 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 		"instance_id",
 		"source_id",
 		"reported_at",
-		"userid_hll",
-		"anonymousid_hll",
-		"identified_anonymousid_hll",
+		"tracked_identifiers_hll",
+		"merged_identifiers_hll",
 	))
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
@@ -204,15 +200,12 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 
 	for _, report := range reports {
 		u.recordHllSizeStats(report)
-		userIDHllString, err := u.hllToString(report.UserIDHll)
+		trackedIdentifiersHllString, err := u.hllToString(report.TrackedIdentifiersHll)
 		if err != nil {
 			return fmt.Errorf("converting user id hll to string: %w", err)
 		}
-		anonIDHllString, err := u.hllToString(report.AnonymousIDHll)
-		if err != nil {
-			return fmt.Errorf("converting anon id hll to string: %w", err)
-		}
-		identifiedAnnIDHllString, err := u.hllToString(report.IdentifiedAnonymousIDHll)
+
+		mergedIdentifiersHllString, err := u.hllToString(report.MergedIdentifiersHll)
 		if err != nil {
 			return fmt.Errorf("converting identified anon id hll to string: %w", err)
 		}
@@ -220,9 +213,8 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 			u.instanceID,
 			report.SourceID,
 			u.now(),
-			userIDHllString,
-			anonIDHllString,
-			identifiedAnnIDHllString,
+			trackedIdentifiersHllString,
+			mergedIdentifiersHllString,
 		)
 		if err != nil {
 			return fmt.Errorf("executing statement: %w", err)
@@ -267,25 +259,19 @@ func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll,
 }
 
 func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
-	if report.UserIDHll != nil {
+	if report.TrackedIdentifiersHll != nil {
 		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
 			"workspace_id": report.WorkspaceID,
 			"source_id":    report.SourceID,
-			"identifier":   idTypeUserID,
-		}).Observe(float64(len(report.UserIDHll.ToBytes())))
+			"identifier":   idTypeTrackedIdentifier,
+		}).Observe(float64(len(report.TrackedIdentifiersHll.ToBytes())))
 	}
-	if report.AnonymousIDHll != nil {
+
+	if report.MergedIdentifiersHll != nil {
 		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
 			"workspace_id": report.WorkspaceID,
 			"source_id":    report.SourceID,
-			"identifier":   idTypeAnonymousID,
-		}).Observe(float64(len(report.AnonymousIDHll.ToBytes())))
-	}
-	if report.IdentifiedAnonymousIDHll != nil {
-		u.stats.NewTaggedStat("tracked_users_hll_bytes", stats.HistogramType, stats.Tags{
-			"workspace_id": report.WorkspaceID,
-			"source_id":    report.SourceID,
-			"identifier":   idTypeIdentifiedAnonymousID,
-		}).Observe(float64(len(report.IdentifiedAnonymousIDHll.ToBytes())))
+			"identifier":   idTypeMergedIdentifier,
+		}).Observe(float64(len(report.MergedIdentifiersHll.ToBytes())))
 	}
 }
