@@ -912,7 +912,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 	})
 
 	Context("RudderTyper", func() {
-		It("TrackingPlanId and TrackingPlanVersion", func() {
+		It("TrackingPlanVersion", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
 
@@ -988,7 +988,6 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
 					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123))
 				}
 			}
