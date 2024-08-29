@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -324,10 +325,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
 	defer drainConfigManager.Stop()
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.DrainConfigRoutine(ctx)
 	}))
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 	streamMsgValidator := stream.NewMessageValidator()

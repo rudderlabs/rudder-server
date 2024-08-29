@@ -50,6 +50,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -628,14 +629,14 @@ func (proc *Handle) Setup(
 	proc.backgroundCancel = cancel
 
 	proc.config.asyncInit = misc.NewAsyncInit(1)
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.backendConfigSubscriber(ctx)
 		return nil
 	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck processor
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -691,7 +692,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	})
 
 	// pinger loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.logger.Info("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Info("Backend config received")
@@ -732,7 +733,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	}))
 
 	// stash loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		st := stash.New()
 		st.Setup(
 			proc.readErrorDB,

@@ -11,8 +11,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/bugsnag/bugsnag-go/v2"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -35,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -115,7 +114,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		syncer()
 		return nil
 	}))
@@ -240,10 +239,10 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
 	defer drainConfigManager.Stop()
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.DrainConfigRoutine(ctx)
 	}))
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
@@ -351,7 +350,7 @@ func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Han
 	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(a.config.http.webPort),
-		Handler:           bugsnag.Handler(srvMux),
+		Handler:           crash.Handler(srvMux),
 		ReadTimeout:       a.config.http.ReadTimeout,
 		ReadHeaderTimeout: a.config.http.ReadHeaderTimeout,
 		WriteTimeout:      a.config.http.WriteTimeout,
