@@ -113,8 +113,9 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: false
-          tags: local-rudder-server:${{ github.sha }}
+          tags: ${{ matrix.build-config.tags }}
           outputs: type=docker,dest=/tmp/local-rudder-server.tar
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=latest
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
@@ -133,6 +134,7 @@ jobs:
           push: true
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache,tag=latest
           build-args: |
             BUILD_DATE=${{ needs.docker-oss-meta.outputs.build-date }}
             VERSION=${{ needs.docker-oss-meta.outputs.version }}
@@ -205,8 +207,16 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: false
-          tags: local-rudder-server:${{ github.sha }}
+          tags: ${{ matrix.build-config.tags }}
+          labels: ${{ matrix.build-config.labels }}
+          build-args: |
+            BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
+            VERSION=${{ needs.docker-ent-meta.outputs.version }}
+            COMMIT_HASH=${{ github.sha }}
+            REVISION=${{ needs.docker-ent-meta.outputs.revision }}
+            ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
           outputs: type=docker,dest=/tmp/local-rudder-server.tar
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=latest
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
@@ -225,6 +235,7 @@ jobs:
           push: true
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache,tag=latest
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
             VERSION=${{ needs.docker-ent-meta.outputs.version }}
@@ -298,8 +309,9 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: false
-          tags: local-rudder-server:${{ github.sha }}
+          tags: ${{ matrix.build-config.tags }}
           outputs: type=docker,dest=/tmp/suppression-backup-service.tar
+          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=latest
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
@@ -318,6 +330,7 @@ jobs:
           push: true
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
+          cache-from: type=local,src=/tmp/.buildx-cache,tag=latest
           build-args: |
             BUILD_DATE=${{ needs.docker-sbsvc-meta.outputs.build-date }}
             VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
