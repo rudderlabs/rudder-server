@@ -350,7 +350,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.reporting = a.app.Features().Reporting.Setup(gCtx, a.bcConfig)
 		defer a.reporting.Stop()
 		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString("reporting"), Label: types.WarehouseReportingLabel})
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			syncer()
 			return nil
 		}))
@@ -376,7 +376,7 @@ func (a *App) Run(ctx context.Context) error {
 	if mode.IsSlave(a.config.mode) {
 		a.logger.Info("Starting warehouse slave...")
 
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			s := slave.New(
 				a.conf,
 				a.logger,
@@ -394,13 +394,13 @@ func (a *App) Run(ctx context.Context) error {
 
 		a.bcConfig.WaitForConfig(ctx)
 
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.notifier.ClearJobs(gCtx)
 		}))
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.monitorDestRouters(gCtx)
 		}))
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			archive.CronArchiver(gCtx, archive.New(
 				a.conf,
 				a.logger,
@@ -415,7 +415,7 @@ func (a *App) Run(ctx context.Context) error {
 			a.grpcServer.Start(gCtx)
 			return nil
 		})
-		g.Go(crash.WrapperForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.sourcesManager.Run(gCtx)
 		}))
 	}

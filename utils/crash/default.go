@@ -23,7 +23,7 @@ func Configure(logger logger.Logger, opts PanicWrapperOpts) {
 	Default = UsingLogger(logger, opts)
 }
 
-func WrapperForWarehouse(fn func() error) func() error {
+func NotifyWarehouse(fn func() error) func() error {
 	return func() error {
 		defer Default.Notify("Warehouse")()
 		return fn()

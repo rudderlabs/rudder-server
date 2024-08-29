@@ -188,18 +188,18 @@ func (r *Router) Start(ctx context.Context) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	r.backgroundGroup = g
-	g.Go(crash.WrapperForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
-	g.Go(crash.WrapperForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.runUploadJobAllocator(gCtx)
 	}))
-	g.Go(crash.WrapperForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.mainLoop(gCtx)
 		return nil
 	}))
-	g.Go(crash.WrapperForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
 	return g.Wait()
