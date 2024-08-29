@@ -9,9 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/tidwall/gjson"
 )
 
 func (b *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error {

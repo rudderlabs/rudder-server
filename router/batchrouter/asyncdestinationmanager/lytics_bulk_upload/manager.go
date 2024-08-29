@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewLyticsBulkUploader(destinationName string, authorization string, endpoint string, lytics LyticsService) common.AsyncUploadAndTransformManager {
+func NewLyticsBulkUploader(destinationName, authorization, endpoint string, lytics LyticsService) common.AsyncUploadAndTransformManager {
 	return &LyticsBulkUploader{
 		destName:      destinationName,
 		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Lytics").Child("LyticsBulkUploader"),
