@@ -47,6 +47,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -993,7 +994,7 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	jd.assertError(jd.doRefreshDSRangeList(l))
 
 	g := jd.backgroundGroup
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		jd.refreshDSListLoop(ctx)
 		return nil
 	}))
@@ -1014,7 +1015,7 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
 
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		jd.addNewDSLoop(ctx)
 		return nil
 	}))

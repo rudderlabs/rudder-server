@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bugsnag/bugsnag-go/v2"
-
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -35,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -148,19 +147,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return 1
 	}
 
-	// Start bugsnag
-	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetString("BUGSNAG_KEY", ""),
+	crash.Configure(r.logger, crash.PanicWrapperOpts{
 		ReleaseStage: config.GetString("GO_ENV", "development"),
-		// The import paths for the Go packages containing your source files
-		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
-		// more configuration options
 		AppType:      fmt.Sprintf("rudder-server-%s", r.appType),
 		AppVersion:   r.releaseInfo.Version,
-		PanicHandler: func() {},
 	})
-	ctx = bugsnag.StartSession(ctx)
-	defer misc.BugsnagNotify(ctx, "Core")()
+	defer crash.Notify("Core")()
 
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
@@ -221,13 +213,13 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Start rudder core
 	if r.canStartServer() {
-		g.Go(misc.WithBugsnag(func() (err error) {
+		g.Go(crash.Wrapper(func() (err error) {
 			if err := r.appHandler.StartRudderCore(ctx, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
 			}
 			return nil
 		}))
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := controlplane.NewClient(
@@ -248,7 +240,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// Start warehouse
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if r.canStartWarehouse() {
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			if err := r.warehouseApp.Run(ctx); err != nil {
 				return fmt.Errorf("warehouse service routine: %w", err)
 			}
