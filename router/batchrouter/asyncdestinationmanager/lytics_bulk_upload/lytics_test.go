@@ -76,7 +76,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 				Manager:         bulkUploader,
 			}
 			expected := common.AsyncUploadOutput{
-				FailedReason:        "got error while opening the file. open : no such file or directory",
+				FailedReason:        "got error while transforming the file. failed to open existing file: open : no such file or directory",
 				ImportingJobIDs:     nil,
 				FailedJobIDs:        []int64{1, 2, 3, 4},
 				ImportingParameters: nil,
@@ -94,6 +94,10 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 			LyticsServiceImpl := lyticsBulkUpload.LyticsServiceImpl{
 				BulkApi: "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
+			uploadDataData := lyticsBulkUpload.HttpRequestData{
+				Endpoint:      LyticsServiceImpl.BulkApi,
+				Authorization: destination.Config["lyticsApiKey"].(string),
+			}
 			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", "abcd", LyticsServiceImpl.BulkApi, lyticsService)}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -103,7 +107,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 				Manager:         bulkUploader,
 			}
 
-			lyticsService.EXPECT().UploadBulkFile(gomock.Any(), asyncDestination.FileName).Return(fmt.Errorf("Upload failed with status code 400"))
+			lyticsService.EXPECT().UploadBulkFile(uploadDataData, asyncDestination.FileName).Return(fmt.Errorf("Upload failed with status code 400"))
 
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "error in uploading the bulk file: Upload failed with status code 400",
@@ -132,8 +136,12 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 				Destination:     &destination,
 				Manager:         bulkUploader,
 			}
+			uploadDataData := lyticsBulkUpload.HttpRequestData{
+				Endpoint:      LyticsServiceImpl.BulkApi,
+				Authorization: destination.Config["lyticsApiKey"].(string),
+			}
 
-			lyticsService.EXPECT().UploadBulkFile(gomock.Any(), asyncDestination.FileName).Return(nil)
+			lyticsService.EXPECT().UploadBulkFile(uploadDataData, asyncDestination.FileName).Return(nil)
 
 			expected := common.AsyncUploadOutput{
 				FailedReason:    "failed as the fileSizeLimit has over",
