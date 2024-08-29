@@ -31,10 +31,6 @@ RUN BUILD_DATE=$(date "+%F,%T") \
 RUN go build -o devtool ./cmd/devtool/
 RUN go build -o rudder-cli ./cmd/rudder-cli/
 
-RUN apk add --no-cache openssl
-
-RUN openssl genpkey -algorithm RSA -out private_key.pem -pkeyopt rsa_keygen_bits:2048
-
 FROM alpine:${ALPINE_VERSION}
 
 RUN apk --no-cache upgrade && \
@@ -45,7 +41,6 @@ COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
 COPY --from=builder rudder-server/build/regulation-worker .
 COPY --from=builder rudder-server/devtool .
 COPY --from=builder rudder-server/rudder-cli /usr/bin/rudder-cli
-COPY --from=builder rudder-server/private_key.pem .
 
 COPY build/docker-entrypoint.sh /
 COPY build/wait-for /
