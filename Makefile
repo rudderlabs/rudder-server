@@ -96,10 +96,12 @@ install-tools:
 	$(GO) install $(protoc-gen-go)
 	$(GO) install $(protoc-gen-go-grpc)
 	$(GO) install $(gotestsum)
+
 .PHONY: lint
-lint: fmt sec ## Run linters on all go files
+lint: fmt  ## Run linters on all go files
 	$(GO) run $(GOLANGCI) run -v
 	$(GO) run $(actionlint)
+	@$(MAKE) sec
 
 .PHONY: fmt
 fmt: install-tools ## Formats all go files

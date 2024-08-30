@@ -132,8 +132,8 @@ jobs:
             --no-verification \
             --fail
       - name: Build and push
-        uses: docker/build-push-action@v6
         if: success()
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
@@ -206,7 +206,7 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build image 
+      - name: Build image (no-push)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -333,6 +333,7 @@ jobs:
             --no-verification \
             --fail
       - name: Build and push
+        if: success()
         uses: docker/build-push-action@v6
         with:
           context: .
