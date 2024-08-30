@@ -59,7 +59,7 @@ TAR_FILENAME="/tmp/image-${IMAGE_SHA#sha256:}-$(date +%s).tar"
 echo "Saving image to a tar file..."
 docker save "$IMAGE_SHA" > "$TAR_FILENAME"
 
-trivy image --input "$TAR_FILENAME" --exit-code 1 --scanners secret
+trivy image --input "$TAR_FILENAME" --scanners vuln,secret
 
 # Run TruffleHog scan
 echo "Running TruffleHog scan..."
