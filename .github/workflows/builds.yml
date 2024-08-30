@@ -220,6 +220,7 @@ jobs:
       - name: Run Trivy secret scanner
         uses: aquasecurity/trivy-action@0.20.0
         with:
+          scan-ref: /tmp
           input: /tmp/local-rudder-server.tar
           format: 'sarif'
           output: 'trivy-results.sarif'
@@ -235,7 +236,7 @@ jobs:
           docker pull trufflesecurity/trufflehog:latest
           docker run --rm -v /tmp:/tmp \
             trufflesecurity/trufflehog:latest \
-            docker --image file:///tmp/local-rudder-server.tar \
+            docker --image file:///github/workspace/image.tar \
             --github-actions \
             --no-verification \
             --fail
