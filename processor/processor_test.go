@@ -946,7 +946,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 	})
 
 	Context("RudderTyper", func() {
-		It("Tracking Plan Id and Version from DgSourceTrackingPlanConfig", func() {
+		It("Tracking plan id and version from DgSourceTrackingPlanConfig", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
 
@@ -1017,11 +1017,11 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
 					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100)) // from DgSourceTrackingPlanConfig
 				}
 			}
 		})
-		It("Tracking plan Version override from context.ruddertyper", func() {
+		It("Tracking plan version override from context.ruddertyper", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
 
@@ -1073,6 +1073,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 										  "sentAt": %[3]q,
 										  "context": {
 											"ruddertyper": {
+                                              "trackingPlanId": "tracking-plan-id",
 											  "trackingPlanVersion": 123
 											}
 										  }
@@ -1097,7 +1098,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
 					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123)) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
 				}
 			}
 		})

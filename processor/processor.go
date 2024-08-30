@@ -1832,17 +1832,16 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				&backendconfig.DestinationT{},
 			)
 
+			trackingPlanID := source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
 			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if rudderTyperTPID != nil && rudderTyperTPID == source.DgSourceTrackingPlanConfig.TrackingPlan.Id {
-				if rudderTyperTPVersion != nil {
-					if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
-						trackingPlanVersion = int(version)
-					}
+			if rudderTyperTPID != nil && rudderTyperTPVersion != nil && rudderTyperTPID == trackingPlanID {
+				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
+					trackingPlanVersion = int(version)
 				}
 			}
-			shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+			shallowEventCopy.Metadata.TrackingPlanId = trackingPlanID
 			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
