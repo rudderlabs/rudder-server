@@ -1834,8 +1834,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 
 			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 && rudderTyperTPVersion != nil {
-				trackingPlanVersion = int(version)
+			if rudderTyperTPVersion != nil {
+				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
+					trackingPlanVersion = int(version)
+				}
 			}
 			shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion

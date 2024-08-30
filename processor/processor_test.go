@@ -149,6 +149,7 @@ func (c *testContext) Finish() {
 const (
 	WriteKeyEnabled           = "enabled-write-key"
 	WriteKeyEnabledNoUT       = "enabled-write-key-no-ut"
+	WriteKeyEnabledTp         = "enabled-write-key-tp"
 	WriteKeyEnabledNoUT2      = "enabled-write-key-no-ut2"
 	WriteKeyEnabledOnlyUT     = "enabled-write-key-only-ut"
 	SourceIDEnabled           = "enabled-source"
@@ -158,6 +159,8 @@ const (
 	WriteKeyTransient         = "transient-write-key"
 	SourceIDEnabledNoUT       = "enabled-source-no-ut"
 	SourceIDEnabledNoUTName   = "SourceIDEnabledNoUT"
+	SourceIDEnabledTp         = "enabled-source-tp"
+	SourceIDEnabledTpName     = "SourceIDEnabledTp"
 	SourceIDEnabledOnlyUT     = "enabled-source-only-ut"
 	SourceIDEnabledOnlyUTName = "SourceIDEnabledOnlyUT"
 	SourceIDEnabledNoUT2      = "enabled-source-no-ut2"
@@ -195,6 +198,7 @@ var (
 		SourceIDGCM:             SourceIDGCMName,
 		SourceIDKetchConsent:    SourceIDKetchConsentName,
 		SourceIDTransient:       SourceIDTransientName,
+		SourceIDEnabledTp:       SourceIDEnabledTpName,
 	}
 )
 
@@ -882,6 +886,36 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 		},
+		{
+			ID:       SourceIDEnabledTp,
+			Name:     SourceIDEnabledTpName,
+			WriteKey: WriteKeyEnabledTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDEnabledTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
 	},
 	Settings: backendconfig.Settings{
 		EventAuditEnabled: true,
@@ -912,7 +946,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 	})
 
 	Context("RudderTyper", func() {
-		It("TrackingPlanVersion", func() {
+		It("Tracking Plan Id and Version from DgSourceTrackingPlanConfig", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
 
@@ -941,7 +975,82 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 							ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 							CustomVal: gatewayCustomVal[0],
 							EventPayload: createBatchPayload(
-								WriteKeyEnabledNoUT,
+								WriteKeyEnabledTp,
+								"2001-01-02T02:23:45.000Z",
+								[]mockEventData{
+									{
+										id:                        "1",
+										jobid:                     1,
+										originalTimestamp:         "2000-01-02T01:23:45",
+										expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+										sentAt:                    "2000-01-02 01:23",
+										expectedSentAt:            "2000-01-02T01:23:00.000Z",
+										expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+									},
+								},
+								func(e mockEventData) string {
+									return fmt.Sprintf(`
+										{
+										  "rudderId": "some-rudder-id",
+										  "messageId": "message-%[1]s",
+										  "some-property": "property-%[1]s",
+										  "originalTimestamp": %[2]q,
+										  "sentAt": %[3]q
+										}
+									`,
+										e.id,
+										e.originalTimestamp,
+										e.sentAt,
+									)
+								},
+							),
+							EventCount:    1,
+							LastJobStatus: jobsdb.JobStatusT{},
+							Parameters:    createBatchParameters(SourceIDEnabledTp),
+							WorkspaceId:   sampleWorkspaceID,
+						},
+					},
+				},
+			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
+			for _, v := range c.MockObserver.calls {
+				for _, e := range v.events {
+					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100))
+				}
+			}
+		})
+		It("Tracking plan Version override from context.ruddertyper", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
+
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+			Expect(err).To(BeNil())
+
+			processor := NewHandle(config.Default, mockTransformer)
+			processor.isolationStrategy = isolationStrategy
+			processor.config.archivalEnabled = config.SingleValueLoader(false)
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: []*jobsdb.JobT{
+						{
+							UUID:      uuid.New(),
+							JobID:     1,
+							CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							CustomVal: gatewayCustomVal[0],
+							EventPayload: createBatchPayload(
+								WriteKeyEnabledTp,
 								"2001-01-02T02:23:45.000Z",
 								[]mockEventData{
 									{
@@ -964,7 +1073,6 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 										  "sentAt": %[3]q,
 										  "context": {
 											"ruddertyper": {
-											  "trackingPlanId": "tracking-plan-id",
 											  "trackingPlanVersion": 123
 											}
 										  }
@@ -978,17 +1086,17 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 							),
 							EventCount:    1,
 							LastJobStatus: jobsdb.JobStatusT{},
-							Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+							Parameters:    createBatchParameters(SourceIDEnabledTp),
 							WorkspaceId:   sampleWorkspaceID,
 						},
 					},
 				},
 			)
-			Expect(err).To(BeNil())
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
+					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
 					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123))
 				}
 			}
