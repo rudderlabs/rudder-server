@@ -217,20 +217,6 @@ jobs:
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
           outputs: type=docker,dest=/tmp/local-rudder-server.tar
           cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=latest
-      - name: Run Trivy secret scanner
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          scan-ref: /tmp
-          input: /tmp/local-rudder-server.tar
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          ignore-unfixed: true
-          exit-code: 1
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
