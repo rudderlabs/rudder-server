@@ -24,12 +24,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -160,6 +160,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
+			"JOBS_DB_HOST="+postgresContainer.Host,
 			"JOBS_DB_PORT="+postgresContainer.Port,
 			"JOBS_DB_USER="+postgresContainer.User,
 			"JOBS_DB_DB_NAME="+postgresContainer.Database,

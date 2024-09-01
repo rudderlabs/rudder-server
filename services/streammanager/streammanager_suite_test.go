@@ -200,7 +200,7 @@ func TestNewProducerWithBQStreamDestination(t *testing.T) {
 						"project_id": "",
 						"private_key_id": "",
 						"private_key": "-----BEGIN PRIVATE KEY----------END PRIVATE KEY-----\n",
-						"client_email": "",
+						"client_email": "foo@barr.com",
 						"client_id": "",
 						"auth_uri": "https://accounts.google.com/o/oauth2/auth",
 						"token_uri": "https://oauth2.googleapis.com/token",

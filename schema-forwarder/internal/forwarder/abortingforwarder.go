@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -31,7 +32,7 @@ func (nf *AbortingForwarder) Start() error {
 	nf.g, ctx = errgroup.WithContext(ctx)
 	nf.cancel = cancel
 
-	nf.g.Go(misc.WithBugsnag(func() error {
+	nf.g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
