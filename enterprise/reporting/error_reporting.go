@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -217,12 +218,12 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
-		if !edr.IsPIIReportingDisabled(workspaceID) {
-			edr.log.Debugf("PII setting is disabled for workspaceId: %s", workspaceID)
+		if edr.IsPIIReportingDisabled(workspaceID) {
+			edr.log.Debugn("PII setting is disabled for workspaceId:", obskit.WorkspaceID(workspaceID))
 			return nil
 		}
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
-		edr.log.Debugf("For DestId: %v -> DestDetail: %v", metric.ConnectionDetails.DestinationID, destinationDetail)
+		edr.log.Debugn("DestinationId & DestDetail details", obskit.DestinationID(metric.ConnectionDetails.DestinationID), logger.NewField("destinationDetail", destinationDetail))
 
 		// extract error-message & error-code
 		errDets := edr.extractErrorDetails(metric.StatusDetail.SampleResponse)
@@ -364,6 +365,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 			getReportsStart := time.Now()
 			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
+			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 			getReportsTimer.Since(getReportsStart)
 			getReportsSize.Observe(float64(len(reports)))
 
