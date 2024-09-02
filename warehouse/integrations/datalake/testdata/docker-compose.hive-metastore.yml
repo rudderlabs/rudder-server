@@ -1,0 +1,18 @@
+version: '3.7'
+services:
+  hive-metastore:
+    image: rudderstack/hive-metastore:latest
+    ports:
+      - "9083"
+    volumes:
+      - ./conf/metastore-site.xml:/opt/apache-hive-metastore-3.0.0-bin/conf/metastore-site.xml:ro
+    environment:
+      METASTORE_DB_HOSTNAME: jobsDb
+      METASTORE_TYPE: postgres
+    depends_on:
+      - jobsDb
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G

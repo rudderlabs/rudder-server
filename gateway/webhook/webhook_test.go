@@ -482,10 +482,22 @@ func TestRecordWebhookErrors(t *testing.T) {
 }
 
 func TestPrepareRequestBody(t *testing.T) {
-	createRequest := func(method, target string, body io.Reader, params map[string]string) *http.Request {
-		r := httptest.NewRequest(method, target, body)
+	type requestOpts struct {
+		method  string
+		target  string
+		body    io.Reader
+		params  map[string]string
+		headers map[string]string
+	}
+
+	createRequest := func(reqOpts requestOpts) *http.Request {
+		r := httptest.NewRequest(reqOpts.method, reqOpts.target, reqOpts.body)
+		for k, v := range reqOpts.headers {
+			r.Header.Set(k, v)
+		}
+
 		q := r.URL.Query()
-		for k, v := range params {
+		for k, v := range reqOpts.params {
 			q.Add(k, v)
 		}
 		r.URL.RawQuery = q.Encode()
@@ -498,56 +510,62 @@ func TestPrepareRequestBody(t *testing.T) {
 		sourceType         string
 		includeQueryParams bool
 		wantError          bool
-		expectedResponse   []byte
+		expectedResponse   string
 	}{
 		{
 			name:             "Empty request body with no query parameters for webhook",
-			req:              createRequest(http.MethodPost, "http://example.com", nil, nil),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com"}),
 			sourceType:       "webhook",
-			expectedResponse: []byte("{}"),
+			expectedResponse: "{}",
 		},
 		{
 			name:             "Empty request body with query parameters for webhook",
-			req:              createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key": "value"}),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
 			sourceType:       "webhook",
-			expectedResponse: []byte("{}"),
+			expectedResponse: "{}",
 		},
 		{
 			name:             "Some payload with no query parameters for webhook",
-			req:              createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`), nil),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
 			sourceType:       "webhook",
-			expectedResponse: []byte(`{"key":"value"}`),
+			expectedResponse: `{"key":"value"}`,
 		},
 		{
 			name:             "Empty request body with query parameters for shopify",
-			req:              createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key": "value"}),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
 			sourceType:       "shopify",
-			expectedResponse: []byte(`{"query_parameters":{"key":["value"]}}`),
+			expectedResponse: `{"query_parameters":{"key":["value"]}}`,
 		},
 		{
 			name:             "Error reading request body for Shopify",
-			req:              createRequest(http.MethodPost, "http://example.com", iotest.ErrReader(errors.New("some error")), nil),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: iotest.ErrReader(errors.New("some error"))}),
 			sourceType:       "Shopify",
 			wantError:        true,
-			expectedResponse: nil,
+			expectedResponse: "",
 		},
 		{
 			name:             "Some payload with no query parameters for shopify",
-			req:              createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key":"value"}`), nil),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
 			sourceType:       "shopify",
-			expectedResponse: []byte(`{"key":"value","query_parameters":{}}`),
+			expectedResponse: `{"key":"value","query_parameters":{}}`,
+		},
+		{
+			name:             "Some payload with headers for shopify",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), headers: map[string]string{"X-Key": "header-value"}}),
+			sourceType:       "shopify",
+			expectedResponse: `{"key":"value","query_parameters":{},"headers":{"X-Key":"header-value"}}`,
 		},
 		{
 			name:             "Some payload with query parameters for Adjust",
-			req:              createRequest(http.MethodPost, "http://example.com", strings.NewReader(`{"key1":"value1"}`), map[string]string{"key2": "value2"}),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
 			sourceType:       "Adjust",
-			expectedResponse: []byte(`{"key1":"value1","query_parameters":{"key2":["value2"]}}`),
+			expectedResponse: `{"key1":"value1","query_parameters":{"key2":["value2"]}}`,
 		},
 		{
 			name:             "No payload with query parameters for Adjust",
-			req:              createRequest(http.MethodPost, "http://example.com", nil, map[string]string{"key2": "value2"}),
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key2": "value2"}}),
 			sourceType:       "adjust",
-			expectedResponse: []byte(`{"query_parameters":{"key2":["value2"]}}`),
+			expectedResponse: `{"query_parameters":{"key2":["value2"]}}`,
 		},
 	}
 
@@ -559,7 +577,7 @@ func TestPrepareRequestBody(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedResponse, result)
+			require.Equal(t, tc.expectedResponse, string(result))
 		})
 	}
 }

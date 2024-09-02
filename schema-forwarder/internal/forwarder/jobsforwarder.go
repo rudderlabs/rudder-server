@@ -24,7 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 // JobsForwarder is a forwarder that transforms and forwards jobs to a pulsar topic
@@ -82,7 +82,7 @@ func (jf *JobsForwarder) Start() error {
 	jf.cancel = cancel
 	jf.g, ctx = errgroup.WithContext(ctx)
 
-	jf.g.Go(misc.WithBugsnag(func() error {
+	jf.g.Go(crash.Wrapper(func() error {
 		var sleepTime time.Duration
 		for {
 			select {

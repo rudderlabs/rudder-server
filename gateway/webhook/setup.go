@@ -22,7 +22,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/services/transformer"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 type Gateway interface {
@@ -63,7 +63,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
 		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
-			return item, struct{}{}
+			return strings.ToLower(item), struct{}{}
 		},
 	)
 
@@ -86,7 +86,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			bt := batchWebhookTransformerT{
 				webhook: webhook,
 				stats:   newWebhookStats(),
@@ -106,7 +106,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 			return nil
 		}))
 	}
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		webhook.printStats(ctx)
 		return nil
 	}))

@@ -107,7 +107,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 }
 
 func (wb *HandleT) IsGetAndNotAllow(reqMethod, sourceDefName string) bool {
-	_, ok := wb.config.forwardGetRequestForSrcMap[sourceDefName]
+	_, ok := wb.config.forwardGetRequestForSrcMap[strings.ToLower(sourceDefName)]
 	return reqMethod == http.MethodGet && !ok
 }
 
@@ -269,6 +269,17 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
+func getXHeaders(req *http.Request) map[string]string {
+	xHeaders := make(map[string]string)
+	for key, values := range req.Header {
+		lowerCaseKey := strings.ToLower(key)
+		if !strings.HasPrefix(lowerCaseKey, "x-forwarded-") && strings.HasPrefix(lowerCaseKey, "x-") {
+			xHeaders[key] = strings.Join(values, ",")
+		}
+	}
+	return xHeaders
+}
+
 func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
 	defer func() {
 		_ = req.Body.Close()
@@ -285,16 +296,22 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 
 	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
 		queryParams := req.URL.Query()
-		paramsBytes, err := json.Marshal(queryParams)
-		if err != nil {
-			return nil, errors.New(response.ErrorInMarshal)
-		}
 
-		body, err = sjson.SetRawBytes(body, "query_parameters", paramsBytes)
+		body, err = sjson.SetBytes(body, "query_parameters", queryParams)
 		if err != nil {
 			return nil, errors.New(response.InvalidJSON)
 		}
 	}
+
+	xHeaders := getXHeaders(req)
+	if len(xHeaders) > 0 {
+		body, err = sjson.SetBytes(body, "headers", xHeaders)
+		if err != nil {
+			return nil, errors.New(response.InvalidJSON)
+		}
+
+	}
+
 	return body, nil
 }
 

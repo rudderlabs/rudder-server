@@ -34,7 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -220,7 +220,7 @@ func (rt *Handle) Setup(
 		return nil
 	})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		limiterStats := func(key string, pstats *partition.Stats) {
 			allPStats := pstats.All()
 			for _, pstat := range allPStats {
@@ -250,7 +250,7 @@ func (rt *Handle) Setup(
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck router
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -266,12 +266,12 @@ func (rt *Handle) Setup(
 		}
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		rt.collectMetrics(ctx)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		rt.statusInsertLoop()
 		return nil
 	}))
@@ -324,7 +324,7 @@ func (rt *Handle) Start() {
 	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
-	rt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	rt.backgroundGroup.Go(crash.Wrapper(func() error {
 		defer close(rt.startEnded) // always close the channel
 		select {
 		case <-ctx.Done():

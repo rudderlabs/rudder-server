@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -105,12 +106,17 @@ func TestIntegrationWebhook(t *testing.T) {
 		application        app.App
 	)
 
+	transformerURL, ok := os.LookupEnv("TEST_OVERRIDE_TRANSFORMER_URL")
+	if !ok {
+		transformerURL = transformerContainer.TransformerURL
+	}
+
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, conf, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           transformerContainer.TransformerURL,
+		TransformerURL:           transformerURL,
 		FeaturesRetryMaxAttempts: 10,
 	})
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
 	<-transformerFeaturesService.Wait()
 
@@ -175,10 +181,6 @@ func TestIntegrationWebhook(t *testing.T) {
 	}, time.Millisecond*500, time.Millisecond)
 
 	for i, tc := range testSetup.Cases {
-		if tc.Skip != "" {
-			t.Skip(tc.Skip)
-			continue
-		}
 		sConfig := sourceConfigs[i]
 
 		writeKey := sConfig.WriteKey
@@ -186,16 +188,32 @@ func TestIntegrationWebhook(t *testing.T) {
 		workspaceID := sConfig.WorkspaceID
 
 		t.Run(tc.Name+"/"+tc.Description, func(t *testing.T) {
+			if tc.Skip != "" {
+				t.Skip(tc.Skip)
+				return
+			}
 			t.Logf("writeKey: %s", writeKey)
 			t.Logf("sourceID: %s", sourceID)
 			t.Logf("workspaceID: %s", workspaceID)
 
 			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
+			// parse query parameters from input request
+			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").Map()
+			if len(qParams) != 0 {
+				for k, v := range qParams {
+					vStr := v.Array()[0].String()
+					query.Set(k, vStr)
+				}
+			}
 			require.NoError(t, err)
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
-			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
+			method := tc.Input.Request.Method
+			if method == "" {
+				method = http.MethodPost
+			}
+			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
 
 			req.Header.Set("X-Forwarded-For", testSetup.Context.RequestIP)
@@ -250,8 +268,18 @@ func TestIntegrationWebhook(t *testing.T) {
 				rudderID, err := kituuid.GetMD5UUID(userID + ":" + anonID)
 				assert.NoError(t, err)
 
+				if anonID != "" {
+					p, err = sjson.SetBytes(p, "anonymousId", anonID)
+					assert.NoError(t, err)
+				}
+
 				p, err = sjson.SetBytes(p, "rudderId", rudderID)
 				assert.NoError(t, err)
+
+				if gjson.GetBytes(batch.Batch[0], "properties.writeKey").String() != "" {
+					p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
+					assert.NoError(t, err)
+				}
 
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
@@ -277,6 +305,12 @@ func TestIntegrationWebhook(t *testing.T) {
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
+
+				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value()
+				if errPayloadWriteKey != nil {
+					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
+					require.NoError(t, err)
+				}
 
 				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}

@@ -234,6 +234,9 @@ func TestTrackedUsersReporting(t *testing.T) {
 		{anonymousID: "anon-2"},
 	}, "identify", writeKey, url)
 	require.NoError(t, err)
+	err = sendAliasEvent("user-1", "user-2", writeKey, url)
+	require.NoError(t, err)
+	eventsCount++
 
 	require.Eventuallyf(t, func() bool {
 		return tc.webhook.RequestsCount() == eventsCount
@@ -244,9 +247,9 @@ func TestTrackedUsersReporting(t *testing.T) {
 	}, 1*time.Minute, 5*time.Second, "data not reported to reporting service")
 
 	cardinalityMap := tc.reportingServer.getCardinalityFromReportingServer()
-	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].userIDCount)
-	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].anonIDCount)
-	require.Equal(t, 2, cardinalityMap[workspaceID][sourceID].identifiedUsersCount)
+	require.Equal(t, 4, cardinalityMap[workspaceID][sourceID].userIDCount)
+	require.Equal(t, 0, cardinalityMap[workspaceID][sourceID].anonIDCount)
+	require.Equal(t, 3, cardinalityMap[workspaceID][sourceID].identifiedUsersCount)
 	cancel()
 	require.NoError(t, wg.Wait())
 }
@@ -326,6 +329,7 @@ func runRudderServer(
 	t.Setenv("CONFIG_BACKEND_URL", tc.configBEServer.URL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
 	t.Setenv("DEST_TRANSFORM_URL", tc.transformerUrl)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.host"), tc.postgresResource.Host)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.port"), tc.postgresResource.Port)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.user"), tc.postgresResource.User)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.name"), tc.postgresResource.Database)
@@ -369,6 +373,53 @@ func runRudderServer(
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
 	return
+}
+
+// nolint: bodyclose
+func sendAliasEvent(userID, previousID, writeKey,
+	url string,
+) error {
+	payload := []byte(fmt.Sprintf(`
+			{
+			  "batch": [
+				{
+				  "userId": %[1]q,
+				  "type": "alias",
+				  "previousId": %[2]q,
+				  "anonymousId": %[1]q,
+				  "context": {
+					"traits": {
+					  "trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library": {
+					  "name": "http"
+					}
+				  },
+				  "timestamp": "2020-02-02T00:23:09.544Z"
+				}
+			  ]
+			}`,
+		userID,
+		previousID,
+	))
+	req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(writeKey, "password")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+	}
+	kithttputil.CloseResponse(resp)
+	return nil
 }
 
 // nolint: bodyclose
