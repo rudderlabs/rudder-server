@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.33.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.32.0...v1.33.0-rc.1) (2024-09-02)
+
+
+### Features
+
+* add support for headers to webhooks ([#5018](https://github.com/rudderlabs/rudder-server/issues/5018)) ([15fa31f](https://github.com/rudderlabs/rudder-server/commit/15fa31f4fdbda218ad3d511e1e309cbef42c3f38))
+* onboarding lytics bulk upload ([#5000](https://github.com/rudderlabs/rudder-server/issues/5000)) ([5c38dab](https://github.com/rudderlabs/rudder-server/commit/5c38dabb4d59a060f1243a2f0f1179e00be18d66))
+* remove bugsnag for reporting panics ([#5014](https://github.com/rudderlabs/rudder-server/issues/5014)) ([d68ceb3](https://github.com/rudderlabs/rudder-server/commit/d68ceb3503bbcfd260276ebee1fa6bebe721cea1))
+* stats for schema size ([#5031](https://github.com/rudderlabs/rudder-server/issues/5031)) ([01b84f4](https://github.com/rudderlabs/rudder-server/commit/01b84f422ffffc95e77800b3655d9a5415ee01ce))
+
+
+### Bug Fixes
+
+* take tacking plan id from dgsourceTPconfig ([#5041](https://github.com/rudderlabs/rudder-server/issues/5041)) ([f6782c3](https://github.com/rudderlabs/rudder-server/commit/f6782c3a74f9ec1b3fb99fd910d088b9223c504c))
+
+
+### Miscellaneous
+
+* add sourceCategory label in event_delivery_time metric ([#5004](https://github.com/rudderlabs/rudder-server/issues/5004)) ([a5adab3](https://github.com/rudderlabs/rudder-server/commit/a5adab32e22a39f2cff50eb1d947ab0ab7a5b6b8))
+* avoid using global config ([#5001](https://github.com/rudderlabs/rudder-server/issues/5001)) ([26228d8](https://github.com/rudderlabs/rudder-server/commit/26228d80522f3ff713bd4e18c857fbb5aa788ecf))
+* avoid using warehouse global config ([26228d8](https://github.com/rudderlabs/rudder-server/commit/26228d80522f3ff713bd4e18c857fbb5aa788ecf))
+* **deps:** bump the go-deps group across 1 directory with 18 updates ([#5038](https://github.com/rudderlabs/rudder-server/issues/5038)) ([c18669b](https://github.com/rudderlabs/rudder-server/commit/c18669b6735d936323d873579c6ab47fcec83ec4))
+* ignore all x-forwarded headers ([#5032](https://github.com/rudderlabs/rudder-server/issues/5032)) ([e832eae](https://github.com/rudderlabs/rudder-server/commit/e832eaede8356634a74e6b370c5eff5a2b6e7a6f))
+* refactor warehouse integration tests ([#5021](https://github.com/rudderlabs/rudder-server/issues/5021)) ([0ca6dbf](https://github.com/rudderlabs/rudder-server/commit/0ca6dbfcd1f316ac91b826e99d9f6ef0c94bb178))
+* sync release v1.32.0 to main branch ([#5010](https://github.com/rudderlabs/rudder-server/issues/5010)) ([3865506](https://github.com/rudderlabs/rudder-server/commit/3865506850836c2bdeaf20c90bd1ab26b5b65bcd))
+* update event_delivery_time histogram buckets for warehouse ([#5015](https://github.com/rudderlabs/rudder-server/issues/5015)) ([983403c](https://github.com/rudderlabs/rudder-server/commit/983403cf74a65bdcb7a8ba7953f15567141fadad))
+* update rudder-go-kit port binding ([#4998](https://github.com/rudderlabs/rudder-server/issues/4998)) ([5327d44](https://github.com/rudderlabs/rudder-server/commit/5327d4413e8aa92ab737243bb45c5971a39e5db8))
+
 ## [1.32.0](https://github.com/rudderlabs/rudder-server/compare/v1.31.0...v1.32.0) (2024-08-19)
 
 
