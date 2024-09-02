@@ -131,7 +131,7 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 				return getErrorMessageFromResponse(unmarshalledJson, ext.ErrorMessageKeys)
 			}
 			lowerErResStr := strings.ToLower(erResStr)
-			if strings.Contains(lowerErResStr, "<body") {
+			if strings.Contains(lowerErResStr, "<body") && strings.Contains(lowerErResStr, "</body>") {
 				return getHTMLErrorMessage(erResStr)
 			}
 
