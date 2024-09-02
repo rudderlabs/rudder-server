@@ -120,12 +120,12 @@ jobs:
             VERSION=${{ needs.docker-oss-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
-          outputs: type=docker,dest=/tmp/local-rudder-server.tar
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=temp
+          outputs: type=docker,dest=${{ runner.temp }}/local-rudder-server.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
-          docker run --rm -v /tmp:/tmp \
+          docker run --rm -v ${{ runner.temp }}:/tmp \
             trufflesecurity/trufflehog:latest \
             docker --image file:///tmp/local-rudder-server.tar \
             --github-actions \
@@ -145,7 +145,7 @@ jobs:
             VERSION=${{ needs.docker-oss-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
-          cache-from: type=local,src=/tmp/.buildx-cache,tag=temp
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   docker-ent-meta:
     runs-on: ubuntu-latest
     outputs:
@@ -220,14 +220,14 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-          outputs: type=docker,dest=/tmp/local-rudder-server.tar
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=temp
+          outputs: type=docker,dest=${{ runner.temp }}/local-rudder-server.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
-          docker run --rm -v /tmp:/tmp \
+          docker run --rm -v ${{ runner.temp }}:/tmp \
             trufflesecurity/trufflehog:latest \
-            docker --image file:///github/workspace/image.tar \
+            docker --image file:///tmp/local-rudder-server.tar \
             --github-actions \
             --no-verification \
             --fail
@@ -246,7 +246,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-          cache-from: type=local,src=/tmp/.buildx-cache,tag=temp
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
@@ -321,12 +321,12 @@ jobs:
             VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-sbsvc-meta.outputs.revision }}
-          outputs: type=docker,dest=/tmp/suppression-backup-service.tar
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max,tag=temp
+          outputs: type=docker,dest=${{ runner.temp }}/suppression-backup-service.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
       - name: Run TruffleHog
         run: |
           docker pull trufflesecurity/trufflehog:latest
-          docker run --rm -v /tmp:/tmp \
+          docker run --rm -v ${{ runner.temp }}:/tmp \
             trufflesecurity/trufflehog:latest \
             docker --image file:///tmp/suppression-backup-service.tar \
             --github-actions \
@@ -347,7 +347,7 @@ jobs:
             VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-sbsvc-meta.outputs.revision }}
-          cache-from: type=local,src=/tmp/.buildx-cache,tag=temp
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   create-manifest-docker-oss:
     runs-on: ubuntu-latest
     needs: [ docker-oss, docker-oss-meta ]
