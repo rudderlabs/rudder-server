@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nuid"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -570,6 +571,27 @@ func BenchmarkUnmarshalTransformerResponse(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var response []TransformerResponse
 		_ = json.Unmarshal(responseData, &response)
+	}
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/processor/transformer
+BenchmarkFastestUnmarshal-10    	   19616	     60979 ns/op	   51469 B/op	    1113 allocs/op
+PASS
+ok  	github.com/rudderlabs/rudder-server/processor/transformer	2.262s
+*/
+func BenchmarkFastestUnmarshal(b *testing.B) {
+	jsonFastest := jsoniter.ConfigFastest
+	for i := 0; i < b.N; i++ {
+		var response []TransformerResponse
+		iter := jsonFastest.BorrowIterator(responseData)
+		iter.ReadVal(&response)
+		if iter.Error != nil {
+			b.Fatal(iter.Error)
+		}
+		jsonFastest.ReturnIterator(iter)
 	}
 }
 
