@@ -25,9 +25,9 @@ type SourceDest struct {
 	SourceID, DestinationID string
 }
 
-type Connection struct {
+type ConnectionWithID struct {
 	ConnectionID string
-	ConnectionT  backendconfig.Connection
+	Connection   backendconfig.Connection
 }
 
 type DestinationJobs []DestinationJobT

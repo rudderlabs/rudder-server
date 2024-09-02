@@ -414,7 +414,7 @@ func (rt *Handle) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
-		connectionsMap := map[types.SourceDest]types.Connection{}
+		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range configData {
 			for connectionID := range wConfig.Connections {
@@ -422,9 +422,9 @@ func (rt *Handle) backendConfigSubscriber() {
 				connectionsMap[types.SourceDest{
 					SourceID:      connection.SourceID,
 					DestinationID: connection.DestinationID,
-				}] = types.Connection{
+				}] = types.ConnectionWithID{
 					ConnectionID: connectionID,
-					ConnectionT:  connection,
+					Connection:   connection,
 				}
 			}
 			for i := range wConfig.Sources {

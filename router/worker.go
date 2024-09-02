@@ -191,7 +191,7 @@ func (w *worker) workLoop() {
 				continue
 			}
 			destination := batchDestination.Destination
-			connection := conn.ConnectionT
+			connection := conn.Connection
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 			// TODO: Remove later
 			w.logger.Debugn("[router worker]",
