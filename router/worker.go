@@ -187,12 +187,17 @@ func (w *worker) workLoop() {
 			}
 
 			w.rt.destinationsMapMu.RLock()
-			batchDestination, ok := w.rt.destinationsMap[parameters.DestinationID]
+			batchDestination, destOK := w.rt.destinationsMap[parameters.DestinationID]
+			conn, connOK := w.rt.connectionsMap[types.SourceDest{
+				SourceID:      parameters.SourceID,
+				DestinationID: parameters.DestinationID,
+			}]
 			w.rt.destinationsMapMu.RUnlock()
-			if !ok {
+			if !destOK || (parameters.SourceJobRunID != "" && !connOK) {
 				continue
 			}
 			destination := batchDestination.Destination
+			connection := conn.Connection
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 			// TODO: Remove later
 			w.logger.Debugn("[router worker]",
@@ -224,6 +229,7 @@ func (w *worker) workLoop() {
 					Message:     job.EventPayload,
 					JobMetadata: jobMetadata,
 					Destination: destination,
+					Connection:  connection,
 				})
 
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
@@ -235,6 +241,7 @@ func (w *worker) workLoop() {
 					Message:     job.EventPayload,
 					JobMetadata: jobMetadata,
 					Destination: destination,
+					Connection:  connection,
 				})
 
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
@@ -245,6 +252,7 @@ func (w *worker) workLoop() {
 				w.destinationJobs = append(w.destinationJobs, types.DestinationJobT{
 					Message:          job.EventPayload,
 					Destination:      destination,
+					Connection:       connection,
 					JobMetadataArray: []types.JobMetadataT{jobMetadata},
 				})
 				w.processDestinationJobs()
@@ -779,7 +787,8 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
 			ID:               destinationJob.Destination.ID,
 		},
-		Adapter: transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
+		Connection: destinationJob.Connection,
+		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
