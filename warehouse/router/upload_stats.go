@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -122,14 +123,14 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		return
 	}
 	if !job.upload.Retried {
-		conf := job.warehouse.Destination.Config
 		syncFrequency := "1440"
-		if conf[warehouseutils.SyncFrequency] != nil {
-			syncFrequency, _ = conf[warehouseutils.SyncFrequency].(string)
+		if frequency := job.warehouse.GetStringDestinationConfig(job.conf, model.SyncFrequencySetting); frequency != "" {
+			syncFrequency = frequency
 		}
 		job.timerStat("event_delivery_time",
 			warehouseutils.Tag{Name: "tableName", Value: capturedTableName},
 			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
+			warehouseutils.Tag{Name: "sourceCategory", Value: job.warehouse.Source.SourceDefinition.Category},
 		).Since(firstEventAt)
 	}
 }

@@ -146,6 +146,7 @@ func ArchivalScenario(
 	config.Set("HOSTED_SERVICE_SECRET", "brt_isolation_secret")
 	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
+	config.Set("DB.host", postgresContainer.Host)
 	config.Set("DB.port", postgresContainer.Port)
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)

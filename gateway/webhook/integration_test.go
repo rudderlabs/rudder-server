@@ -3,13 +3,12 @@ package webhook_test
 import (
 	"bytes"
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -29,6 +28,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -41,47 +41,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
+
+	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
-
-type testSetup struct {
-	context testContext
-	cases   []testCase
-}
-
-type testContext struct {
-	Now       time.Time
-	RequestIP string `json:"request_ip"`
-}
-
-type testCase struct {
-	Name        string
-	Description string
-	Input       testCaseInput
-	Output      testCaseOutput
-
-	config backendconfig.SourceT
-}
-
-type testCaseInput struct {
-	Request testCaseRequest
-}
-type testCaseRequest struct {
-	Method   string
-	RawQuery string `json:"query"`
-	Headers  map[string]string
-	Body     json.RawMessage
-}
-
-type testCaseOutput struct {
-	Response testCaseResponse
-	Queue    []json.RawMessage
-	ErrQueue []json.RawMessage `json:"err_queue"`
-}
-
-type testCaseResponse struct {
-	Body       json.RawMessage
-	StatusCode int `json:"status"`
-}
 
 func TestIntegrationWebhook(t *testing.T) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -144,20 +106,26 @@ func TestIntegrationWebhook(t *testing.T) {
 		application        app.App
 	)
 
+	transformerURL, ok := os.LookupEnv("TEST_OVERRIDE_TRANSFORMER_URL")
+	if !ok {
+		transformerURL = transformerContainer.TransformerURL
+	}
+
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, conf, transformer.FeaturesServiceOptions{
 		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           transformerContainer.TransformerURL,
+		TransformerURL:           transformerURL,
 		FeaturesRetryMaxAttempts: 10,
 	})
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
+	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
 	<-transformerFeaturesService.Wait()
 
 	bcs := make(map[string]backendconfig.ConfigT)
 
-	testSetup := loadTestSetup(t)
+	testSetup := testcases.Load(t)
+	sourceConfigs := make([]backendconfig.SourceT, len(testSetup.Cases))
 
-	for i, tc := range testSetup.cases {
+	for i, tc := range testSetup.Cases {
 		sConfig := backendconfigtest.NewSourceBuilder().
 			WithSourceType(strings.ToUpper(tc.Name)).
 			WithSourceCategory("webhook").
@@ -174,7 +142,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		bc.Sources[0].WorkspaceID = bc.WorkspaceID
 		sConfig.WorkspaceID = bc.WorkspaceID
 		bcs[bc.WorkspaceID] = bc
-		testSetup.cases[i].config = sConfig
+		sourceConfigs[i] = sConfig
 	}
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -189,7 +157,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
 		streamMsgValidator,
 		gateway.WithNow(func() time.Time {
-			return testSetup.context.Now
+			return testSetup.Context.Now
 		}))
 	require.NoError(t, err)
 	g.Go(func() error {
@@ -212,27 +180,43 @@ func TestIntegrationWebhook(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, time.Millisecond*500, time.Millisecond)
 
-	for _, tc := range testSetup.cases {
-		writeKey := tc.config.WriteKey
-		sourceID := tc.config.ID
-		workspaceID := tc.config.WorkspaceID
+	for i, tc := range testSetup.Cases {
+		sConfig := sourceConfigs[i]
 
-		t.Run(tc.Description, func(t *testing.T) {
+		writeKey := sConfig.WriteKey
+		sourceID := sConfig.ID
+		workspaceID := sConfig.WorkspaceID
+
+		t.Run(tc.Name+"/"+tc.Description, func(t *testing.T) {
+			if tc.Skip != "" {
+				t.Skip(tc.Skip)
+				return
+			}
 			t.Logf("writeKey: %s", writeKey)
 			t.Logf("sourceID: %s", sourceID)
 			t.Logf("workspaceID: %s", workspaceID)
 
-			t.Log("Request Body:", string(tc.Input.Request.Body))
-
 			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
+			// parse query parameters from input request
+			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").Map()
+			if len(qParams) != 0 {
+				for k, v := range qParams {
+					vStr := v.Array()[0].String()
+					query.Set(k, vStr)
+				}
+			}
 			require.NoError(t, err)
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
-			req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
+			method := tc.Input.Request.Method
+			if method == "" {
+				method = http.MethodPost
+			}
+			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
 			require.NoError(t, err)
 
-			req.Header.Set("X-Forwarded-For", testSetup.context.RequestIP)
+			req.Header.Set("X-Forwarded-For", testSetup.Context.RequestIP)
 			for k, v := range tc.Input.Request.Headers {
 				req.Header.Set(k, v)
 			}
@@ -278,6 +262,25 @@ func TestIntegrationWebhook(t *testing.T) {
 					require.NoError(t, err)
 				}
 
+				userID := gjson.GetBytes(batch.Batch[0], "userId").String()
+				anonID := gjson.GetBytes(batch.Batch[0], "anonymousId").String()
+
+				rudderID, err := kituuid.GetMD5UUID(userID + ":" + anonID)
+				assert.NoError(t, err)
+
+				if anonID != "" {
+					p, err = sjson.SetBytes(p, "anonymousId", anonID)
+					assert.NoError(t, err)
+				}
+
+				p, err = sjson.SetBytes(p, "rudderId", rudderID)
+				assert.NoError(t, err)
+
+				if gjson.GetBytes(batch.Batch[0], "properties.writeKey").String() != "" {
+					p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
+					assert.NoError(t, err)
+				}
+
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
 
@@ -296,12 +299,18 @@ func TestIntegrationWebhook(t *testing.T) {
 					Event  json.RawMessage       `json:"event"`
 					Source backendconfig.SourceT `json:"source"`
 				}{
-					Source: tc.config,
-					Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(tc.config.WriteKey)),
+					Source: sConfig,
+					Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
 				})
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
+
+				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value()
+				if errPayloadWriteKey != nil {
+					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
+					require.NoError(t, err)
+				}
 
 				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
@@ -312,50 +321,4 @@ func TestIntegrationWebhook(t *testing.T) {
 	cancel()
 	err = g.Wait()
 	require.NoError(t, err)
-}
-
-//go:embed testdata/context.json
-var contextData []byte
-
-//go:embed testdata/testcases/**/*.json
-var testdata embed.FS
-
-func loadTestSetup(t *testing.T) testSetup {
-	t.Helper()
-
-	var tc testContext
-	err := json.Unmarshal(contextData, &tc)
-	require.NoError(t, err)
-
-	var tcs []testCase
-	err = fs.WalkDir(testdata, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		f, err := testdata.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		var tc testCase
-		err = json.NewDecoder(f).Decode(&tc)
-		if err != nil {
-			return err
-		}
-		tcs = append(tcs, tc)
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	return testSetup{
-		context: tc,
-		cases:   tcs,
-	}
 }

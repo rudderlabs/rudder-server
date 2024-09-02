@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -121,7 +122,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
 	for i := 0; i < st.config.noOfErrStashWorkers.Load(); i++ {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			for jobs := range st.errProcessQ {
 				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
@@ -158,8 +159,9 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 
 	errorJobs := make([]ErrorJob, 0)
 
+	ctx := context.Background()
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
-		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
+		preferences, err := st.fileuploader.GetStoragePreferences(ctx, workspaceID)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
 			errorJobs = append(errorJobs, ErrorJob{
@@ -206,13 +208,13 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 	}()
 
-	g, _ := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	var mu sync.Mutex
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
-		errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
+		errFileUploader, err := st.fileuploader.GetFileManager(ctx, wrkId)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
 			mu.Lock()
@@ -226,13 +228,13 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			mu.Unlock()
 			continue
 		}
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			uploadOutput, err := errFileUploader.Upload(ctx, outputFile, prefixes...)
 			st.logger.Infof("Uploaded error logs to %s for workspaceId %s", uploadOutput.Location, wrkId)
 			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{

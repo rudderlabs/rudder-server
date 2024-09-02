@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/notifier"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -164,6 +164,7 @@ func New(
 		db:                   r.db,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
+			Conf:               r.conf,
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,
 			StageRepo:          r.stagingRepo,
@@ -187,18 +188,18 @@ func (r *Router) Start(ctx context.Context) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	r.backgroundGroup = g
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.runUploadJobAllocator(gCtx)
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.mainLoop(gCtx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
 	return g.Wait()

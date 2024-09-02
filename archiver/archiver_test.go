@@ -166,7 +166,7 @@ func TestJobsArchival(t *testing.T) {
 	downloadedJobs := make([]*jobsdb.JobT, 0)
 	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := fileUploaderProvider.GetFileManager(workspace)
+		fm, err := fileUploaderProvider.GetFileManager(ctx, workspace)
 		require.NoError(t, err)
 		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefixByWorkspace[i], 20)
 		files, err := getAllFileNames(fileIter)

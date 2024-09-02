@@ -50,6 +50,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -380,7 +381,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
-) {
+) error {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
@@ -614,7 +615,11 @@ func (proc *Handle) Setup(
 		})
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New()
+		var err error
+		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
+		if err != nil {
+			return err
+		}
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -624,14 +629,14 @@ func (proc *Handle) Setup(
 	proc.backgroundCancel = cancel
 
 	proc.config.asyncInit = misc.NewAsyncInit(1)
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.backendConfigSubscriber(ctx)
 		return nil
 	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck processor
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -643,6 +648,7 @@ func (proc *Handle) Setup(
 	}))
 
 	proc.crashRecover()
+	return nil
 }
 
 func (proc *Handle) setupReloadableVars() {
@@ -686,7 +692,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	})
 
 	// pinger loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.logger.Info("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Info("Backend config received")
@@ -727,7 +733,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	}))
 
 	// stash loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		st := stash.New()
 		st.Setup(
 			proc.readErrorDB,
@@ -1708,7 +1714,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				ok, previousSize, err := proc.dedup.Set(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize})
+				ok, previousSize, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceID: batchEvent.WorkspaceId})
 				if err != nil {
 					panic(err)
 				}
@@ -1830,10 +1836,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
 			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if rudderTyperTPID != nil && rudderTyperTPVersion != nil {
-				if id, ok := rudderTyperTPID.(string); ok && id != "" {
-					trackingPlanID = id
-				}
+			if rudderTyperTPID != nil && rudderTyperTPVersion != nil && rudderTyperTPID == trackingPlanID {
 				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
 					trackingPlanVersion = int(version)
 				}

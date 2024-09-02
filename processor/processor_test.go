@@ -12,14 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/format"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -32,6 +29,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -78,7 +76,7 @@ type mockTrackedUsersReporter struct {
 	}
 }
 
-func (m *mockTrackedUsersReporter) ReportUsers(ctx context.Context, reports []*trackedusers.UsersReport, tx *Tx) error {
+func (m *mockTrackedUsersReporter) ReportUsers(_ context.Context, reports []*trackedusers.UsersReport, _ *Tx) error {
 	m.reportCalls = append(m.reportCalls, struct {
 		reportedReports []*trackedusers.UsersReport
 	}{reportedReports: reports})
@@ -151,6 +149,7 @@ func (c *testContext) Finish() {
 const (
 	WriteKeyEnabled           = "enabled-write-key"
 	WriteKeyEnabledNoUT       = "enabled-write-key-no-ut"
+	WriteKeyEnabledTp         = "enabled-write-key-tp"
 	WriteKeyEnabledNoUT2      = "enabled-write-key-no-ut2"
 	WriteKeyEnabledOnlyUT     = "enabled-write-key-only-ut"
 	SourceIDEnabled           = "enabled-source"
@@ -160,6 +159,8 @@ const (
 	WriteKeyTransient         = "transient-write-key"
 	SourceIDEnabledNoUT       = "enabled-source-no-ut"
 	SourceIDEnabledNoUTName   = "SourceIDEnabledNoUT"
+	SourceIDEnabledTp         = "enabled-source-tp"
+	SourceIDEnabledTpName     = "SourceIDEnabledTp"
 	SourceIDEnabledOnlyUT     = "enabled-source-only-ut"
 	SourceIDEnabledOnlyUTName = "SourceIDEnabledOnlyUT"
 	SourceIDEnabledNoUT2      = "enabled-source-no-ut2"
@@ -197,6 +198,7 @@ var (
 		SourceIDGCM:             SourceIDGCMName,
 		SourceIDKetchConsent:    SourceIDKetchConsentName,
 		SourceIDTransient:       SourceIDTransientName,
+		SourceIDEnabledTp:       SourceIDEnabledTpName,
 	}
 )
 
@@ -884,6 +886,36 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 		},
+		{
+			ID:       SourceIDEnabledTp,
+			Name:     SourceIDEnabledTpName,
+			WriteKey: WriteKeyEnabledTp,
+			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: "webhook",
+			},
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestinationIDEnabledA,
+					Name:               "A",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "enabled-destination-a-definition-id",
+						Name:        "enabled-destination-a-definition-name",
+						DisplayName: "enabled-destination-a-definition-display-name",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+			DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+				SourceId: SourceIDEnabledTp,
+				TrackingPlan: backendconfig.TrackingPlanT{
+					Id:      "tracking-plan-id",
+					Version: 100,
+				},
+			},
+		},
 	},
 	Settings: backendconfig.Settings{
 		EventAuditEnabled: true,
@@ -914,7 +946,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 	})
 
 	Context("RudderTyper", func() {
-		It("TrackingPlanId and TrackingPlanVersion", func() {
+		It("Tracking plan id and version from DgSourceTrackingPlanConfig", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
 
@@ -943,7 +975,82 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 							ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 							CustomVal: gatewayCustomVal[0],
 							EventPayload: createBatchPayload(
-								WriteKeyEnabledNoUT,
+								WriteKeyEnabledTp,
+								"2001-01-02T02:23:45.000Z",
+								[]mockEventData{
+									{
+										id:                        "1",
+										jobid:                     1,
+										originalTimestamp:         "2000-01-02T01:23:45",
+										expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+										sentAt:                    "2000-01-02 01:23",
+										expectedSentAt:            "2000-01-02T01:23:00.000Z",
+										expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+									},
+								},
+								func(e mockEventData) string {
+									return fmt.Sprintf(`
+										{
+										  "rudderId": "some-rudder-id",
+										  "messageId": "message-%[1]s",
+										  "some-property": "property-%[1]s",
+										  "originalTimestamp": %[2]q,
+										  "sentAt": %[3]q
+										}
+									`,
+										e.id,
+										e.originalTimestamp,
+										e.sentAt,
+									)
+								},
+							),
+							EventCount:    1,
+							LastJobStatus: jobsdb.JobStatusT{},
+							Parameters:    createBatchParameters(SourceIDEnabledTp),
+							WorkspaceId:   sampleWorkspaceID,
+						},
+					},
+				},
+			)
+
+			Expect(c.MockObserver.calls).To(HaveLen(1))
+			for _, v := range c.MockObserver.calls {
+				for _, e := range v.events {
+					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100)) // from DgSourceTrackingPlanConfig
+				}
+			}
+		})
+		It("Tracking plan version override from context.ruddertyper", func() {
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
+
+			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+			Expect(err).To(BeNil())
+
+			processor := NewHandle(config.Default, mockTransformer)
+			processor.isolationStrategy = isolationStrategy
+			processor.config.archivalEnabled = config.SingleValueLoader(false)
+			Setup(processor, c, false, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+			GinkgoT().Log("Processor setup and init done")
+
+			_ = processor.processJobsForDest(
+				"",
+				subJob{
+					subJobs: []*jobsdb.JobT{
+						{
+							UUID:      uuid.New(),
+							JobID:     1,
+							CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+							CustomVal: gatewayCustomVal[0],
+							EventPayload: createBatchPayload(
+								WriteKeyEnabledTp,
 								"2001-01-02T02:23:45.000Z",
 								[]mockEventData{
 									{
@@ -966,7 +1073,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 										  "sentAt": %[3]q,
 										  "context": {
 											"ruddertyper": {
-											  "trackingPlanId": "tracking-plan-id",
+                                              "trackingPlanId": "tracking-plan-id",
 											  "trackingPlanVersion": 123
 											}
 										  }
@@ -980,7 +1087,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 							),
 							EventCount:    1,
 							LastJobStatus: jobsdb.JobStatusT{},
-							Parameters:    createBatchParameters(SourceIDEnabledNoUT),
+							Parameters:    createBatchParameters(SourceIDEnabledTp),
 							WorkspaceId:   sampleWorkspaceID,
 						},
 					},
@@ -991,7 +1098,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
 					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123))
+					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123)) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
 				}
 			}
 		})
@@ -1874,7 +1981,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1893,6 +2000,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1905,7 +2013,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1924,6 +2032,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1941,7 +2050,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -1960,6 +2069,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -2533,7 +2643,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Set(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).Times(3)
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -3044,7 +3154,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3063,7 +3173,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
-
+			Expect(err).To(BeNil())
 			setMainLoopTimeout(processor, 1*time.Second)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -3103,7 +3213,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			processor.Setup(
+			err := processor.Setup(
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3122,6 +3232,7 @@ var _ = Describe("Processor", Ordered, func() {
 				[]enricher.PipelineEnricher{},
 				trackedusers.NewNoopDataCollector(),
 			)
+			Expect(err).To(BeNil())
 			defer processor.Shutdown()
 
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
@@ -5111,7 +5222,7 @@ func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 
 func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
 	setDisableDedupFeature(processor, enableDedup)
-	processor.Setup(
+	err := processor.Setup(
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
@@ -5130,6 +5241,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
 	)
+	Expect(err).To(BeNil())
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
 }
