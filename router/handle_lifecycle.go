@@ -414,8 +414,19 @@ func (rt *Handle) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
+		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range configData {
+			for connectionID := range wConfig.Connections {
+				connection := wConfig.Connections[connectionID]
+				connectionsMap[types.SourceDest{
+					SourceID:      connection.SourceID,
+					DestinationID: connection.DestinationID,
+				}] = types.ConnectionWithID{
+					ConnectionID: connectionID,
+					Connection:   connection,
+				}
+			}
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				for i := range source.Destinations {
@@ -446,6 +457,7 @@ func (rt *Handle) backendConfigSubscriber() {
 			}
 		}
 		rt.destinationsMapMu.Lock()
+		rt.connectionsMap = connectionsMap
 		rt.destinationsMap = destinationsMap
 		rt.destinationsMapMu.Unlock()
 		if !rt.isBackendConfigInitialized {

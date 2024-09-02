@@ -92,6 +92,7 @@ type TransformerEvent struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    Metadata                   `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
+	Connection  backendconfig.Connection   `json:"connection"`
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 	Credentials []Credential               `json:"credentials"`
 }
