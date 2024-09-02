@@ -117,6 +117,7 @@ require (
 
 require (
 	github.com/apache/arrow/go/v17 v17.0.0 // indirect
+	github.com/k3a/html2text v1.2.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 )
