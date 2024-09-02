@@ -3,11 +3,13 @@ package transformer
 import (
 	"bytes"
 	"context"
+	js "encoding/json"
 	"fmt"
 	"testing"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/nats-io/nuid"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -574,6 +576,32 @@ func BenchmarkUnmarshalTransformerResponse(b *testing.B) {
 	}
 }
 
+type TransformerResponse2 struct {
+	// Not marking this Singular Event, since this not a RudderEvent
+	Output           js.RawMessage     `json:"output"`
+	Metadata         Metadata          `json:"metadata"`
+	StatusCode       int               `json:"statusCode"`
+	Error            string            `json:"error"`
+	ValidationErrors []ValidationError `json:"validationErrors"`
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/processor/transformer
+=== RUN   BenchmarkUnmarshalTransformerResponse2
+BenchmarkUnmarshalTransformerResponse2
+BenchmarkUnmarshalTransformerResponse2-10          39862             29601 ns/op           23613 B/op        464 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/processor/transformer       2.089s
+*/
+func BenchmarkUnmarshalTransformerResponse2(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		var response []TransformerResponse2
+		_ = json.Unmarshal(responseData, &response)
+	}
+}
+
 /*
 goos: darwin
 goarch: arm64
@@ -586,6 +614,29 @@ func BenchmarkFastestUnmarshal(b *testing.B) {
 	jsonFastest := jsoniter.ConfigFastest
 	for i := 0; i < b.N; i++ {
 		var response []TransformerResponse
+		iter := jsonFastest.BorrowIterator(responseData)
+		iter.ReadVal(&response)
+		if iter.Error != nil {
+			b.Fatal(iter.Error)
+		}
+		jsonFastest.ReturnIterator(iter)
+	}
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/processor/transformer
+=== RUN   BenchmarkFastestUnmarshalTransformerResponse2
+BenchmarkFastestUnmarshalTransformerResponse2
+BenchmarkFastestUnmarshalTransformerResponse2-10           43570             27036 ns/op           21501 B/op        324 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/processor/transformer       1.960s
+*/
+func BenchmarkFastestUnmarshalTransformerResponse2(b *testing.B) {
+	jsonFastest := jsoniter.ConfigFastest
+	for i := 0; i < b.N; i++ {
+		var response []TransformerResponse2
 		iter := jsonFastest.BorrowIterator(responseData)
 		iter.ReadVal(&response)
 		if iter.Error != nil {
@@ -622,7 +673,7 @@ type TResponse struct {
 	StatusCode string
 }
 
-func parseNewResponse(data []byte, itemSep, fieldSep []byte) []TResponse {
+func parseNewResponse(data, itemSep, fieldSep []byte) []TResponse {
 	var response []TResponse
 	items := bytes.Split(data, itemSep)
 	for _, item := range items {
