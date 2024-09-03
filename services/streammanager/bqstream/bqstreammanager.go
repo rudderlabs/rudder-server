@@ -156,5 +156,5 @@ func (producer *BQStreamProducer) Close() error {
 func createErr(err error, msg string) error {
 	fmtMsg := fmt.Errorf("[BQStream] error :: %v:: %w", msg, err).Error()
 	pkgLogger.Errorf(fmtMsg)
-	return fmt.Errorf(fmtMsg)
+	return errors.New(fmtMsg)
 }

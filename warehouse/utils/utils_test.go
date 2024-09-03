@@ -817,7 +817,7 @@ func TestObjectStorageType(t *testing.T) {
 }
 
 func TestGetTablePathInObjectStorage(t *testing.T) {
-	require.NoError(t, os.Setenv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-test-payload"))
+	t.Setenv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-test-payload")
 	inputs := []struct {
 		namespace string
 		tableName string
