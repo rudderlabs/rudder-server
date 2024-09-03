@@ -109,10 +109,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -174,10 +170,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -231,10 +223,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -282,10 +270,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -412,10 +396,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -526,10 +506,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -601,10 +577,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -803,10 +775,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -929,10 +897,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -953,10 +917,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1018,10 +978,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1042,10 +998,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1107,10 +1059,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1131,10 +1079,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1196,10 +1140,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1220,10 +1160,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1288,10 +1224,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1312,10 +1244,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1380,10 +1308,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1404,10 +1328,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1472,10 +1392,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1496,10 +1412,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1573,10 +1485,6 @@ func TestUploads(t *testing.T) {
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
-		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
 		}...)
 		requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
 			{A: "status", B: waiting},
@@ -1784,41 +1692,6 @@ func requireStagingFileEventsCount(
 		10*time.Second,
 		250*time.Millisecond,
 		"expected staging file events count to be %d", expectedCount,
-	)
-}
-
-// nolint:unparam
-func requireLoadFileEventsCount(
-	t testing.TB,
-	ctx context.Context,
-	db *sqlmw.DB,
-	expectedCount int,
-	filters ...lo.Tuple2[string, any],
-) {
-	t.Helper()
-
-	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_load_files WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
-		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
-	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
-		return t.B
-	})
-
-	require.Eventuallyf(t,
-		func() bool {
-			var eventsCount int
-			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
-			if err != nil {
-				t.Logf("error getting load file events count: %v", err)
-				return false
-			}
-			t.Logf("Load file events count: %d", eventsCount)
-			return eventsCount == expectedCount
-		},
-		10*time.Second,
-		250*time.Millisecond,
-		"expected load file events count to be %d", expectedCount,
 	)
 }
 
