@@ -375,11 +375,22 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
+			transformationID := ""
+			if len(data[0].Destination.Transformations) > 0 {
+				transformationID = data[0].Destination.Transformations[0].ID
+			}
+
 			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, stats.Tags{
+				"destinationType":  data[0].Destination.DestinationDefinition.Name,
+				"destinationId":    data[0].Destination.ID,
+				"sourceId":         data[0].Metadata.SourceID,
+				"transformationId": transformationID,
+				"stage":            stage,
+
+				// Legacy tags: to be removed
 				"dest_type": data[0].Destination.DestinationDefinition.Name,
 				"dest_id":   data[0].Destination.ID,
 				"src_id":    data[0].Metadata.SourceID,
-				"stage":     stage,
 			})
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
