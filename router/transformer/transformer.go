@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -597,7 +598,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
-			err:        fmt.Errorf(errStr),
+			err:        errors.New(errStr),
 		}
 	}
 
