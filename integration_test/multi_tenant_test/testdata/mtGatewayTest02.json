@@ -53,5 +53,62 @@
           }
         ]
       }
-    ]
+    ],
+    "connections": {
+      "connedctionID": {
+        "sourceId": "xxxyyyzzEaEurW247ad9WYZLUyk",
+        "destinationId": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
+        "enabled": true,
+        "config": {
+          "mapping": {
+            "enabled": true,
+            "mapping": {
+              "alias": {
+                "enabled": true,
+                "mapping": {
+                  "email": "email",
+                  "name": "name"
+                }
+              },
+              "group": {
+                "enabled": true,
+                "mapping": {
+                  "groupId": "groupId",
+                  "groupName": "groupName"
+                }
+              },
+              "identify": {
+                "enabled": true,
+                "mapping": {
+                  "email": "email",
+                  "name": "name"
+                }
+              },
+              "page": {
+                "enabled": true,
+                "mapping": {
+                  "pageName": "pageName",
+                  "pageType": "pageType"
+                }
+              },
+              "screen": {
+                "enabled": true,
+                "mapping": {
+                  "screenName": "screenName",
+                  "screenType": "screenType"
+                }
+              },
+              "track": {
+                "enabled": true,
+                "mapping": {
+                  "eventName": "eventName",
+                  "eventValue": "eventValue"
+                }
+              }
+            }
+          }
+        },
+        "processorEnabled": true
+      }
+    }
 }
