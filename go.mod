@@ -58,6 +58,7 @@ require (
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/joho/godotenv v1.5.1
 	github.com/json-iterator/go v1.1.12
+	github.com/k3a/html2text v1.2.1
 	github.com/lensesio/tableprinter v0.0.0-20201125135848-89e81fc956e7
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.0
@@ -80,7 +81,7 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.38.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.1
-	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240812044419-23196ec42acf
+	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240903092449-3f2a5a664d32
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.9.0
 	github.com/samber/lo v1.47.0
