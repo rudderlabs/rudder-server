@@ -6,7 +6,7 @@ TESTFILE=_testok
 MOUNT_PATH=/local
 
 # go tools versions
-GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.57.1
+GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.3
 gofumpt=mvdan.cc/gofumpt@latest
 govulncheck=golang.org/x/vuln/cmd/govulncheck@latest
 goimports=golang.org/x/tools/cmd/goimports@latest
