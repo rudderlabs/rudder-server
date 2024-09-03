@@ -96,11 +96,12 @@ install-tools:
 	$(GO) install $(protoc-gen-go)
 	$(GO) install $(protoc-gen-go-grpc)
 	$(GO) install $(gotestsum)
+
 .PHONY: lint
-lint: fmt ## Run linters on all go files
+lint: fmt  ## Run linters on all go files
 	$(GO) run $(GOLANGCI) run -v
-	$(GO) run $(govulncheck) ./...
 	$(GO) run $(actionlint)
+	@$(MAKE) sec
 
 .PHONY: fmt
 fmt: install-tools ## Formats all go files
@@ -126,3 +127,8 @@ generate-openapi-spec: install-tools
 	  -g html2 \
 	  -o ${MOUNT_PATH}/gateway/openapi
 
+.PHONY: sec
+sec: ## Run security checks
+	$(GO) run $(govulncheck) ./...
+	./build/scan_docker.sh
+	./build/scan_docker.sh -f ./suppression-backup-service/Dockerfile
