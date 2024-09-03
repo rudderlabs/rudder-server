@@ -514,53 +514,23 @@ func (a *Archiver) deleteLoadFileRecords(
 }
 
 func (a *Archiver) Delete(ctx context.Context) error {
-	a.log.Infof(`[Archiver]: Started deleting for warehouse`)
-
-	uploadsToDelete, err := a.countUploadsToDelete(ctx)
-	if err != nil {
-		return fmt.Errorf("counting uploads to delete: %w", err)
-	}
+	a.log.Infon(`Started deleting for warehouse`)
 
 	maxLimit := a.config.maxLimit.Load()
 
-	for uploadsToDelete > 0 {
-		if err := a.deleteUploads(ctx, maxLimit); err != nil {
+	for {
+		count, err := a.deleteUploads(ctx, maxLimit)
+		if err != nil {
 			return fmt.Errorf("deleting uploads: %w", err)
 		}
-		uploadsToDelete -= maxLimit
+		if count == 0 {
+			break
+		}
 	}
 	return nil
 }
 
-func (a *Archiver) countUploadsToDelete(ctx context.Context) (int, error) {
-	skipWorkspaceIDs := []string{""}
-	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
-
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  count(*)
-		FROM
-		  %s
-		WHERE
-		  created_at < NOW() - $1::interval
-		  AND status = $2
-		  AND NOT workspace_id = ANY ( $3 );`,
-		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
-	)
-
-	var totalUploads int
-
-	err := a.db.QueryRowContext(
-		ctx,
-		sqlStatement,
-		fmt.Sprintf("%d DAY", a.config.uploadRetentionTimeInDays.Load()),
-		model.ExportedData,
-		pq.Array(skipWorkspaceIDs),
-	).Scan(&totalUploads)
-	return totalUploads, err
-}
-
-func (a *Archiver) deleteUploads(ctx context.Context, limit int) error {
+func (a *Archiver) deleteUploads(ctx context.Context, limit int) (int64, error) {
 	skipWorkspaceIDs := []string{""}
 	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
 
@@ -578,7 +548,7 @@ func (a *Archiver) deleteUploads(ctx context.Context, limit int) error {
 `,
 		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable))
 
-	_, err := a.db.ExecContext(
+	result, err := a.db.ExecContext(
 		ctx,
 		sqlStatement,
 		fmt.Sprintf("%d DAY", a.config.uploadRetentionTimeInDays.Load()),
@@ -586,5 +556,8 @@ func (a *Archiver) deleteUploads(ctx context.Context, limit int) error {
 		pq.Array(skipWorkspaceIDs),
 		limit,
 	)
-	return err
+	if err != nil {
+		return 0, fmt.Errorf("error deleting uploads: %w", err)
+	}
+	return result.RowsAffected()
 }

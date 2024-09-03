@@ -271,7 +271,7 @@ func TestArchiver_Delete(t *testing.T) {
 	var count int
 	err = pgResource.DB.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %q`, warehouseutils.WarehouseUploadsTable)).Scan(&count)
 	require.NoError(t, err)
-	require.Equal(t, 0, count, "wh_uploads rows should be deleted")
+	require.Zero(t, count, "wh_uploads rows should be deleted")
 }
 
 func jsonTestData(t require.TestingT, file string, value any) {
