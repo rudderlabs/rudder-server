@@ -1021,7 +1021,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 	}
 	// the job failed
-	w.logger.Debugf("Job failed to send, analyzing...")
+	w.logger.Debugn("Job failed to send, analyzing...")
 
 	if isJobTerminated(respStatusCode) {
 		status.JobState = jobsdb.Aborted.State
