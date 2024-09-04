@@ -135,7 +135,7 @@ func (m *fileMigrator) uploadFile(ctx context.Context, jobs []*newFileFormat, so
 		fmt.Sprintf("%d_%d_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceId),
 	)
 	if err := os.MkdirAll(filepath.Dir(localFilePath), os.ModePerm); err != nil {
-		return (fmt.Errorf("creating gz file %q: mkdir error: %w", localFilePath, err))
+		return fmt.Errorf("creating gz file %q: mkdir error: %w", localFilePath, err)
 	}
 	writer, err := misc.CreateGZ(localFilePath)
 	if err != nil {

@@ -165,7 +165,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(ctx, workspaceID)
 		if err != nil {
-			st.logger.Errorn("Skipping Storing errors for workspace since no storage preferences are found", obskit.WorkspaceID(workspaceID))
+			st.logger.Errorn("Skipping Storing errors for workspace since no storage preferences are found", obskit.WorkspaceID(workspaceID), obskit.Error(err))
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{
@@ -233,13 +233,12 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, path := range writerMap {
 		errFileUploader, err := st.fileuploader.GetFileManager(ctx, workspaceID)
 		if err != nil {
-			st.logger.Errorn("Skipping Storing errors for workspace since no file manager is found", obskit.WorkspaceID(workspaceID))
+			st.logger.Errorn("Skipping Storing errors for workspace since no file manager is found", obskit.WorkspaceID(workspaceID), obskit.Error(err))
 			if !errors.Is(err, fileuploader.ErrNotSubscribed) {
 				mu.Lock()
 				errorJobs = append(errorJobs, ErrorJob{
 					jobs: jobsPerWorkspace[workspaceID],
 					errorOutput: StoreErrorOutputT{
-						Location: "",
 						Error:    err,
 					},
 				})
