@@ -15,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/samber/lo"
@@ -83,15 +86,6 @@ var errorsMappings = []model.JobError{
 		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
 	},
 }
-
-// String constants for redshift destination config
-const (
-	RSHost     = "host"
-	RSPort     = "port"
-	RSDbName   = "database"
-	RSUserName = "user"
-	RSPassword = "password"
-)
 
 const (
 	rudderStringLength = 512
@@ -181,16 +175,6 @@ type s3ManifestEntry struct {
 
 type s3Manifest struct {
 	Entries []s3ManifestEntry `json:"entries"`
-}
-
-type connectionCredentials struct {
-	Host       string
-	Port       string
-	DbName     string
-	Username   string
-	Password   string
-	timeout    time.Duration
-	TunnelInfo *tunnelling.TunnelInfo
 }
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
@@ -521,10 +505,13 @@ func (rs *Redshift) loadTable(
 		return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 	}
 
-	var rowsDeleted int64
+	var (
+		rowsDeletedResult, rowsInsertedResult sql.Result
+		rowsDeleted, rowsInserted             int64
+	)
 	if rs.ShouldMerge(tableName) {
 		log.Infow("deleting from load table")
-		rowsDeleted, err = rs.deleteFromLoadTable(
+		rowsDeletedResult, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
 			stagingTableName, tableSchemaAfterUpload,
 		)
@@ -534,7 +521,7 @@ func (rs *Redshift) loadTable(
 	}
 
 	log.Infow("inserting into load table")
-	rowsInserted, err := rs.insertIntoLoadTable(
+	rowsInsertedResult, err = rs.insertIntoLoadTable(
 		ctx, txn, tableName,
 		stagingTableName, strKeys,
 	)
@@ -545,6 +532,19 @@ func (rs *Redshift) loadTable(
 	log.Debugw("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
+	}
+
+	if rowsDeletedResult != nil {
+		rowsDeleted, err = rowsDeletedResult.RowsAffected()
+		if err != nil {
+			return nil, "", fmt.Errorf("getting rows affected: %w", err)
+		}
+	}
+	if rowsInsertedResult != nil {
+		rowsInserted, err = rowsInsertedResult.RowsAffected()
+		if err != nil {
+			return nil, "", fmt.Errorf("getting rows affected: %w", err)
+		}
 	}
 
 	log.Infow("completed loading")
@@ -627,7 +627,7 @@ func (rs *Redshift) deleteFromLoadTable(
 	tableName string,
 	stagingTableName string,
 	tableSchemaAfterUpload model.TableSchema,
-) (int64, error) {
+) (sql.Result, error) {
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
@@ -664,9 +664,9 @@ func (rs *Redshift) deleteFromLoadTable(
 
 	result, err := txn.ExecContext(ctx, deleteStmt)
 	if err != nil {
-		return 0, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
+		return nil, fmt.Errorf("deleting from main table for dedup: %w", normalizeError(err))
 	}
-	return result.RowsAffected()
+	return result, nil
 }
 
 func (rs *Redshift) insertIntoLoadTable(
@@ -675,7 +675,7 @@ func (rs *Redshift) insertIntoLoadTable(
 	tableName string,
 	stagingTableName string,
 	sortedColumnKeys []string,
-) (int64, error) {
+) (sql.Result, error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -707,11 +707,11 @@ func (rs *Redshift) insertIntoLoadTable(
 		partitionKey,
 	)
 
-	r, err := txn.ExecContext(ctx, insertStmt)
+	result, err := txn.ExecContext(ctx, insertStmt)
 	if err != nil {
-		return 0, fmt.Errorf("inserting into main table: %w", err)
+		return nil, fmt.Errorf("inserting into main table: %w", err)
 	}
-	return r.RowsAffected()
+	return result, nil
 }
 
 func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
@@ -910,36 +910,18 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 }
 
 func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
-	cred := rs.getConnectionCredentials()
-	dsn := url.URL{
-		Scheme: "postgres",
-		User:   url.UserPassword(cred.Username, cred.Password),
-		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
-		Path:   cred.DbName,
-	}
-
-	params := url.Values{}
-	params.Add("sslmode", "require")
-
-	if cred.timeout > 0 {
-		params.Add("connect_timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
-	}
-
-	dsn.RawQuery = params.Encode()
-
 	var (
 		err error
 		db  *sql.DB
 	)
 
-	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.Connect(dsn.String(), cred.TunnelInfo.Config); err != nil {
-			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
-		}
+	if rs.useIAMForAuth() {
+		db, err = rs.connectUsingIAMRole()
 	} else {
-		if db, err = sql.Open("postgres", dsn.String()); err != nil {
-			return nil, fmt.Errorf("connecting to redshift: %w", err)
-		}
+		db, err = rs.connectUsingPassword()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("connecting to redshift: %w", err)
 	}
 
 	_, err = db.ExecContext(ctx, `SET query_group to 'RudderStack'`)
@@ -967,6 +949,89 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 		}),
 	)
 	return middleware, nil
+}
+
+func (rs *Redshift) useIAMForAuth() bool {
+	return rs.Warehouse.GetBoolDestinationConfig(model.UseIAMForAuthSetting)
+}
+
+func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
+	var (
+		database          = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.DatabaseSetting)
+		user              = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.UserSetting)
+		iamRoleARNForAuth = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.IAMRoleARNForAuthSetting)
+		clusterID         = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterIDSetting)
+		clusterRegion     = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterRegionSetting)
+		timeout           = rs.connectTimeout
+	)
+
+	data := sqlconnectconfig.RedshiftData{
+		ClusterIdentifier: clusterID,
+		Database:          database,
+		User:              user,
+		Region:            clusterRegion,
+		RoleARN:           iamRoleARNForAuth,
+		ExternalID:        rs.Warehouse.WorkspaceID,
+		RoleARNExpiry:     time.Hour,
+		Timeout:           timeout,
+	}
+
+	credentialsJSON, err := data.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("connectUsingIAMRole: marshalling redshift credentials: %w", err)
+	}
+
+	sqlConnectDB, err := sqlconnect.NewDB("redshift", credentialsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("connectUsingIAMRole: creating redshift connection: %w", err)
+	}
+	return sqlConnectDB.SqlDB(), nil
+}
+
+func (rs *Redshift) connectUsingPassword() (*sql.DB, error) {
+	var (
+		host       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.HostSetting)
+		port       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.PortSetting)
+		database   = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.DatabaseSetting)
+		user       = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.UserSetting)
+		password   = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.PasswordSetting)
+		timeout    = rs.connectTimeout
+		tunnelInfo = tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config)
+	)
+
+	var (
+		err error
+		db  *sql.DB
+	)
+
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   fmt.Sprintf("%s:%s", host, port),
+		Path:   database,
+	}
+
+	params := url.Values{}
+	params.Add("sslmode", "require")
+
+	if timeout > 0 && timeout < time.Second {
+		return nil, fmt.Errorf("connectUsingPassword: invalid timeout value: %d", timeout)
+	} else if timeout >= time.Second {
+		params.Add("connect_timeout", fmt.Sprintf("%d", timeout/time.Second))
+	}
+
+	dsn.RawQuery = params.Encode()
+
+	if tunnelInfo != nil {
+		if db, err = tunnelling.Connect(dsn.String(), tunnelInfo.Config); err != nil {
+			return nil, fmt.Errorf("connectUsingPassword: connecting to redshift through tunnel: %w", err)
+		}
+	} else {
+		if db, err = sql.Open("postgres", dsn.String()); err != nil {
+			return nil, fmt.Errorf("connectUsingPassword: connecting to redshift: %w", err)
+		}
+	}
+	return db, nil
 }
 
 func (rs *Redshift) dropDanglingStagingTables(ctx context.Context) error {
@@ -1132,20 +1197,6 @@ func (rs *Redshift) AlterColumn(ctx context.Context, tableName, columnName, colu
 	}
 
 	return res, nil
-}
-
-func (rs *Redshift) getConnectionCredentials() connectionCredentials {
-	creds := connectionCredentials{
-		Host:       warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		Port:       warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		DbName:     warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		Username:   warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		Password:   warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-		timeout:    rs.connectTimeout,
-		TunnelInfo: tunnelling.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
-	}
-
-	return creds
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace

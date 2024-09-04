@@ -16,8 +16,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
+	"go.uber.org/mock/gomock"
+
 	dbsql "github.com/databricks/databricks-sql-go"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
@@ -28,17 +29,15 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
@@ -73,173 +72,149 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(testKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", testKey)
+		}
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
-	c.Start(context.Background())
-
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
+	whutils.Init()
 
-	jobsDBPort := c.Port("jobsDb", 5432)
+	destType := whutils.DELTALAKE
 
-	httpPort, err := kithelper.GetFreePort()
+	credentials, err := deltaLakeTestCredentials()
 	require.NoError(t, err)
-
-	workspaceID := warehouseutils.RandHex()
-	sourceID := warehouseutils.RandHex()
-	destinationID := warehouseutils.RandHex()
-	writeKey := warehouseutils.RandHex()
-	destType := warehouseutils.DELTALAKE
-	namespace := whth.RandSchema(destType)
-
-	deltaLakeCredentials, err := deltaLakeTestCredentials()
-	require.NoError(t, err)
-
-	port, err := strconv.Atoi(deltaLakeCredentials.Port)
-	require.NoError(t, err)
-
-	connector, err := dbsql.NewConnector(
-		dbsql.WithServerHostname(deltaLakeCredentials.Host),
-		dbsql.WithPort(port),
-		dbsql.WithHTTPPath(deltaLakeCredentials.Path),
-		dbsql.WithAccessToken(deltaLakeCredentials.Token),
-		dbsql.WithSessionParams(map[string]string{
-			"ansi_mode": "false",
-		}),
-	)
-	require.NoError(t, err)
-
-	db := sql.OpenDB(connector)
-	require.NoError(t, db.Ping())
-
-	bootstrapSvc := func(t *testing.T, preferAppend *bool) {
-		var preferAppendStr string
-		if preferAppend != nil {
-			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
-		}
-		templateConfigurations := map[string]any{
-			"workspaceID":   workspaceID,
-			"sourceID":      sourceID,
-			"destinationID": destinationID,
-			"writeKey":      writeKey,
-			"host":          deltaLakeCredentials.Host,
-			"port":          deltaLakeCredentials.Port,
-			"path":          deltaLakeCredentials.Path,
-			"token":         deltaLakeCredentials.Token,
-			"namespace":     namespace,
-			"containerName": deltaLakeCredentials.ContainerName,
-			"accountName":   deltaLakeCredentials.AccountName,
-			"accountKey":    deltaLakeCredentials.AccountKey,
-			"preferAppend":  preferAppendStr,
-		}
-		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-		whth.EnhanceWithDefaultEnvs(t)
-		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-		t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
-
-		svcDone := make(chan struct{})
-		ctx, cancel := context.WithCancel(context.Background())
-
-		go func() {
-			r := runner.New(runner.ReleaseInfo{})
-			_ = r.Run(ctx, []string{"deltalake-integration-test"})
-			close(svcDone)
-		}()
-
-		t.Cleanup(func() { <-svcDone })
-		t.Cleanup(cancel)
-
-		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-		health.WaitUntilReady(ctx, t,
-			serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint",
-		)
-	}
 
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB := whth.JobsDB(t, jobsDBPort)
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
 
-		t.Cleanup(func() {
-			dropSchema(t, db, namespace)
-		})
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testCases := []struct {
 			name                string
-			writeKey            string
-			schema              string
-			sourceID            string
-			destinationID       string
 			messageID           string
 			warehouseEventsMap  whth.EventsCountMap
-			preferAppend        *bool
 			useParquetLoadFiles bool
 			stagingFilePrefix   string
 			jobRunID            string
+			configOverride      map[string]any
 		}{
 			{
 				name:                "Merge Mode",
-				writeKey:            writeKey,
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				preferAppend:        th.Ptr(false),
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-merge-mode",
 				jobRunID:            misc.FastUUID().String(),
+				configOverride: map[string]any{
+					"preferAppend": false,
+				},
 			},
 			{
 				name:                "Append Mode",
-				writeKey:            writeKey,
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
 				warehouseEventsMap:  appendEventsMap(),
-				preferAppend:        th.Ptr(true),
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-append-mode",
 				// an empty jobRunID means that the source is not an ETL one
 				// see Uploader.CanAppend()
 				jobRunID: "",
+				configOverride: map[string]any{
+					"preferAppend": true,
+				},
 			},
 			{
 				name:                "Undefined preferAppend",
-				writeKey:            writeKey,
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				preferAppend:        nil, // not defined in backend config
 				useParquetLoadFiles: false,
 				stagingFilePrefix:   "testdata/upload-job-undefined-preferAppend-mode",
 				jobRunID:            misc.FastUUID().String(),
 			},
 			{
 				name:                "Parquet load files",
-				writeKey:            writeKey,
-				schema:              namespace,
-				sourceID:            sourceID,
-				destinationID:       destinationID,
 				warehouseEventsMap:  mergeEventsMap(),
-				preferAppend:        th.Ptr(false),
 				useParquetLoadFiles: true,
 				stagingFilePrefix:   "testdata/upload-job-parquet",
 				jobRunID:            misc.FastUUID().String(),
+				configOverride: map[string]any{
+					"preferAppend": false,
+				},
 			},
 		}
 
 		for _, tc := range testCases {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.preferAppend)
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
+
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("host", credentials.Host).
+					WithConfigOption("port", credentials.Port).
+					WithConfigOption("path", credentials.Path).
+					WithConfigOption("token", credentials.Token).
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("bucketProvider", "AZURE_BLOB").
+					WithConfigOption("containerName", credentials.ContainerName).
+					WithConfigOption("useSTSTokens", false).
+					WithConfigOption("enableSSE", false).
+					WithConfigOption("accountName", credentials.AccountName).
+					WithConfigOption("accountKey", credentials.AccountKey).
+					WithConfigOption("syncFrequency", "30")
+				for k, v := range tc.configOverride {
+					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+				}
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destinationBuilder.Build()).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				port, err := strconv.Atoi(credentials.Port)
+				require.NoError(t, err)
+
+				connector, err := dbsql.NewConnector(
+					dbsql.WithServerHostname(credentials.Host),
+					dbsql.WithPort(port),
+					dbsql.WithHTTPPath(credentials.Path),
+					dbsql.WithAccessToken(credentials.Token),
+					dbsql.WithSessionParams(map[string]string{
+						"ansi_mode": "false",
+					}),
+				)
+				require.NoError(t, err)
+
+				db := sql.OpenDB(connector)
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() { _ = db.Close() })
+				t.Cleanup(func() {
+					dropSchema(t, db, namespace)
+				})
 
 				sqlClient := &warehouseclient.Client{
 					SQL:  db,
@@ -248,22 +223,22 @@ func TestIntegration(t *testing.T) {
 
 				conf := map[string]interface{}{
 					"bucketProvider": "AZURE_BLOB",
-					"containerName":  deltaLakeCredentials.ContainerName,
+					"containerName":  credentials.ContainerName,
 					"prefix":         "",
 					"useSTSTokens":   false,
 					"enableSSE":      false,
-					"accountName":    deltaLakeCredentials.AccountName,
-					"accountKey":     deltaLakeCredentials.AccountKey,
+					"accountName":    credentials.AccountName,
+					"accountKey":     credentials.AccountKey,
 				}
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
 					WriteKey:      writeKey,
-					Schema:        tc.schema,
+					Schema:        namespace,
 					Tables:        tables,
-					SourceID:      tc.sourceID,
-					DestinationID: tc.destinationID,
+					SourceID:      sourceID,
+					DestinationID: destinationID,
 					JobRunID:      tc.jobRunID,
 					WarehouseEventsMap: whth.EventsCountMap{
 						"identifies":    1,
@@ -289,10 +264,10 @@ func TestIntegration(t *testing.T) {
 				t.Log("verifying test case 2")
 				ts2 := whth.TestConfig{
 					WriteKey:           writeKey,
-					Schema:             tc.schema,
+					Schema:             namespace,
 					Tables:             tables,
-					SourceID:           tc.sourceID,
-					DestinationID:      tc.destinationID,
+					SourceID:           sourceID,
+					DestinationID:      destinationID,
 					JobRunID:           tc.jobRunID,
 					WarehouseEventsMap: tc.warehouseEventsMap,
 					Config:             conf,
@@ -310,25 +285,44 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validation", func(t *testing.T) {
+		namespace := whth.RandSchema(destType)
+
+		port, err := strconv.Atoi(credentials.Port)
+		require.NoError(t, err)
+
+		connector, err := dbsql.NewConnector(
+			dbsql.WithServerHostname(credentials.Host),
+			dbsql.WithPort(port),
+			dbsql.WithHTTPPath(credentials.Path),
+			dbsql.WithAccessToken(credentials.Token),
+			dbsql.WithSessionParams(map[string]string{
+				"ansi_mode": "false",
+			}),
+		)
+		require.NoError(t, err)
+
+		db := sql.OpenDB(connector)
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
 		t.Cleanup(func() {
 			dropSchema(t, db, namespace)
 		})
 
 		dest := backendconfig.DestinationT{
-			ID: destinationID,
+			ID: "test_destination_id",
 			Config: map[string]interface{}{
-				"host":            deltaLakeCredentials.Host,
-				"port":            deltaLakeCredentials.Port,
-				"path":            deltaLakeCredentials.Path,
-				"token":           deltaLakeCredentials.Token,
+				"host":            credentials.Host,
+				"port":            credentials.Port,
+				"path":            credentials.Path,
+				"token":           credentials.Token,
 				"namespace":       namespace,
 				"bucketProvider":  "AZURE_BLOB",
-				"containerName":   deltaLakeCredentials.ContainerName,
+				"containerName":   credentials.ContainerName,
 				"prefix":          "",
 				"useSTSTokens":    false,
 				"enableSSE":       false,
-				"accountName":     deltaLakeCredentials.AccountName,
-				"accountKey":      deltaLakeCredentials.AccountKey,
+				"accountName":     credentials.AccountName,
+				"accountKey":      credentials.AccountKey,
 				"syncFrequency":   "30",
 				"eventDelivery":   false,
 				"eventDeliveryTS": 1648195480174,
@@ -367,7 +361,6 @@ func TestIntegration(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Setenv(
 					"RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES",
@@ -384,12 +377,6 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
-
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
 
@@ -419,36 +406,36 @@ func TestIntegration(t *testing.T) {
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
 				Config: map[string]any{
-					"host":           deltaLakeCredentials.Host,
-					"port":           deltaLakeCredentials.Port,
-					"path":           deltaLakeCredentials.Path,
-					"token":          deltaLakeCredentials.Token,
+					"host":           credentials.Host,
+					"port":           credentials.Port,
+					"path":           credentials.Path,
+					"token":          credentials.Token,
 					"namespace":      namespace,
-					"bucketProvider": warehouseutils.AzureBlob,
-					"containerName":  deltaLakeCredentials.ContainerName,
-					"accountName":    deltaLakeCredentials.AccountName,
-					"accountKey":     deltaLakeCredentials.AccountKey,
+					"bucketProvider": whutils.AzureBlob,
+					"containerName":  credentials.ContainerName,
+					"accountName":    credentials.AccountName,
+					"accountKey":     credentials.AccountKey,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
 		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: warehouseutils.AzureBlob,
+			Provider: whutils.AzureBlob,
 			Config: map[string]any{
-				"containerName":  deltaLakeCredentials.ContainerName,
-				"accountName":    deltaLakeCredentials.AccountName,
-				"accountKey":     deltaLakeCredentials.AccountKey,
-				"bucketProvider": warehouseutils.AzureBlob,
+				"containerName":  credentials.ContainerName,
+				"accountName":    credentials.AccountName,
+				"accountKey":     credentials.AccountKey,
+				"bucketProvider": whutils.AzureBlob,
 			},
 		})
 		require.NoError(t, err)
@@ -458,8 +445,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -474,8 +461,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -496,10 +483,10 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_without_dedup_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(
 					t, loadFiles, tableName, schemaInUpload, schemaInWarehouse,
-					warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z",
+					whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z",
 				)
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
@@ -547,8 +534,8 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_with_dedup_use_new_record_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -597,8 +584,8 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_with_no_overlapping_partition_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = false
@@ -648,8 +635,8 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_with_no_overlapping_partition_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = true
@@ -701,8 +688,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, true, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-12-15T06:53:49.640Z")
 
 			appendWarehouse := th.Clone(t, warehouse)
 			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -751,13 +738,13 @@ func TestIntegration(t *testing.T) {
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
-			loadFiles := []warehouseutils.LoadFile{{
+			loadFiles := []whutils.LoadFile{{
 				Location: fmt.Sprintf("https://%s.blob.core.windows.net/%s/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/a01af26e-4548-49ff-a895-258829cc1a83-load_file_not_exists_test_table/load.csv.gz",
-					deltaLakeCredentials.AccountName,
-					deltaLakeCredentials.ContainerName,
+					credentials.AccountName,
+					credentials.ContainerName,
 				),
 			}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -781,8 +768,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -825,8 +812,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -865,12 +852,12 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, records, whth.MismatchSchemaTestRecords())
 		})
 		t.Run("discards", func(t *testing.T) {
-			tableName := warehouseutils.DiscardsTable
+			tableName := whutils.DiscardsTable
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -882,7 +869,7 @@ func TestIntegration(t *testing.T) {
 				dropSchema(t, d.DB.DB, namespace)
 			})
 
-			err = d.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			err = d.CreateTable(ctx, tableName, whutils.DiscardsSchema)
 			require.NoError(t, err)
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
@@ -912,8 +899,8 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeParquet, false, false, "2022-12-15T06:53:49.640Z")
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeParquet, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -957,8 +944,8 @@ func TestIntegration(t *testing.T) {
 
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -1018,8 +1005,8 @@ func TestIntegration(t *testing.T) {
 
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, warehouseutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -1078,37 +1065,31 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Fetch Schema", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
-
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
 				Config: map[string]any{
-					"host":           deltaLakeCredentials.Host,
-					"port":           deltaLakeCredentials.Port,
-					"path":           deltaLakeCredentials.Path,
-					"token":          deltaLakeCredentials.Token,
+					"host":           credentials.Host,
+					"port":           credentials.Port,
+					"path":           credentials.Path,
+					"token":          credentials.Token,
 					"namespace":      namespace,
-					"bucketProvider": warehouseutils.AzureBlob,
-					"containerName":  deltaLakeCredentials.ContainerName,
-					"accountName":    deltaLakeCredentials.AccountName,
-					"accountKey":     deltaLakeCredentials.AccountKey,
+					"bucketProvider": whutils.AzureBlob,
+					"containerName":  credentials.ContainerName,
+					"accountName":    credentials.AccountName,
+					"accountKey":     credentials.AccountKey,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
@@ -1201,7 +1182,7 @@ func TestIntegration(t *testing.T) {
 
 			missingDatatypeStats := []string{"void", "timestamp_ntz", "struct", "array", "binary", "map", "decimal(10,2)"}
 			for _, missingDatatype := range missingDatatypeStats {
-				require.EqualValues(t, 1, statsStore.Get(warehouseutils.RudderMissingDatatype, stats.Tags{
+				require.EqualValues(t, 1, statsStore.Get(whutils.RudderMissingDatatype, stats.Tags{
 					"module":      "warehouse",
 					"destType":    warehouse.Type,
 					"workspaceId": warehouse.WorkspaceID,
@@ -1216,10 +1197,11 @@ func TestIntegration(t *testing.T) {
 
 func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 	t.Helper()
+	t.Log("dropping schema", namespace)
 
 	require.Eventually(t,
 		func() bool {
-			_, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
+			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
 			if err != nil {
 				t.Logf("error deleting schema %q: %v", namespace, err)
 				return false
@@ -1257,8 +1239,6 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.deltalake.maxErrorLength", len(tempError.Error())*25)
@@ -1330,7 +1310,7 @@ func TestDeltalake_ShouldMerge(t *testing.T) {
 
 func newMockUploader(
 	t testing.TB,
-	loadFiles []warehouseutils.LoadFile,
+	loadFiles []whutils.LoadFile,
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
@@ -1338,7 +1318,7 @@ func newMockUploader(
 	canAppend bool,
 	onDedupUseNewRecords bool,
 	eventTS string,
-) warehouseutils.Uploader {
+) whutils.Uploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
@@ -1350,7 +1330,7 @@ func newMockUploader(
 	mockUploader.EXPECT().ShouldOnDedupUseNewRecord().Return(onDedupUseNewRecords).AnyTimes()
 	mockUploader.EXPECT().CanAppend().Return(canAppend).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+		func(ctx context.Context, options whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
 			return slices.Clone(loadFiles), nil
 		},
 	).AnyTimes()

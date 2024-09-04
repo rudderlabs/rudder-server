@@ -17,11 +17,10 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -39,6 +38,7 @@ type BigQuery struct {
 	warehouse  model.Warehouse
 	projectID  string
 	uploader   warehouseutils.Uploader
+	conf       *config.Config
 	logger     logger.Logger
 
 	config struct {
@@ -53,13 +53,6 @@ type BigQuery struct {
 type loadTableResponse struct {
 	partitionDate string
 }
-
-// String constants for bigquery destination config
-const (
-	project     = "project"
-	credentials = "credentials"
-	location    = "location"
-)
 
 const (
 	provider       = warehouseutils.BQ
@@ -126,6 +119,7 @@ var errorsMappings = []model.JobError{
 func New(conf *config.Config, log logger.Logger) *BigQuery {
 	bq := &BigQuery{}
 
+	bq.conf = conf
 	bq.logger = log.Child("integrations").Child("bigquery")
 
 	bq.config.setUsersLoadPartitionFirstEventFilter = conf.GetBool("Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter", true)
@@ -244,7 +238,7 @@ func (bq *BigQuery) schemaExists(ctx context.Context, _, _ string) (exists bool,
 
 func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 	bq.logger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.namespace, bq.projectID)
-	location := strings.TrimSpace(warehouseutils.GetConfigValue(location, bq.warehouse))
+	location := strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.LocationSetting))
 	if location == "" {
 		location = "US"
 	}
@@ -460,7 +454,7 @@ func (bq *BigQuery) jobStatistics(
 ) (*bqService.JobStatistics, error) {
 	serv, err := bqService.NewService(
 		ctx,
-		option.WithCredentialsJSON([]byte(warehouseutils.GetConfigValue(credentials, bq.warehouse))),
+		option.WithCredentialsJSON([]byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
@@ -667,12 +661,12 @@ func (bq *BigQuery) IsEmpty(
 ) (bool, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(project, bq.warehouse))
+	bq.projectID = strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.ProjectSetting))
 
 	var err error
 	bq.db, err = bq.connect(ctx, BQCredentials{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(credentials, bq.warehouse),
+		Credentials: bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting),
 	})
 	if err != nil {
 		return false, fmt.Errorf("connecting to bigquery: %v", err)
@@ -702,11 +696,11 @@ func (bq *BigQuery) Setup(ctx context.Context, warehouse model.Warehouse, upload
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.uploader = uploader
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(project, bq.warehouse))
+	bq.projectID = strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.ProjectSetting))
 
 	bq.db, err = bq.connect(ctx, BQCredentials{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(credentials, bq.warehouse),
+		Credentials: bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting),
 	})
 	return err
 }
@@ -994,10 +988,10 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(project, bq.warehouse))
+	bq.projectID = strings.TrimSpace(bq.warehouse.GetStringDestinationConfig(bq.conf, model.ProjectSetting))
 	dbClient, err := bq.connect(ctx, BQCredentials{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(credentials, bq.warehouse),
+		Credentials: bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting),
 	})
 	if err != nil {
 		return client.Client{}, err

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -342,6 +343,14 @@ var tcs = []getValTc{
 		expected: `You're creating a duplicate record. We recommend you use an existing record instead.`,
 	},
 	{
+		inputStr: `{"response":"\u003c!--\n  ~ Copyright (C) 2010-2021 Evergage, Inc.\n  ~ All rights reserved.\n  --\u003e\n\n\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n    \u003cmeta charset=\"UTF-8\"\u003e\n    \u003ctitle\u003eSalesforce Personalization\u003c/title\u003e\n    \u003clink rel=\"icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003clink rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003cstyle\u003e\n        body { font-family: Salesforce Sans,Arial,sans-serif; text-align: center; padding: 50px; background-color:#fff; }\n        h1 { font-size: 1.25rem; color: #080707; text-align: center; margin-top: -0.5rem; }\n        p { font-size: 0.8125rem; color: #3E3E3C; text-align:center; }\n    \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n    \u003cdiv align=”center”\u003e\n        \u003cimg src=\"/PageNotAvailable.svg\" /\u003e\n    \u003c/div\u003e\n    \u003cdiv align=”center”\u003e\n        \u003ch1\u003eThe page you want isn’t available.\u003c/h1\u003e\n        \u003cp\u003eTo find the page you want, use the main navigation.\u003c/p\u003e\n    \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e","firstAttemptedAt":"2024-09-02T06:57:13.829Z","content-type":"text/html"}`,
+		expected: "The page you want isn’t available.\r\n\r\n To find the page you want, use the main navigation.\r\n\r\n ",
+	},
+	{
+		inputStr: `{"response":"{\"status\":\"fail\",\"processed\":0,\"unprocessed\":[{\"status\":\"fail\",\"code\":513,\"error\":\"Event Name is incorrect. ErrorCode: 513 - Trying to raise a restricted system event. Skipped record number : 1\",\"record\":{\"evtData\":{\"initial_referrer\":\"https://www.google.com/\",\"initial_referring_domain\":\"www.google.com\",\"path\":\"/busca/\",\"referrer\":\"https://www.extrabom.com.br/busca/?q=Bombril\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"referring_domain\":\"www.extrabom.com.br\",\"search\":\"?q=X14\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"tab_url\":\"https://www.extrabom.com.br/busca/?q=X14\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"title\":\"X14 - Busca - Extrabom\",\"url\":\"https://www.extrabom.com.br/busca/?q=X14\"},\"evtName\":\"Web Page Viewed\",\"identity\":\"69298\",\"type\":\"event\"}}]}","firstAttemptedAt":"2024-09-02T00:40:06.451Z","content-type":"application/json"}`,
+		expected: "Event Name is incorrect. ErrorCode: 513 - Trying to raise a restricted system event. Skipped record number : 1",
+	},
+	{
 		inputStr: `{"response":"{\"destinationResponse\":\"\u003c!DOCTYPE html\u003e\\n\u003chtml lang=\\\"en\\\" id=\\\"facebook\\\"\u003e\\n  \u003chead\u003e\\n    \u003ctitle\u003eFacebook | Error\u003c/title\u003e\\n    \u003cmeta charset=\\\"utf-8\\\"\u003e\\n    \u003cmeta http-equiv=\\\"cache-control\\\" content=\\\"no-cache\\\"\u003e\\n    \u003cmeta http-equiv=\\\"cache-control\\\" content=\\\"no-store\\\"\u003e\\n    \u003cmeta http-equiv=\\\"cache-control\\\" content=\\\"max-age=0\\\"\u003e\\n    \u003cmeta http-equiv=\\\"expires\\\" content=\\\"-1\\\"\u003e\\n    \u003cmeta http-equiv=\\\"pragma\\\" content=\\\"no-cache\\\"\u003e\\n    \u003cmeta name=\\\"robots\\\" content=\\\"noindex,nofollow\\\"\u003e\\n    \u003cstyle\u003e\\n      html, body {\\n        color: #141823;\\n        background-color: #e9eaed;\\n        font-family: Helvetica, Lucida Grande, Arial,\\n                     Tahoma, Verdana, sans-serif;\\n        margin: 0;\\n        padding: 0;\\n        text-align: center;\\n      }\\n\\n      #header {\\n        height: 30px;\\n        padding-bottom: 10px;\\n        padding-top: 10px;\\n        text-align: center;\\n      }\\n\\n      #icon {\\n        width: 30px;\\n      }\\n\\n      h1 {\\n        font-size: 18px;\\n      }\\n\\n      p {\\n        font-size: 13px;\\n      }\\n\\n      #footer {\\n        border-top: 1px solid #ddd;\\n        color: #9197a3;\\n        font-size: 12px;\\n        padding: 5px 8px 6px 0;\\n      }\\n    \u003c/style\u003e\\n  \u003c/head\u003e\\n  \u003cbody\u003e\\n    \u003cdiv id=\\\"header\\\"\u003e\\n      \u003ca href=\\\"//www.facebook.com/\\\"\u003e\\n        \u003cimg id=\\\"icon\\\" src=\\\"//static.facebook.com/images/logos/facebook_2x.png\\\" /\u003e\\n      \u003c/a\u003e\\n    \u003c/div\u003e\\n    \u003cdiv id=\\\"core\\\"\u003e\\n      \u003ch1 id=\\\"sorry\\\"\u003eSorry, something went wrong.\u003c/h1\u003e\\n      \u003cp id=\\\"promise\\\"\u003e\\n        We're working on it and we'll get it fixed as soon as we can.\\n      \u003c/p\u003e\\n      \u003cp id=\\\"back-link\\\"\u003e\\n        \u003ca id=\\\"back\\\" href=\\\"//www.facebook.com/\\\"\u003eGo Back\u003c/a\u003e\\n      \u003c/p\u003e\\n      \u003cdiv id=\\\"footer\\\"\u003e\\n        Facebook\\n        \u003cspan id=\\\"copyright\\\"\u003e\\n          \u0026copy; 2022\\n        \u003c/span\u003e\\n        \u003cspan id=\\\"help-link\\\"\u003e\\n          \u0026#183;\\n          \u003ca id=\\\"help\\\" href=\\\"//www.facebook.com/help/\\\"\u003eHelp Center\u003c/a\u003e\\n        \u003c/span\u003e\\n      \u003c/div\u003e\\n    \u003c/div\u003e\\n    \u003cscript\u003e\\n      document.getElementById('back').onclick = function() {\\n        if (history.length \u003e 1) {\\n          history.back();\\n          return false;\\n        }\\n      };\\n\\n      // Adjust the display based on the window size\\n      if (window.innerHeight \u003c 80 || window.innerWidth \u003c 80) {\\n        // Blank if window is too small\\n        document.body.style.display = 'none';\\n      };\\n      if (window.innerWidth \u003c 200 || window.innerHeight \u003c 150) {\\n        document.getElementById('back-link').style.display = 'none';\\n        document.getElementById('help-link').style.display = 'none';\\n      };\\n      if (window.innerWidth \u003c 200) {\\n        document.getElementById('sorry').style.fontSize = '16px';\\n      };\\n      if (window.innerWidth \u003c 150) {\\n        document.getElementById('promise').style.display = 'none';\\n      };\\n      if (window.innerHeight \u003c 150) {\\n        document.getElementById('sorry').style.margin = '4px 0 0 0';\\n        document.getElementById('sorry').style.fontSize = '14px';\\n        document.getElementById('promise').style.display = 'none';\\n      };\\n    \u003c/script\u003e\\n  \u003c/body\u003e\\n\u003c/html\u003e\\n\",\"message\":\"Request Processed Successfully\",\"status\":502}","firstAttemptedAt":"2023-03-30T17:31:41.884Z","content-type":"application/json"}`,
 		expected: "Request Processed Successfully",
 	},
@@ -415,7 +424,7 @@ func TestExtractErrorDetails(t *testing.T) {
 		},
 	}
 
-	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{})
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
 			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
@@ -599,7 +608,7 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 	configSubscriber := newConfigSubscriber(logger.NOP)
-	ed := NewErrorDetailReporter(context.Background(), configSubscriber)
+	ed := NewErrorDetailReporter(context.Background(), configSubscriber, stats.NOP, config.Default)
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{

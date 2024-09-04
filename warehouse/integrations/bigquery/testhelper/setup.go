@@ -65,6 +65,11 @@ func RetrieveRecordsFromWarehouse(
 			switch item := item.(type) {
 			case time.Time:
 				return item.Format(time.RFC3339)
+			case string:
+				if t, err := time.Parse(time.RFC3339Nano, item); err == nil {
+					return t.Format(time.RFC3339)
+				}
+				return item
 			default:
 				return cast.ToString(item)
 			}

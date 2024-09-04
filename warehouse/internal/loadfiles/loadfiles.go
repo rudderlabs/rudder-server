@@ -2,15 +2,16 @@ package loadfiles
 
 import (
 	"context"
+	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/services/notifier"
 
-	stdjson "encoding/json"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/samber/lo"
 
@@ -20,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -57,6 +59,7 @@ type ControlPlaneClient interface {
 }
 
 type LoadFileGenerator struct {
+	Conf     *config.Config
 	Logger   logger.Logger
 	Notifier Notifier
 
@@ -225,7 +228,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 			if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
-				payload.LoadFilePrefix = GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+				payload.LoadFilePrefix = lf.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -289,7 +292,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 				if resp.Status == notifier.Aborted && resp.Error != nil {
 					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
-					sampleError = fmt.Errorf(resp.Error.Error())
+					sampleError = errors.New(resp.Error.Error())
 					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
 					if err != nil {
 						return fmt.Errorf("set staging file error status: %w", err)
@@ -384,15 +387,15 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *
 	return
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
+func (lf *LoadFileGenerator) GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
 	switch warehouse.Type {
 	case warehouseutils.GCSDatalake:
 		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 
-		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+		if windowLayout := warehouse.GetStringDestinationConfig(lf.Conf, model.TimeWindowLayoutSetting); windowLayout != "" {
 			windowFormat = timeWindow.Format(windowLayout)
 		}
-		if suffix := warehouseutils.GetConfigValue("tableSuffix", warehouse); suffix != "" {
+		if suffix := warehouse.GetStringDestinationConfig(lf.Conf, model.TableSuffixSetting); suffix != "" {
 			windowFormat = fmt.Sprintf("%v/%v", suffix, windowFormat)
 		}
 		return windowFormat
@@ -400,7 +403,7 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
 		if !schemarepository.UseGlue(&warehouse) {
 			return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 		}
-		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+		if windowLayout := warehouse.GetStringDestinationConfig(lf.Conf, model.TimeWindowLayoutSetting); windowLayout != "" {
 			return timeWindow.Format(windowLayout)
 		}
 	}

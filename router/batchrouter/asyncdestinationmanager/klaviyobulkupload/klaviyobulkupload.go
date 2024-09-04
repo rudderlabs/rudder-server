@@ -3,6 +3,7 @@ package klaviyobulkupload
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -375,7 +376,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 		if resp.StatusCode != 202 {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
-			kbu.logger.Error("Got non 202 as statusCode.", fmt.Errorf(string(bodyBytes)))
+			kbu.logger.Error("Got non 202 as statusCode.", errors.New(string(bodyBytes)))
 		}
 		var uploadresp UploadResp
 		uploadRespErr := json.Unmarshal((bodyBytes), &uploadresp)

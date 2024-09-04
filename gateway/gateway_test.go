@@ -22,7 +22,8 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

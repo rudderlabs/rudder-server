@@ -3,10 +3,9 @@ package snowflake
 import (
 	"bytes"
 	"context"
-	"crypto/rsa"
 	"database/sql"
 	"encoding/csv"
-	"encoding/pem"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -18,11 +17,13 @@ import (
 
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
-	"github.com/youmark/pkcs8"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -36,21 +37,6 @@ import (
 const (
 	provider       = whutils.SNOWFLAKE
 	tableNameLimit = 127
-)
-
-// String constants for snowflake destination config
-const (
-	storageIntegration   = "storageIntegration"
-	account              = "account"
-	warehouse            = "warehouse"
-	database             = "database"
-	user                 = "user"
-	role                 = "role"
-	password             = "password"
-	useKeyPairAuth       = "useKeyPairAuth"
-	privateKey           = "privateKey"
-	privateKeyPassphrase = "privateKeyPassphrase"
-	application          = "Rudderstack_Warehouse"
 )
 
 var primaryKeyMap = map[string]string{
@@ -132,20 +118,6 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-type credentials struct {
-	account              string
-	warehouse            string
-	database             string
-	user                 string
-	role                 string
-	password             string
-	schemaName           string
-	useKeyPairAuth       bool
-	privateKey           string
-	privateKeyPassphrase string
-	timeout              time.Duration
-}
-
 type tableLoadResp struct {
 	db           *sqlmw.DB
 	stagingTable string
@@ -172,6 +144,7 @@ type Snowflake struct {
 	Warehouse      model.Warehouse
 	Uploader       whutils.Uploader
 	connectTimeout time.Duration
+	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
 
@@ -190,6 +163,7 @@ type Snowflake struct {
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf := &Snowflake{
+		conf:   conf,
 		logger: log.Child("integrations").Child("snowflake"),
 		stats:  stat,
 	}
@@ -299,11 +273,11 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *Snowflake) authString() string {
 	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && whutils.GetConfigValue(storageIntegration, sf.Warehouse) == "") {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, whutils.GetConfigValue(storageIntegration, sf.Warehouse))
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
 	}
 	return auth
 }
@@ -1062,50 +1036,54 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 }
 
 func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB, error) {
-	cred := sf.getConnectionCredentials(opts)
-	urlConfig := snowflake.Config{
-		Account:     cred.account,
-		User:        cred.user,
-		Role:        cred.role,
-		Database:    cred.database,
-		Schema:      cred.schemaName,
-		Warehouse:   cred.warehouse,
-		Application: application,
-	}
-	if cred.timeout > 0 {
-		urlConfig.LoginTimeout = cred.timeout
-	}
-	if cred.useKeyPairAuth {
-		rsaPrivateKey, err := ParsePrivateKey(cred.privateKey, cred.privateKeyPassphrase)
-		if err != nil {
-			return nil, fmt.Errorf("parsing private key: %w", err)
-		}
+	var (
+		account              = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.AccountSetting)
+		warehouse            = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.WarehouseSetting)
+		database             = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.DatabaseSetting)
+		user                 = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.UserSetting)
+		role                 = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.RoleSetting)
+		password             = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PasswordSetting)
+		useKeyPairAuth       = sf.Warehouse.GetBoolDestinationConfig(model.UseKeyPairAuthSetting)
+		privateKey           = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PrivateKeySetting)
+		privateKeyPassphrase = sf.Warehouse.GetStringDestinationConfig(sf.conf, model.PrivateKeyPassphraseSetting)
+		schemaName           = opts.schemaName
+		timeout              = sf.connectTimeout
+	)
 
-		urlConfig.PrivateKey = rsaPrivateKey
-		urlConfig.Authenticator = snowflake.AuthTypeJwt
-	} else {
-		urlConfig.Password = cred.password
-		urlConfig.Authenticator = snowflake.AuthTypeSnowflake
+	data := sqlconnectconfig.Snowflake{
+		Account:              account,
+		Warehouse:            warehouse,
+		DBName:               database,
+		User:                 user,
+		Schema:               schemaName,
+		Role:                 role,
+		Password:             password,
+		UseKeyPairAuth:       useKeyPairAuth,
+		PrivateKey:           privateKey,
+		PrivateKeyPassphrase: privateKeyPassphrase,
+		Application:          "Rudderstack_Warehouse",
+		LoginTimeout:         timeout,
 	}
 
-	var err error
-	dsn, err := snowflake.DSN(&urlConfig)
+	credentialsJSON, err := json.Marshal(data)
 	if err != nil {
-		return nil, fmt.Errorf("SF: Error costructing DSN to connect : (%v)", err)
+		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}
 
-	var db *sql.DB
-	if db, err = sql.Open("snowflake", dsn); err != nil {
-		return nil, fmt.Errorf("SF: snowflake connect error : (%v)", err)
+	sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
 	}
+
+	sqlDB := sqlConnectDB.SqlDB()
 
 	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
-	_, err = db.ExecContext(ctx, alterStatement)
+	_, err = sqlDB.ExecContext(ctx, alterStatement)
 	if err != nil {
 		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
 	}
 	middleware := sqlmw.New(
-		db,
+		sqlDB,
 		sqlmw.WithStats(sf.stats),
 		sqlmw.WithLogger(sf.logger),
 		sqlmw.WithKeyAndValues(
@@ -1125,24 +1103,6 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		}),
 	)
 	return middleware, nil
-}
-
-func ParsePrivateKey(privateKey, passPhrase string) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode([]byte(whutils.FormatPemContent(privateKey)))
-	if block == nil {
-		return nil, errors.New("decoding private key failed")
-	}
-
-	var opts [][]byte
-	if len(passPhrase) > 0 {
-		opts = append(opts, []byte(passPhrase))
-	}
-
-	rsaPrivateKey, err := pkcs8.ParsePKCS8PrivateKeyRSA(block.Bytes, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("parsing private key: %w", err)
-	}
-	return rsaPrivateKey, nil
 }
 
 func (sf *Snowflake) CreateSchema(ctx context.Context) (err error) {
@@ -1369,22 +1329,6 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 		}
 	}
 	return
-}
-
-func (sf *Snowflake) getConnectionCredentials(opts optionalCreds) credentials {
-	return credentials{
-		account:              whutils.GetConfigValue(account, sf.Warehouse),
-		warehouse:            whutils.GetConfigValue(warehouse, sf.Warehouse),
-		database:             whutils.GetConfigValue(database, sf.Warehouse),
-		user:                 whutils.GetConfigValue(user, sf.Warehouse),
-		role:                 whutils.GetConfigValue(role, sf.Warehouse),
-		password:             whutils.GetConfigValue(password, sf.Warehouse),
-		useKeyPairAuth:       whutils.ReadAsBool(useKeyPairAuth, sf.Warehouse.Destination.Config),
-		privateKey:           whutils.GetConfigValue(privateKey, sf.Warehouse),
-		privateKeyPassphrase: whutils.GetConfigValue(privateKeyPassphrase, sf.Warehouse),
-		schemaName:           opts.schemaName,
-		timeout:              sf.connectTimeout,
-	}
 }
 
 func (sf *Snowflake) Setup(ctx context.Context, warehouse model.Warehouse, uploader whutils.Uploader) (err error) {

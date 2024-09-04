@@ -44,11 +44,13 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -137,6 +139,7 @@ type Handle struct {
 		sourceIdSourceMap               map[string]backendconfig.SourceT
 		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
 		oneTrustConsentCategoriesMap    map[string][]string
+		connectionConfigMap             map[connection]backendconfig.Connection
 		ketchConsentCategoriesMap       map[string][]string
 		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations               []string
@@ -379,7 +382,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
-) {
+) error {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
@@ -613,7 +616,11 @@ func (proc *Handle) Setup(
 		})
 	}
 	if proc.config.enableDedup {
-		proc.dedup = dedup.New(dedup.DefaultPath())
+		var err error
+		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
+		if err != nil {
+			return err
+		}
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -623,14 +630,14 @@ func (proc *Handle) Setup(
 	proc.backgroundCancel = cancel
 
 	proc.config.asyncInit = misc.NewAsyncInit(1)
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.backendConfigSubscriber(ctx)
 		return nil
 	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck processor
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -642,6 +649,7 @@ func (proc *Handle) Setup(
 	}))
 
 	proc.crashRecover()
+	return nil
 }
 
 func (proc *Handle) setupReloadableVars() {
@@ -685,7 +693,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	})
 
 	// pinger loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		proc.logger.Info("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
 		proc.logger.Info("Backend config received")
@@ -726,7 +734,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	}))
 
 	// stash loop
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		st := stash.New()
 		st.Setup(
 			proc.readErrorDB,
@@ -809,6 +817,10 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 }
 
+type connection struct {
+	sourceID, destinationID string
+}
+
 func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	var initDone bool
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
@@ -824,8 +836,12 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			eventAuditEnabled               = make(map[string]bool)
 			credentialsMap                  = make(map[string][]transformer.Credential)
 			nonEventStreamSources           = make(map[string]bool)
+			connectionConfigMap             = make(map[connection]backendconfig.Connection)
 		)
 		for workspaceID, wConfig := range config {
+			for _, conn := range wConfig.Connections {
+				connectionConfigMap[connection{sourceID: conn.SourceID, destinationID: conn.DestinationID}] = conn
+			}
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				sourceIdSourceMap[source.ID] = *source
@@ -859,6 +875,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			})
 		}
 		proc.config.configSubscriberLock.Lock()
+		proc.config.connectionConfigMap = connectionConfigMap
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
 		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
 		proc.config.destGenericConsentManagementMap = destGenericConsentManagementMap
@@ -880,6 +897,12 @@ func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.Libr
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 	return proc.config.workspaceLibrariesMap[workspaceID]
+}
+
+func (proc *Handle) getConnectionConfig(conn connection) backendconfig.Connection {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.connectionConfigMap[conn]
 }
 
 func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT, error) {
@@ -1084,6 +1107,7 @@ func (proc *Handle) getTransformerEvents(
 	commonMetaData *transformer.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	destination *backendconfig.DestinationT,
+	connection backendconfig.Connection,
 	inPU, pu string,
 ) (
 	[]transformer.TransformerEvent,
@@ -1146,6 +1170,7 @@ func (proc *Handle) getTransformerEvents(
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
 			Destination: *destination,
+			Connection:  connection,
 			Credentials: proc.config.credentialsMap[commonMetaData.WorkspaceID],
 		}
 		eventsToTransform = append(eventsToTransform, updatedEvent)
@@ -1707,7 +1732,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				p := payloadFunc()
 				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				if ok, previousSize := proc.dedup.Set(dedup.KeyValue{Key: dedupKey, Value: messageSize}); !ok {
+				ok, previousSize, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceID: batchEvent.WorkspaceId})
+				if err != nil {
+					panic(err)
+				}
+				if !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
 					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
 					continue
@@ -1825,10 +1854,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
 			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if rudderTyperTPID != nil && rudderTyperTPVersion != nil {
-				if id, ok := rudderTyperTPID.(string); ok && id != "" {
-					trackingPlanID = id
-				}
+			if rudderTyperTPID != nil && rudderTyperTPVersion != nil && rudderTyperTPID == trackingPlanID {
 				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
 					trackingPlanVersion = int(version)
 				}
@@ -1997,6 +2023,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
 					shallowEventCopy := transformer.TransformerEvent{}
+					shallowEventCopy.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
 					shallowEventCopy.Message = singularEvent
 					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
@@ -2491,6 +2518,7 @@ func (proc *Handle) transformSrcDest(
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	sourceName := eventList[0].Metadata.SourceName
 	destination := &eventList[0].Destination
+	connection := eventList[0].Connection
 	workspaceID := eventList[0].Metadata.WorkspaceID
 	destType := destination.DestinationDefinition.Name
 	commonMetaData := &transformer.Metadata{
@@ -2584,7 +2612,7 @@ func (proc *Handle) transformSrcDest(
 			var successMetrics []*types.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, inPU, types.USER_TRANSFORMER)
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, types.USER_TRANSFORMER)
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, types.USER_TRANSFORMER)
 			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
@@ -2681,7 +2709,7 @@ func (proc *Handle) transformSrcDest(
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 	}
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, inPU, types.EVENT_FILTER)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, types.EVENT_FILTER)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	// REPORTING - START

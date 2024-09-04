@@ -56,7 +56,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.Handle.transformer = proc.Transformer
 	}
 
-	proc.Handle.Setup(
+	if err := proc.Handle.Setup(
 		proc.BackendConfig,
 		proc.gatewayDB,
 		proc.routerDB,
@@ -74,7 +74,9 @@ func (proc *LifecycleManager) Start() error {
 		proc.transDebugger,
 		proc.enrichers,
 		proc.trackedUsersReporter,
-	)
+	); err != nil {
+		return err
+	}
 
 	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel

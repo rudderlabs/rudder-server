@@ -3,6 +3,7 @@ package offline_conversions
 import (
 	"archive/zip"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,20 +12,21 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	bingads_sdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	mock_bulkservice "github.com/rudderlabs/bing-ads-go-sdk/mocks"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/bingads"
 	mocks_oauth "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -136,9 +138,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			clientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &clientI)
 			errorMsg := "Error in getting bulk upload url"
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errorMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errorMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
@@ -179,11 +181,11 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			ClientI := Client{}
 			bulkUploader := NewBingAdsBulkUploader("BING_ADS", bingAdsService, &ClientI)
 			errMsg := "unable to get bulk upload url, check your credentials"
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
-			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf(errMsg))
+			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, errors.New(errMsg))
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
