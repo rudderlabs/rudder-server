@@ -264,7 +264,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		edr.log.Errorf("Failed during statement preparation: %v", err)
+		edr.log.Errorf("Failed during statement execution: %v", err)
 		return fmt.Errorf("executing final statement: %v", err)
 	}
 
