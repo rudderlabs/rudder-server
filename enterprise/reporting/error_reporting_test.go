@@ -1,16 +1,16 @@
 package reporting
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	. "github.com/onsi/gomega"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"go.uber.org/mock/gomock"
 
-	"context"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -18,8 +18,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
-	utilsTx "github.com/rudderlabs/rudder-server/utils/tx"
 	"github.com/stretchr/testify/assert"
+
+	utilsTx "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 func TestShouldReport(t *testing.T) {
@@ -115,7 +116,6 @@ func TestErrorDetailReporter_Report(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
 			mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				ch := make(chan pubsub.DataEvent, 1)
 				ch <- pubsub.DataEvent{
@@ -217,7 +217,6 @@ func TestErrorDetailReporter_Report(t *testing.T) {
 			copyStmt.WillBeClosed()
 			err := edr.Report(ctx, tt.metrics, mockTx)
 			assert.NoError(t, err)
-
 		})
 		err = dbMock.ExpectationsWereMet()
 		assert.NoError(t, err)
