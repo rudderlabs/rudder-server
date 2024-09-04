@@ -239,7 +239,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 				errorJobs = append(errorJobs, ErrorJob{
 					jobs: jobsPerWorkspace[workspaceID],
 					errorOutput: StoreErrorOutputT{
-						Error:    err,
+						Error: err,
 					},
 				})
 				mu.Unlock()
