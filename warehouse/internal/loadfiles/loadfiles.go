@@ -3,6 +3,7 @@ package loadfiles
 import (
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -291,7 +292,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 				if resp.Status == notifier.Aborted && resp.Error != nil {
 					lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
-					sampleError = fmt.Errorf(resp.Error.Error())
+					sampleError = errors.New(resp.Error.Error())
 					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
 					if err != nil {
 						return fmt.Errorf("set staging file error status: %w", err)

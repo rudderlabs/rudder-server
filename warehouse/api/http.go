@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
-	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
@@ -147,7 +147,7 @@ func (a *Api) Start(ctx context.Context) error {
 
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(a.config.webPort)),
-		Handler:           bugsnag.Handler(srvMux),
+		Handler:           crash.Handler(srvMux),
 		ReadHeaderTimeout: a.config.readerHeaderTimeout,
 	}
 	return kithttputil.ListenAndServe(ctx, srv)
