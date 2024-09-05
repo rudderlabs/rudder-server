@@ -482,6 +482,13 @@ func TestRecordWebhookErrors(t *testing.T) {
 }
 
 func TestPrepareRequestBody(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
+	btWebhookHandler := batchWebhookTransformerT{webhook: webhookHandler}
 	type requestOpts struct {
 		method  string
 		target  string
@@ -571,7 +578,7 @@ func TestPrepareRequestBody(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
+			result, err := btWebhookHandler.prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
 			if tc.wantError {
 				require.Error(t, err)
 				return
