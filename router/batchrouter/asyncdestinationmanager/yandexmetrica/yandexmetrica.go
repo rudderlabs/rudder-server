@@ -3,6 +3,7 @@ package yandexmetrica
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -361,7 +362,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != http.StatusOK { // error scenario
-		return ym.generateErrorOutput("got non 200 response from the destination", fmt.Errorf(string(bodyBytes)), importingJobIDs)
+		return ym.generateErrorOutput("got non 200 response from the destination", errors.New(string(bodyBytes)), importingJobIDs)
 	}
 	eventsSuccessStat.Count(len(asyncDestStruct.ImportingJobIDs))
 	return common.AsyncUploadOutput{
