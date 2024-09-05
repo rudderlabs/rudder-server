@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -280,7 +281,7 @@ func getXHeaders(req *http.Request) map[string]string {
 	return xHeaders
 }
 
-func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
+func (bt *batchWebhookTransformerT) prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
 	defer func() {
 		_ = req.Body.Close()
 	}()
@@ -299,17 +300,18 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 
 		body, err = sjson.SetBytes(body, "query_parameters", queryParams)
 		if err != nil {
-			return nil, errors.New(response.InvalidJSON)
+			return nil, fmt.Errorf("error in setting query_parameters: %s", response.InvalidJSON)
 		}
 	}
 
 	xHeaders := getXHeaders(req)
 	if len(xHeaders) > 0 {
-		body, err = sjson.SetBytes(body, "headers", xHeaders)
+		bodyWithHeaders, err := sjson.SetBytes(body, "headers", xHeaders)
 		if err != nil {
-			return nil, errors.New(response.InvalidJSON)
+			bt.webhook.logger.Warnf("error in setting headers: %s", response.InvalidJSON)
+		} else {
+			body = bodyWithHeaders
 		}
-
 	}
 
 	return body, nil
@@ -343,16 +345,21 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			body, err := bt.prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
-				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
+				errMessage := err.Error()
+				bt.webhook.countWebhookErrors(req.sourceType, req.authContext, errMessage, response.GetErrorStatusCode(errMessage), 1)
+				req.done <- transformerResponse{Err: response.GetStatus(errMessage)}
 				continue
 			}
 			if !json.Valid(body) {
-				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
+				errMessage := fmt.Sprintf("body is invalid: %s", response.InvalidJSON)
+				bt.webhook.countWebhookErrors(req.sourceType, req.authContext, errMessage, response.GetErrorStatusCode(errMessage), 1)
+				req.done <- transformerResponse{Err: response.GetStatus(errMessage)}
 				continue
 			}
 			if len(body) > bt.webhook.config.maxReqSize.Load() {
+				bt.webhook.countWebhookErrors(req.sourceType, req.authContext, response.GetStatus(response.RequestBodyTooLarge), response.GetErrorStatusCode(response.RequestBodyTooLarge), 1)
 				req.done <- transformerResponse{
 					StatusCode: response.GetErrorStatusCode(response.RequestBodyTooLarge),
 					Err:        response.GetStatus(response.RequestBodyTooLarge),
@@ -362,6 +369,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, body)
 			if err != nil {
+				bt.webhook.countWebhookErrors(req.sourceType, req.authContext, response.GetStatus(response.InvalidWebhookSource), response.GetErrorStatusCode(response.InvalidWebhookSource), 1)
 				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidWebhookSource)}
 				continue
 			}
