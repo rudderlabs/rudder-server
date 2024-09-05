@@ -116,9 +116,8 @@ require (
 	google.golang.org/protobuf v1.34.2
 )
 
-require github.com/rudderlabs/goqu/v10 v10.3.0 // indirect
-
 require (
+	github.com/rudderlabs/goqu/v10 v10.3.0 // indirect
 	cloud.google.com/go v0.115.1 // indirect
 	cloud.google.com/go/auth v0.9.3 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
