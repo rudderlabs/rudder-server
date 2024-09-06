@@ -482,6 +482,12 @@ func TestRecordWebhookErrors(t *testing.T) {
 }
 
 func TestPrepareRequestBody(t *testing.T) {
+	initWebhook()
+	ctrl := gomock.NewController(t)
+	mockGW := mockWebhook.NewMockGateway(ctrl)
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
 	type requestOpts struct {
 		method  string
 		target  string
@@ -508,6 +514,7 @@ func TestPrepareRequestBody(t *testing.T) {
 		name               string
 		req                *http.Request
 		sourceType         string
+		description        string
 		includeQueryParams bool
 		wantError          bool
 		expectedResponse   string
@@ -549,12 +556,19 @@ func TestPrepareRequestBody(t *testing.T) {
 			sourceType:       "shopify",
 			expectedResponse: `{"key":"value","query_parameters":{}}`,
 		},
-		// {
-		// 	name:             "Some payload with headers for shopify",
-		// 	req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), headers: map[string]string{"X-Key": "header-value"}}),
-		// 	sourceType:       "shopify",
-		// 	expectedResponse: `{"key":"value","query_parameters":{},"headers":{"X-Key":"header-value"}}`,
-		// },
+		{
+			name:             "Some payload with headers for shopify",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), headers: map[string]string{"X-Key": "header-value"}}),
+			sourceType:       "shopify",
+			expectedResponse: `{"key":"value","query_parameters":{},"headers":{"X-Key":"header-value"}}`,
+		},
+		{
+			name:             "Some payload with headers for sendgrid",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`[{"key":"value"}]`), headers: map[string]string{"X-Key": "header-value"}}),
+			sourceType:       "webhook",
+			description:      "Request Body is array so headers won't be included",
+			expectedResponse: `[{"key":"value"}]`,
+		},
 		{
 			name:             "Some payload with query parameters for Adjust",
 			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
@@ -571,7 +585,7 @@ func TestPrepareRequestBody(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
+			result, err := webhookHandler.prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
 			if tc.wantError {
 				require.Error(t, err)
 				return

@@ -269,18 +269,18 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-// func getXHeaders(req *http.Request) map[string]string {
-// 	xHeaders := make(map[string]string)
-// 	for key, values := range req.Header {
-// 		lowerCaseKey := strings.ToLower(key)
-// 		if !strings.HasPrefix(lowerCaseKey, "x-forwarded-") && strings.HasPrefix(lowerCaseKey, "x-") {
-// 			xHeaders[key] = strings.Join(values, ",")
-// 		}
-// 	}
-// 	return xHeaders
-// }
+func getXHeaders(req *http.Request) map[string]string {
+	xHeaders := make(map[string]string)
+	for key, values := range req.Header {
+		lowerCaseKey := strings.ToLower(key)
+		if !strings.HasPrefix(lowerCaseKey, "x-forwarded-") && strings.HasPrefix(lowerCaseKey, "x-") {
+			xHeaders[key] = strings.Join(values, ",")
+		}
+	}
+	return xHeaders
+}
 
-func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
+func (webhook *HandleT) prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
 	defer func() {
 		_ = req.Body.Close()
 	}()
@@ -303,14 +303,16 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 		}
 	}
 
-	// xHeaders := getXHeaders(req)
-	// if len(xHeaders) > 0 {
-	// 	body, err = sjson.SetBytes(body, "headers", xHeaders)
-	// 	if err != nil {
-	// 		return nil, errors.New(response.InvalidJSON)
-	// 	}
-
-	// }
+	xHeaders := getXHeaders(req)
+	if len(xHeaders) > 0 {
+		bodyWithHeaders, err := sjson.SetBytes(body, "headers", xHeaders)
+		if err != nil {
+			// When headers are not set in body, log the error and continue without setting headers
+			webhook.logger.Infof("Error while setting headers for source type=%s in body: %s", sourceType, err.Error())
+		} else {
+			body = bodyWithHeaders
+		}
+	}
 
 	return body, nil
 }
@@ -343,7 +345,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
-			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			body, err := bt.webhook.prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
 				continue
