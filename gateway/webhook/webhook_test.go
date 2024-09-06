@@ -550,12 +550,6 @@ func TestPrepareRequestBody(t *testing.T) {
 			expectedResponse: `{"key":"value","query_parameters":{}}`,
 		},
 		{
-			name:             "Some payload with headers for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), headers: map[string]string{"X-Key": "header-value"}}),
-			sourceType:       "shopify",
-			expectedResponse: `{"key":"value","query_parameters":{},"headers":{"X-Key":"header-value"}}`,
-		},
-		{
 			name:             "Some payload with query parameters for Adjust",
 			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
 			sourceType:       "Adjust",

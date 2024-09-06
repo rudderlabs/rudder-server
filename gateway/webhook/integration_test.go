@@ -284,14 +284,18 @@ func TestIntegrationWebhook(t *testing.T) {
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
 
-			r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
-				WorkspaceID: workspaceID,
-				// ParameterFilters: []jobsdb.ParameterFilterT{{
-				// 	Name:  "source_id",
-				// 	Value: sourceID,
-				// }},
-				JobsLimit: 1,
-			})
+			require.Eventually(t, func() bool {
+				r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+					WorkspaceID: workspaceID,
+					ParameterFilters: []jobsdb.ParameterFilterT{{
+						Name:  "source_id",
+						Value: sourceID,
+					}},
+					JobsLimit: 1,
+				})
+				return err == nil && len(r.Jobs) == len(tc.Output.ErrQueue)
+			}, time.Second, time.Millisecond*10)
+			
 			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
