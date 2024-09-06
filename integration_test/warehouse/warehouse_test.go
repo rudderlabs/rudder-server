@@ -434,6 +434,7 @@ func TestUploads(t *testing.T) {
 			group             errgroup.Group
 			postgresResource  *postgres.Resource
 			sshServerResource *sshserver.Resource
+			minioResource     *minio.Resource
 		)
 		group.Go(func() (err error) {
 			postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
@@ -446,6 +447,10 @@ func TestUploads(t *testing.T) {
 				sshserver.WithDockerNetwork(network),
 			)
 			return err
+		})
+		group.Go(func() (err error) {
+			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
+			return
 		})
 		require.NoError(t, group.Wait())
 
@@ -463,57 +468,72 @@ func TestUploads(t *testing.T) {
 		tunnelledPrivateKey, err := os.ReadFile(privateKeyPath)
 		require.NoError(t, err)
 
-		db, minioResource, whClient := setupServer(t, false,
-			func(m map[string]backendconfig.ConfigT, minioResource *minio.Resource) {
-				m[workspaceID] = backendconfig.ConfigT{
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
+		bcConfig := defaultBackendConfig(postgresResource, minioResource, false)
+		bcConfig[workspaceID] = backendconfig.ConfigT{
+			WorkspaceID: workspaceID,
+			Sources: []backendconfig.SourceT{
+				{
+					ID:      sourceID,
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{
 						{
-							ID:      sourceID,
+							ID:      destinationID,
 							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]any{
-										"host":             tunnelledHost,
-										"database":         tunnelledDatabase,
-										"user":             tunnelledUser,
-										"password":         tunnelledPassword,
-										"port":             tunnelledPort,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"useSSH":           true,
-										"sshUser":          tunnelledSSHUser,
-										"sshPort":          tunnelledSSHPort,
-										"sshHost":          tunnelledSSHHost,
-										"sshPrivateKey":    strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
-									},
-									RevisionID: destinationID,
-								},
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: whutils.POSTGRES,
 							},
+							Config: map[string]any{
+								"host":             tunnelledHost,
+								"database":         tunnelledDatabase,
+								"user":             tunnelledUser,
+								"password":         tunnelledPassword,
+								"port":             tunnelledPort,
+								"sslMode":          "disable",
+								"namespace":        namespace,
+								"bucketProvider":   whutils.MINIO,
+								"bucketName":       minioResource.BucketName,
+								"accessKeyID":      minioResource.AccessKeyID,
+								"secretAccessKey":  minioResource.AccessKeySecret,
+								"useSSL":           false,
+								"endPoint":         minioResource.Endpoint,
+								"syncFrequency":    "0",
+								"useRudderStorage": false,
+								"useSSH":           true,
+								"sshUser":          tunnelledSSHUser,
+								"sshPort":          tunnelledSSHPort,
+								"sshHost":          tunnelledSSHHost,
+								"sshPrivateKey":    strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
+							},
+							RevisionID: destinationID,
 						},
 					},
-				}
+				},
 			},
-			nil,
+		}
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			require.NoError(t, runWarehouseServer(t, ctx, webPort, postgresResource, bcConfig))
+		}()
+		t.Cleanup(func() {
+			cancel()
+			<-done
+		})
+
+		serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+		health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
+
+		var (
+			db       = sqlmw.New(postgresResource.DB)
+			whClient = whclient.NewWarehouse(serverURL)
+			events   = 100
+			jobs     = 1
 		)
-
-		ctx := context.Background()
-		events := 100
-		jobs := 1
-
 		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 				uuid.New().String(),

@@ -272,7 +272,7 @@ func (r *Router) initWorker() chan *UploadJob {
 
 				err := uploadJob.run()
 				if err != nil {
-					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+v", err)
 				}
 
 				r.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
