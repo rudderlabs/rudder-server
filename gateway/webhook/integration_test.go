@@ -295,7 +295,7 @@ func TestIntegrationWebhook(t *testing.T) {
 				})
 				return err == nil && len(r.Jobs) == len(tc.Output.ErrQueue)
 			}, time.Second, time.Millisecond*10)
-			
+
 			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
