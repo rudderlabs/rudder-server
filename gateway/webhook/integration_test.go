@@ -89,6 +89,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		"gateway",
 		jobsdb.WithDBHandle(p.DB),
 	)
+
 	require.NoError(t, gatewayDB.Start())
 	defer gatewayDB.TearDown()
 
@@ -123,6 +124,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	bcs := make(map[string]backendconfig.ConfigT)
 
 	testSetup := testcases.Load(t)
+
 	sourceConfigs := make([]backendconfig.SourceT, len(testSetup.Cases))
 
 	for i, tc := range testSetup.Cases {
