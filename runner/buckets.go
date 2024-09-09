@@ -128,5 +128,13 @@ var (
 			// 1microsecond, 2.5microsecond, 5microsecond, 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
 			0.00001, 0.00025, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 		},
+		"router_transformation_payload_size_bytes": {
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+		},
+		"router_delivery_payload_size_bytes": {
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+		},
 	}
 )

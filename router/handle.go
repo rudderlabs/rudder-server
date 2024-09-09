@@ -75,6 +75,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
+	reportJobsdbPayload                config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
 
