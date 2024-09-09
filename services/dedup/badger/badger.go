@@ -114,6 +114,7 @@ func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 }
 
 func (d *BadgerDB) Close() {
+	d.init()
 	close(d.close)
 	<-d.gcDone
 	_ = d.badgerDB.Close()
