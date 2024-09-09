@@ -144,6 +144,11 @@ func (d *BadgerDB) gcLoop() {
 		case <-time.After(5 * time.Minute):
 		}
 	again:
+		select {
+		case <-d.close:
+			return
+		default:
+		}
 		// One call would only result in removal of at max one log file.
 		// As an optimization, you could also immediately re-run it whenever it returns nil error
 		// (this is why `goto again` is used).
