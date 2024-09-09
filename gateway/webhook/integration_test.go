@@ -293,12 +293,12 @@ func TestIntegrationWebhook(t *testing.T) {
 						Name:  "source_id",
 						Value: sourceID,
 					}},
-					JobsLimit: 10,
+					JobsLimit: 1,
 				})
-				require.NoError(t, err)
-				return len(r.Jobs) == len(tc.Output.ErrQueue)
+				return err == nil && len(r.Jobs) == len(tc.Output.ErrQueue)
 			}, time.Second, time.Millisecond*10)
 
+			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
 				errPayload, err := json.Marshal(struct {
