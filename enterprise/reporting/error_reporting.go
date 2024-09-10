@@ -365,11 +365,22 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 			getReportsStart := time.Now()
 			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
+			if ctx.Err() != nil {
+				edr.log.Errorw("getting reports", "error", ctx.Err())
+				select {
+				case <-ctx.Done():
+					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					return ctx.Err()
+				case <-time.After(edr.mainLoopSleepInterval.Load()):
+				}
+				continue
+			}
 			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 			getReportsTimer.Since(getReportsStart)
 			getReportsSize.Observe(float64(len(reports)))
 
 			if len(reports) == 0 {
+				lastReportedAtTime.Store(loopStart)
 				select {
 				case <-ctx.Done():
 					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
