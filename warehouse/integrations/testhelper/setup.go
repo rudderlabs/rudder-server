@@ -77,7 +77,6 @@ func (w *TestConfig) VerifyEvents(t testing.TB) {
 	createStagingFile(t, w)
 
 	verifyEventsInStagingFiles(t, w)
-	verifyEventsInLoadFiles(t, w)
 	verifyEventsInTableUploads(t, w)
 
 	if w.SourceJob {

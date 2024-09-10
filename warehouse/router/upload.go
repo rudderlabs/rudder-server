@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -287,16 +289,14 @@ func (job *UploadJob) run() (err error) {
 	defer whManager.Cleanup(job.ctx)
 
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
-		job.logger.Warnw("Error during recovery (dangling staging table cleanup)",
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
-			logfield.Namespace, job.warehouse.Namespace,
-			logfield.Error, err.Error(),
+		job.logger.Warnn("Error during recovery (dangling staging table cleanup)",
+			obskit.DestinationID(job.warehouse.Destination.ID),
+			obskit.DestinationType(job.warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(job.warehouse.WorkspaceID),
+			obskit.Namespace(job.warehouse.Namespace),
+			obskit.Error(err),
+			obskit.SourceID(job.warehouse.Source.ID),
+			obskit.SourceType(job.warehouse.Source.SourceDefinition.Name),
 		)
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
@@ -424,6 +424,7 @@ func (job *UploadJob) run() (err error) {
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == model.ExportedData {
+			_ = job.loadFilesRepo.DeleteByStagingFiles(job.ctx, job.stagingFileIDs)
 			break
 		}
 

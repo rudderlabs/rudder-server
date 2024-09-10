@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.1](https://github.com/rudderlabs/rudder-server/compare/v1.33.0...v1.33.1) (2024-09-06)
+
+
+### Bug Fixes
+
+* revert support for webhook headers ([#5064](https://github.com/rudderlabs/rudder-server/issues/5064)) ([56eca34](https://github.com/rudderlabs/rudder-server/commit/56eca3475e24ab9ba12624d2b4015c9d15be7249))
+
 ## [1.33.0](https://github.com/rudderlabs/rudder-server/compare/v1.32.0...v1.33.0) (2024-09-02)
 
 
