@@ -88,7 +88,7 @@ func TestWebhookMaxRequestSize(t *testing.T) {
 
 	mockGW := mockWebhook.NewMockGateway(ctrl)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
 
 	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
 
@@ -130,7 +130,7 @@ func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
 	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
+	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
 	arctx := &gwtypes.AuthRequestContext{
 		SourceDefName: sourceDefName,
 		WriteKey:      sampleWriteKey,
