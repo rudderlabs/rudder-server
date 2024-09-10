@@ -46,3 +46,11 @@ func Test_Badger(t *testing.T) {
 		require.False(t, found)
 	})
 }
+
+func TestBadgerClose(t *testing.T) {
+	badger := NewBadgerDB(config.New(), stats.NOP, t.TempDir())
+	require.NotNil(t, badger)
+
+	t.Log("close badger without any other operation")
+	badger.Close()
+}
