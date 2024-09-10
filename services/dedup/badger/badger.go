@@ -129,8 +129,6 @@ func (d *BadgerDB) init() error {
 	var err error
 
 	d.once.Do(func() {
-		d.wg = sync.WaitGroup{}
-
 		d.badgerDB, err = badger.Open(d.opts)
 		if err != nil {
 			return
