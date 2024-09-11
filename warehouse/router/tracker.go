@@ -23,13 +23,13 @@ import (
 // CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouse
 // we pick the staging file which is oldest within the range NOW() - 2 * syncFrequency and NOW() - 3 * syncFrequency
 func (r *Router) CronTracker(ctx context.Context) error {
-	tick := r.statsFactory.NewTaggedStat("warehouse_cron_tracker_tick", stats.CountType, stats.Tags{
+	cronTrackerExecTimestamp := r.statsFactory.NewTaggedStat("warehouse_cron_tracker_timestamp_seconds", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
 		"destType": r.destType,
 	})
 	for {
 
-		tick.Count(1)
+		cronTrackerExecTimestamp.Gauge(time.Now().Unix())
 
 		r.configSubscriberLock.RLock()
 		warehouses := append([]model.Warehouse{}, r.warehouses...)
