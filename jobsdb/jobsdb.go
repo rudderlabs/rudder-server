@@ -1483,8 +1483,9 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pqError, ok := err.(*pq.Error)
-		if ok && pqError.Code == pq.ErrorCode("42P01") {
+		var pqError *pq.Error
+		ok := errors.As(err, &pqError)
+		if ok && pqError.Code == ("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
@@ -3178,7 +3179,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
 	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		jd.assertError(err)
 	}
 	return &job
