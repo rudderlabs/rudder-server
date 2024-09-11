@@ -12,9 +12,12 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sftp/mock_sftp"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -133,7 +136,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := newDefaultManager(fileManager)
+			defaultManager := newDefaultManager(logger.NOP, stats.NOP, fileManager)
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017},
@@ -155,7 +158,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := newDefaultManager(fileManager)
+			defaultManager := newDefaultManager(logger.NOP, stats.NOP, fileManager)
 			fileManager.EXPECT().Upload(gomock.Any(), gomock.Any()).Return(fmt.Errorf("root directory does not exists"))
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			asyncDestination := common.AsyncDestinationStruct{
@@ -178,7 +181,7 @@ var _ = Describe("SFTP test", func() {
 			initSFTP()
 			ctrl := gomock.NewController(GinkgoT())
 			fileManager := mock_sftp.NewMockFileManager(ctrl)
-			defaultManager := newDefaultManager(fileManager)
+			defaultManager := newDefaultManager(logger.NOP, stats.NOP, fileManager)
 			now := time.Now()
 			filePath := fmt.Sprintf("/tmp/testDir1/destination_id_1_someJobRunId_1/file_%d_%02d_%02d_%d_1.csv", now.Year(), now.Month(), now.Day(), now.Unix())
 			fileManager.EXPECT().Upload(gomock.Any(), filePath).Return(nil)
