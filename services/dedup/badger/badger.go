@@ -1,6 +1,7 @@
 package badger
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -23,11 +24,12 @@ type BadgerDB struct {
 	logger   loggerForBadger
 	badgerDB *badger.DB
 	window   config.ValueLoader[time.Duration]
-	close    chan struct{}
-	gcDone   chan struct{}
 	path     string
 	opts     badger.Options
 	once     sync.Once
+	wg       sync.WaitGroup
+	bgCtx    context.Context
+	cancel   context.CancelFunc
 }
 
 // DefaultPath returns the default path for the deduplication service's badger DB
@@ -57,14 +59,16 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 		WithSyncWrites(conf.GetBool("BadgerDB.syncWrites", false)).
 		WithDetectConflicts(conf.GetBool("BadgerDB.detectConflicts", false))
 
+	bgCtx, cancel := context.WithCancel(context.Background())
 	db := &BadgerDB{
 		stats:  stats,
 		logger: loggerForBadger{log},
 		path:   path,
-		gcDone: make(chan struct{}),
-		close:  make(chan struct{}),
 		window: dedupWindow,
 		opts:   badgerOpts,
+		wg:     sync.WaitGroup{},
+		bgCtx:  bgCtx,
+		cancel: cancel,
 	}
 	return &Dedup{
 		badgerDB: db,
@@ -114,9 +118,11 @@ func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 }
 
 func (d *BadgerDB) Close() {
-	close(d.close)
-	<-d.gcDone
-	_ = d.badgerDB.Close()
+	d.cancel()
+	d.wg.Wait()
+	if d.badgerDB != nil {
+		_ = d.badgerDB.Close()
+	}
 }
 
 func (d *BadgerDB) init() error {
@@ -127,9 +133,10 @@ func (d *BadgerDB) init() error {
 		if err != nil {
 			return
 		}
+		d.wg.Add(1)
 		rruntime.Go(func() {
+			defer d.wg.Done()
 			d.gcLoop()
-			close(d.gcDone)
 		})
 	})
 	return err
@@ -138,12 +145,15 @@ func (d *BadgerDB) init() error {
 func (d *BadgerDB) gcLoop() {
 	for {
 		select {
-		case <-d.close:
+		case <-d.bgCtx.Done():
 			_ = d.badgerDB.RunValueLogGC(0.5)
 			return
 		case <-time.After(5 * time.Minute):
 		}
 	again:
+		if d.bgCtx.Err() != nil {
+			return
+		}
 		// One call would only result in removal of at max one log file.
 		// As an optimization, you could also immediately re-run it whenever it returns nil error
 		// (this is why `goto again` is used).
