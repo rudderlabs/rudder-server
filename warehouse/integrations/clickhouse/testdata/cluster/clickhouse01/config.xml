@@ -31,7 +31,7 @@
     <users_config>users.xml</users_config>
     <default_profile>rudder</default_profile>
     <default_database>rudderdb</default_database>
-    <timezone>Europe/Moscow</timezone>
+    <timezone>UTC</timezone>
     <mlock_executable>false</mlock_executable>
 
     <remote_servers>
