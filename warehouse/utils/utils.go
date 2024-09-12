@@ -169,6 +169,7 @@ var DiscardsSchema = map[string]string{
 	"column_value": "string",
 	"received_at":  "datetime",
 	"uuid_ts":      "datetime",
+	"reason":       "string",
 }
 
 const (
