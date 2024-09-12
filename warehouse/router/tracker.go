@@ -29,7 +29,8 @@ func (r *Router) CronTracker(ctx context.Context) error {
 	})
 	for {
 
-		cronTrackerExecTimestamp.Gauge(time.Now().Unix())
+		execTime := time.Now()
+		cronTrackerExecTimestamp.Gauge(execTime.Unix())
 
 		r.configSubscriberLock.RLock()
 		warehouses := append([]model.Warehouse{}, r.warehouses...)
@@ -51,11 +52,12 @@ func (r *Router) CronTracker(ctx context.Context) error {
 			}
 		}
 
+		nextExecTime := execTime.Add(r.config.uploadStatusTrackFrequency)
 		select {
 		case <-ctx.Done():
 			r.logger.Infon("context is cancelled, stopped running tracking")
 			return nil
-		case <-time.After(r.config.uploadStatusTrackFrequency):
+		case <-time.After(time.Until(nextExecTime)):
 		}
 	}
 }
