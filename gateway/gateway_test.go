@@ -559,7 +559,7 @@ var _ = Describe("Gateway", func() {
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
 			expectedStr := []byte(fmt.Sprintf(
-				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "","source_category": "", "traceparent": ""}`,
+				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "","source_category": "webhook", "traceparent": ""}`,
 				SourceIDEnabled,
 			))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
