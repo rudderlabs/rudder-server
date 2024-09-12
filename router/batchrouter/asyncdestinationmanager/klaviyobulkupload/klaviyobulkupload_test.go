@@ -7,6 +7,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -30,7 +34,7 @@ var destination = &backendconfig.DestinationT{
 }
 
 func TestNewManagerSuccess(t *testing.T) {
-	manager, err := klaviyobulkupload.NewManager(destination)
+	manager, err := klaviyobulkupload.NewManager(logger.NOP, stats.NOP, destination)
 	assert.NoError(t, err)
 	assert.NotNil(t, manager)
 	assert.Equal(t, "KLAVIYO_BULK_UPLOAD", destination.Name)
