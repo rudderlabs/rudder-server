@@ -64,23 +64,204 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		azureSynapsePort := c.Port("azure_synapse", 1433)
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testcase := []struct {
-			name   string
-			tables []string
+			name          string
+			tables        []string
+			verifySchema  func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
 		}{
 			{
 				name:   "Upload Job",
 				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"screens", "context_source_id", "varchar"},
+						{"screens", "user_id", "varchar"},
+						{"screens", "sent_at", "datetimeoffset"},
+						{"screens", "context_request_ip", "varchar"},
+						{"screens", "original_timestamp", "datetimeoffset"},
+						{"screens", "url", "varchar"},
+						{"screens", "context_source_type", "varchar"},
+						{"screens", "_between", "varchar"},
+						{"screens", "timestamp", "datetimeoffset"},
+						{"screens", "context_ip", "varchar"},
+						{"screens", "context_destination_type", "varchar"},
+						{"screens", "received_at", "datetimeoffset"},
+						{"screens", "title", "varchar"},
+						{"screens", "uuid_ts", "datetimeoffset"},
+						{"screens", "context_destination_id", "varchar"},
+						{"screens", "name", "varchar"},
+						{"screens", "id", "varchar"},
+						{"screens", "_as", "varchar"},
+						{"identifies", "context_ip", "varchar"},
+						{"identifies", "context_destination_id", "varchar"},
+						{"identifies", "email", "varchar"},
+						{"identifies", "context_request_ip", "varchar"},
+						{"identifies", "sent_at", "datetimeoffset"},
+						{"identifies", "uuid_ts", "datetimeoffset"},
+						{"identifies", "_as", "varchar"},
+						{"identifies", "logins", "bigint"},
+						{"identifies", "context_source_type", "varchar"},
+						{"identifies", "context_traits_logins", "bigint"},
+						{"identifies", "name", "varchar"},
+						{"identifies", "context_destination_type", "varchar"},
+						{"identifies", "_between", "varchar"},
+						{"identifies", "id", "varchar"},
+						{"identifies", "timestamp", "datetimeoffset"},
+						{"identifies", "received_at", "datetimeoffset"},
+						{"identifies", "user_id", "varchar"},
+						{"identifies", "context_traits_email", "varchar"},
+						{"identifies", "context_traits_as", "varchar"},
+						{"identifies", "context_traits_name", "varchar"},
+						{"identifies", "original_timestamp", "datetimeoffset"},
+						{"identifies", "context_traits_between", "varchar"},
+						{"identifies", "context_source_id", "varchar"},
+						{"users", "context_traits_name", "varchar"},
+						{"users", "context_traits_between", "varchar"},
+						{"users", "context_request_ip", "varchar"},
+						{"users", "context_traits_logins", "bigint"},
+						{"users", "context_destination_id", "varchar"},
+						{"users", "email", "varchar"},
+						{"users", "logins", "bigint"},
+						{"users", "_as", "varchar"},
+						{"users", "context_source_id", "varchar"},
+						{"users", "uuid_ts", "datetimeoffset"},
+						{"users", "context_source_type", "varchar"},
+						{"users", "context_traits_email", "varchar"},
+						{"users", "name", "varchar"},
+						{"users", "id", "varchar"},
+						{"users", "_between", "varchar"},
+						{"users", "context_ip", "varchar"},
+						{"users", "received_at", "datetimeoffset"},
+						{"users", "sent_at", "datetimeoffset"},
+						{"users", "context_traits_as", "varchar"},
+						{"users", "context_destination_type", "varchar"},
+						{"users", "timestamp", "datetimeoffset"},
+						{"users", "original_timestamp", "datetimeoffset"},
+						{"product_track", "review_id", "varchar"},
+						{"product_track", "context_source_id", "varchar"},
+						{"product_track", "user_id", "varchar"},
+						{"product_track", "timestamp", "datetimeoffset"},
+						{"product_track", "uuid_ts", "datetimeoffset"},
+						{"product_track", "review_body", "varchar"},
+						{"product_track", "context_source_type", "varchar"},
+						{"product_track", "_as", "varchar"},
+						{"product_track", "_between", "varchar"},
+						{"product_track", "id", "varchar"},
+						{"product_track", "rating", "bigint"},
+						{"product_track", "event", "varchar"},
+						{"product_track", "original_timestamp", "datetimeoffset"},
+						{"product_track", "context_destination_type", "varchar"},
+						{"product_track", "context_ip", "varchar"},
+						{"product_track", "context_destination_id", "varchar"},
+						{"product_track", "sent_at", "datetimeoffset"},
+						{"product_track", "received_at", "datetimeoffset"},
+						{"product_track", "event_text", "varchar"},
+						{"product_track", "product_id", "varchar"},
+						{"product_track", "context_request_ip", "varchar"},
+						{"tracks", "original_timestamp", "datetimeoffset"},
+						{"tracks", "context_destination_id", "varchar"},
+						{"tracks", "event", "varchar"},
+						{"tracks", "context_request_ip", "varchar"},
+						{"tracks", "uuid_ts", "datetimeoffset"},
+						{"tracks", "context_destination_type", "varchar"},
+						{"tracks", "user_id", "varchar"},
+						{"tracks", "sent_at", "datetimeoffset"},
+						{"tracks", "context_source_type", "varchar"},
+						{"tracks", "context_ip", "varchar"},
+						{"tracks", "timestamp", "datetimeoffset"},
+						{"tracks", "received_at", "datetimeoffset"},
+						{"tracks", "context_source_id", "varchar"},
+						{"tracks", "event_text", "varchar"},
+						{"tracks", "id", "varchar"},
+						{"aliases", "context_request_ip", "varchar"},
+						{"aliases", "context_destination_type", "varchar"},
+						{"aliases", "context_destination_id", "varchar"},
+						{"aliases", "previous_id", "varchar"},
+						{"aliases", "context_ip", "varchar"},
+						{"aliases", "sent_at", "datetimeoffset"},
+						{"aliases", "id", "varchar"},
+						{"aliases", "uuid_ts", "datetimeoffset"},
+						{"aliases", "timestamp", "datetimeoffset"},
+						{"aliases", "original_timestamp", "datetimeoffset"},
+						{"aliases", "context_source_id", "varchar"},
+						{"aliases", "user_id", "varchar"},
+						{"aliases", "context_source_type", "varchar"},
+						{"aliases", "received_at", "datetimeoffset"},
+						{"pages", "name", "varchar"},
+						{"pages", "url", "varchar"},
+						{"pages", "id", "varchar"},
+						{"pages", "timestamp", "datetimeoffset"},
+						{"pages", "title", "varchar"},
+						{"pages", "user_id", "varchar"},
+						{"pages", "context_source_id", "varchar"},
+						{"pages", "context_source_type", "varchar"},
+						{"pages", "original_timestamp", "datetimeoffset"},
+						{"pages", "context_request_ip", "varchar"},
+						{"pages", "received_at", "datetimeoffset"},
+						{"pages", "_between", "varchar"},
+						{"pages", "context_destination_type", "varchar"},
+						{"pages", "uuid_ts", "datetimeoffset"},
+						{"pages", "context_destination_id", "varchar"},
+						{"pages", "sent_at", "datetimeoffset"},
+						{"pages", "context_ip", "varchar"},
+						{"pages", "_as", "varchar"},
+						{"groups", "_as", "varchar"},
+						{"groups", "user_id", "varchar"},
+						{"groups", "context_destination_type", "varchar"},
+						{"groups", "sent_at", "datetimeoffset"},
+						{"groups", "context_source_type", "varchar"},
+						{"groups", "received_at", "datetimeoffset"},
+						{"groups", "context_ip", "varchar"},
+						{"groups", "industry", "varchar"},
+						{"groups", "timestamp", "datetimeoffset"},
+						{"groups", "group_id", "varchar"},
+						{"groups", "uuid_ts", "datetimeoffset"},
+						{"groups", "context_source_id", "varchar"},
+						{"groups", "context_request_ip", "varchar"},
+						{"groups", "_between", "varchar"},
+						{"groups", "original_timestamp", "datetimeoffset"},
+						{"groups", "name", "varchar"},
+						{"groups", "_plan", "varchar"},
+						{"groups", "context_destination_id", "varchar"},
+						{"groups", "employees", "bigint"},
+						{"groups", "id", "varchar"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					userIDFormat := "userId_azure_synapse"
+					userIDSQL := "LEFT(user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id) + 1) + 1) - 1)"
+					uuidTSSQL := "LEFT(uuid_ts, 10)"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, LEFT(id, CHARINDEX('_', id, CHARINDEX('_', id, CHARINDEX('_', id) + 1) + 1) - 1), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, _plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 		}
 
@@ -93,7 +274,7 @@ func TestIntegration(t *testing.T) {
 					namespace     = whth.RandSchema(destType)
 				)
 
-				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+				destination := backendconfigtest.NewDestinationBuilder(destType).
 					WithID(destinationID).
 					WithRevisionID(destinationID).
 					WithConfigOption("host", host).
@@ -110,7 +291,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useSSL", false).
 					WithConfigOption("endPoint", minioEndpoint).
 					WithConfigOption("useRudderStorage", false).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -118,7 +300,7 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
@@ -167,10 +349,10 @@ func TestIntegration(t *testing.T) {
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
-					JobRunID:        misc.FastUUID().String(),
-					TaskRunID:       misc.FastUUID().String(),
-					StagingFilePath: "testdata/upload-job.staging-1.json",
+					EventsFilePath:  "../testdata/upload-job.events-1.json",
 					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
@@ -187,12 +369,18 @@ func TestIntegration(t *testing.T) {
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
-					JobRunID:        misc.FastUUID().String(),
-					TaskRunID:       misc.FastUUID().String(),
-					StagingFilePath: "testdata/upload-job.staging-2.json",
+					EventsFilePath:  "../testdata/upload-job.events-2.json",
 					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 			})
 		}
 	})
