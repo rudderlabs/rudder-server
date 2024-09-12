@@ -61,7 +61,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml", "testdata/docker-compose.gcs.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml", "testdata/docker-compose.gcs.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -69,17 +69,17 @@ func TestIntegration(t *testing.T) {
 		azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 		gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testCases := []struct {
-			name              string
-			tables            []string
-			destType          string
-			conf              map[string]interface{}
-			prerequisite      func(t testing.TB, ctx context.Context)
-			stagingFilePrefix string
-			configOverride    map[string]any
+			name           string
+			tables         []string
+			destType       string
+			conf           map[string]interface{}
+			prerequisite   func(t testing.TB, ctx context.Context)
+			configOverride map[string]any
 		}{
 			{
 				name:     "S3Datalake",
@@ -100,7 +100,6 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB, ctx context.Context) {
 					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
-				stagingFilePrefix: "testdata/upload-job-s3-datalake",
 				configOverride: map[string]any{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
@@ -114,7 +113,7 @@ func TestIntegration(t *testing.T) {
 			},
 			{
 				name:     "GCSDatalake",
-				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases"},
 				destType: whutils.GCSDatalake,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
@@ -127,7 +126,6 @@ func TestIntegration(t *testing.T) {
 				prerequisite: func(t testing.TB, ctx context.Context) {
 					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 				},
-				stagingFilePrefix: "testdata/upload-job-gcs-datalake",
 				configOverride: map[string]any{
 					"bucketName": gcsBucketName,
 					"endPoint":   gcsEndPoint,
@@ -149,7 +147,6 @@ func TestIntegration(t *testing.T) {
 					"forcePathStyle": true,
 					"disableSSL":     true,
 				},
-				stagingFilePrefix: "testdata/upload-job-azure-datalake",
 				configOverride: map[string]any{
 					"containerName":  azContainerName,
 					"accountName":    azAccountName,
@@ -178,6 +175,7 @@ func TestIntegration(t *testing.T) {
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
+				destination := destinationBuilder.Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -185,7 +183,7 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
@@ -216,7 +214,9 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:        httpPort,
 					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
-					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
+					EventsFilePath:  "../testdata/upload-job.events-1.json",
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
@@ -234,7 +234,9 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:        httpPort,
 					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
-					StagingFilePath: tc.stagingFilePrefix + ".staging-2.json",
+					EventsFilePath:  "../testdata/upload-job.events-2.json",
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
 			})
@@ -355,7 +357,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.trino.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.trino.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		destType := whutils.S3Datalake
@@ -363,6 +365,7 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
@@ -372,28 +375,28 @@ func TestIntegration(t *testing.T) {
 		writeKey := whutils.RandHex()
 		namespace := whth.RandSchema(destType)
 
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("namespace", namespace).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("region", s3Region).
+			WithConfigOption("bucketName", s3BucketName).
+			WithConfigOption("accessKeyID", s3AccessKeyID).
+			WithConfigOption("accessKey", s3AccessKey).
+			WithConfigOption("endPoint", s3EndPoint).
+			WithConfigOption("enableSSE", false).
+			WithConfigOption("s3ForcePathStyle", true).
+			WithConfigOption("disableSSL", true).
+			WithConfigOption("prefix", "some-prefix").
+			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
 				backendconfigtest.NewSourceBuilder().
 					WithID(sourceID).
 					WithWriteKey(writeKey).
 					WithWorkspaceID(workspaceID).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder(destType).
-							WithID(destinationID).
-							WithRevisionID(destinationID).
-							WithConfigOption("namespace", namespace).
-							WithConfigOption("syncFrequency", "30").
-							WithConfigOption("region", s3Region).
-							WithConfigOption("bucketName", s3BucketName).
-							WithConfigOption("accessKeyID", s3AccessKeyID).
-							WithConfigOption("accessKey", s3AccessKey).
-							WithConfigOption("endPoint", s3EndPoint).
-							WithConfigOption("enableSSE", false).
-							WithConfigOption("s3ForcePathStyle", true).
-							WithConfigOption("disableSSL", true).
-							WithConfigOption("prefix", "some-prefix").Build(),
-					).
+					WithConnection(destination).
 					Build(),
 			).
 			WithWorkspaceID(workspaceID).
@@ -404,16 +407,12 @@ func TestIntegration(t *testing.T) {
 		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 		ts := whth.TestConfig{
-			WriteKey:              writeKey,
-			Schema:                namespace,
-			Tables:                []string{"tracks"},
-			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
-			LoadFilesEventsMap:    map[string]int{"tracks": 8},
-			TableUploadsEventsMap: map[string]int{"tracks": 8},
-			WarehouseEventsMap:    map[string]int{"tracks": 8},
-			SourceID:              sourceID,
-			DestinationID:         destinationID,
-			DestinationType:       destType,
+			WriteKey:        writeKey,
+			Schema:          namespace,
+			Tables:          []string{"tracks"},
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destType,
 			Config: map[string]interface{}{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
@@ -426,12 +425,14 @@ func TestIntegration(t *testing.T) {
 				"prefix":           "some-prefix",
 				"syncFrequency":    "30",
 			},
-			WorkspaceID:     workspaceID,
-			JobsDB:          jobsDB,
-			HTTPPort:        httpPort,
-			UserID:          whth.GetUserId(destType),
-			SkipWarehouse:   true,
-			StagingFilePath: "testdata/trino.staging.json",
+			WorkspaceID:    workspaceID,
+			JobsDB:         jobsDB,
+			HTTPPort:       httpPort,
+			UserID:         whth.GetUserId(destType),
+			SkipWarehouse:  true,
+			EventsFilePath: "../testdata/upload-job.events-1.json",
+			TransformerURL: transformerURL,
+			Destination:    destination,
 		}
 		ts.VerifyEvents(t)
 
@@ -467,13 +468,11 @@ func TestIntegration(t *testing.T) {
 		)
 		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
-				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
+				CREATE TABLE IF NOT EXISTS minio.rudderstack.product_track (
 					"_timestamp" TIMESTAMP,
 					context_destination_id VARCHAR,
 					context_destination_type VARCHAR,
 					context_ip VARCHAR,
-					context_library_name VARCHAR,
-					context_passed_ip VARCHAR,
 					context_request_ip VARCHAR,
 					context_source_id VARCHAR,
 					context_source_type VARCHAR,
@@ -485,10 +484,16 @@ func TestIntegration(t *testing.T) {
 					sent_at TIMESTAMP,
 					"timestamp" TIMESTAMP,
 					user_id VARCHAR,
-					uuid_ts TIMESTAMP
+					uuid_ts TIMESTAMP,
+					_as VARCHAR,
+					review_body VARCHAR,
+					_between VARCHAR,
+					product_id VARCHAR,
+					review_id VARCHAR,
+					rating VARCHAR
 				)
 				WITH (
-					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/',
+					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/product_track/2023/05/12/04/',
 					format = 'PARQUET'
 				)
 			`)
@@ -508,7 +513,7 @@ func TestIntegration(t *testing.T) {
 				select
 				    count(*)
 				from
-				     minio.rudderstack.tracks
+				     minio.rudderstack.product_track
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count: ", err)
@@ -519,14 +524,14 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(8), count)
+		require.Equal(t, int64(4), count)
 
 		require.Eventually(t, func() bool {
 			err := db.QueryRowContext(ctx, `
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
 					context_destination_id = '`+destinationID+`'
 			`).Scan(&count)
@@ -539,7 +544,7 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(8), count)
+		require.Equal(t, int64(4), count)
 
 		t.Log("By default parquet_use_column_index=true and parquet_ignore_statistics=false")
 		t.Log("parquet_use_column_index=true")
@@ -548,9 +553,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -584,9 +589,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -597,7 +602,7 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(3), count)
+		require.Equal(t, int64(1), count)
 
 		t.Logf("parquet_ignore_statistics=true")
 		dsnIgnoreStatistics := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_ignore_statistics=true",
@@ -614,9 +619,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -627,14 +632,14 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(3), count)
+		require.Equal(t, int64(1), count)
 	})
 
 	t.Run("Spark", func(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.spark.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.spark.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		destType := whutils.S3Datalake
@@ -642,6 +647,7 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
@@ -651,28 +657,28 @@ func TestIntegration(t *testing.T) {
 		writeKey := whutils.RandHex()
 		namespace := whth.RandSchema(destType)
 
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("namespace", namespace).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("region", s3Region).
+			WithConfigOption("bucketName", s3BucketName).
+			WithConfigOption("accessKeyID", s3AccessKeyID).
+			WithConfigOption("accessKey", s3AccessKey).
+			WithConfigOption("endPoint", s3EndPoint).
+			WithConfigOption("enableSSE", false).
+			WithConfigOption("s3ForcePathStyle", true).
+			WithConfigOption("disableSSL", true).
+			WithConfigOption("prefix", "some-prefix").
+			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
 				backendconfigtest.NewSourceBuilder().
 					WithID(sourceID).
 					WithWriteKey(writeKey).
 					WithWorkspaceID(workspaceID).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder(destType).
-							WithID(destinationID).
-							WithRevisionID(destinationID).
-							WithConfigOption("namespace", namespace).
-							WithConfigOption("syncFrequency", "30").
-							WithConfigOption("region", s3Region).
-							WithConfigOption("bucketName", s3BucketName).
-							WithConfigOption("accessKeyID", s3AccessKeyID).
-							WithConfigOption("accessKey", s3AccessKey).
-							WithConfigOption("endPoint", s3EndPoint).
-							WithConfigOption("enableSSE", false).
-							WithConfigOption("s3ForcePathStyle", true).
-							WithConfigOption("disableSSL", true).
-							WithConfigOption("prefix", "some-prefix").Build(),
-					).
+					WithConnection(destination).
 					Build(),
 			).
 			WithWorkspaceID(workspaceID).
@@ -683,16 +689,12 @@ func TestIntegration(t *testing.T) {
 		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 		ts := whth.TestConfig{
-			WriteKey:              writeKey,
-			Schema:                namespace,
-			Tables:                []string{"tracks"},
-			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
-			LoadFilesEventsMap:    map[string]int{"tracks": 8},
-			TableUploadsEventsMap: map[string]int{"tracks": 8},
-			WarehouseEventsMap:    map[string]int{"tracks": 8},
-			SourceID:              sourceID,
-			DestinationID:         destinationID,
-			DestinationType:       destType,
+			WriteKey:        writeKey,
+			Schema:          namespace,
+			Tables:          []string{"tracks"},
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destType,
 			Config: map[string]interface{}{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
@@ -705,12 +707,14 @@ func TestIntegration(t *testing.T) {
 				"prefix":           "some-prefix",
 				"syncFrequency":    "30",
 			},
-			WorkspaceID:     workspaceID,
-			JobsDB:          jobsDB,
-			HTTPPort:        httpPort,
-			UserID:          whth.GetUserId(destType),
-			SkipWarehouse:   true,
-			StagingFilePath: "testdata/spark.staging.json",
+			WorkspaceID:    workspaceID,
+			JobsDB:         jobsDB,
+			HTTPPort:       httpPort,
+			UserID:         whth.GetUserId(destType),
+			SkipWarehouse:  true,
+			EventsFilePath: "../testdata/upload-job.events-2.json",
+			TransformerURL: transformerURL,
+			Destination:    destination,
 		}
 		ts.VerifyEvents(t)
 
@@ -719,27 +723,32 @@ func TestIntegration(t *testing.T) {
 			"spark-sql",
 			"-e",
 			`
-			CREATE EXTERNAL TABLE tracks (
+			CREATE EXTERNAL TABLE product_track (
 			  	_timestamp timestamp,
 				context_destination_id string,
 			  	context_destination_type string,
 			  	context_ip string,
-				context_library_name string,
-			  	context_passed_ip string,
 				context_request_ip string,
 			  	context_source_id string,
 				context_source_type string,
 			  	event string,
-				event_text string, id string,
+				event_text string,
+                id string,
 			  	original_timestamp timestamp,
 				received_at timestamp,
 			  	sent_at timestamp,
 				timestamp timestamp,
 			  	user_id string,
-			  	uuid_ts timestamp
+			  	uuid_ts timestamp,
+				_as string,
+				review_body string,
+				_between string,
+				product_id string,
+				review_id string,
+				rating string
 			)
 			STORED AS PARQUET
-			location "s3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/";
+			location "s3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/product_track/2023/05/12/04/";
 		`,
 			"-S",
 		)
@@ -752,13 +761,13 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					tracks;
+					product_track;
 			`,
 			"-S",
 		)
 		countOutput = strings.ReplaceAll(strings.ReplaceAll(countOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, countOutput)
-		require.Equal(t, string(countOutput[len(countOutput)-1]), "8", countOutput) // last character is the count
+		require.Equal(t, string(countOutput[len(countOutput)-1]), "4", countOutput) // last character is the count
 
 		filteredCountOutput := c.Exec(ctx,
 			"spark-master",
@@ -768,7 +777,7 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					tracks
+					product_track
 				where
 					context_destination_id = '`+destinationID+`';
 			`,
@@ -776,7 +785,7 @@ func TestIntegration(t *testing.T) {
 		)
 		filteredCountOutput = strings.ReplaceAll(strings.ReplaceAll(filteredCountOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, filteredCountOutput)
-		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8", filteredCountOutput) // last character is the count
+		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "4", filteredCountOutput) // last character is the count
 	})
 }
 

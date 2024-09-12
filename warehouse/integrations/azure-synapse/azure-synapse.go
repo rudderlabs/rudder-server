@@ -628,7 +628,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 						  	select top 1 %[1]q from %[2]s
 						  	where x.id = %[2]s.id
 							  and %[1]q is not null
-							order by X.received_at desc
+							order by received_at desc
 							)
 						  end as %[1]q`, colName, as.Namespace+"."+unionStagingTableName)
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below

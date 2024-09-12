@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
@@ -91,60 +93,203 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
+		schemaFor := func(db *sql.DB, namespace, tableName string) [][]string {
+			tableSchema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`DESCRIBE QUERY TABLE %s.%s;`, namespace, tableName))
+			return lo.Map(tableSchema, func(row []string, index int) []string {
+				return []string{row[0], row[1]}
+			})
+		}
 
 		testCases := []struct {
-			name                string
-			messageID           string
-			warehouseEventsMap  whth.EventsCountMap
-			useParquetLoadFiles bool
-			stagingFilePrefix   string
-			jobRunID            string
-			configOverride      map[string]any
+			name                               string
+			warehouseEventsMap2                whth.EventsCountMap
+			useParquetLoadFiles                bool
+			configOverride                     map[string]any
+			stagingFilePath1, stagingFilePath2 string
+			useSameUserID                      bool
+			verifySchema                       func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords                      func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
 		}{
 			{
-				name:                "Merge Mode",
-				warehouseEventsMap:  mergeEventsMap(),
-				useParquetLoadFiles: false,
-				stagingFilePrefix:   "testdata/upload-job-merge-mode",
-				jobRunID:            misc.FastUUID().String(),
+				name:             "Merge Mode",
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:    true,
 				configOverride: map[string]any{
 					"preferAppend": false,
 				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					require.ElementsMatch(t, schemaFor(db, namespace, "screens"), [][]string{{"context_source_id", "string"}, {"event_date", "date"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_request_ip", "string"}, {"original_timestamp", "timestamp"}, {"url", "string"}, {"context_source_type", "string"}, {"_between", "string"}, {"timestamp", "timestamp"}, {"context_ip", "string"}, {"context_destination_type", "string"}, {"received_at", "timestamp"}, {"title", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"name", "string"}, {"id", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "identifies"), [][]string{{"context_ip", "string"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"email", "string"}, {"context_request_ip", "string"}, {"sent_at", "timestamp"}, {"uuid_ts", "timestamp"}, {"_as", "string"}, {"logins", "bigint"}, {"context_source_type", "string"}, {"context_traits_logins", "bigint"}, {"name", "string"}, {"context_destination_type", "string"}, {"_between", "string"}, {"id", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"user_id", "string"}, {"context_traits_email", "string"}, {"context_traits_as", "string"}, {"context_traits_name", "string"}, {"original_timestamp", "timestamp"}, {"context_traits_between", "string"}, {"context_source_id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "users"), [][]string{{"context_traits_name", "string"}, {"event_date", "date"}, {"context_traits_between", "string"}, {"context_request_ip", "string"}, {"context_traits_logins", "bigint"}, {"context_destination_id", "string"}, {"email", "string"}, {"logins", "bigint"}, {"_as", "string"}, {"context_source_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_type", "string"}, {"context_traits_email", "string"}, {"name", "string"}, {"id", "string"}, {"_between", "string"}, {"context_ip", "string"}, {"received_at", "timestamp"}, {"sent_at", "timestamp"}, {"context_traits_as", "string"}, {"context_destination_type", "string"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "product_track"), [][]string{{"review_id", "string"}, {"event_date", "date"}, {"context_source_id", "string"}, {"user_id", "string"}, {"timestamp", "timestamp"}, {"uuid_ts", "timestamp"}, {"review_body", "string"}, {"context_source_type", "string"}, {"_as", "string"}, {"_between", "string"}, {"id", "string"}, {"rating", "bigint"}, {"event", "string"}, {"original_timestamp", "timestamp"}, {"context_destination_type", "string"}, {"context_ip", "string"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"received_at", "timestamp"}, {"event_text", "string"}, {"product_id", "string"}, {"context_request_ip", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "tracks"), [][]string{{"original_timestamp", "timestamp"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"event", "string"}, {"context_request_ip", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_type", "string"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"context_ip", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"context_source_id", "string"}, {"event_text", "string"}, {"id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "aliases"), [][]string{{"context_request_ip", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"context_destination_id", "string"}, {"previous_id", "string"}, {"context_ip", "string"}, {"sent_at", "timestamp"}, {"id", "string"}, {"uuid_ts", "timestamp"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}, {"context_source_id", "string"}, {"user_id", "string"}, {"context_source_type", "string"}, {"received_at", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "pages"), [][]string{{"name", "string"}, {"url", "string"}, {"event_date", "date"}, {"id", "string"}, {"timestamp", "timestamp"}, {"title", "string"}, {"user_id", "string"}, {"context_source_id", "string"}, {"context_source_type", "string"}, {"original_timestamp", "timestamp"}, {"context_request_ip", "string"}, {"received_at", "timestamp"}, {"_between", "string"}, {"context_destination_type", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"context_ip", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "groups"), [][]string{{"_as", "string"}, {"user_id", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"received_at", "timestamp"}, {"context_ip", "string"}, {"industry", "string"}, {"timestamp", "timestamp"}, {"group_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_id", "string"}, {"context_request_ip", "string"}, {"_between", "string"}, {"original_timestamp", "timestamp"}, {"name", "string"}, {"plan", "string"}, {"context_destination_id", "string"}, {"employees", "bigint"}, {"id", "string"}})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_deltalake"
+					userIDSQL := "SUBSTRING(user_id, 1, 16)"
+					uuidTSSQL := "DATE_FORMAT(uuid_ts, 'yyyy-MM-dd')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:                "Append Mode",
-				warehouseEventsMap:  appendEventsMap(),
-				useParquetLoadFiles: false,
-				stagingFilePrefix:   "testdata/upload-job-append-mode",
-				// an empty jobRunID means that the source is not an ETL one
-				// see Uploader.CanAppend()
-				jobRunID: "",
+				name: "Append Mode",
+				warehouseEventsMap2: whth.EventsCountMap{
+					// For all tables we will be appending because of:
+					// * preferAppend
+					"identifies":    8,
+					"users":         2,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:    true,
 				configOverride: map[string]any{
 					"preferAppend": true,
 				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					require.ElementsMatch(t, schemaFor(db, namespace, "screens"), [][]string{{"context_source_id", "string"}, {"event_date", "date"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_request_ip", "string"}, {"original_timestamp", "timestamp"}, {"url", "string"}, {"context_source_type", "string"}, {"_between", "string"}, {"timestamp", "timestamp"}, {"context_ip", "string"}, {"context_destination_type", "string"}, {"received_at", "timestamp"}, {"title", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"name", "string"}, {"id", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "identifies"), [][]string{{"context_ip", "string"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"email", "string"}, {"context_request_ip", "string"}, {"sent_at", "timestamp"}, {"uuid_ts", "timestamp"}, {"_as", "string"}, {"logins", "bigint"}, {"context_source_type", "string"}, {"context_traits_logins", "bigint"}, {"name", "string"}, {"context_destination_type", "string"}, {"_between", "string"}, {"id", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"user_id", "string"}, {"context_traits_email", "string"}, {"context_traits_as", "string"}, {"context_traits_name", "string"}, {"original_timestamp", "timestamp"}, {"context_traits_between", "string"}, {"context_source_id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "users"), [][]string{{"context_traits_name", "string"}, {"event_date", "date"}, {"context_traits_between", "string"}, {"context_request_ip", "string"}, {"context_traits_logins", "bigint"}, {"context_destination_id", "string"}, {"email", "string"}, {"logins", "bigint"}, {"_as", "string"}, {"context_source_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_type", "string"}, {"context_traits_email", "string"}, {"name", "string"}, {"id", "string"}, {"_between", "string"}, {"context_ip", "string"}, {"received_at", "timestamp"}, {"sent_at", "timestamp"}, {"context_traits_as", "string"}, {"context_destination_type", "string"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "product_track"), [][]string{{"review_id", "string"}, {"event_date", "date"}, {"context_source_id", "string"}, {"user_id", "string"}, {"timestamp", "timestamp"}, {"uuid_ts", "timestamp"}, {"review_body", "string"}, {"context_source_type", "string"}, {"_as", "string"}, {"_between", "string"}, {"id", "string"}, {"rating", "bigint"}, {"event", "string"}, {"original_timestamp", "timestamp"}, {"context_destination_type", "string"}, {"context_ip", "string"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"received_at", "timestamp"}, {"event_text", "string"}, {"product_id", "string"}, {"context_request_ip", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "tracks"), [][]string{{"original_timestamp", "timestamp"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"event", "string"}, {"context_request_ip", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_type", "string"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"context_ip", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"context_source_id", "string"}, {"event_text", "string"}, {"id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "aliases"), [][]string{{"context_request_ip", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"context_destination_id", "string"}, {"previous_id", "string"}, {"context_ip", "string"}, {"sent_at", "timestamp"}, {"id", "string"}, {"uuid_ts", "timestamp"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}, {"context_source_id", "string"}, {"user_id", "string"}, {"context_source_type", "string"}, {"received_at", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "pages"), [][]string{{"name", "string"}, {"url", "string"}, {"event_date", "date"}, {"id", "string"}, {"timestamp", "timestamp"}, {"title", "string"}, {"user_id", "string"}, {"context_source_id", "string"}, {"context_source_type", "string"}, {"original_timestamp", "timestamp"}, {"context_request_ip", "string"}, {"received_at", "timestamp"}, {"_between", "string"}, {"context_destination_type", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"context_ip", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "groups"), [][]string{{"_as", "string"}, {"user_id", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"received_at", "timestamp"}, {"context_ip", "string"}, {"industry", "string"}, {"timestamp", "timestamp"}, {"group_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_id", "string"}, {"context_request_ip", "string"}, {"_between", "string"}, {"original_timestamp", "timestamp"}, {"name", "string"}, {"plan", "string"}, {"context_destination_id", "string"}, {"employees", "bigint"}, {"id", "string"}})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_deltalake"
+					userIDSQL := "SUBSTRING(user_id, 1, 16)"
+					uuidTSSQL := "DATE_FORMAT(uuid_ts, 'yyyy-MM-dd')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsAppendRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:                "Undefined preferAppend",
-				warehouseEventsMap:  mergeEventsMap(),
-				useParquetLoadFiles: false,
-				stagingFilePrefix:   "testdata/upload-job-undefined-preferAppend-mode",
-				jobRunID:            misc.FastUUID().String(),
+				name:             "Undefined preferAppend",
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:    true,
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					require.ElementsMatch(t, schemaFor(db, namespace, "screens"), [][]string{{"context_source_id", "string"}, {"event_date", "date"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_request_ip", "string"}, {"original_timestamp", "timestamp"}, {"url", "string"}, {"context_source_type", "string"}, {"_between", "string"}, {"timestamp", "timestamp"}, {"context_ip", "string"}, {"context_destination_type", "string"}, {"received_at", "timestamp"}, {"title", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"name", "string"}, {"id", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "identifies"), [][]string{{"context_ip", "string"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"email", "string"}, {"context_request_ip", "string"}, {"sent_at", "timestamp"}, {"uuid_ts", "timestamp"}, {"_as", "string"}, {"logins", "bigint"}, {"context_source_type", "string"}, {"context_traits_logins", "bigint"}, {"name", "string"}, {"context_destination_type", "string"}, {"_between", "string"}, {"id", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"user_id", "string"}, {"context_traits_email", "string"}, {"context_traits_as", "string"}, {"context_traits_name", "string"}, {"original_timestamp", "timestamp"}, {"context_traits_between", "string"}, {"context_source_id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "users"), [][]string{{"context_traits_name", "string"}, {"event_date", "date"}, {"context_traits_between", "string"}, {"context_request_ip", "string"}, {"context_traits_logins", "bigint"}, {"context_destination_id", "string"}, {"email", "string"}, {"logins", "bigint"}, {"_as", "string"}, {"context_source_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_type", "string"}, {"context_traits_email", "string"}, {"name", "string"}, {"id", "string"}, {"_between", "string"}, {"context_ip", "string"}, {"received_at", "timestamp"}, {"sent_at", "timestamp"}, {"context_traits_as", "string"}, {"context_destination_type", "string"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "product_track"), [][]string{{"review_id", "string"}, {"event_date", "date"}, {"context_source_id", "string"}, {"user_id", "string"}, {"timestamp", "timestamp"}, {"uuid_ts", "timestamp"}, {"review_body", "string"}, {"context_source_type", "string"}, {"_as", "string"}, {"_between", "string"}, {"id", "string"}, {"rating", "bigint"}, {"event", "string"}, {"original_timestamp", "timestamp"}, {"context_destination_type", "string"}, {"context_ip", "string"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"received_at", "timestamp"}, {"event_text", "string"}, {"product_id", "string"}, {"context_request_ip", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "tracks"), [][]string{{"original_timestamp", "timestamp"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"event", "string"}, {"context_request_ip", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_type", "string"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"context_ip", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"context_source_id", "string"}, {"event_text", "string"}, {"id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "aliases"), [][]string{{"context_request_ip", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"context_destination_id", "string"}, {"previous_id", "string"}, {"context_ip", "string"}, {"sent_at", "timestamp"}, {"id", "string"}, {"uuid_ts", "timestamp"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}, {"context_source_id", "string"}, {"user_id", "string"}, {"context_source_type", "string"}, {"received_at", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "pages"), [][]string{{"name", "string"}, {"url", "string"}, {"event_date", "date"}, {"id", "string"}, {"timestamp", "timestamp"}, {"title", "string"}, {"user_id", "string"}, {"context_source_id", "string"}, {"context_source_type", "string"}, {"original_timestamp", "timestamp"}, {"context_request_ip", "string"}, {"received_at", "timestamp"}, {"_between", "string"}, {"context_destination_type", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"context_ip", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "groups"), [][]string{{"_as", "string"}, {"user_id", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"received_at", "timestamp"}, {"context_ip", "string"}, {"industry", "string"}, {"timestamp", "timestamp"}, {"group_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_id", "string"}, {"context_request_ip", "string"}, {"_between", "string"}, {"original_timestamp", "timestamp"}, {"name", "string"}, {"plan", "string"}, {"context_destination_id", "string"}, {"employees", "bigint"}, {"id", "string"}})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_deltalake"
+					userIDSQL := "SUBSTRING(user_id, 1, 16)"
+					uuidTSSQL := "DATE_FORMAT(uuid_ts, 'yyyy-MM-dd')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:                "Parquet load files",
-				warehouseEventsMap:  mergeEventsMap(),
+				name:                "Parquet load files(merge)",
+				stagingFilePath1:    "../testdata/upload-job.events-1.json",
+				stagingFilePath2:    "../testdata/upload-job.events-1.json",
+				useSameUserID:       true,
 				useParquetLoadFiles: true,
-				stagingFilePrefix:   "testdata/upload-job-parquet",
-				jobRunID:            misc.FastUUID().String(),
 				configOverride: map[string]any{
 					"preferAppend": false,
+				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					require.ElementsMatch(t, schemaFor(db, namespace, "screens"), [][]string{{"context_source_id", "string"}, {"event_date", "date"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_request_ip", "string"}, {"original_timestamp", "timestamp"}, {"url", "string"}, {"context_source_type", "string"}, {"_between", "string"}, {"timestamp", "timestamp"}, {"context_ip", "string"}, {"context_destination_type", "string"}, {"received_at", "timestamp"}, {"title", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"name", "string"}, {"id", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "identifies"), [][]string{{"context_ip", "string"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"email", "string"}, {"context_request_ip", "string"}, {"sent_at", "timestamp"}, {"uuid_ts", "timestamp"}, {"_as", "string"}, {"logins", "bigint"}, {"context_source_type", "string"}, {"context_traits_logins", "bigint"}, {"name", "string"}, {"context_destination_type", "string"}, {"_between", "string"}, {"id", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"user_id", "string"}, {"context_traits_email", "string"}, {"context_traits_as", "string"}, {"context_traits_name", "string"}, {"original_timestamp", "timestamp"}, {"context_traits_between", "string"}, {"context_source_id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "users"), [][]string{{"context_traits_name", "string"}, {"event_date", "date"}, {"context_traits_between", "string"}, {"context_request_ip", "string"}, {"context_traits_logins", "bigint"}, {"context_destination_id", "string"}, {"email", "string"}, {"logins", "bigint"}, {"_as", "string"}, {"context_source_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_type", "string"}, {"context_traits_email", "string"}, {"name", "string"}, {"id", "string"}, {"_between", "string"}, {"context_ip", "string"}, {"received_at", "timestamp"}, {"sent_at", "timestamp"}, {"context_traits_as", "string"}, {"context_destination_type", "string"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "product_track"), [][]string{{"review_id", "string"}, {"event_date", "date"}, {"context_source_id", "string"}, {"user_id", "string"}, {"timestamp", "timestamp"}, {"uuid_ts", "timestamp"}, {"review_body", "string"}, {"context_source_type", "string"}, {"_as", "string"}, {"_between", "string"}, {"id", "string"}, {"rating", "bigint"}, {"event", "string"}, {"original_timestamp", "timestamp"}, {"context_destination_type", "string"}, {"context_ip", "string"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"received_at", "timestamp"}, {"event_text", "string"}, {"product_id", "string"}, {"context_request_ip", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "tracks"), [][]string{{"original_timestamp", "timestamp"}, {"event_date", "date"}, {"context_destination_id", "string"}, {"event", "string"}, {"context_request_ip", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_type", "string"}, {"user_id", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"context_ip", "string"}, {"timestamp", "timestamp"}, {"received_at", "timestamp"}, {"context_source_id", "string"}, {"event_text", "string"}, {"id", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "aliases"), [][]string{{"context_request_ip", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"context_destination_id", "string"}, {"previous_id", "string"}, {"context_ip", "string"}, {"sent_at", "timestamp"}, {"id", "string"}, {"uuid_ts", "timestamp"}, {"timestamp", "timestamp"}, {"original_timestamp", "timestamp"}, {"context_source_id", "string"}, {"user_id", "string"}, {"context_source_type", "string"}, {"received_at", "timestamp"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "pages"), [][]string{{"name", "string"}, {"url", "string"}, {"event_date", "date"}, {"id", "string"}, {"timestamp", "timestamp"}, {"title", "string"}, {"user_id", "string"}, {"context_source_id", "string"}, {"context_source_type", "string"}, {"original_timestamp", "timestamp"}, {"context_request_ip", "string"}, {"received_at", "timestamp"}, {"_between", "string"}, {"context_destination_type", "string"}, {"uuid_ts", "timestamp"}, {"context_destination_id", "string"}, {"sent_at", "timestamp"}, {"context_ip", "string"}, {"_as", "string"}})
+					require.ElementsMatch(t, schemaFor(db, namespace, "groups"), [][]string{{"_as", "string"}, {"user_id", "string"}, {"event_date", "date"}, {"context_destination_type", "string"}, {"sent_at", "timestamp"}, {"context_source_type", "string"}, {"received_at", "timestamp"}, {"context_ip", "string"}, {"industry", "string"}, {"timestamp", "timestamp"}, {"group_id", "string"}, {"uuid_ts", "timestamp"}, {"context_source_id", "string"}, {"context_request_ip", "string"}, {"_between", "string"}, {"original_timestamp", "timestamp"}, {"name", "string"}, {"plan", "string"}, {"context_destination_id", "string"}, {"employees", "bigint"}, {"id", "string"}})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_deltalake"
+					userIDSQL := "SUBSTRING(user_id, 1, 16)"
+					uuidTSSQL := "DATE_FORMAT(uuid_ts, 'yyyy-MM-dd')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
 				},
 			},
 		}
@@ -176,6 +321,7 @@ func TestIntegration(t *testing.T) {
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
+				destination := destinationBuilder.Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -183,7 +329,7 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
@@ -230,34 +376,25 @@ func TestIntegration(t *testing.T) {
 					"accountName":    credentials.AccountName,
 					"accountKey":     credentials.AccountKey,
 				}
-				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+				tables := []string{"groups"}
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:      writeKey,
-					Schema:        namespace,
-					Tables:        tables,
-					SourceID:      sourceID,
-					DestinationID: destinationID,
-					JobRunID:      tc.jobRunID,
-					WarehouseEventsMap: whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-					},
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
 					Config:          conf,
 					WorkspaceID:     workspaceID,
 					DestinationType: destType,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
-					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
+					EventsFilePath:  tc.stagingFilePath1,
 					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
@@ -268,18 +405,28 @@ func TestIntegration(t *testing.T) {
 					Tables:             tables,
 					SourceID:           sourceID,
 					DestinationID:      destinationID,
-					JobRunID:           tc.jobRunID,
-					WarehouseEventsMap: tc.warehouseEventsMap,
+					WarehouseEventsMap: tc.warehouseEventsMap2,
 					Config:             conf,
 					WorkspaceID:        workspaceID,
 					DestinationType:    destType,
 					JobsDB:             jobsDB,
 					HTTPPort:           httpPort,
 					Client:             sqlClient,
-					StagingFilePath:    tc.stagingFilePrefix + ".staging-2.json",
+					EventsFilePath:     tc.stagingFilePath2,
 					UserID:             ts1.UserID,
+					TransformerURL:     transformerURL,
+					Destination:        destination,
+				}
+				if tc.useSameUserID {
+					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
 			})
 		}
 	})
@@ -1341,30 +1488,4 @@ func newMockUploader(
 	mockUploader.EXPECT().GetFirstLastEvent().Return(firstLastEventTS, firstLastEventTS).AnyTimes()
 
 	return mockUploader
-}
-
-func mergeEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-	}
-}
-
-func appendEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    2,
-		"users":         2,
-		"tracks":        2,
-		"product_track": 2,
-		"pages":         2,
-		"screens":       2,
-		"aliases":       2,
-		"groups":        2,
-	}
 }

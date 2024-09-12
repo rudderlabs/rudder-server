@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -403,7 +404,7 @@ func (bq *BigQuery) loadTableByAppend(
 	gcsRef *bigquery.GCSReference,
 	log logger.Logger,
 ) (*types.LoadTableStats, *loadTableResponse, error) {
-	partitionDate := time.Now().Format("2006-01-02")
+	partitionDate := timeutil.Now().Format("2006-01-02")
 
 	outputTable := partitionedTable(
 		tableName,
@@ -1007,7 +1008,7 @@ func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	outputTable := partitionedTable(tableName, time.Now().Format("2006-01-02"))
+	outputTable := partitionedTable(tableName, timeutil.Now().Format("2006-01-02"))
 	loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(ctx)

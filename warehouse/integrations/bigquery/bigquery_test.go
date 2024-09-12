@@ -149,7 +149,6 @@ func TestIntegration(t *testing.T) {
 			tables                              []string
 			stagingFilesEventsMap               whth.EventsCountMap
 			stagingFilesModifiedEventsMap       whth.EventsCountMap
-			loadFilesEventsMap                  whth.EventsCountMap
 			tableUploadsEventsMap               whth.EventsCountMap
 			warehouseEventsMap                  whth.EventsCountMap
 			sourceJob                           bool
@@ -171,10 +170,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilesModifiedEventsMap: whth.EventsCountMap{
 					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
 				},
-				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				sourceJob:             true,
+				sourceJob: true,
 				prerequisite: func(ctx context.Context, t testing.TB, db *bigquery.Client) {
 					t.Helper()
 					_ = db.Dataset(namespace).DeleteWithContents(ctx)
@@ -182,17 +178,14 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/sources-job",
 			},
 			{
-				name:   "Append mode",
-				schema: namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
+				name:                          "Append mode",
+				schema:                        namespace,
+				tables:                        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:                      writeKey,
 				sourceID:                      sourceID,
 				destinationID:                 destinationID,
 				stagingFilesEventsMap:         stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-				loadFilesEventsMap:            loadFilesEventsMap(),
 				tableUploadsEventsMap:         tableUploadsEventsMap(),
 				warehouseEventsMap:            appendEventsMap(),
 				skipModifiedEvents:            true,
@@ -203,17 +196,14 @@ func TestIntegration(t *testing.T) {
 				stagingFilePrefix: "testdata/upload-job-append-mode",
 			},
 			{
-				name:   "Append mode with custom partition",
-				schema: namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
+				name:                                "Append mode with custom partition",
+				schema:                              namespace,
+				tables:                              []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				writeKey:                            writeKey,
 				sourceID:                            sourceID,
 				destinationID:                       destinationID,
 				stagingFilesEventsMap:               stagingFilesEventsMap(),
 				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
 				tableUploadsEventsMap:               tableUploadsEventsMap(),
 				warehouseEventsMap:                  appendEventsMap(),
 				skipModifiedEvents:                  true,
@@ -295,9 +285,9 @@ func TestIntegration(t *testing.T) {
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
 					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
+					SourceJob:             tc.sourceJob,
 					Config:                conf,
 					WorkspaceID:           workspaceID,
 					DestinationType:       destType,
@@ -323,7 +313,6 @@ func TestIntegration(t *testing.T) {
 					SourceID:              tc.sourceID,
 					DestinationID:         tc.destinationID,
 					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
 					TableUploadsEventsMap: tc.tableUploadsEventsMap,
 					WarehouseEventsMap:    tc.warehouseEventsMap,
 					SourceJob:             tc.sourceJob,
@@ -868,20 +857,6 @@ func newMockUploader(
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 
 	return mockUploader
-}
-
-func loadFilesEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    4,
-		"users":         4,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        1,
-		"_groups":       3,
-	}
 }
 
 func tableUploadsEventsMap() whth.EventsCountMap {
