@@ -451,7 +451,7 @@ func (jr *jobRun) cleanup() {
 	}
 }
 
-func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter) error {
+func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter, reason string) error {
 	rowID, hasID := columnData[jr.job.columnName("id")]
 	receivedAt, hasReceivedAt := columnData[jr.job.columnName("received_at")]
 
@@ -472,7 +472,7 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
-
+		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
 			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.Format(timestampFormat))
