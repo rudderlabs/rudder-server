@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
@@ -1955,8 +1956,13 @@ var _ = Describe("Gateway", func() {
 				done:           make(chan<- string),
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			jobForm, stat, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
 			Expect(err).To(BeNil())
+			Expect(stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
 
 			var job struct {
 				Batch []struct {
@@ -1995,8 +2001,13 @@ var _ = Describe("Gateway", func() {
 				done:           make(chan<- string),
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			jobForm, stat, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
 			Expect(err).To(BeNil())
+			Expect(stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
 
 			var job struct {
 				Batch []struct {
