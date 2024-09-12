@@ -8,12 +8,15 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	mocks "github.com/rudderlabs/rudder-server/mocks/router/lytics_bulk_upload"
@@ -67,7 +70,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 			LyticsServiceImpl := lyticsBulkUpload.LyticsServiceImpl{
 				BulkApi: "https://bulk.lytics.io/collect/bulk/test?timestamp_field=timestamp",
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader("LYTICS_BULK_UPLOAD", destination.Config["lyticsApiKey"].(string), LyticsServiceImpl.BulkApi, lyticsService)}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(logger.NOP, stats.NOP, "LYTICS_BULK_UPLOAD", destination.Config["lyticsApiKey"].(string), LyticsServiceImpl.BulkApi, lyticsService)}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
@@ -102,12 +105,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 
 			// Set up the SimpleAsyncDestinationManager with the LyticsBulkUploader
 			bulkUploader := common.SimpleAsyncDestinationManager{
-				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(
-					"LYTICS_BULK_UPLOAD",
-					destination.Config["lyticsApiKey"].(string),
-					LyticsServiceImpl.BulkApi,
-					lyticsService,
-				),
+				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(logger.NOP, stats.NOP, "LYTICS_BULK_UPLOAD", destination.Config["lyticsApiKey"].(string), LyticsServiceImpl.BulkApi, lyticsService),
 			}
 
 			// Set up the AsyncDestinationStruct with test data
@@ -163,12 +161,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 
 			// Set up the SimpleAsyncDestinationManager with the LyticsBulkUploader
 			bulkUploader := common.SimpleAsyncDestinationManager{
-				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(
-					"LYTICS_BULK_UPLOAD",
-					destination.Config["lyticsApiKey"].(string),
-					LyticsServiceImpl.BulkApi,
-					lyticsService,
-				),
+				UploaderAndTransformer: lyticsBulkUpload.NewLyticsBulkUploader(logger.NOP, stats.NOP, "LYTICS_BULK_UPLOAD", destination.Config["lyticsApiKey"].(string), LyticsServiceImpl.BulkApi, lyticsService),
 			}
 
 			// Set up the AsyncDestinationStruct with test data

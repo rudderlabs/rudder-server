@@ -286,6 +286,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// values retrieved from first event in batch
 		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
+		sourceCategory                    = req.authContext.SourceCategory
 
 		// tracing
 		traceParent = req.traceParent
@@ -459,6 +460,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
 		"traceparent":        traceParent,
+		"source_category":    sourceCategory,
 	}
 	if len(destinationID) != 0 {
 		params["destination_id"] = destinationID
@@ -734,6 +736,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		UserID          string `json:"user_id"`
 		TraceParent     string `json:"traceparent"`
 		DestinationID   string `json:"destination_id,omitempty"`
+		SourceCategory  string `json:"source_category"`
 	}
 
 	type singularEventBatch struct {
@@ -796,6 +799,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			UserID:          msg.Properties.UserID,
 			TraceParent:     msg.Properties.TraceID,
 			DestinationID:   msg.Properties.DestinationID,
+			SourceCategory:  msg.Properties.SourceType,
 		}
 
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)

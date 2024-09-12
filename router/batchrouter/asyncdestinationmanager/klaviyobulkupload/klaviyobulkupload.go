@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -59,11 +60,12 @@ func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	return payload
 }
 
-func NewManager(destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
 	return &KlaviyoBulkUploader{
 		destName:          destination.DestinationDefinition.Name,
 		destinationConfig: destination.Config,
-		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("KlaviyoBulkUpload").Child("KlaviyoBulkUploader"),
+		logger:            logger.Child("KlaviyoBulkUpload").Child("KlaviyoBulkUploader"),
+		statsFactory:      statsFactory,
 	}, nil
 }
 
@@ -264,7 +266,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 }
 
 func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, err error, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
-	eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+	eventsAbortedStat := kbu.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": "KLAVIYO_BULK_UPLOAD",
 	})
@@ -336,7 +338,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 	chunks, _ := chunkBySizeAndElements(combinedProfiles, MAXPAYLOADSIZE, BATCHSIZE)
 
-	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
+	eventsSuccessStat := kbu.statsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	var importIds []string // DelimitedImportIds is : separated importIds
 
@@ -359,8 +361,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		req.Header.Set("Authorization", "Klaviyo-API-Key "+destination.Config["privateApiKey"].(string))
 		req.Header.Set("revision", "2024-05-15")
 
-		uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
+		uploadTimeStat := kbu.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
+		payloadSizeStat := kbu.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
 		payloadSizeStat.Observe(float64(len(outputJSON)))
 
 		resp, err := client.Do(req)
