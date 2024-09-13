@@ -588,13 +588,11 @@ func (w *worker) processDestinationJobs() {
 							respBody := strings.Join(respBodyArr, " ")
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
-						tags := stats.Tags{
+						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
 							"destType":      w.rt.destType,
 							"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
 							"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
-						}
-						stats.Default.NewTaggedStat("router_input_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(destinationJob.JobMetadataArray[0].JobT.EventPayload)))
-						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(destinationJob.Message)))
+						}).Observe(float64(len(destinationJob.Message)))
 					}
 				}
 				ch <- struct{}{}
