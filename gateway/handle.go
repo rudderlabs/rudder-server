@@ -689,6 +689,8 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				}
 				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
 			}
+		} else {
+			stat.RequestEventsSucceeded(0)
 		}
 
 		status = http.StatusOK
@@ -771,6 +773,16 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
 			return nil, stat, errors.New(response.InvalidStreamMessage)
 		}
+		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
+		if !ok {
+			// only live-events will not work if writeKey is not found
+			gw.logger.Errorn("unable to get writeKey for job",
+				logger.NewStringField("messageId", msg.Properties.MessageID),
+				obskit.SourceID(msg.Properties.SourceID))
+		}
+		stat.SourceID = msg.Properties.SourceID
+		stat.WorkspaceID = msg.Properties.WorkspaceID
+		stat.WriteKey = writeKey
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
@@ -801,17 +813,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			DestinationID:   msg.Properties.DestinationID,
 			SourceCategory:  msg.Properties.SourceType,
 		}
-
-		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
-		if !ok {
-			// only live-events will not work if writeKey is not found
-			gw.logger.Errorn("unable to get writeKey for job",
-				logger.NewStringField("messageId", msg.Properties.MessageID),
-				obskit.SourceID(msg.Properties.SourceID))
-		}
-		stat.SourceID = msg.Properties.SourceID
-		stat.WorkspaceID = msg.Properties.WorkspaceID
-		stat.WriteKey = writeKey
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
 		if err != nil {

@@ -1838,6 +1838,96 @@ var _ = Describe("Gateway", func() {
 					},
 				},
 			}))
+			Expect(statStore.GetByName("gateway.write_key_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_successful_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_successful_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_requests",
+					Tags: map[string]string{
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_successful_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_successful_requests",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_failed_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 0,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_failed_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_failed_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 0,
+				},
+			}))
 		})
 
 		It("Successful request, without debugger", func() {
@@ -1860,6 +1950,23 @@ var _ = Describe("Gateway", func() {
 			defer httputil.CloseResponse(resp)
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
+			failedRequestStat := statStore.GetByName("gateway.write_key_failed_requests")
+			Expect(failedRequestStat[len(failedRequestStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"writeKey":    "",
+						"reqType":     "internalBatch",
+						"reason":      response.NotRudderEvent,
+						"workspaceId": "",
+						"sourceID":    "",
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 1,
+				},
+			))
 		})
 
 		It("request failed unmarshall error", func() {
@@ -1872,6 +1979,25 @@ var _ = Describe("Gateway", func() {
 			defer httputil.CloseResponse(resp)
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
+			failedRequestStat := statStore.GetByName("gateway.write_key_failed_requests")
+			Expect(failedRequestStat[len(failedRequestStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"writeKey":    "",
+						"reqType":     "internalBatch",
+						"reason":      response.InvalidJSON,
+						"workspaceId": "",
+						"sourceID":    "",
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 1,
+				},
+			))
+			failedEventStat := statStore.GetByName("gateway.write_key_failed_events")
+			Expect(failedEventStat).To(HaveLen(0))
 		})
 
 		It("request failed message validation error", func() {
@@ -1884,6 +2010,23 @@ var _ = Describe("Gateway", func() {
 			defer httputil.CloseResponse(resp)
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.InvalidStreamMessage))
+			failedRequestStat := statStore.GetByName("gateway.write_key_failed_requests")
+			Expect(failedRequestStat[len(failedRequestStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"writeKey":    "",
+						"reqType":     "internalBatch",
+						"reason":      response.InvalidStreamMessage,
+						"workspaceId": "",
+						"sourceID":    "",
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 1,
+				},
+			))
 		})
 
 		It("request success - suppressed user", func() {
@@ -1893,6 +2036,22 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+			successfulReqStat := statStore.GetByName("gateway.write_key_successful_requests")
+			Expect(successfulReqStat[len(successfulReqStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_successful_requests",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 1,
+				},
+			))
 		})
 
 		It("request success - multiple messages", func() {
@@ -1904,6 +2063,38 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+			successfulReqStat := statStore.GetByName("gateway.write_key_successful_requests")
+			Expect(successfulReqStat[len(successfulReqStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_successful_requests",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 1,
+				},
+			))
+			successfulEventStat := statStore.GetByName("gateway.write_key_successful_events")
+			Expect(successfulEventStat[len(successfulEventStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_successful_events",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 2,
+				},
+			))
 		})
 
 		It("request failed db error", func() {
@@ -1914,6 +2105,40 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
+			failedReqStat := statStore.GetByName("gateway.write_key_failed_requests")
+			Expect(failedReqStat[len(failedReqStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+						"reason":      "storeFailed",
+					},
+					Value: 1,
+				},
+			))
+			failedEventStat := statStore.GetByName("gateway.write_key_failed_events")
+			Expect(failedEventStat[len(failedEventStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_failed_events",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+						"reason":      "storeFailed",
+					},
+					Value: 1,
+				},
+			))
 		})
 	})
 
