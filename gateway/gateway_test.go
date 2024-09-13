@@ -2095,6 +2095,22 @@ var _ = Describe("Gateway", func() {
 					Value: 2,
 				},
 			))
+			eventsStat := statStore.GetByName("gateway.write_key_events")
+			Expect(eventsStat[len(eventsStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_events",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+					},
+					Value: 2,
+				},
+			))
 		})
 
 		It("request failed db error", func() {
@@ -2135,6 +2151,22 @@ var _ = Describe("Gateway", func() {
 						"sdkVersion":  "",
 						"source":      "",
 						"reason":      "storeFailed",
+					},
+					Value: 1,
+				},
+			))
+			eventsStat := statStore.GetByName("gateway.write_key_events")
+			Expect(eventsStat[len(eventsStat)-1]).To(Equal(
+				memstats.Metric{
+					Name: "gateway.write_key_events",
+					Tags: map[string]string{
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
 					},
 					Value: 1,
 				},
