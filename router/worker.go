@@ -588,6 +588,13 @@ func (w *worker) processDestinationJobs() {
 							respBody := strings.Join(respBodyArr, " ")
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
+						tags := stats.Tags{
+							"destType":      w.rt.destType,
+							"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
+							"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
+						}
+						stats.Default.NewTaggedStat("router_input_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(destinationJob.JobMetadataArray[0].JobT.EventPayload)))
+						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(destinationJob.Message)))
 					}
 				}
 				ch <- struct{}{}
@@ -989,14 +996,6 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 	if !w.rt.reportJobsdbPayload.Load() { // TODO: update default/remove this flag after monitoring the payload sizes
 		inputPayload = payload
 	}
-	tags := stats.Tags{
-		"destType":      w.rt.destType,
-		"workspaceID":   destinationJobMetadata.WorkspaceID,
-		"state":         status.JobState,
-		"destinationID": destinationJobMetadata.DestinationID,
-	}
-	stats.Default.NewTaggedStat("router_transformation_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(destinationJobMetadata.JobT.EventPayload)))
-	stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, tags).Observe(float64(len(payload)))
 
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "content-type", respContentType)
@@ -1016,15 +1015,17 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 		return
 	}
-	switch errorAt {
-	case routerutils.ERROR_AT_TF:
-		inputPayload = destinationJobMetadata.JobT.EventPayload
-		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_transformer")
-	default: // includes ERROR_AT_DEL, ERROR_AT_CUST
-		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_delivery")
+	if !isSuccessStatus(respStatusCode) {
+		switch errorAt {
+		case routerutils.ERROR_AT_TF:
+			inputPayload = destinationJobMetadata.JobT.EventPayload
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_transformer")
+		default: // includes ERROR_AT_DEL, ERROR_AT_CUST
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_delivery")
+		}
+		// TODO: update after observing the sizes of the payloads
+		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 	}
-	// TODO: update after observing the sizes of the payloads
-	status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 
 	// Saving payload to DB only
 	// 1. if job failed and
