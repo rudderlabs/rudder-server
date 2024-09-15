@@ -124,188 +124,1520 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testcase := []struct {
-			name                          string
-			tables                        []string
-			stagingFilesEventsMap         whth.EventsCountMap
-			stagingFilesModifiedEventsMap whth.EventsCountMap
-			loadFilesEventsMap            whth.EventsCountMap
-			tableUploadsEventsMap         whth.EventsCountMap
-			warehouseEventsMap            whth.EventsCountMap
-			warehouseEventsMap2           whth.EventsCountMap
-			cred                          *testCredentials
-			database                      string
-			sourceJob                     bool
-			stagingFilePrefix             string
-			emptyJobRunID                 bool
-			customUserID                  string
-			configOverride                map[string]any
+			name                               string
+			tables                             []string
+			cred                               *testCredentials
+			database                           string
+			warehouseEventsMap2                whth.EventsCountMap
+			sourceJob                          bool
+			stagingFilePath1, stagingFilePath2 string
+			jobRunID1, taskRunID1              string
+			jobRunID2, taskRunID2              string
+			useSameUserID                      bool
+			configOverride                     map[string]any
+			verifySchema                       func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords                      func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
 		}{
 			{
-				name: "Upload Job with Normal Database",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     credentials,
-				database: credentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job",
+				name:             "Upload Job",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             credentials,
+				database:         credentials.Database,
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
 					"password":     credentials.Password,
 				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name: "Upload Job with Role",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     rbacCredentials,
-				database: rbacCredentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job-with-role",
+				name:             "Upload Job with Role",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             rbacCredentials,
+				database:         rbacCredentials.Database,
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
 					"role":         rbacCredentials.Role,
 					"password":     rbacCredentials.Password,
 				},
+
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name: "Upload Job with Case Sensitive Database",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     credentials,
-				database: strings.ToLower(credentials.Database),
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
+				name:             "Upload Job with Case Sensitive Database",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             credentials,
+				database:         strings.ToLower(credentials.Database),
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
 					"password":     credentials.Password,
 				},
+
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name: "Upload Job with Key Pair Unencrypted Key",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     keyPairUnEncryptedCredentials,
-				database: keyPairUnEncryptedCredentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
+				name:             "Upload Job with Key Pair Unencrypted Key",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             keyPairUnEncryptedCredentials,
+				database:         keyPairUnEncryptedCredentials.Database,
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend":   false,
 					"useKeyPairAuth": true,
 					"privateKey":     keyPairUnEncryptedCredentials.PrivateKey,
 				},
+
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name: "Upload Job with Key Pair Encrypted Key",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     keyPairEncryptedCredentials,
-				database: keyPairEncryptedCredentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
+				name:             "Upload Job with Key Pair Encrypted Key",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             keyPairEncryptedCredentials,
+				database:         keyPairEncryptedCredentials.Database,
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend":         false,
 					"useKeyPairAuth":       true,
 					"privateKey":           keyPairEncryptedCredentials.PrivateKey,
 					"privateKeyPassphrase": keyPairEncryptedCredentials.PrivateKeyPassphrase,
 				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:     "Source Job with Sources",
-				tables:   []string{"tracks", "google_sheet"},
-				cred:     credentials,
-				database: credentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
-				},
-				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				sourceJob:             true,
-				stagingFilePrefix:     "testdata/sources-job",
+				name:             "Source Job with Sources",
+				tables:           []string{"tracks", "google_sheet"},
+				cred:             credentials,
+				database:         credentials.Database,
+				sourceJob:        true,
+				jobRunID1:        misc.FastUUID().String(),
+				taskRunID1:       misc.FastUUID().String(),
+				jobRunID2:        misc.FastUUID().String(),
+				taskRunID2:       misc.FastUUID().String(),
+				stagingFilePath1: "../testdata/source-job.events-1.json",
+				stagingFilePath2: "../testdata/source-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
 					"password":     credentials.Password,
 				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "CONTEXT_SOURCES_JOB_ID", "TEXT"},
+						{"TRACKS", "CONTEXT_SOURCES_VERSION", "TEXT"},
+						{"TRACKS", "CONTEXT_SOURCES_TASK_RUN_ID", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"TRACKS", "CHANNEL", "TEXT"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "CONTEXT_SOURCES_JOB_RUN_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"GOOGLE_SHEET", "_AS", "TEXT"},
+						{"GOOGLE_SHEET", "REVIEW_BODY", "TEXT"},
+						{"GOOGLE_SHEET", "RATING", "NUMBER"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GOOGLE_SHEET", "_BETWEEN", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GOOGLE_SHEET", "REVIEW_ID", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCES_VERSION", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GOOGLE_SHEET", "ID", "TEXT"},
+						{"GOOGLE_SHEET", "USER_ID", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GOOGLE_SHEET", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GOOGLE_SHEET", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GOOGLE_SHEET", "PRODUCT_ID", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCES_TASK_RUN_ID", "TEXT"},
+						{"GOOGLE_SHEET", "EVENT", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GOOGLE_SHEET", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GOOGLE_SHEET", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GOOGLE_SHEET", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCES_JOB_RUN_ID", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_IP", "TEXT"},
+						{"GOOGLE_SHEET", "CONTEXT_SOURCES_JOB_ID", "TEXT"},
+						{"GOOGLE_SHEET", "CHANNEL", "TEXT"},
+						{"GOOGLE_SHEET", "EVENT_TEXT", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT channel, context_sources_job_id, received_at, context_sources_version, %s, sent_at, context_ip, event, event_text, %s, context_destination_id, id, context_request_ip, context_source_type, original_timestamp, context_sources_job_run_id, context_sources_task_run_id, context_source_id, context_destination_type, timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.SourceJobTracksRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+					googleSheetRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT product_id, sent_at, _between, context_request_ip, context_sources_job_run_id, channel, review_body, context_source_id, original_timestamp, context_destination_id, context_sources_job_id, event, context_sources_task_run_id, context_source_type, %s, context_ip, timestamp, id, received_at, review_id, %s, context_sources_version, context_destination_type, event_text, _as, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "GOOGLE_SHEET"))
+					require.ElementsMatch(t, googleSheetRecords, whth.SourceJobGoogleSheetRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+				},
 			},
 			{
-				name:                          "Upload Job in append mode",
-				tables:                        []string{"identifies", "users", "tracks"},
-				cred:                          credentials,
-				database:                      credentials.Database,
-				stagingFilesEventsMap:         whth.EventsCountMap{"wh_staging_files": 3},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{"wh_staging_files": 3},
-				loadFilesEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				tableUploadsEventsMap:         map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				warehouseEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 1, "tracks": 2},
-				stagingFilePrefix:             "testdata/append-job",
-				// an empty jobRunID means that the source is not an ETL one
-				// see Uploader.CanAppend()
-				emptyJobRunID: true,
+				name:     "Upload Job in append mode",
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:     credentials,
+				database: credentials.Database,
+				warehouseEventsMap2: whth.EventsCountMap{
+					// For all tables except users we will be appending because of:
+					// * preferAppend
+					"identifies":    8,
+					"users":         1,
+					"tracks":        8,
+					"product_track": 8,
+					"pages":         8,
+					"screens":       8,
+					"aliases":       8,
+					"groups":        8,
+				},
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:    true,
 				configOverride: map[string]any{
 					"preferAppend": true,
 					"password":     credentials.Password,
 				},
-				customUserID: whth.GetUserId("append_test"),
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsAppendRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name: "Undefined preferAppend",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				cred:     credentials,
-				database: credentials.Database,
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
-				},
-				stagingFilePrefix: "testdata/upload-job-undefined-preferAppend-mode",
+				name:             "Undefined preferAppend",
+				tables:           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:             credentials,
+				database:         credentials.Database,
+				stagingFilePath1: "../testdata/upload-job.events-1.json",
+				stagingFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:    true,
 				configOverride: map[string]any{
 					"password": credentials.Password,
+				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.ElementsMatch(t, schema, [][]string{
+						{"SCREENS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"SCREENS", "USER_ID", "TEXT"},
+						{"SCREENS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"SCREENS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "URL", "TEXT"},
+						{"SCREENS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"SCREENS", "_BETWEEN", "TEXT"},
+						{"SCREENS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_IP", "TEXT"},
+						{"SCREENS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"SCREENS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"SCREENS", "TITLE", "TEXT"},
+						{"SCREENS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"SCREENS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"SCREENS", "NAME", "TEXT"},
+						{"SCREENS", "ID", "TEXT"},
+						{"SCREENS", "_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_IP", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"IDENTIFIES", "EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"IDENTIFIES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "_AS", "TEXT"},
+						{"IDENTIFIES", "LOGINS", "NUMBER"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"IDENTIFIES", "NAME", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"IDENTIFIES", "_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "ID", "TEXT"},
+						{"IDENTIFIES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "USER_ID", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"IDENTIFIES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"IDENTIFIES", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"IDENTIFIES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_NAME", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_LOGINS", "NUMBER"},
+						{"USERS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"USERS", "EMAIL", "TEXT"},
+						{"USERS", "LOGINS", "NUMBER"},
+						{"USERS", "_AS", "TEXT"},
+						{"USERS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"USERS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"USERS", "CONTEXT_TRAITS_EMAIL", "TEXT"},
+						{"USERS", "NAME", "TEXT"},
+						{"USERS", "ID", "TEXT"},
+						{"USERS", "_BETWEEN", "TEXT"},
+						{"USERS", "CONTEXT_IP", "TEXT"},
+						{"USERS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"USERS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"USERS", "CONTEXT_TRAITS_AS", "TEXT"},
+						{"USERS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"USERS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"USERS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PRODUCT_TRACK", "USER_ID", "TEXT"},
+						{"PRODUCT_TRACK", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "REVIEW_BODY", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "_AS", "TEXT"},
+						{"PRODUCT_TRACK", "_BETWEEN", "TEXT"},
+						{"PRODUCT_TRACK", "ID", "TEXT"},
+						{"PRODUCT_TRACK", "RATING", "NUMBER"},
+						{"PRODUCT_TRACK", "EVENT", "TEXT"},
+						{"PRODUCT_TRACK", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_IP", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PRODUCT_TRACK", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PRODUCT_TRACK", "EVENT_TEXT", "TEXT"},
+						{"PRODUCT_TRACK", "PRODUCT_ID", "TEXT"},
+						{"PRODUCT_TRACK", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"TRACKS", "EVENT", "TEXT"},
+						{"TRACKS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"TRACKS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"TRACKS", "USER_ID", "TEXT"},
+						{"TRACKS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"TRACKS", "CONTEXT_IP", "TEXT"},
+						{"TRACKS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"TRACKS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"TRACKS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"TRACKS", "EVENT_TEXT", "TEXT"},
+						{"TRACKS", "ID", "TEXT"},
+						{"ALIASES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"ALIASES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"ALIASES", "PREVIOUS_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_IP", "TEXT"},
+						{"ALIASES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"ALIASES", "ID", "TEXT"},
+						{"ALIASES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"ALIASES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"ALIASES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"ALIASES", "USER_ID", "TEXT"},
+						{"ALIASES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"ALIASES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "NAME", "TEXT"},
+						{"PAGES", "URL", "TEXT"},
+						{"PAGES", "ID", "TEXT"},
+						{"PAGES", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "TITLE", "TEXT"},
+						{"PAGES", "USER_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"PAGES", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"PAGES", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"PAGES", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "_BETWEEN", "TEXT"},
+						{"PAGES", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"PAGES", "UUID_TS", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"PAGES", "SENT_AT", "TIMESTAMP_TZ"},
+						{"PAGES", "CONTEXT_IP", "TEXT"},
+						{"PAGES", "_AS", "TEXT"},
+						{"GROUPS", "_AS", "TEXT"},
+						{"GROUPS", "USER_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_TYPE", "TEXT"},
+						{"GROUPS", "SENT_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_TYPE", "TEXT"},
+						{"GROUPS", "RECEIVED_AT", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_IP", "TEXT"},
+						{"GROUPS", "INDUSTRY", "TEXT"},
+						{"GROUPS", "TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "GROUP_ID", "TEXT"},
+						{"GROUPS", "UUID_TS", "TIMESTAMP_TZ"},
+						{"GROUPS", "CONTEXT_SOURCE_ID", "TEXT"},
+						{"GROUPS", "CONTEXT_REQUEST_IP", "TEXT"},
+						{"GROUPS", "_BETWEEN", "TEXT"},
+						{"GROUPS", "ORIGINAL_TIMESTAMP", "TIMESTAMP_TZ"},
+						{"GROUPS", "NAME", "TEXT"},
+						{"GROUPS", "PLAN", "TEXT"},
+						{"GROUPS", "CONTEXT_DESTINATION_ID", "TEXT"},
+						{"GROUPS", "EMPLOYEES", "NUMBER"},
+						{"GROUPS", "ID", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_2_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MERGE_RULES", "MERGE_PROPERTY_1_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_VALUE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "MERGE_PROPERTY_TYPE", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "RUDDER_ID", "TEXT"},
+						{"RUDDER_IDENTITY_MAPPINGS", "UPDATED_AT", "TIMESTAMP_TZ"},
+					})
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_snowflake"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
 				},
 			},
 		}
@@ -337,6 +1669,7 @@ func TestIntegration(t *testing.T) {
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
+				destination := destinationBuilder.Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -344,20 +1677,19 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
 					Build()
 
+				t.Setenv("RSERVER_WAREHOUSE_ENABLE_IDRESOLUTION", "true")
 				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
 				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
 				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_WORKSPACE_IDS", workspaceID)
 				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_TABLES", strings.Join(
-					[]string{
-						"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-					},
+					[]string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 					" ",
 				))
 
@@ -403,76 +1735,60 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
-				userID := tc.customUserID
-				if userID == "" {
-					userID = whth.GetUserId(destType)
-				}
-				jobRunID := ""
-				if !tc.emptyJobRunID {
-					jobRunID = misc.FastUUID().String()
-				}
 				ts1 := whth.TestConfig{
-					WriteKey:              writeKey,
-					Schema:                namespace,
-					Tables:                tc.tables,
-					SourceID:              sourceID,
-					DestinationID:         destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                userID,
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tc.tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					SourceJob:       tc.sourceJob,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        tc.jobRunID1,
+					TaskRunID:       tc.taskRunID1,
+					EventsFilePath:  tc.stagingFilePath1,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				userID = tc.customUserID
-				if userID == "" {
-					userID = whth.GetUserId(destType)
-				}
-				jobRunID = ""
-				if !tc.emptyJobRunID {
-					jobRunID = misc.FastUUID().String()
-				}
-				whEventsMap := tc.warehouseEventsMap2
-				if whEventsMap == nil {
-					whEventsMap = tc.warehouseEventsMap
-				}
 				ts2 := whth.TestConfig{
-					WriteKey:              writeKey,
-					Schema:                namespace,
-					Tables:                tc.tables,
-					SourceID:              sourceID,
-					DestinationID:         destinationID,
-					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    whEventsMap,
-					SourceJob:             tc.sourceJob,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                userID,
+					WriteKey:           writeKey,
+					Schema:             namespace,
+					Tables:             tc.tables,
+					SourceID:           sourceID,
+					DestinationID:      destinationID,
+					WarehouseEventsMap: tc.warehouseEventsMap2,
+					SourceJob:          tc.sourceJob,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
+					JobsDB:             jobsDB,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					JobRunID:           tc.jobRunID2,
+					TaskRunID:          tc.taskRunID2,
+					EventsFilePath:     tc.stagingFilePath2,
+					UserID:             whth.GetUserId(destType),
+					TransformerURL:     transformerURL,
+					Destination:        destination,
 				}
-				if tc.sourceJob {
+				if tc.useSameUserID {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
 			})
 		}
 	})

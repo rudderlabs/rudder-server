@@ -61,486 +61,408 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testcase := []struct {
-			name                                string
-			tables                              []string
-			stagingFilesEventsMap               whth.EventsCountMap
-			stagingFilesModifiedEventsMap       whth.EventsCountMap
-			loadFilesEventsMap                  whth.EventsCountMap
-			tableUploadsEventsMap               whth.EventsCountMap
-			warehouseEventsMap                  whth.EventsCountMap
-			sourceJob                           bool
-			skipModifiedEvents                  bool
-			setup                               func(testing.TB, context.Context, *bigquery.Client, string)
-			checkTablesPostLoading              func(testing.TB, context.Context, *bigquery.Client, string)
-			customPartitionsEnabledWorkspaceIDs string
-			stagingFilePrefix                   string
-			configOverride                      map[string]any
+			name                               string
+			tables                             []string
+			sourceJob                          bool
+			stagingFilePath1, stagingFilePath2 string
+			jobRunID1, taskRunID1              string
+			jobRunID2, taskRunID2              string
+			useSameUserID                      bool
+			configOverride                     map[string]any
+			preLoading                         func(testing.TB, context.Context, *bigquery.Client, string)
+			postLoading                        func(testing.TB, context.Context, *bigquery.Client, string)
+			verifySchema                       func(*testing.T, *bigquery.Client, string)
+			verifyRecords                      func(*testing.T, *bigquery.Client, string, string, string, string, string)
 		}{
 			{
-				name:   "Source Job",
-				tables: []string{"tracks", "google_sheet"},
-				stagingFilesEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+				name:             "Source Job",
+				tables:           []string{"tracks", "google_sheet"},
+				sourceJob:        true,
+				jobRunID1:        misc.FastUUID().String(),
+				taskRunID1:       misc.FastUUID().String(),
+				jobRunID2:        misc.FastUUID().String(),
+				taskRunID2:       misc.FastUUID().String(),
+				stagingFilePath1: "../testdata/source-job.events-1.json",
+				stagingFilePath2: "../testdata/source-job.events-2.json",
+				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM %s.INFORMATION_SCHEMA.COLUMNS WHERE table_type != 'VIEW' AND (column_name != '_PARTITIONTIME' OR c.column_name IS NULL);`, namespace))
+					t.Log(schema)
 				},
-				stagingFilesModifiedEventsMap: whth.EventsCountMap{
-					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
-				},
-				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				sourceJob:             true,
-				stagingFilePrefix:     "testdata/sources-job",
-			},
-			{
-				name: "Append mode",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:         stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap: stagingFilesEventsMap(),
-				loadFilesEventsMap:            loadFilesEventsMap(),
-				tableUploadsEventsMap:         tableUploadsEventsMap(),
-				warehouseEventsMap:            appendEventsMap(),
-				skipModifiedEvents:            true,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
+				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					userIDFormat := "userId_bq"
+					userIDSQL := "SUBSTR(user_id, 1, 16)"
+					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
 
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
-						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
-					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-						"_groups":       1,
-					})
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode",
-			},
-			{
-				name: "Append mode with default config (partitionColumn: _PARTITIONTIME, partitionType: day)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
-						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
-					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-						"_groups":       1,
-					})
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "_PARTITIONTIME",
-					"partitionType":   "day",
+					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
 			},
-			{
-				name: "Append mode with ingestion-time hour partitioning (partitionColumn: _PARTITIONTIME, partitionType: hour)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
-						require.Equal(t, bigquery.HourPartitioningType, table.TimePartitioning.Type)
-					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-						"_groups":       1,
-					})
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "_PARTITIONTIME",
-					"partitionType":   "hour",
-				},
-			},
-			{
-				name: "Append mode with ingestion-time monthly partitioning (partitionColumn: _PARTITIONTIME, partitionType: month)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
-						require.Equal(t, bigquery.MonthPartitioningType, table.TimePartitioning.Type)
-					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-						"_groups":       1,
-					})
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "_PARTITIONTIME",
-					"partitionType":   "month",
-				},
-			},
-			{
-				name: "Append mode with ingestion-time monthly partitioning (partitionColumn: _PARTITIONTIME, partitionType: year)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
-						require.Equal(t, bigquery.YearPartitioningType, table.TimePartitioning.Type)
-					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies":    1,
-						"users":         1,
-						"tracks":        1,
-						"product_track": 1,
-						"pages":         1,
-						"screens":       1,
-						"aliases":       1,
-						"groups":        1,
-						"_groups":       1,
-					})
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "_PARTITIONTIME",
-					"partitionType":   "year",
-				},
-			},
-			{
-				name: "Append mode (partitionColumn: received_at, partitionType: hour)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Equal(t, "received_at", table.TimePartitioning.Field)
-						require.Equal(t, bigquery.HourPartitioningType, table.TimePartitioning.Type)
-					}
-					partitions := listPartitions(t, ctx, db, namespace)
-					filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
-						return lo.Contains(checkTables, table.A)
-					})
-					for _, partition := range filteredPartitions {
-						require.Equal(t, partition.B, "2023051204")
-					}
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "received_at",
-					"partitionType":   "hour",
-				},
-			},
-			{
-				name: "Append mode (partitionColumn: received_at, partitionType: day)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Equal(t, "received_at", table.TimePartitioning.Field)
-						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
-					}
-					partitions := listPartitions(t, ctx, db, namespace)
-					filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
-						return lo.Contains(checkTables, table.A)
-					})
-					for _, partition := range filteredPartitions {
-						require.Equal(t, partition.B, "20230512")
-					}
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "received_at",
-					"partitionType":   "day",
-				},
-			},
-			{
-				name: "Append mode (partitionColumn: received_at, partitionType: month)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Equal(t, "received_at", table.TimePartitioning.Field)
-						require.Equal(t, bigquery.MonthPartitioningType, table.TimePartitioning.Type)
-					}
-					partitions := listPartitions(t, ctx, db, namespace)
-					filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
-						return lo.Contains(checkTables, table.A)
-					})
-					for _, partition := range filteredPartitions {
-						require.Equal(t, partition.B, "202305")
-					}
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "received_at",
-					"partitionType":   "month",
-				},
-			},
-			{
-				name: "Append mode (partitionColumn: received_at, partitionType: year)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Equal(t, "received_at", table.TimePartitioning.Field)
-						require.Equal(t, bigquery.YearPartitioningType, table.TimePartitioning.Type)
-					}
-					partitions := listPartitions(t, ctx, db, namespace)
-					filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
-						return lo.Contains(checkTables, table.A)
-					})
-					for _, partition := range filteredPartitions {
-						require.Equal(t, partition.B, "2023")
-					}
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "received_at",
-					"partitionType":   "year",
-				},
-			},
-			{
-				name: "Append mode with table already created (partitionColumn: received_at, partitionType: day)",
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				stagingFilesEventsMap:               stagingFilesEventsMap(),
-				stagingFilesModifiedEventsMap:       stagingFilesEventsMap(),
-				loadFilesEventsMap:                  loadFilesEventsMap(),
-				tableUploadsEventsMap:               tableUploadsEventsMap(),
-				warehouseEventsMap:                  appendEventsMap(),
-				skipModifiedEvents:                  true,
-				customPartitionsEnabledWorkspaceIDs: workspaceID,
-				setup: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
-						Location: "US",
-					})
-					require.NoError(t, err)
-
-					for _, table := range []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"} {
-						err = db.Dataset(namespace).Table(table).Create(context.Background(), &bigquery.TableMetadata{
-							Schema: []*bigquery.FieldSchema{
-								{Name: "received_at", Type: bigquery.TimestampFieldType},
-							},
-							TimePartitioning: &bigquery.TimePartitioning{
-								Field: "received_at",
-								Type:  bigquery.DayPartitioningType,
-							},
-						})
-						require.NoError(t, err)
-					}
-				},
-				checkTablesPostLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
-					t.Helper()
-
-					checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-					tables := listTables(t, ctx, db, namespace)
-					filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
-						return lo.Contains(checkTables, table.Name)
-					})
-					for _, table := range filteredTables {
-						require.NotNil(t, table.TimePartitioning)
-						require.Equal(t, "received_at", table.TimePartitioning.Field)
-						require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
-					}
-					partitions := listPartitions(t, ctx, db, namespace)
-					filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
-						return lo.Contains(checkTables, table.A)
-					})
-					for _, partition := range filteredPartitions {
-						require.Equal(t, partition.B, "20230512")
-					}
-				},
-				stagingFilePrefix: "testdata/upload-job-append-mode-custom-partition",
-				configOverride: map[string]any{
-					"partitionColumn": "received_at",
-					"partitionType":   "day",
-				},
-			},
+			//{
+			//	name:   "Append mode",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
+			//			require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//
+			//		verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
+			//			"identifies":    1,
+			//			"users":         1,
+			//			"tracks":        1,
+			//			"product_track": 1,
+			//			"pages":         1,
+			//			"screens":       1,
+			//			"aliases":       1,
+			//			"groups":        1,
+			//			"_groups":       1,
+			//		})
+			//	},
+			//},
+			//{
+			//	name:   "Append mode with default config (partitionColumn: _PARTITIONTIME, partitionType: day)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
+			//			require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//
+			//		verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
+			//			"identifies":    1,
+			//			"users":         1,
+			//			"tracks":        1,
+			//			"product_track": 1,
+			//			"pages":         1,
+			//			"screens":       1,
+			//			"aliases":       1,
+			//			"groups":        1,
+			//			"_groups":       1,
+			//		})
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "_PARTITIONTIME",
+			//		"partitionType":   "day",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode with ingestion-time hour partitioning (partitionColumn: _PARTITIONTIME, partitionType: hour)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
+			//			require.Equal(t, bigquery.HourPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//
+			//		verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
+			//			"identifies":    1,
+			//			"users":         1,
+			//			"tracks":        1,
+			//			"product_track": 1,
+			//			"pages":         1,
+			//			"screens":       1,
+			//			"aliases":       1,
+			//			"groups":        1,
+			//			"_groups":       1,
+			//		})
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "_PARTITIONTIME",
+			//		"partitionType":   "hour",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode with ingestion-time monthly partitioning (partitionColumn: _PARTITIONTIME, partitionType: month)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
+			//			require.Equal(t, bigquery.MonthPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//
+			//		verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
+			//			"identifies":    1,
+			//			"users":         1,
+			//			"tracks":        1,
+			//			"product_track": 1,
+			//			"pages":         1,
+			//			"screens":       1,
+			//			"aliases":       1,
+			//			"groups":        1,
+			//			"_groups":       1,
+			//		})
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "_PARTITIONTIME",
+			//		"partitionType":   "month",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode with ingestion-time monthly partitioning (partitionColumn: _PARTITIONTIME, partitionType: year)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Empty(t, table.TimePartitioning.Field) // If empty, the table is partitioned by pseudo column '_PARTITIONTIME'
+			//			require.Equal(t, bigquery.YearPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//
+			//		verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
+			//			"identifies":    1,
+			//			"users":         1,
+			//			"tracks":        1,
+			//			"product_track": 1,
+			//			"pages":         1,
+			//			"screens":       1,
+			//			"aliases":       1,
+			//			"groups":        1,
+			//			"_groups":       1,
+			//		})
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "_PARTITIONTIME",
+			//		"partitionType":   "year",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode (partitionColumn: received_at, partitionType: hour)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Equal(t, "received_at", table.TimePartitioning.Field)
+			//			require.Equal(t, bigquery.HourPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//		partitions := listPartitions(t, ctx, db, namespace)
+			//		filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
+			//			return lo.Contains(checkTables, table.A)
+			//		})
+			//		for _, partition := range filteredPartitions {
+			//			require.Equal(t, partition.B, "2023051204")
+			//		}
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "received_at",
+			//		"partitionType":   "hour",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode (partitionColumn: received_at, partitionType: day)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Equal(t, "received_at", table.TimePartitioning.Field)
+			//			require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//		partitions := listPartitions(t, ctx, db, namespace)
+			//		filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
+			//			return lo.Contains(checkTables, table.A)
+			//		})
+			//		for _, partition := range filteredPartitions {
+			//			require.Equal(t, partition.B, "20230512")
+			//		}
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "received_at",
+			//		"partitionType":   "day",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode (partitionColumn: received_at, partitionType: month)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Equal(t, "received_at", table.TimePartitioning.Field)
+			//			require.Equal(t, bigquery.MonthPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//		partitions := listPartitions(t, ctx, db, namespace)
+			//		filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
+			//			return lo.Contains(checkTables, table.A)
+			//		})
+			//		for _, partition := range filteredPartitions {
+			//			require.Equal(t, partition.B, "202305")
+			//		}
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "received_at",
+			//		"partitionType":   "month",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode (partitionColumn: received_at, partitionType: year)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Equal(t, "received_at", table.TimePartitioning.Field)
+			//			require.Equal(t, bigquery.YearPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//		partitions := listPartitions(t, ctx, db, namespace)
+			//		filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
+			//			return lo.Contains(checkTables, table.A)
+			//		})
+			//		for _, partition := range filteredPartitions {
+			//			require.Equal(t, partition.B, "2023")
+			//		}
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "received_at",
+			//		"partitionType":   "year",
+			//	},
+			//},
+			//{
+			//	name:   "Append mode with table already created (partitionColumn: received_at, partitionType: day)",
+			//	tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			//	preLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		err = db.Dataset(namespace).Create(context.Background(), &bigquery.DatasetMetadata{
+			//			Location: "US",
+			//		})
+			//		require.NoError(t, err)
+			//
+			//		for _, table := range []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"} {
+			//			err = db.Dataset(namespace).Table(table).Create(context.Background(), &bigquery.TableMetadata{
+			//				Schema: []*bigquery.FieldSchema{
+			//					{Name: "received_at", Type: bigquery.TimestampFieldType},
+			//				},
+			//				TimePartitioning: &bigquery.TimePartitioning{
+			//					Field: "received_at",
+			//					Type:  bigquery.DayPartitioningType,
+			//				},
+			//			})
+			//			require.NoError(t, err)
+			//		}
+			//	},
+			//	postLoading: func(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) {
+			//		t.Helper()
+			//
+			//		checkTables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+			//
+			//		tables := listTables(t, ctx, db, namespace)
+			//		filteredTables := lo.Filter(tables, func(table *bigquery.TableMetadata, _ int) bool {
+			//			return lo.Contains(checkTables, table.Name)
+			//		})
+			//		for _, table := range filteredTables {
+			//			require.NotNil(t, table.TimePartitioning)
+			//			require.Equal(t, "received_at", table.TimePartitioning.Field)
+			//			require.Equal(t, bigquery.DayPartitioningType, table.TimePartitioning.Type)
+			//		}
+			//		partitions := listPartitions(t, ctx, db, namespace)
+			//		filteredPartitions := lo.Filter(partitions, func(table lo.Tuple2[string, string], _ int) bool {
+			//			return lo.Contains(checkTables, table.A)
+			//		})
+			//		for _, partition := range filteredPartitions {
+			//			require.Equal(t, partition.B, "20230512")
+			//		}
+			//	},
+			//	configOverride: map[string]any{
+			//		"partitionColumn": "received_at",
+			//		"partitionType":   "day",
+			//	},
+			//},
 		}
 
 		for _, tc := range testcase {
@@ -564,6 +486,7 @@ func TestIntegration(t *testing.T) {
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
+				destination := destinationBuilder.Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -571,7 +494,7 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
@@ -596,8 +519,8 @@ func TestIntegration(t *testing.T) {
 					dropSchema(t, db, namespace)
 				})
 
-				if tc.setup != nil {
-					tc.setup(t, ctx, db, namespace)
+				if tc.preLoading != nil {
+					tc.preLoading(t, ctx, db, namespace)
 				}
 
 				sqlClient := &client.Client{
@@ -612,62 +535,62 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:              writeKey,
-					Schema:                namespace,
-					Tables:                tc.tables,
-					SourceID:              sourceID,
-					DestinationID:         destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tc.tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					SourceJob:       tc.sourceJob,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        tc.jobRunID1,
+					TaskRunID:       tc.taskRunID1,
+					EventsFilePath:  tc.stagingFilePath1,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
-				if tc.checkTablesPostLoading != nil {
-					tc.checkTablesPostLoading(t, ctx, db, namespace)
-				}
-				if tc.skipModifiedEvents {
-					return
+				if tc.postLoading != nil {
+					tc.postLoading(t, ctx, db, namespace)
 				}
 
 				t.Log("verifying test case 2")
 				ts2 := whth.TestConfig{
-					WriteKey:              writeKey,
-					Schema:                namespace,
-					Tables:                tc.tables,
-					SourceID:              sourceID,
-					DestinationID:         destinationID,
-					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					SourceJob:             tc.sourceJob,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tc.tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					SourceJob:       tc.sourceJob,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        tc.jobRunID2,
+					TaskRunID:       tc.taskRunID2,
+					EventsFilePath:  tc.stagingFilePath2,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
-				if tc.sourceJob {
+				if tc.useSameUserID {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
 			})
 		}
 	})
@@ -1397,52 +1320,4 @@ func newMockUploader(
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 
 	return mockUploader
-}
-
-func loadFilesEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    4,
-		"users":         4,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        1,
-		"_groups":       3,
-	}
-}
-
-func tableUploadsEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    4,
-		"users":         4,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        1,
-		"_groups":       3,
-	}
-}
-
-func stagingFilesEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
-	}
-}
-
-func appendEventsMap() whth.EventsCountMap {
-	return whth.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        1,
-		"_groups":       3,
-	}
 }
