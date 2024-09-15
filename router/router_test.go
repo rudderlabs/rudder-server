@@ -34,6 +34,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
+	mockutils "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -46,6 +47,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	txutils "github.com/rudderlabs/rudder-server/utils/tx"
+	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -103,6 +106,15 @@ var (
 				},
 			},
 		},
+		Connections: map[string]backendconfig.Connection{
+			"connection1": {
+				Enabled:          true,
+				SourceID:         sourceIDEnabled,
+				DestinationID:    gaDestinationID,
+				ProcessorEnabled: true,
+				Config:           map[string]interface{}{"key": "value"},
+			},
+		},
 	}
 )
 
@@ -114,6 +126,7 @@ type testContext struct {
 	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
 	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	mockReporting     *mockutils.MockReporting
 }
 
 // Initialize mocks and common expectations
@@ -123,6 +136,7 @@ func (c *testContext) Setup() {
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockReporting = mockutils.NewMockReporting(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("backend_config")
 
@@ -528,7 +542,7 @@ var _ = Describe("router", func() {
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 			toRetryJobsList := []*jobsdb.JobT{
 				{
 					UUID:         uuid.New(),
@@ -622,7 +636,7 @@ var _ = Describe("router", func() {
 			router.netHandle = mockNetHandle
 
 			gaPayload := `{}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
@@ -708,7 +722,7 @@ var _ = Describe("router", func() {
 			router.netHandle = mockNetHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
@@ -786,7 +800,7 @@ var _ = Describe("router", func() {
 			router.netHandle = mockNetHandle
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_job_run_id": "someJobRunId", "source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_job_run_id": "someJobRunId", "source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
@@ -880,12 +894,12 @@ var _ = Describe("router", func() {
 						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
 					},
 					Parameters: []byte(fmt.Sprintf(`{
-						"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+						"source_id": "%s",
 						"destination_id": "%s",
 						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 						"received_at": "%s",
 						"transform_at": "processor"
-					}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -978,22 +992,22 @@ var _ = Describe("router", func() {
 						ErrorCode:     "500",
 						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
 						JobParameters: []byte(fmt.Sprintf(`{
-							"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+							"source_id": "%s",
 							"destination_id": "%s",
 							"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 							"received_at": "%s",
 							"transform_at": "processor",
 							"source_job_run_id": "someJobRunId"
-						}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+						}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
 					},
 					Parameters: []byte(fmt.Sprintf(`{
-						"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77",
+						"source_id": "%s",
 						"destination_id": "%s",
 						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 						"received_at": "%s",
 						"transform_at": "processor",
 						"source_job_run_id": "someJobRunId"
-					}`, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -1072,7 +1086,7 @@ var _ = Describe("router", func() {
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, nonexistentDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, nonexistentDestinationID) // skipcq: GO-R4002
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
@@ -1160,7 +1174,7 @@ var _ = Describe("router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting: &reporting.NOOP{},
+				Reporting: c.mockReporting,
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
@@ -1173,7 +1187,7 @@ var _ = Describe("router", func() {
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -1284,6 +1298,15 @@ var _ = Describe("router", func() {
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
 				})
+			c.mockReporting.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+				func(_ context.Context, metrics []*utilTypes.PUReportedMetric, _ *txutils.Tx) error {
+					Expect(metrics).To(HaveLen(1))
+					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(200))
+					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Succeeded.State))
+					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(json.RawMessage(`{"message": "some transformed message"}`)))
+					return nil
+				},
+			)
 
 			<-router.backendConfigInitialized
 			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
@@ -1300,43 +1323,36 @@ var _ = Describe("router", func() {
 			}, 20*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
-		It("aborts jobs if batching fails for few of the jobs", func() {
+		It("fails jobs if batching fails for few of the jobs", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
-				Reporting: &reporting.NOOP{},
+				Reporting: c.mockReporting,
 				netHandle: mockNetHandle,
 			}
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
 
-			// we have a job that has failed once(toRetryJobsList), it should abort when picked up next
-			// Because we only allow one failure per job with this
 			router.transformer = mockTransformer
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 			router.reloadableConfig.maxFailedCountForJob = config.SingleValueLoader(5)
 			router.enableBatching = true
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
-			toRetryJobsList := []*jobsdb.JobT{
-				{
-					UUID:         uuid.New(),
-					UserID:       "u1",
-					JobID:        2009,
-					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal:    customVal["GA"],
-					EventPayload: []byte(gaPayload),
-					LastJobStatus: jobsdb.JobStatusT{
-						AttemptNum:    1,
-						ErrorResponse: []byte(`{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`),
-					},
-					Parameters: []byte(parameters),
-				},
-			}
 			unprocessedJobsList := []*jobsdb.JobT{
+				{
+					UUID:          uuid.New(),
+					UserID:        "u1",
+					JobID:         2009,
+					CreatedAt:     time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:      time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+					CustomVal:     customVal["GA"],
+					EventPayload:  []byte(gaPayload),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    []byte(parameters),
+				},
 				{
 					UUID:         uuid.New(),
 					UserID:       "u1",
@@ -1364,7 +1380,7 @@ var _ = Describe("router", func() {
 					Parameters: []byte(parameters),
 				},
 			}
-			allJobs := append(toRetryJobsList, unprocessedJobsList...)
+			allJobs := unprocessedJobsList
 
 			payloadLimit := router.reloadableConfig.payloadLimit
 			callAllJobs := c.mockRouterJobsDB.EXPECT().GetToProcess(gomock.Any(),
@@ -1373,38 +1389,34 @@ var _ = Describe("router", func() {
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: gaDestinationID}},
 					PayloadSizeLimit: payloadLimit.Load(),
 					JobsLimit:        10000,
-				}, nil).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: toRetryJobsList}}, nil).Times(
-				1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
+				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
-					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(unprocessedJobsList[1], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
+					assertJobStatus(unprocessedJobsList[2], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
 
 			mockTransformer.EXPECT().Transform("BATCH", gomock.Any()).After(callAllJobs).Times(1).DoAndReturn(
 				func(_ string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-					assertRouterJobs(&transformMessage.Data[0], toRetryJobsList[0])
-					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[0])
-					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[0], unprocessedJobsList[0])
+					assertRouterJobs(&transformMessage.Data[1], unprocessedJobsList[1])
+					assertRouterJobs(&transformMessage.Data[2], unprocessedJobsList[2])
 
 					return []types.DestinationJobT{
 						{
 							Message: []byte(`{"message": "some transformed message"}`),
 							JobMetadataArray: []types.JobMetadataT{
 								{
-									UserID:           "u1",
-									JobID:            2009,
-									JobT:             toRetryJobsList[0],
-									FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
-									AttemptNum:       1,
+									UserID: "u1",
+									JobID:  2009,
+									JobT:   unprocessedJobsList[0],
 								},
 								{
-									UserID:           "u1",
-									JobID:            2010,
-									JobT:             unprocessedJobsList[0],
-									FirstAttemptedAt: "2021-06-28T15:57:30.742+05:30",
+									UserID: "u1",
+									JobID:  2010,
+									JobT:   unprocessedJobsList[1],
 								},
 							},
 							Batched:    true,
@@ -1412,12 +1424,12 @@ var _ = Describe("router", func() {
 							StatusCode: 500,
 						},
 						{
-							Message: []byte(`{"message": "some transformed message"}`),
+							Message: []byte(`{"message": "some other transformed message"}`),
 							JobMetadataArray: []types.JobMetadataT{
 								{
 									UserID: "u1",
 									JobID:  2011,
-									JobT:   unprocessedJobsList[1],
+									JobT:   unprocessedJobsList[2],
 								},
 							},
 							Batched:    true,
@@ -1436,10 +1448,21 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", 2)
-					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", 0)
-					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(unprocessedJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
+					assertTransformJobStatuses(unprocessedJobsList[1], statuses[1], jobsdb.Waiting.State, "", 0)
+					assertTransformJobStatuses(unprocessedJobsList[2], statuses[2], jobsdb.Waiting.State, "", 0)
 				})
+			c.mockReporting.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+				func(_ context.Context, metrics []*utilTypes.PUReportedMetric, _ *txutils.Tx) error {
+					Expect(metrics).To(HaveLen(1))
+					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(500))
+					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Failed.State))
+					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(json.RawMessage(gaPayload)))
+					Expect(metrics[0].StatusDetail.SampleResponse).To(ContainSubstring(`failureStage":"RudderStack Transformation Error"`))
+
+					return nil
+				},
+			)
 
 			<-router.backendConfigInitialized
 			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
@@ -1491,7 +1514,7 @@ var _ = Describe("router", func() {
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(5)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -1700,7 +1723,7 @@ var _ = Describe("router", func() {
 			router.reloadableConfig.noOfJobsToBatchInAWorker = config.SingleValueLoader(3)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -1869,7 +1892,7 @@ var _ = Describe("router", func() {
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -2029,7 +2052,7 @@ var _ = Describe("router", func() {
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -2175,7 +2198,7 @@ var _ = Describe("router", func() {
 			router.noOfWorkers = 1
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
-			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, gaDestinationID) // skipcq: GO-R4002
+			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "router"}`, sourceIDEnabled, gaDestinationID) // skipcq: GO-R4002
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
@@ -2311,6 +2334,13 @@ var _ = Describe("router", func() {
 func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 	Expect(routerJob.JobMetadata.JobID).To(Equal(job.JobID))
 	Expect(routerJob.JobMetadata.UserID).To(Equal(job.UserID))
+	Expect(routerJob.Connection).To(Equal(backendconfig.Connection{
+		Enabled:          true,
+		SourceID:         sourceIDEnabled,
+		DestinationID:    gaDestinationID,
+		ProcessorEnabled: true,
+		Config:           map[string]interface{}{"key": "value"},
+	}))
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {

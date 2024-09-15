@@ -21,6 +21,12 @@ var (
 		"event_delivery_time": {
 			60, 300, 900, 1800, 2100, 2700, 3900, 4500, 5400, 9900, 11100, 12600, 21600, 23400, 43200, 45000, 82800, 86400, 88200, // 1m, 5m, 15m, 30m, 35m, 45m, 1h5m, 1h15m, 1h30m, 2h45m, 3h5m, 3h30m, 6h, 6h30m, 12h, 12h30m, 23h, 24h, 24h30m
 		},
+		"warehouse_schema_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB), float64(1 * bytesize.GB),
+		},
 	}
 
 	customBuckets = map[string][]float64{
