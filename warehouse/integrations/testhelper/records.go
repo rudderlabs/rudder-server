@@ -204,6 +204,24 @@ func UploadJobUsersRecords(userIDFormat, sourceID, destID, destType string) [][]
 	}
 }
 
+// UploadJobUsersRecordsForDatalake returns a set of records for testing upload job users scenarios.
+// It uses upload-job.events-1.json, upload-job.events-2.json as the source of data.
+// sent_at, timestamp, original_timestamp will not be present in the records.
+// TODO: Once we start populating it in the records, we need to update the expected records.
+func UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destID, destType string) [][]string {
+	uuidTS := timeutil.Now().Format("2006-01-02")
+	return [][]string{
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+1@example.com", "", destID, "rhedricks+1@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:08:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+2@example.com", "", destID, "rhedricks+2@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:14:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+3@example.com", "", destID, "rhedricks+3@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:20:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:26:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+5@example.com", "", destID, "rhedricks+5@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:32:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+6@example.com", "", destID, "rhedricks+6@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:38:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "", "", "2", "", "2", "[::1]", "", "rhedricks+7@example.com", "", destID, "rhedricks+7@example.com", "", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:44:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+8@example.com", "", destID, "rhedricks+8@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:50:48Z", "Richard Hendricks", ""},
+	}
+}
+
 // UploadJobUsersAppendRecords returns a set of records for testing upload job users scenarios.
 // It uses twice upload-job.events-1.json as the source of data.
 func UploadJobUsersAppendRecords(userIDFormat, sourceID, destID, destType string) [][]string {
