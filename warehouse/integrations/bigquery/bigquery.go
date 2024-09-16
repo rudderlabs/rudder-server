@@ -941,9 +941,9 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		  LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name)
 		WHERE
 		  (t.table_type != 'VIEW')
-		  and
-		  (t.table_name not like '%s')
-		  and (
+		  OR
+		  (t.table_name NOT LIKE '%s')
+		  OR (
 			c.column_name != '_PARTITIONTIME'
 			OR c.column_name IS NULL
 		  );

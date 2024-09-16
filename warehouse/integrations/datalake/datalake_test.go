@@ -10,10 +10,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-	"github.com/trinodb/trino-go-client/trino"
-
 	"cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v7"
+	"github.com/samber/lo"
+	"github.com/spf13/cast"
+	"github.com/trinodb/trino-go-client/trino"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/reader"
+	"github.com/xitongsys/parquet-go/types"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"google.golang.org/api/option"
 
@@ -80,6 +87,8 @@ func TestIntegration(t *testing.T) {
 			conf           map[string]interface{}
 			prerequisite   func(t testing.TB, ctx context.Context)
 			configOverride map[string]any
+			verifySchema   func(*testing.T, filemanager.FileManager, string)
+			verifyRecords  func(*testing.T, filemanager.FileManager, string, string, string)
 		}{
 			{
 				name:     "S3Datalake",
@@ -110,6 +119,52 @@ func TestIntegration(t *testing.T) {
 					"s3ForcePathStyle": true,
 					"disableSSL":       true,
 				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					schemasMap := map[string][][]string{
+						"aliases":       {{"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"groups":        {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"tracks":        {{"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, schema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.ElementsMatch(t, schemasMap[tableName], schema)
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "PARGO_PREFIX__timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "PARGO_PREFIX__timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "PARGO_PREFIX__timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"PARGO_PREFIX__timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "PARGO_PREFIX__timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "PARGO_PREFIX__timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "PARGO_PREFIX__timestamp"},
+						"groups":        {"Context_destination_type", "Id", "PARGO_PREFIX__between", "Plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "PARGO_PREFIX__timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_s3_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+				},
 			},
 			{
 				name:     "GCSDatalake",
@@ -131,6 +186,52 @@ func TestIntegration(t *testing.T) {
 					"endPoint":   gcsEndPoint,
 					"disableSSL": true,
 					"jsonReads":  true,
+				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					schemasMap := map[string][][]string{
+						"aliases":       {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"_groups":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"tracks":        {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, schema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.ElementsMatch(t, schemasMap[tableName], schema)
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "Timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"Timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "Timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "Timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "Timestamp"},
+						"_groups":       {"Context_destination_type", "Id", "PARGO_PREFIX__between", "Plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "Timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_gcs_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["_groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 				},
 			},
 			{
@@ -154,6 +255,52 @@ func TestIntegration(t *testing.T) {
 					"endPoint":       azEndPoint,
 					"forcePathStyle": true,
 					"disableSSL":     true,
+				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					schemasMap := map[string][][]string{
+						"aliases":       {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"groups":        {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"PARGO_PREFIX__plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"tracks":        {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
+						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, schema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.ElementsMatch(t, schemasMap[tableName], schema)
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "Timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"Timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "Timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "Timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "Timestamp"},
+						"groups":        {"Context_destination_type", "Id", "PARGO_PREFIX__between", "PARGO_PREFIX__plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "Timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_azure_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 				},
 			},
 		}
@@ -239,6 +386,23 @@ func TestIntegration(t *testing.T) {
 					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				storageProvider := whutils.ObjectStorageType(tc.destType, tc.conf, false)
+				fm, err := filemanager.New(&filemanager.Settings{
+					Provider: storageProvider,
+					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+						Provider:         storageProvider,
+						Config:           tc.conf,
+						UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
+						WorkspaceID:      workspaceID,
+					}),
+				})
+				require.NoError(t, err)
+				tc.verifySchema(t, fm, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, fm, sourceID, destinationID, namespace)
 			})
 		}
 	})
@@ -787,6 +951,170 @@ func TestIntegration(t *testing.T) {
 		require.NotEmpty(t, filteredCountOutput)
 		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "4", filteredCountOutput) // last character is the count
 	})
+}
+
+func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[string][][]string {
+	t.Helper()
+
+	ctx := context.Background()
+	schemasMap := make(map[string][][]string)
+
+	fileIter := fm.ListFilesWithPrefix(ctx, "", prefix, 1000)
+	files, err := getAllFileNames(fileIter)
+	require.NoError(t, err)
+
+	for _, file := range files {
+		f, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		require.NoError(t, fm.Download(ctx, f, file))
+
+		pf, err := local.NewLocalFileReader(f.Name())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = pf.Close()
+		})
+
+		pr, err := reader.NewParquetReader(pf, nil, int64(100))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pr.ReadStop()
+		})
+
+		schemasMap[file] = lo.Map(pr.SchemaHandler.SchemaElements, func(item *parquet.SchemaElement, index int) []string {
+			if item.Type == nil {
+				return []string{item.Name, ""}
+			}
+			return []string{item.Name, item.Type.String()}
+		})
+		schemasMap[file] = lo.Filter(schemasMap[file], func(item []string, index int) bool {
+			return item[0] != "Parquet_go_root"
+		})
+	}
+	return schemasMap
+}
+
+func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat, uuidFormat string) map[string][][]string {
+	t.Helper()
+
+	prefix := "rudder-datalake/" + namespace + "/"
+	ctx := context.Background()
+	recordsMap := make(map[string][][]string)
+
+	fs := filesSchema(t, fm, prefix)
+
+	for file, schema := range fs {
+		fileNameSplits := strings.Split(file, "/")
+		require.GreaterOrEqual(t, len(fileNameSplits), 2)
+		tableName := fileNameSplits[2]
+
+		f, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		require.NoError(t, fm.Download(ctx, f, file))
+
+		pf, err := local.NewLocalFileReader(f.Name())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = pf.Close()
+		})
+
+		pr, err := reader.NewParquetReader(pf, nil, int64(100))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pr.ReadStop()
+		})
+
+		data := make([][]string, pr.GetNumRows())
+		for i := 0; i < int(pr.GetNumRows()); i++ {
+			data[i] = make([]string, len(pr.SchemaHandler.SchemaElements)-1)
+		}
+		for i := 0; i < len(pr.SchemaHandler.SchemaElements)-1; i++ {
+			d, _, _, err := pr.ReadColumnByIndex(int64(i), pr.GetNumRows())
+			require.NoError(t, err)
+
+			nd := lo.Map(d, func(item any, index int) string {
+				switch item := item.(type) {
+				case time.Time:
+					return item.Format(time.RFC3339)
+				case string:
+					if t, err := time.Parse(time.RFC3339Nano, item); err == nil {
+						return t.Format(time.RFC3339)
+					}
+					return item
+				case int64:
+					// Check if the int64 value is a plausible Unix timestamp
+					if item > 1_000_000_000 && item < 10_000_000_000_000_000 {
+						return types.TIMESTAMP_MICROSToTime(item, true).UTC().Format(time.RFC3339)
+					}
+					return cast.ToString(item) // Otherwise, handle it as a normal int64
+				default:
+					return cast.ToString(item)
+				}
+			})
+
+			for j := 0; j < int(pr.GetNumRows()); j++ {
+				data[j][i] = nd[j]
+			}
+		}
+
+		for _, record := range data {
+			// Truncate the user ID to the length of the format
+			if tableName == whutils.UsersTable {
+				if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+					return item[0] == "Id"
+				}); found {
+					record[idx] = record[idx][0:len(userIDFormat)]
+				}
+			} else {
+				if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+					return item[0] == "User_id"
+				}); found {
+					record[idx] = record[idx][0:len(userIDFormat)]
+				}
+			}
+
+			// Truncate the UUID to the length of the format
+			if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+				return item[0] == "Uuid_ts"
+			}); found {
+				record[idx] = record[idx][0:len(uuidFormat)]
+			}
+		}
+
+		outputData := make([][]string, len(data))
+		for i := range data {
+			outputData[i] = make([]string, len(data[i]))
+		}
+		for i, field := range outputFormat[tableName] {
+			_, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+				return item[0] == field
+			})
+			require.True(t, found)
+
+			for j := range data {
+				outputData[j][i] = data[j][idx]
+			}
+		}
+
+		recordsMap[tableName] = append(recordsMap[tableName], outputData...)
+	}
+	return recordsMap
+}
+
+func getAllFileNames(fileIter filemanager.ListSession) ([]string, error) {
+	files := make([]string, 0)
+	for {
+		fileInfo, err := fileIter.Next()
+		if err != nil {
+			return files, err
+		}
+		if len(fileInfo) == 0 {
+			break
+		}
+		for _, file := range fileInfo {
+			files = append(files, file.Key)
+		}
+	}
+	return files, nil
 }
 
 func createGCSBucket(t testing.TB, ctx context.Context, endpoint, bucketName string) {
