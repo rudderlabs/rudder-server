@@ -632,13 +632,15 @@ func TestIntegration(t *testing.T) {
 		t.Run("discards", func(t *testing.T) {
 			tableName := warehouseutils.DiscardsTable
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.json.gz", tableName)
+			file, err := whth.CreateDiscardFileJSON(t)
+			require.NoError(t, err)
+			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
 
 			bq := whbigquery.New(config.New(), logger.NOP)
-			err := bq.Setup(ctx, warehouse, mockUploader)
+			err = bq.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = bq.CreateSchema(ctx)

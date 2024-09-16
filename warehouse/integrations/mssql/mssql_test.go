@@ -565,13 +565,15 @@ func TestIntegration(t *testing.T) {
 		t.Run("discards", func(t *testing.T) {
 			tableName := whutils.DiscardsTable
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			file, err := whth.CreateDiscardFileCSV(t)
+			require.NoError(t, err)
+			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
 
 			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
-			err := ms.Setup(ctx, warehouse, mockUploader)
+			err = ms.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = ms.CreateSchema(ctx)

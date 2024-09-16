@@ -739,13 +739,13 @@ func TestUploads(t *testing.T) {
 		jobs := 1
 
 		goodEvents := lo.RepeatBy(events/2, func(int) string {
-			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z","reason":""},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime","reason":"string"}, "table": "tracks"}}`,
+			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 				uuid.New().String(),
 				uuid.New().String(),
 			)
 		})
 		badEvents := lo.RepeatBy(events/2, func(int) string {
-			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%d,"received_at":"2023-05-12T04:36:50.199Z","reason":""},"metadata":{"columns":{"id":"string","user_id":"int","received_at":"datetime","reason":"string"}, "table": "tracks"}}`,
+			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%d,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"int","received_at":"datetime"}, "table": "tracks"}}`,
 				uuid.New().String(),
 				rand.Intn(1000),
 			)
@@ -767,7 +767,6 @@ func TestUploads(t *testing.T) {
 					"id":          "string",
 					"user_id":     "int",
 					"received_at": "datetime",
-					"reason":      "string",
 				},
 			},
 		}))

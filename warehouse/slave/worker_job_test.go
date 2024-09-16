@@ -377,7 +377,7 @@ func TestSlaveJob(t *testing.T) {
 				},
 				&constraints.Violation{},
 				discardWriter,
-				"invalid converstion from string to timestamp",
+				"invalid conversion from string to timestamp",
 			)
 			require.NoError(t, err)
 		}
@@ -389,15 +389,15 @@ func TestSlaveJob(t *testing.T) {
 				ViolatedIdentifier: "test_violated_identifier",
 			},
 			discardWriter,
-			"invalid converstion from string to timestamp",
+			"invalid conversion from string to timestamp",
 		)
 		require.NoError(t, err)
 
 		require.Equal(t, discardWriter.data, []string{
-			"loaded_at,test_discard_column,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid converstion from string to timestamp,2020-04-27T20:00:00.000Z",
-			"loaded_at,uuid_ts,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid converstion from string to timestamp,2020-04-27T20:00:00.000Z",
-			"loaded_at,loaded_at,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid converstion from string to timestamp,2020-04-27T20:00:00.000Z",
-			"loaded_at,test_constrains,2020-04-27T20:00:00.000Z,test_violated_identifier,test_table,invalid converstion from string to timestamp,2020-04-27T20:00:00.000Z",
+			"loaded_at,test_discard_column,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid conversion from string to timestamp,2020-04-27T20:00:00.000Z",
+			"loaded_at,uuid_ts,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid conversion from string to timestamp,2020-04-27T20:00:00.000Z",
+			"loaded_at,loaded_at,2020-04-27 20:00:00 +0000 UTC,test_id,test_table,invalid conversion from string to timestamp,2020-04-27T20:00:00.000Z",
+			"loaded_at,test_constrains,2020-04-27T20:00:00.000Z,test_violated_identifier,test_table,invalid conversion from string to timestamp,2020-04-27T20:00:00.000Z",
 		})
 	})
 
