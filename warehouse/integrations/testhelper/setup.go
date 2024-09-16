@@ -444,11 +444,10 @@ func CreateDiscardFileCSV(t testing.TB) (*os.File, error) {
 	t.Helper()
 
 	data := DiscardTestRecords()
-	outfile, err := os.Create(filepath.Join(t.TempDir() + "discard.csv.gz"))
+	outfile, err := os.Create(filepath.Join(t.TempDir(), "discard.csv.gz"))
 	if err != nil {
 		return nil, err
 	}
-	defer outfile.Close()
 
 	gzipWriter := gzip.NewWriter(outfile)
 	defer gzipWriter.Close()
@@ -472,11 +471,10 @@ func CreateDiscardFileJSON(t testing.TB) (*os.File, error) {
 	t.Helper()
 
 	data := DiscardTestRecords()
-	outfile, err := os.Create(filepath.Join(t.TempDir() + "discard.json.gz"))
+	outfile, err := os.Create(filepath.Join(t.TempDir(), "discard.json.gz"))
 	if err != nil {
 		return nil, err
 	}
-	defer outfile.Close()
 
 	gzipWriter := gzip.NewWriter(outfile)
 	defer gzipWriter.Close()
