@@ -588,6 +588,11 @@ func (w *worker) processDestinationJobs() {
 							respBody := strings.Join(respBodyArr, " ")
 							respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 						}
+						stats.Default.NewTaggedStat("router_delivery_payload_size_bytes", stats.HistogramType, stats.Tags{
+							"destType":      w.rt.destType,
+							"workspaceID":   destinationJob.JobMetadataArray[0].WorkspaceID,
+							"destinationID": destinationJob.JobMetadataArray[0].DestinationID,
+						}).Observe(float64(len(destinationJob.Message)))
 					}
 				}
 				ch <- struct{}{}
@@ -985,13 +990,9 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 	}
 
-	inputPayload := payload
-	switch errorAt {
-	case routerutils.ERROR_AT_TF:
-		inputPayload = destinationJobMetadata.JobT.EventPayload
-		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "failureStage", "RudderStack Transformation Error")
-	default: // includes ERROR_AT_DEL, ERROR_AT_CUST
-		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "failureStage", "Destination Error")
+	inputPayload := destinationJobMetadata.JobT.EventPayload
+	if !w.rt.reportJobsdbPayload.Load() { // TODO: update default/remove this flag after monitoring the payload sizes
+		inputPayload = payload
 	}
 
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
@@ -1012,6 +1013,18 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 		return
 	}
+	if !isSuccessStatus(respStatusCode) {
+		switch errorAt {
+		case routerutils.ERROR_AT_TF:
+			inputPayload = destinationJobMetadata.JobT.EventPayload
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_transformer")
+		default: // includes ERROR_AT_DEL, ERROR_AT_CUST
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_delivery")
+		}
+		// TODO: update after observing the sizes of the payloads
+		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
+	}
+
 	// Saving payload to DB only
 	// 1. if job failed and
 	// 2. if router job undergoes batching or dest transform.
