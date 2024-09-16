@@ -899,7 +899,9 @@ func TestIntegration(t *testing.T) {
 		t.Run("discards", func(t *testing.T) {
 			tableName := whutils.ToProviderCase(destType, whutils.DiscardsTable)
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			file, err := whth.CreateDiscardFileCSV(t)
+			require.NoError(t, err)
+			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			discardsSchema := lo.MapKeys(whutils.DiscardsSchema, func(_, key string) string {
 				return whutils.ToProviderCase(destType, key)
@@ -909,7 +911,7 @@ func TestIntegration(t *testing.T) {
 			mockUploader := newMockUploader(t, loadFiles, tableName, discardsSchema, discardsSchema, false, false)
 
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			err := sf.Setup(ctx, warehouse, mockUploader)
+			err = sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = sf.CreateSchema(ctx)
