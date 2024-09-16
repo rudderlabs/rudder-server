@@ -375,7 +375,6 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				}
 				continue
 			}
-			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 			getReportsTimer.Since(getReportsStart)
 			getReportsSize.Observe(float64(len(reports)))
 
@@ -384,11 +383,12 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				select {
 				case <-ctx.Done():
 					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
-					return nil
+					return ctx.Err()
 				case <-time.After(edr.sleepInterval.Load()):
 				}
 				continue
 			}
+			lastReportedAtTime.Store(time.Unix(reportedAt*60, 0))
 
 			aggregationStart := time.Now()
 			metrics := edr.aggregate(reports)
@@ -434,7 +434,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			mainLoopTimer.Since(loopStart)
 			select {
 			case <-ctx.Done():
-				return nil
+				return ctx.Err()
 			case <-time.After(edr.mainLoopSleepInterval.Load()):
 			}
 		}
