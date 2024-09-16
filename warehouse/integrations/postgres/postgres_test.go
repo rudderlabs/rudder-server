@@ -916,13 +916,15 @@ func TestIntegration(t *testing.T) {
 			ctx := context.Background()
 			tableName := whutils.DiscardsTable
 
-			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			file, err := whth.CreateDiscardFileCSV(t)
+			require.NoError(t, err)
+			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
-			err := pg.Setup(ctx, warehouse, mockUploader)
+			err = pg.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = pg.CreateSchema(ctx)

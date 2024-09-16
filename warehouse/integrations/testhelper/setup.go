@@ -1,8 +1,11 @@
 package testhelper
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -350,12 +353,12 @@ func AppendTestRecords() [][]string {
 // It uses testdata/discards.* as the source of data.
 func DiscardTestRecords() [][]string {
 	return [][]string{
-		{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "2022-12-15T06:53:49Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
+		{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
+		{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
+		{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
+		{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
+		{"context_screen_density", "2022-12-15T06:53:49Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z", "dummy reason"},
 	}
 }
 
@@ -434,4 +437,54 @@ func MismatchSchemaTestRecords() [][]string {
 		{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
 		{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
 	}
+}
+
+func CreateDiscardFileCSV(t testing.TB) (*os.File, error) {
+	t.Helper()
+
+	data := DiscardTestRecords()
+	outfile, err := os.Create(t.TempDir() + "discard.csv.gz")
+	if err != nil {
+		return nil, err
+	}
+	defer outfile.Close()
+
+	gzipWriter := gzip.NewWriter(outfile)
+	defer gzipWriter.Close()
+
+	csvWriter := csv.NewWriter(gzipWriter)
+
+	for _, row := range data {
+		if err := csvWriter.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	csvWriter.Flush()
+
+	if err := csvWriter.Error(); err != nil {
+		return nil, err
+	}
+	return outfile, nil
+}
+
+func CreateDiscardFileJSON(t testing.TB) (*os.File, error) {
+	t.Helper()
+
+	data := DiscardTestRecords()
+	outfile, err := os.Create(t.TempDir() + "discard.json.gz")
+	if err != nil {
+		return nil, err
+	}
+	defer outfile.Close()
+
+	gzipWriter := gzip.NewWriter(outfile)
+	defer gzipWriter.Close()
+
+	jsonEncoder := json.NewEncoder(gzipWriter)
+
+	if err := jsonEncoder.Encode(data); err != nil {
+		return nil, err
+	}
+
+	return outfile, nil
 }
