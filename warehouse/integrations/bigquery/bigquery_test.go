@@ -634,6 +634,9 @@ func TestIntegration(t *testing.T) {
 
 			file, err := whth.CreateDiscardFileJSON(t)
 			require.NoError(t, err)
+			defer func() {
+				_ = file.Close()
+			}()
 			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}

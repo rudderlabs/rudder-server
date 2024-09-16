@@ -901,6 +901,9 @@ func TestIntegration(t *testing.T) {
 
 			file, err := whth.CreateDiscardFileCSV(t)
 			require.NoError(t, err)
+			defer func() {
+				_ = file.Close()
+			}()
 			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
 
 			discardsSchema := lo.MapKeys(whutils.DiscardsSchema, func(_, key string) string {
