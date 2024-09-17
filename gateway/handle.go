@@ -286,6 +286,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		// values retrieved from first event in batch
 		sourcesJobRunID, sourcesTaskRunID = req.authContext.SourceJobRunID, req.authContext.SourceTaskRunID
+		sourceCategory                    = req.authContext.SourceCategory
 
 		// tracing
 		traceParent = req.traceParent
@@ -459,6 +460,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
 		"traceparent":        traceParent,
+		"source_category":    sourceCategory,
 	}
 	if len(destinationID) != 0 {
 		params["destination_id"] = destinationID
@@ -644,65 +646,58 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
-			ctx          = r.Context()
-			reqType      = ctx.Value(gwtypes.CtxParamCallType).(string)
-			jobs         []*jobsdb.JobT
-			body         []byte
-			err          error
-			status       int
-			errorMessage string
-			responseBody string
+			ctx           = r.Context()
+			reqType       = ctx.Value(gwtypes.CtxParamCallType).(string)
+			jobsWithStats []jobWithStat
+			body          []byte
+			err           error
+			status        int
+			errorMessage  string
+			responseBody  string
+			stat          = gwstats.SourceStat{ReqType: reqType}
 		)
 
 		// TODO: add tracing
 		gw.logger.LogRequest(r)
 		body, err = gw.getPayloadFromRequest(r)
 		if err != nil {
-			stat := gwstats.SourceStat{
-				ReqType: reqType,
-			}
 			stat.RequestFailed("requestBodyReadFailed")
 			stat.Report(gw.stats)
 			goto requestError
 		}
-		jobs, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
+		jobsWithStats, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
 		if err != nil {
 			goto requestError
 		}
 
-		if len(jobs) > 0 {
+		if len(jobsWithStats) > 0 {
+			jobs := lo.Map(jobsWithStats, func(jws jobWithStat, _ int) *jobsdb.JobT {
+				return jws.job
+			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
-				gw.stats.NewTaggedStat(
-					"gateway.write_key_failed_events",
-					stats.CountType,
-					gw.newReqTypeStatsTagsWithReason(reqType, "storeFailed"),
-				).Count(len(jobs))
+				for _, jws := range jobsWithStats {
+					jws.stat.RequestEventsFailed(1, "storeFailed")
+					jws.stat.Report(gw.stats)
+				}
 				goto requestError
 			}
-			gw.stats.NewTaggedStat(
-				"gateway.write_key_successful_events",
-				stats.CountType,
-				gw.newReqTypeStatsTagsWithReason(reqType, ""),
-			).Count(len(jobs))
-
-			// Sending events to config backend
-			for _, job := range jobs {
-				writeKey := gjson.GetBytes(job.EventPayload, "writeKey").String()
-				if writeKey == "" {
+			for _, jws := range jobsWithStats {
+				jws.stat.RequestEventsSucceeded(1)
+				jws.stat.Report(gw.stats)
+				// Sending events to config backend
+				if jws.stat.WriteKey == "" {
 					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
-				gw.sourcehandle.RecordEvent(writeKey, job.EventPayload)
+				gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
 			}
+		} else {
+			stat.RequestEventsSucceeded(0)
+			stat.Report(gw.stats)
 		}
 
 		status = http.StatusOK
 		responseBody = response.GetStatus(response.Ok)
-		gw.stats.NewTaggedStat(
-			"gateway.write_key_successful_requests",
-			stats.CountType,
-			gw.newReqTypeStatsTagsWithReason(reqType, ""),
-		).Increment()
 		gw.logger.Debugn("response",
 			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
@@ -716,11 +711,6 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 		errorMessage = err.Error()
 		status = response.GetErrorStatusCode(errorMessage)
 		responseBody = response.GetStatus(errorMessage)
-		gw.stats.NewTaggedStat(
-			"gateway.write_key_failed_requests",
-			stats.CountType,
-			gw.newReqTypeStatsTagsWithReason(reqType, errorMessage),
-		).Increment()
 		gw.logger.Infon("response",
 			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
@@ -738,7 +728,14 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	}
 }
 
-func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) ([]*jobsdb.JobT, error) {
+type jobWithStat struct {
+	job  *jobsdb.JobT
+	stat gwstats.SourceStat
+}
+
+func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
+	[]jobWithStat, error,
+) {
 	type params struct {
 		MessageID       string `json:"message_id"`
 		SourceID        string `json:"source_id"`
@@ -747,6 +744,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		UserID          string `json:"user_id"`
 		TraceParent     string `json:"traceparent"`
 		DestinationID   string `json:"destination_id,omitempty"`
+		SourceCategory  string `json:"source_category"`
 	}
 
 	type singularEventBatch struct {
@@ -759,27 +757,45 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	var (
 		messages         []stream.Message
 		isUserSuppressed = gw.memoizedIsUserSuppressed()
-		jobs             []*jobsdb.JobT
+		res              []jobWithStat
+		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
 	err := jsonfast.Unmarshal(body, &messages)
 	if err != nil {
+		stat.RequestFailed(response.InvalidJSON)
+		stat.Report(gw.stats)
 		return nil, errors.New(response.InvalidJSON)
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))
 
 	if len(messages) == 0 {
+		stat.RequestFailed(response.NotRudderEvent)
+		stat.Report(gw.stats)
 		return nil, errors.New(response.NotRudderEvent)
 	}
 
-	jobs = make([]*jobsdb.JobT, 0, len(messages))
+	res = make([]jobWithStat, 0, len(messages))
 
 	for _, msg := range messages {
+		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.streamMsgValidator(&msg)
 		if err != nil {
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
+			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
+			stat.Report(gw.stats)
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
+		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
+		if !ok {
+			// only live-events will not work if writeKey is not found
+			gw.logger.Errorn("unable to get writeKey for job",
+				logger.NewStringField("messageId", msg.Properties.MessageID),
+				obskit.SourceID(msg.Properties.SourceID))
+		}
+		stat.SourceID = msg.Properties.SourceID
+		stat.WorkspaceID = msg.Properties.WorkspaceID
+		stat.WriteKey = writeKey
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
@@ -808,14 +824,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			UserID:          msg.Properties.UserID,
 			TraceParent:     msg.Properties.TraceID,
 			DestinationID:   msg.Properties.DestinationID,
-		}
-
-		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
-		if !ok {
-			// only live-events will not work if writeKey is not found
-			gw.logger.Errorn("unable to get writeKey for job",
-				logger.NewStringField("messageId", msg.Properties.MessageID),
-				obskit.SourceID(msg.Properties.SourceID))
+			SourceCategory:  msg.Properties.SourceType,
 		}
 
 		marshalledParams, err := json.Marshal(jobsDBParams)
@@ -831,10 +840,16 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
 		if err != nil {
+			err = fmt.Errorf("filling receivedAt: %w", err)
+			stat.RequestEventsFailed(1, err.Error())
+			stat.Report(gw.stats)
 			return nil, fmt.Errorf("filling receivedAt: %w", err)
 		}
 		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
 		if err != nil {
+			err = fmt.Errorf("filling request_ip: %w", err)
+			stat.RequestEventsFailed(1, err.Error())
+			stat.Report(gw.stats)
 			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
 
@@ -847,24 +862,30 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		payload, err := json.Marshal(eventBatch)
 		if err != nil {
+			err = fmt.Errorf("marshalling event batch: %w", err)
+			stat.RequestEventsFailed(1, err.Error())
+			stat.Report(gw.stats)
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 		jobUUID := uuid.New()
-		jobs = append(jobs, &jobsdb.JobT{
-			UUID:         jobUUID,
-			UserID:       msg.Properties.RoutingKey,
-			Parameters:   marshalledParams,
-			CustomVal:    customVal,
-			EventPayload: payload,
-			EventCount:   len(eventBatch.Batch),
-			WorkspaceId:  msg.Properties.WorkspaceID,
+		res = append(res, jobWithStat{
+			stat: stat,
+			job: &jobsdb.JobT{
+				UUID:         jobUUID,
+				UserID:       msg.Properties.RoutingKey,
+				Parameters:   marshalledParams,
+				CustomVal:    customVal,
+				EventPayload: payload,
+				EventCount:   len(eventBatch.Batch),
+				WorkspaceId:  msg.Properties.WorkspaceID,
+			},
 		})
 	}
-	if len(jobs) == 0 { // events suppressed - but return success
+	if len(res) == 0 { // events suppressed - but return success
 		return nil, nil
 	}
 
-	return jobs, nil
+	return res, nil
 }
 
 func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {

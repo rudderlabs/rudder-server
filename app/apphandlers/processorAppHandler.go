@@ -76,9 +76,6 @@ func (a *processorApp) Setup() error {
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
-	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
-		return err
-	}
 	if err := rudderCoreNodeSetup(); err != nil {
 		return err
 	}

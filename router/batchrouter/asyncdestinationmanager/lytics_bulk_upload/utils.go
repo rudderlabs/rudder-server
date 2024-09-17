@@ -12,6 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -156,7 +157,7 @@ func (u *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 		}
 
 		// Calculate the payload size and observe it
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType,
+		payloadSizeStat := u.statsFactory.NewTaggedStat("payload_size", stats.HistogramType,
 			map[string]string{
 				"module":   "batch_router",
 				"destType": u.destName,

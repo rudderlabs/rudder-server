@@ -45,6 +45,9 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 	if _, exists := os.LookupEnv(bqHelper.TestKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", bqHelper.TestKey)
+		}
 		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
