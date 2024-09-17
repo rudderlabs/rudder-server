@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"go.uber.org/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -75,159 +75,19 @@ func TestIntegration(t *testing.T) {
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
-		expectedSchema := [][]string{
-			{"screens", "context_source_id", "varchar"},
-			{"screens", "user_id", "varchar"},
-			{"screens", "sent_at", "datetimeoffset"},
-			{"screens", "context_request_ip", "varchar"},
-			{"screens", "original_timestamp", "datetimeoffset"},
-			{"screens", "url", "varchar"},
-			{"screens", "context_source_type", "varchar"},
-			{"screens", "_between", "varchar"},
-			{"screens", "timestamp", "datetimeoffset"},
-			{"screens", "context_ip", "varchar"},
-			{"screens", "context_destination_type", "varchar"},
-			{"screens", "received_at", "datetimeoffset"},
-			{"screens", "title", "varchar"},
-			{"screens", "uuid_ts", "datetimeoffset"},
-			{"screens", "context_destination_id", "varchar"},
-			{"screens", "name", "varchar"},
-			{"screens", "id", "varchar"},
-			{"screens", "_as", "varchar"},
-			{"identifies", "context_ip", "varchar"},
-			{"identifies", "context_destination_id", "varchar"},
-			{"identifies", "email", "varchar"},
-			{"identifies", "context_request_ip", "varchar"},
-			{"identifies", "sent_at", "datetimeoffset"},
-			{"identifies", "uuid_ts", "datetimeoffset"},
-			{"identifies", "_as", "varchar"},
-			{"identifies", "logins", "bigint"},
-			{"identifies", "context_source_type", "varchar"},
-			{"identifies", "context_traits_logins", "bigint"},
-			{"identifies", "name", "varchar"},
-			{"identifies", "context_destination_type", "varchar"},
-			{"identifies", "_between", "varchar"},
-			{"identifies", "id", "varchar"},
-			{"identifies", "timestamp", "datetimeoffset"},
-			{"identifies", "received_at", "datetimeoffset"},
-			{"identifies", "user_id", "varchar"},
-			{"identifies", "context_traits_email", "varchar"},
-			{"identifies", "context_traits_as", "varchar"},
-			{"identifies", "context_traits_name", "varchar"},
-			{"identifies", "original_timestamp", "datetimeoffset"},
-			{"identifies", "context_traits_between", "varchar"},
-			{"identifies", "context_source_id", "varchar"},
-			{"users", "context_traits_name", "varchar"},
-			{"users", "context_traits_between", "varchar"},
-			{"users", "context_request_ip", "varchar"},
-			{"users", "context_traits_logins", "bigint"},
-			{"users", "context_destination_id", "varchar"},
-			{"users", "email", "varchar"},
-			{"users", "logins", "bigint"},
-			{"users", "_as", "varchar"},
-			{"users", "context_source_id", "varchar"},
-			{"users", "uuid_ts", "datetimeoffset"},
-			{"users", "context_source_type", "varchar"},
-			{"users", "context_traits_email", "varchar"},
-			{"users", "name", "varchar"},
-			{"users", "id", "varchar"},
-			{"users", "_between", "varchar"},
-			{"users", "context_ip", "varchar"},
-			{"users", "received_at", "datetimeoffset"},
-			{"users", "sent_at", "datetimeoffset"},
-			{"users", "context_traits_as", "varchar"},
-			{"users", "context_destination_type", "varchar"},
-			{"users", "timestamp", "datetimeoffset"},
-			{"users", "original_timestamp", "datetimeoffset"},
-			{"product_track", "review_id", "varchar"},
-			{"product_track", "context_source_id", "varchar"},
-			{"product_track", "user_id", "varchar"},
-			{"product_track", "timestamp", "datetimeoffset"},
-			{"product_track", "uuid_ts", "datetimeoffset"},
-			{"product_track", "review_body", "varchar"},
-			{"product_track", "context_source_type", "varchar"},
-			{"product_track", "_as", "varchar"},
-			{"product_track", "_between", "varchar"},
-			{"product_track", "id", "varchar"},
-			{"product_track", "rating", "bigint"},
-			{"product_track", "event", "varchar"},
-			{"product_track", "original_timestamp", "datetimeoffset"},
-			{"product_track", "context_destination_type", "varchar"},
-			{"product_track", "context_ip", "varchar"},
-			{"product_track", "context_destination_id", "varchar"},
-			{"product_track", "sent_at", "datetimeoffset"},
-			{"product_track", "received_at", "datetimeoffset"},
-			{"product_track", "event_text", "varchar"},
-			{"product_track", "product_id", "varchar"},
-			{"product_track", "context_request_ip", "varchar"},
-			{"tracks", "original_timestamp", "datetimeoffset"},
-			{"tracks", "context_destination_id", "varchar"},
-			{"tracks", "event", "varchar"},
-			{"tracks", "context_request_ip", "varchar"},
-			{"tracks", "uuid_ts", "datetimeoffset"},
-			{"tracks", "context_destination_type", "varchar"},
-			{"tracks", "user_id", "varchar"},
-			{"tracks", "sent_at", "datetimeoffset"},
-			{"tracks", "context_source_type", "varchar"},
-			{"tracks", "context_ip", "varchar"},
-			{"tracks", "timestamp", "datetimeoffset"},
-			{"tracks", "received_at", "datetimeoffset"},
-			{"tracks", "context_source_id", "varchar"},
-			{"tracks", "event_text", "varchar"},
-			{"tracks", "id", "varchar"},
-			{"aliases", "context_request_ip", "varchar"},
-			{"aliases", "context_destination_type", "varchar"},
-			{"aliases", "context_destination_id", "varchar"},
-			{"aliases", "previous_id", "varchar"},
-			{"aliases", "context_ip", "varchar"},
-			{"aliases", "sent_at", "datetimeoffset"},
-			{"aliases", "id", "varchar"},
-			{"aliases", "uuid_ts", "datetimeoffset"},
-			{"aliases", "timestamp", "datetimeoffset"},
-			{"aliases", "original_timestamp", "datetimeoffset"},
-			{"aliases", "context_source_id", "varchar"},
-			{"aliases", "user_id", "varchar"},
-			{"aliases", "context_source_type", "varchar"},
-			{"aliases", "received_at", "datetimeoffset"},
-			{"pages", "name", "varchar"},
-			{"pages", "url", "varchar"},
-			{"pages", "id", "varchar"},
-			{"pages", "timestamp", "datetimeoffset"},
-			{"pages", "title", "varchar"},
-			{"pages", "user_id", "varchar"},
-			{"pages", "context_source_id", "varchar"},
-			{"pages", "context_source_type", "varchar"},
-			{"pages", "original_timestamp", "datetimeoffset"},
-			{"pages", "context_request_ip", "varchar"},
-			{"pages", "received_at", "datetimeoffset"},
-			{"pages", "_between", "varchar"},
-			{"pages", "context_destination_type", "varchar"},
-			{"pages", "uuid_ts", "datetimeoffset"},
-			{"pages", "context_destination_id", "varchar"},
-			{"pages", "sent_at", "datetimeoffset"},
-			{"pages", "context_ip", "varchar"},
-			{"pages", "_as", "varchar"},
-			{"groups", "_as", "varchar"},
-			{"groups", "user_id", "varchar"},
-			{"groups", "context_destination_type", "varchar"},
-			{"groups", "sent_at", "datetimeoffset"},
-			{"groups", "context_source_type", "varchar"},
-			{"groups", "received_at", "datetimeoffset"},
-			{"groups", "context_ip", "varchar"},
-			{"groups", "industry", "varchar"},
-			{"groups", "timestamp", "datetimeoffset"},
-			{"groups", "group_id", "varchar"},
-			{"groups", "uuid_ts", "datetimeoffset"},
-			{"groups", "context_source_id", "varchar"},
-			{"groups", "context_request_ip", "varchar"},
-			{"groups", "_between", "varchar"},
-			{"groups", "original_timestamp", "datetimeoffset"},
-			{"groups", "name", "varchar"},
-			{"groups", "_plan", "varchar"},
-			{"groups", "context_destination_id", "varchar"},
-			{"groups", "employees", "bigint"},
-			{"groups", "id", "varchar"},
+		expectedSchema := model.Schema{
+			"screens":       {"context_source_id": "varchar", "user_id": "varchar", "sent_at": "datetimeoffset", "context_request_ip": "varchar", "original_timestamp": "datetimeoffset", "url": "varchar", "context_source_type": "varchar", "_between": "varchar", "timestamp": "datetimeoffset", "context_ip": "varchar", "context_destination_type": "varchar", "received_at": "datetimeoffset", "title": "varchar", "uuid_ts": "datetimeoffset", "context_destination_id": "varchar", "name": "varchar", "id": "varchar", "_as": "varchar"},
+			"identifies":    {"context_ip": "varchar", "context_destination_id": "varchar", "email": "varchar", "context_request_ip": "varchar", "sent_at": "datetimeoffset", "uuid_ts": "datetimeoffset", "_as": "varchar", "logins": "bigint", "context_source_type": "varchar", "context_traits_logins": "bigint", "name": "varchar", "context_destination_type": "varchar", "_between": "varchar", "id": "varchar", "timestamp": "datetimeoffset", "received_at": "datetimeoffset", "user_id": "varchar", "context_traits_email": "varchar", "context_traits_as": "varchar", "context_traits_name": "varchar", "original_timestamp": "datetimeoffset", "context_traits_between": "varchar", "context_source_id": "varchar"},
+			"users":         {"context_traits_name": "varchar", "context_traits_between": "varchar", "context_request_ip": "varchar", "context_traits_logins": "bigint", "context_destination_id": "varchar", "email": "varchar", "logins": "bigint", "_as": "varchar", "context_source_id": "varchar", "uuid_ts": "datetimeoffset", "context_source_type": "varchar", "context_traits_email": "varchar", "name": "varchar", "id": "varchar", "_between": "varchar", "context_ip": "varchar", "received_at": "datetimeoffset", "sent_at": "datetimeoffset", "context_traits_as": "varchar", "context_destination_type": "varchar", "timestamp": "datetimeoffset", "original_timestamp": "datetimeoffset"},
+			"product_track": {"review_id": "varchar", "context_source_id": "varchar", "user_id": "varchar", "timestamp": "datetimeoffset", "uuid_ts": "datetimeoffset", "review_body": "varchar", "context_source_type": "varchar", "_as": "varchar", "_between": "varchar", "id": "varchar", "rating": "bigint", "event": "varchar", "original_timestamp": "datetimeoffset", "context_destination_type": "varchar", "context_ip": "varchar", "context_destination_id": "varchar", "sent_at": "datetimeoffset", "received_at": "datetimeoffset", "event_text": "varchar", "product_id": "varchar", "context_request_ip": "varchar"},
+			"tracks":        {"original_timestamp": "datetimeoffset", "context_destination_id": "varchar", "event": "varchar", "context_request_ip": "varchar", "uuid_ts": "datetimeoffset", "context_destination_type": "varchar", "user_id": "varchar", "sent_at": "datetimeoffset", "context_source_type": "varchar", "context_ip": "varchar", "timestamp": "datetimeoffset", "received_at": "datetimeoffset", "context_source_id": "varchar", "event_text": "varchar", "id": "varchar"},
+			"aliases":       {"context_request_ip": "varchar", "context_destination_type": "varchar", "context_destination_id": "varchar", "previous_id": "varchar", "context_ip": "varchar", "sent_at": "datetimeoffset", "id": "varchar", "uuid_ts": "datetimeoffset", "timestamp": "datetimeoffset", "original_timestamp": "datetimeoffset", "context_source_id": "varchar", "user_id": "varchar", "context_source_type": "varchar", "received_at": "datetimeoffset"},
+			"pages":         {"name": "varchar", "url": "varchar", "id": "varchar", "timestamp": "datetimeoffset", "title": "varchar", "user_id": "varchar", "context_source_id": "varchar", "context_source_type": "varchar", "original_timestamp": "datetimeoffset", "context_request_ip": "varchar", "received_at": "datetimeoffset", "_between": "varchar", "context_destination_type": "varchar", "uuid_ts": "datetimeoffset", "context_destination_id": "varchar", "sent_at": "datetimeoffset", "context_ip": "varchar", "_as": "varchar"},
+			"groups":        {"_as": "varchar", "user_id": "varchar", "context_destination_type": "varchar", "sent_at": "datetimeoffset", "context_source_type": "varchar", "received_at": "datetimeoffset", "context_ip": "varchar", "industry": "varchar", "timestamp": "datetimeoffset", "group_id": "varchar", "uuid_ts": "datetimeoffset", "context_source_id": "varchar", "context_request_ip": "varchar", "_between": "varchar", "original_timestamp": "datetimeoffset", "name": "varchar", "_plan": "varchar", "context_destination_id": "varchar", "employees": "bigint", "id": "varchar"},
 		}
+		userIDFormat := "userId_azure_synapse"
+		userIDSQL := "LEFT(user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id) + 1) + 1) - 1)"
+		uuidTSSQL := "LEFT(uuid_ts, 10)"
 
 		testcase := []struct {
 			name          string
@@ -239,14 +99,12 @@ func TestIntegration(t *testing.T) {
 				name:   "Upload Job",
 				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.ElementsMatch(t, schema, expectedSchema)
+					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedSchema)
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
-					userIDFormat := "userId_azure_synapse"
-					userIDSQL := "LEFT(user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id) + 1) + 1) - 1)"
-					uuidTSSQL := "LEFT(uuid_ts, 10)"
-
+					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, LEFT(id, CHARINDEX('_', id, CHARINDEX('_', id, CHARINDEX('_', id) + 1) + 1) - 1), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))

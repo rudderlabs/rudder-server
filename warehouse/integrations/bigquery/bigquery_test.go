@@ -129,7 +129,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name:   "Append mode",
+				name:                          "Append mode",
 				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 				warehouseEventsMap2: whth.EventsCountMap{
 					// For all tables we will be appending because of preferAppend config

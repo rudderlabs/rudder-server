@@ -21,6 +21,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -120,6 +121,78 @@ func (w *TestConfig) reset() {
 		} else {
 			w.WarehouseEventsMap = defaultWarehouseEventsMap(w.DestinationType)
 		}
+	}
+}
+
+func defaultStagingFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"wh_staging_files": 32,
+	}
+}
+
+func defaultLoadFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
+		"users":         4,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+	}
+}
+
+func defaultTableUploadsEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
+		"users":         4,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+	}
+}
+
+func defaultWarehouseEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
+		"users":         1,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+	}
+}
+
+func SourcesStagingFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"wh_staging_files": 8,
+	}
+}
+
+func SourcesLoadFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
+
+func SourcesTableUploadsEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
+
+func SourcesWarehouseEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 4,
+		"tracks":       4,
 	}
 }
 
@@ -238,4 +311,14 @@ func RetrieveRecordsFromWarehouse(
 		}))
 	}
 	return records
+}
+
+func ConvertRecordsToSchema(input [][]string) model.Schema {
+	return lo.MapValues(lo.GroupBy(input, func(row []string) string {
+		return row[0]
+	}), func(columns [][]string, _ string) model.TableSchema {
+		return lo.SliceToMap(columns, func(col []string) (string, string) {
+			return col[1], col[2]
+		})
+	})
 }

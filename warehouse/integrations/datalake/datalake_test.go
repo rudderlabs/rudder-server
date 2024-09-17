@@ -29,6 +29,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -107,6 +108,7 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency":    "30",
 				},
 				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
 					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
 				configOverride: map[string]any{
@@ -120,26 +122,30 @@ func TestIntegration(t *testing.T) {
 					"disableSSL":       true,
 				},
 				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
-					schemasMap := map[string][][]string{
-						"aliases":       {{"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"groups":        {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"tracks":        {{"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"PARGO_PREFIX__timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"groups":        {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
 					}
 
 					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
-					for fileName, schema := range fs {
+					for fileName, fileSchema := range fs {
 						fileNameSplits := strings.Split(fileName, "/")
 						require.GreaterOrEqual(t, len(fileNameSplits), 2)
 						tableName := fileNameSplits[2]
-						require.ElementsMatch(t, schemasMap[tableName], schema)
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
 					}
 				},
 				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
 					outputFormat := map[string][]string{
 						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "PARGO_PREFIX__timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
 						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "PARGO_PREFIX__timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
@@ -179,6 +185,7 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency": "30",
 				},
 				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
 					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 				},
 				configOverride: map[string]any{
@@ -188,26 +195,30 @@ func TestIntegration(t *testing.T) {
 					"jsonReads":  true,
 				},
 				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
-					schemasMap := map[string][][]string{
-						"aliases":       {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"_groups":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"tracks":        {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"_groups":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
 					}
 
 					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
-					for fileName, schema := range fs {
+					for fileName, fileSchema := range fs {
 						fileNameSplits := strings.Split(fileName, "/")
 						require.GreaterOrEqual(t, len(fileNameSplits), 2)
 						tableName := fileNameSplits[2]
-						require.ElementsMatch(t, schemasMap[tableName], schema)
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
 					}
 				},
 				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
 					outputFormat := map[string][]string{
 						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
 						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
@@ -257,26 +268,30 @@ func TestIntegration(t *testing.T) {
 					"disableSSL":     true,
 				},
 				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
-					schemasMap := map[string][][]string{
-						"aliases":       {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Previous_id", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"groups":        {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Employees", "INT64"}, {"Group_id", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Industry", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"PARGO_PREFIX__plan", "BYTE_ARRAY"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"identifies":    {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"pages":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"product_track": {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Product_id", "BYTE_ARRAY"}, {"Rating", "INT64"}, {"Received_at", "INT64"}, {"Review_body", "BYTE_ARRAY"}, {"Review_id", "BYTE_ARRAY"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"screens":       {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Title", "BYTE_ARRAY"}, {"Url", "BYTE_ARRAY"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"tracks":        {{"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Event", "BYTE_ARRAY"}, {"Event_text", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"User_id", "BYTE_ARRAY"}, {"Uuid_ts", "INT64"}},
-						"users":         {{"PARGO_PREFIX__as", "BYTE_ARRAY"}, {"PARGO_PREFIX__between", "BYTE_ARRAY"}, {"Timestamp", "INT64"}, {"Context_destination_id", "BYTE_ARRAY"}, {"Context_destination_type", "BYTE_ARRAY"}, {"Context_ip", "BYTE_ARRAY"}, {"Context_request_ip", "BYTE_ARRAY"}, {"Context_source_id", "BYTE_ARRAY"}, {"Context_source_type", "BYTE_ARRAY"}, {"Context_traits_as", "BYTE_ARRAY"}, {"Context_traits_between", "BYTE_ARRAY"}, {"Context_traits_email", "BYTE_ARRAY"}, {"Context_traits_logins", "INT64"}, {"Context_traits_name", "BYTE_ARRAY"}, {"Email", "BYTE_ARRAY"}, {"Id", "BYTE_ARRAY"}, {"Logins", "INT64"}, {"Name", "BYTE_ARRAY"}, {"Original_timestamp", "INT64"}, {"Received_at", "INT64"}, {"Sent_at", "INT64"}, {"Uuid_ts", "INT64"}},
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"groups":        {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "PARGO_PREFIX__plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
 					}
 
 					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
-					for fileName, schema := range fs {
+					for fileName, fileSchema := range fs {
 						fileNameSplits := strings.Split(fileName, "/")
 						require.GreaterOrEqual(t, len(fileNameSplits), 2)
 						tableName := fileNameSplits[2]
-						require.ElementsMatch(t, schemasMap[tableName], schema)
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
 					}
 				},
 				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
 					outputFormat := map[string][]string{
 						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
 						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
@@ -387,7 +402,6 @@ func TestIntegration(t *testing.T) {
 				}
 				ts2.VerifyEvents(t)
 
-				t.Log("verifying schema")
 				storageProvider := whutils.ObjectStorageType(tc.destType, tc.conf, false)
 				fm, err := filemanager.New(&filemanager.Settings{
 					Provider: storageProvider,
@@ -399,6 +413,8 @@ func TestIntegration(t *testing.T) {
 					}),
 				})
 				require.NoError(t, err)
+
+				t.Log("verifying schema")
 				tc.verifySchema(t, fm, namespace)
 
 				t.Log("verifying records")
@@ -967,6 +983,10 @@ func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[st
 		f, err := os.CreateTemp(t.TempDir(), "")
 		require.NoError(t, err)
 		require.NoError(t, fm.Download(ctx, f, file))
+		t.Cleanup(func() {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+		})
 
 		pf, err := local.NewLocalFileReader(f.Name())
 		require.NoError(t, err)
@@ -986,6 +1006,8 @@ func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[st
 			}
 			return []string{item.Name, item.Type.String()}
 		})
+
+		// Remove the root element from the schema
 		schemasMap[file] = lo.Filter(schemasMap[file], func(item []string, index int) bool {
 			return item[0] != "Parquet_go_root"
 		})
@@ -1010,6 +1032,10 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 		f, err := os.CreateTemp(t.TempDir(), "")
 		require.NoError(t, err)
 		require.NoError(t, fm.Download(ctx, f, file))
+		t.Cleanup(func() {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+		})
 
 		pf, err := local.NewLocalFileReader(f.Name())
 		require.NoError(t, err)
@@ -1027,10 +1053,13 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 		for i := 0; i < int(pr.GetNumRows()); i++ {
 			data[i] = make([]string, len(pr.SchemaHandler.SchemaElements)-1)
 		}
+
 		for i := 0; i < len(pr.SchemaHandler.SchemaElements)-1; i++ {
+			// Read the column data
 			d, _, _, err := pr.ReadColumnByIndex(int64(i), pr.GetNumRows())
 			require.NoError(t, err)
 
+			// Map the column data to a string slice
 			nd := lo.Map(d, func(item any, index int) string {
 				switch item := item.(type) {
 				case time.Time:
@@ -1051,13 +1080,14 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 				}
 			})
 
+			// Assign the column data to the data slice
 			for j := 0; j < int(pr.GetNumRows()); j++ {
 				data[j][i] = nd[j]
 			}
 		}
 
+		// Truncate the user ID and UUID to the length of the format
 		for _, record := range data {
-			// Truncate the user ID to the length of the format
 			if tableName == whutils.UsersTable {
 				if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
 					return item[0] == "Id"
@@ -1071,8 +1101,6 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 					record[idx] = record[idx][0:len(userIDFormat)]
 				}
 			}
-
-			// Truncate the UUID to the length of the format
 			if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
 				return item[0] == "Uuid_ts"
 			}); found {
@@ -1080,10 +1108,13 @@ func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, ou
 			}
 		}
 
+		// Reorder the data based on the output format
 		outputData := make([][]string, len(data))
 		for i := range data {
 			outputData[i] = make([]string, len(data[i]))
 		}
+
+		// Find the index of the field in the schema and assign the data to the output data
 		for i, field := range outputFormat[tableName] {
 			_, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
 				return item[0] == field
