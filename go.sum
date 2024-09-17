@@ -1153,8 +1153,8 @@ github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a h
 github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
 github.com/rudderlabs/sql-tunnels v0.1.7 h1:wDCRl6zY4M5gfWazf7XkSTGQS3yjBzUiUgEMBIfHNDA=
 github.com/rudderlabs/sql-tunnels v0.1.7/go.mod h1:5f7+YL49JHYgteP4rAgqKnr4K2OadB0oIpUS+Tt3sPM=
-github.com/rudderlabs/sqlconnect-go v1.10.0 h1:PbYUdr8vDnBWYzaXCC1cpaJMYi7ggMp44/utuMVfmIs=
-github.com/rudderlabs/sqlconnect-go v1.10.0/go.mod h1:6vfDgv/fTUtJxX4zvNYtXt254HlOgDw/ybzBxkKWbdQ=
+github.com/rudderlabs/sqlconnect-go v1.10.1 h1:HdIs5sozRJIbP6riUJLV3f2roZkVGX6j4mtbYK7NvrU=
+github.com/rudderlabs/sqlconnect-go v1.10.1/go.mod h1:6vfDgv/fTUtJxX4zvNYtXt254HlOgDw/ybzBxkKWbdQ=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/ruudk/golang-pdf417 v0.0.0-20181029194003-1af4ab5afa58/go.mod h1:6lfFZQK844Gfx8o5WFuvpxWRwnSoipWe/p622j1v06w=
