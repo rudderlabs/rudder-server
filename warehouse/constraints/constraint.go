@@ -2,6 +2,7 @@ package constraints
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -18,6 +19,7 @@ type constraints interface {
 type Violation struct {
 	IsViolated         bool
 	ViolatedIdentifier string
+	Reason             string
 }
 
 type indexConstraint struct {
@@ -25,6 +27,7 @@ type indexConstraint struct {
 	columnName   string
 	indexColumns []string
 	limit        int
+	reason       string
 }
 
 type Manager struct {
@@ -42,12 +45,14 @@ func New(conf *config.Config) *Manager {
 				columnName:   "merge_property_1_value",
 				indexColumns: []string{"merge_property_1_type", "merge_property_1_value"},
 				limit:        512,
+				reason:       "The maximum length of the concatenated columns " + "merge_property_1_type" + " and " + "merge_property_1_value" + " should be less than 512",
 			},
 			&indexConstraint{
 				tableName:    "rudder_identity_merge_rules",
 				columnName:   "merge_property_2_value",
 				indexColumns: []string{"merge_property_2_type", "merge_property_2_value"},
 				limit:        512,
+				reason:       "The maximum length of the concatenated columns " + "merge_property_2_type" + " and " + "merge_property_2_value" + " should be less than 512",
 			},
 		},
 		warehouseutils.SNOWFLAKE: {
@@ -56,12 +61,14 @@ func New(conf *config.Config) *Manager {
 				columnName:   "MERGE_PROPERTY_1_VALUE",
 				indexColumns: []string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE"},
 				limit:        512,
+				reason:       "The maximum length of the concatenated columns MERGE_PROPERTY_1_TYPE and MERGE_PROPERTY_1_VALUE should be less than 512",
 			},
 			&indexConstraint{
 				tableName:    "RUDDER_IDENTITY_MERGE_RULES",
 				columnName:   "MERGE_PROPERTY_2_VALUE",
 				indexColumns: []string{"MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"},
 				limit:        512,
+				reason:       "The maximum length of the concatenated columns MERGE_PROPERTY_2_TYPE and MERGE_PROPERTY_2_VALUE should be less than 512",
 			},
 		},
 	}
@@ -116,5 +123,6 @@ func (ic *indexConstraint) violates(brEvent *types.BatchRouterEvent, columnName 
 	return &Violation{
 		IsViolated:         concatenatedLength > ic.limit,
 		ViolatedIdentifier: strcase.ToKebab(warehouseutils.DiscardsTable) + "-" + misc.FastUUID().String(),
+		Reason:             ic.reason,
 	}
 }
