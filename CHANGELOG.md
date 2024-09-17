@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.34.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.33.1...v1.34.0-rc.2) (2024-09-17)
+
+
+### Features
+
+* enable retention period for warehouse uploads ([#5045](https://github.com/rudderlabs/rudder-server/issues/5045)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+
+
+### Bug Fixes
+
+* datalake spark flaky test ([#5075](https://github.com/rudderlabs/rudder-server/issues/5075)) ([57dd8c1](https://github.com/rudderlabs/rudder-server/commit/57dd8c18ec0fb11775020841611908d9c1d4d9a3))
+* error reporting lag and pii handle ([#5028](https://github.com/rudderlabs/rudder-server/issues/5028)) ([40a5446](https://github.com/rudderlabs/rudder-server/commit/40a5446fa269a7861773dbaa14c8acc123c8112e))
+* gateway internal batch endpoint stats ([#5089](https://github.com/rudderlabs/rudder-server/issues/5089)) ([bbaaabd](https://github.com/rudderlabs/rudder-server/commit/bbaaabd03a7aef6e26227adbdfdba457a71fdd39))
+* prevent badgerdb hang when closing without prior operations ([#5074](https://github.com/rudderlabs/rudder-server/issues/5074)) ([9a4b843](https://github.com/rudderlabs/rudder-server/commit/9a4b8439dfea3ab46aa6da4d179192502337b230))
+* replace counter with gauge cron tracker alert ([#5084](https://github.com/rudderlabs/rudder-server/issues/5084)) ([dc7d6ef](https://github.com/rudderlabs/rudder-server/commit/dc7d6ef441ae28a800fcb7f0c9f73fda33b5192f))
+* reporting from warehouse module for failing uploads ([#5044](https://github.com/rudderlabs/rudder-server/issues/5044)) ([ec92f31](https://github.com/rudderlabs/rudder-server/commit/ec92f3120d2b4595af0530f16310f725a66248bf))
+* revert support for webhook headers ([#5064](https://github.com/rudderlabs/rudder-server/issues/5064)) ([df7e02f](https://github.com/rudderlabs/rudder-server/commit/df7e02f77db50c397e42ea6524099187e4519152))
+* webhook integration tests ([#5061](https://github.com/rudderlabs/rudder-server/issues/5061)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+
+
+### Miscellaneous
+
+* add trufflehog scan step before image push ([#5035](https://github.com/rudderlabs/rudder-server/issues/5035)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* delete load files post successful upload ([#5050](https://github.com/rudderlabs/rudder-server/issues/5050)) ([d9c5c79](https://github.com/rudderlabs/rudder-server/commit/d9c5c7997de9964551a2d1101a6e638920d80db2))
+* deps upgrade ([#5081](https://github.com/rudderlabs/rudder-server/issues/5081)) ([6493beb](https://github.com/rudderlabs/rudder-server/commit/6493beb18c92373b0796b3413849ecf6e1e37683))
+* **deps:** bump the go-deps group across 1 directory with 4 updates ([#5090](https://github.com/rudderlabs/rudder-server/issues/5090)) ([63c4033](https://github.com/rudderlabs/rudder-server/commit/63c403395cff4fbff21feef93f743f9401f42907))
+* **deps:** bump the go-deps group across 1 directory with 6 updates ([#5058](https://github.com/rudderlabs/rudder-server/issues/5058)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* **deps:** bump the go-deps group with 2 updates ([#5059](https://github.com/rudderlabs/rudder-server/issues/5059)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* for bigquery FORCE_RUN_INTEGRATION_TESTS ([#5060](https://github.com/rudderlabs/rudder-server/issues/5060)) ([ff271e5](https://github.com/rudderlabs/rudder-server/commit/ff271e58c91bcf7036ae030887a6b6086f3b214e))
+* include transformationId in transformer client metrics ([#5055](https://github.com/rudderlabs/rudder-server/issues/5055)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* make scylla hosts as slice ([#5107](https://github.com/rudderlabs/rudder-server/issues/5107)) ([0ada31f](https://github.com/rudderlabs/rudder-server/commit/0ada31fe945df8e3f01090cb6d39b5738bd6adff))
+* passing dependency for asyncdestinationmanager ([#5080](https://github.com/rudderlabs/rudder-server/issues/5080)) ([f6271a0](https://github.com/rudderlabs/rudder-server/commit/f6271a0cad08e55c5ac28a19cd2e034a4024ed7d))
+* propogate source category to router ([#5085](https://github.com/rudderlabs/rudder-server/issues/5085)) ([f41b9d1](https://github.com/rudderlabs/rudder-server/commit/f41b9d125d83368ff9603c54966eaab54e722592))
+* refine error extractor ([#5049](https://github.com/rudderlabs/rudder-server/issues/5049)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* remove multiGzipWriter ([#5016](https://github.com/rudderlabs/rudder-server/issues/5016)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* remove workspace table ([#4952](https://github.com/rudderlabs/rudder-server/issues/4952)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* sample events based on stage of failure ([#4999](https://github.com/rudderlabs/rudder-server/issues/4999)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* send connection config to router transform ([#4903](https://github.com/rudderlabs/rudder-server/issues/4903)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* sync 1.33.1 to master ([#5071](https://github.com/rudderlabs/rudder-server/issues/5071)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* sync release 1.33.x to master ([#5047](https://github.com/rudderlabs/rudder-server/issues/5047)) ([#5102](https://github.com/rudderlabs/rudder-server/issues/5102)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* sync release v1.33.0 to main branch ([#5054](https://github.com/rudderlabs/rudder-server/issues/5054)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* trino hive cursor error ([#5024](https://github.com/rudderlabs/rudder-server/issues/5024)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* update router reports payload behind a flag, emit stats to observe sizes ([#5067](https://github.com/rudderlabs/rudder-server/issues/5067)) ([7d74183](https://github.com/rudderlabs/rudder-server/commit/7d7418320869b5ed038c29cd5353806408cf17ea))
+* update webhook test cases ([#5053](https://github.com/rudderlabs/rudder-server/issues/5053)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+* upgrade go to 1.23.0 ([#5052](https://github.com/rudderlabs/rudder-server/issues/5052)) ([b4f18d2](https://github.com/rudderlabs/rudder-server/commit/b4f18d28279c7585f7904363be7bf250437278b9))
+
 ## [1.33.1](https://github.com/rudderlabs/rudder-server/compare/v1.33.0...v1.33.1) (2024-09-06)
 
 
