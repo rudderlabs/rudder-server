@@ -16,27 +16,13 @@ func defaultStagingFilesWithIDResolutionEventsMap() EventsCountMap {
 
 func defaultTableUploadsEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"identifies":    4,
-		"users":         4,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
+		"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
 	}
 }
 
 func defaultWarehouseEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
+		"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
 	}
 }
 
@@ -54,28 +40,12 @@ func defaultSourcesStagingFilesWithIDResolutionEventsMap() EventsCountMap {
 
 func defaultSourcesTableUploadsEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"tracks":       4,
-		"google_sheet": 4,
+		"tracks": 4, "google_sheet": 4,
 	}
 }
 
 func defaultSourcesWarehouseEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"google_sheet": 4,
-		"tracks":       4,
-	}
-}
-
-func SourcesTableUploadsEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"tracks":       4,
-		"google_sheet": 4,
-	}
-}
-
-func SourcesWarehouseEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"google_sheet": 4,
-		"tracks":       4,
+		"google_sheet": 4, "tracks": 4,
 	}
 }

@@ -21,6 +21,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -148,6 +149,9 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 	jobsDB, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 	require.NoError(t, jobsDB.Ping())
+	t.Cleanup(func() {
+		_ = jobsDB.Close()
+	})
 
 	t.Cleanup(func() {
 		_ = jobsDB.Close()
@@ -235,4 +239,14 @@ func RetrieveRecordsFromWarehouse(
 		}))
 	}
 	return records
+}
+
+func ConvertRecordsToSchema(input [][]string) model.Schema {
+	return lo.MapValues(lo.GroupBy(input, func(row []string) string {
+		return row[0]
+	}), func(columns [][]string, _ string) model.TableSchema {
+		return lo.SliceToMap(columns, func(col []string) (string, string) {
+			return col[1], col[2]
+		})
+	})
 }
