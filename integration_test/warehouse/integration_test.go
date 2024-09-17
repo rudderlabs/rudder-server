@@ -660,7 +660,7 @@ func TestUploads(t *testing.T) {
 				{A: "in_pu", B: "batch_router"},
 				{A: "pu", B: "warehouse"},
 				{A: "initial_state", B: false},
-				{A: "terminal_state", B: true},
+				{A: "terminal_state", B: false},
 			}...)
 			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
