@@ -383,7 +383,7 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:           httpPort,
 					Client:             sqlClient,
 					EventsFilePath:     tc.stagingFilePath2,
-					UserID:             ts1.UserID,
+					UserID:             whth.GetUserId(destType),
 					TransformerURL:     transformerURL,
 					Destination:        destination,
 				}
