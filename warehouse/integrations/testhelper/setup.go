@@ -111,14 +111,14 @@ func (w *TestConfig) reset() {
 		if w.SourceJob {
 			w.TableUploadsEventsMap = defaultSourcesTableUploadsEventsMap()
 		} else {
-			w.TableUploadsEventsMap = defaultTableUploadsEventsMap()
+			w.TableUploadsEventsMap = defaultTableUploadsEventsMap(w.DestinationType)
 		}
 	}
 	if len(w.WarehouseEventsMap) == 0 {
 		if w.SourceJob {
 			w.WarehouseEventsMap = defaultSourcesWarehouseEventsMap()
 		} else {
-			w.WarehouseEventsMap = defaultWarehouseEventsMap()
+			w.WarehouseEventsMap = defaultWarehouseEventsMap(w.DestinationType)
 		}
 	}
 }

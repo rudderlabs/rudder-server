@@ -600,14 +600,7 @@ func TestIntegration(t *testing.T) {
 				warehouseEventsMap2: whth.EventsCountMap{
 					// For all tables except users we will be appending because of:
 					// * preferAppend
-					"identifies":    8,
-					"users":         1,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
+					"identifies": 8, "users": 1, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
 				},
 				stagingFilePath1: "../testdata/upload-job.events-1.json",
 				stagingFilePath2: "../testdata/upload-job.events-1.json",

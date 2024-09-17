@@ -294,14 +294,7 @@ func TestIntegration(t *testing.T) {
 					return connectClickhouseDB(t, ctx, dsn)
 				},
 				warehouseEvents2: whth.EventsCountMap{
-					"identifies":    8,
-					"users":         2,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
+					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
 				},
 				clusterSetup: func(t *testing.T, ctx context.Context) {
 					t.Helper()

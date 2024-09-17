@@ -331,14 +331,7 @@ func TestIntegration(t *testing.T) {
 					// For users table we will not be appending since the following config are not set
 					// * Warehouse.postgres.skipDedupDestinationIDs
 					// * Warehouse.postgres.skipComputingUserLatestTraits
-					"identifies":    8,
-					"users":         1,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
+					"identifies": 8, "users": 1, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
 				},
 				configOverride: map[string]any{
 					"preferAppend": true,
@@ -416,14 +409,7 @@ func TestIntegration(t *testing.T) {
 					// For users table we will be appending because of:
 					// * Warehouse.postgres.skipDedupDestinationIDs
 					// * Warehouse.postgres.skipComputingUserLatestTraits
-					"identifies":    8,
-					"users":         2,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
+					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
 				},
 				configOverride: map[string]any{
 					"preferAppend": true,

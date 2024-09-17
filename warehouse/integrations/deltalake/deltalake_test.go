@@ -162,16 +162,8 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "Append Mode",
 				warehouseEventsMap2: whth.EventsCountMap{
-					// For all tables we will be appending because of:
-					// * preferAppend
-					"identifies":    8,
-					"users":         2,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
+					// For all tables we will be appending because of preferAppend config
+					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "_groups": 8,
 				},
 				stagingFilePath1: "../testdata/upload-job.events-1.json",
 				stagingFilePath2: "../testdata/upload-job.events-1.json",
