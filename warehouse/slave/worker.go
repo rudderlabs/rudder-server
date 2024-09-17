@@ -352,6 +352,15 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 				)
 
 				if convError != nil || violatedConstraints.IsViolated {
+					var reason string
+					if violatedConstraints.IsViolated {
+						reason = violatedConstraints.Reason
+					} else if convError != nil {
+						reason = convError.Error()
+					} else {
+						reason = "unknown reason"
+					}
+
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
@@ -363,7 +372,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 						return nil, err
 					}
 
-					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable], convError.Error())
+					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable], reason)
 					if err != nil {
 						jr.logger.Errorf("Failed to write to discards: %v", err)
 					}
