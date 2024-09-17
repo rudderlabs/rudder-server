@@ -1036,18 +1036,13 @@ func TestIntegration(t *testing.T) {
 					ctx := context.Background()
 					tableName := whutils.DiscardsTable
 
-					file, err := whth.CreateDiscardFileCSV(t)
-					require.NoError(t, err)
-					defer func() {
-						_ = file.Close()
-					}()
-					uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
+					uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 					loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 					mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv)
 
 					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-					err = rs.Setup(ctx, warehouse, mockUploader)
+					err := rs.Setup(ctx, warehouse, mockUploader)
 					require.NoError(t, err)
 
 					err = rs.CreateSchema(ctx)
@@ -1068,6 +1063,7 @@ func TestIntegration(t *testing.T) {
 							SELECT
 							  column_name,
 							  column_value,
+						      reason,
 							  received_at,
 							  row_id,
 							  table_name,

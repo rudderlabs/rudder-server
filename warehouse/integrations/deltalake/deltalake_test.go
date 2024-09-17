@@ -854,18 +854,13 @@ func TestIntegration(t *testing.T) {
 		t.Run("discards", func(t *testing.T) {
 			tableName := whutils.DiscardsTable
 
-			file, err := whth.CreateDiscardFileCSV(t)
-			require.NoError(t, err)
-			defer func() {
-				_ = file.Close()
-			}()
-			uploadOutput := whth.UploadLoadFile(t, fm, file.Name(), tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
-			err = d.Setup(ctx, warehouse, mockUploader)
+			err := d.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
 			err = d.CreateSchema(ctx)
@@ -888,6 +883,7 @@ func TestIntegration(t *testing.T) {
 						column_name,
 						column_value,
 						received_at,
+						reason,
 						row_id,
 						table_name,
 						uuid_ts
