@@ -1303,7 +1303,7 @@ var _ = Describe("router", func() {
 					Expect(metrics).To(HaveLen(1))
 					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(200))
 					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Succeeded.State))
-					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(json.RawMessage(`{"message": "some transformed message"}`)))
+					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(toRetryJobsList[0].EventPayload))
 					return nil
 				},
 			)
@@ -1458,7 +1458,7 @@ var _ = Describe("router", func() {
 					Expect(metrics[0].StatusDetail.StatusCode).To(Equal(500))
 					Expect(metrics[0].StatusDetail.Status).To(Equal(jobsdb.Failed.State))
 					Expect(metrics[0].StatusDetail.SampleEvent).To(Equal(json.RawMessage(gaPayload)))
-					Expect(metrics[0].StatusDetail.SampleResponse).To(ContainSubstring(`failureStage":"RudderStack Transformation Error"`))
+					Expect(metrics[0].StatusDetail.SampleResponse).To(ContainSubstring(`"routerSubStage":"router_dest_transformer"`))
 
 					return nil
 				},

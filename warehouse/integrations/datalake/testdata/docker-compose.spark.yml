@@ -24,6 +24,8 @@ services:
     ports:
       - "8080"
       - "7077"
+    depends_on:
+      - hive-metastore
     deploy:
       resources:
         limits:

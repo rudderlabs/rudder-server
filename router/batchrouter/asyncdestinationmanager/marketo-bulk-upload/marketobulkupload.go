@@ -25,6 +25,7 @@ type MarketoBulkUploader struct {
 	destName          string
 	destinationConfig MarketoConfig
 	logger            logger.Logger
+	statsFactory      stats.Stats
 	timeout           time.Duration
 	csvHeaders        []string
 	dataHashToJobId   map[string]int64
@@ -407,12 +408,12 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		input = append(input, tempJob)
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := b.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
+	payloadSizeStat := b.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
@@ -459,7 +460,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if statusCodeHTTP != 200 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf(`HTTP Call to Transformer Returned Non 200. StatusCode: %d`, statusCodeHTTP),
+			FailedReason:  "BRT: Error in Uploading File: " + resp.Status,
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}

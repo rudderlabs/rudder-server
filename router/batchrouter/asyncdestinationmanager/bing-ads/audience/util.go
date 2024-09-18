@@ -18,6 +18,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -161,7 +162,7 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 			return nil, err
 		}
 
-		payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType,
+		payloadSizeStat := b.statsFactory.NewTaggedStat("payload_size", stats.HistogramType,
 			map[string]string{
 				"module":   "batch_router",
 				"destType": b.destName,

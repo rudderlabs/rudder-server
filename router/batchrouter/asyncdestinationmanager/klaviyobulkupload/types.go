@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -33,6 +35,7 @@ type KlaviyoBulkUploader struct {
 	destName             string
 	destinationConfig    map[string]interface{}
 	logger               logger.Logger
+	statsFactory         stats.Stats
 	Client               *http.Client
 	jobIdToIdentifierMap map[string]int64
 }

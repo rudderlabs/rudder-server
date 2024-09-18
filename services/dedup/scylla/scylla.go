@@ -113,7 +113,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 }
 
 func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
-	cluster := gocql.NewCluster(conf.GetString("Scylla.Hosts", "localhost:9042"))
+	cluster := gocql.NewCluster(conf.GetReloadableStringSliceVar([]string{"localhost:9042"}, "Scylla.Hosts").Load()...)
 	cluster.Consistency = gocql.Quorum
 	cluster.RetryPolicy = &gocql.ExponentialBackoffRetryPolicy{
 		NumRetries: conf.GetInt("Scylla.NumRetries", 3),

@@ -23,7 +23,7 @@ const (
 
 const MaxLengthExceeded = ":max-length-exceeded:"
 
-var (
+const (
 	DiffStatus = "diff"
 
 	// Module names

@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -261,7 +262,7 @@ func (brt *Handle) Shutdown() {
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
-	manager, err := asyncdestinationmanager.NewManager(destination, brt.backendConfig)
+	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
 	if err != nil {
 		brt.logger.Errorf("BRT: Error initializing async destination struct for %s destination: %v", destination.Name, err)
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{

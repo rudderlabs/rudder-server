@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
-func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
 	destConfig := MarketoConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.DestinationDefinition.Config)
 	if err != nil {

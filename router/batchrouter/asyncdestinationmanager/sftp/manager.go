@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sftp"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -73,9 +74,9 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 		"destType": destType,
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
-	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
+	uploadTimeStat := d.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
+	payloadSizeStat := d.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
+	eventsSuccessStat := d.statsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	payloadSizeStat.Observe(float64(fileInfo.Size()))
 	d.logger.Debugn("File Upload Started", obskit.DestinationID(destinationID))
@@ -96,14 +97,15 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 }
 
-func newDefaultManager(fileManager sftp.FileManager) *defaultManager {
+func newDefaultManager(logger logger.Logger, statsFactory stats.Stats, fileManager sftp.FileManager) *defaultManager {
 	return &defaultManager{
-		FileManager: fileManager,
-		logger:      logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("SFTP").Child("Manager"),
+		FileManager:  fileManager,
+		logger:       logger.Child("SFTP").Child("Manager"),
+		statsFactory: statsFactory,
 	}
 }
 
-func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUploadAndTransformManager, error) {
+func newInternalManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncUploadAndTransformManager, error) {
 	sshConfig, err := createSSHConfig(destination)
 	if err != nil {
 		return nil, fmt.Errorf("creating SSH config: %w", err)
@@ -114,11 +116,11 @@ func newInternalManager(destination *backendconfig.DestinationT) (common.AsyncUp
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 
-	return newDefaultManager(fileManager), nil
+	return newDefaultManager(logger, statsFactory, fileManager), nil
 }
 
-func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
-	sftpManager, err := newInternalManager(destination)
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
+	sftpManager, err := newInternalManager(logger, statsFactory, destination)
 	if err != nil {
 		return nil, err
 	}
