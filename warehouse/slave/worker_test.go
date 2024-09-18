@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -965,8 +966,13 @@ func TestHandleSchemaChange(t *testing.T) {
 				tc.currentDataType,
 				tc.value,
 			)
+			if convError != nil {
+				require.Nil(t, newColumnVal)
+				require.EqualError(t, convError, tc.convError.Error())
+				return
+			}
 			require.Equal(t, newColumnVal, tc.newColumnVal)
-			require.ErrorIs(t, convError, tc.convError)
+			require.NoError(t, convError)
 		})
 	}
 }
