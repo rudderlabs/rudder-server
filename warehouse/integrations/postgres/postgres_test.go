@@ -114,7 +114,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -156,7 +156,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -187,7 +187,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -236,7 +236,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -271,7 +271,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedSourceJobSchema)
+					require.Equal(t, expectedSourceJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -445,166 +445,26 @@ func TestIntegration(t *testing.T) {
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
-		expectedUploadJobSchema := [][]string{
-			{"screens", "context_source_id", "text"},
-			{"screens", "user_id", "text"},
-			{"screens", "sent_at", "timestamp with time zone"},
-			{"screens", "context_request_ip", "text"},
-			{"screens", "original_timestamp", "timestamp with time zone"},
-			{"screens", "url", "text"},
-			{"screens", "context_source_type", "text"},
-			{"screens", "_between", "text"},
-			{"screens", "timestamp", "timestamp with time zone"},
-			{"screens", "context_ip", "text"},
-			{"screens", "context_destination_type", "text"},
-			{"screens", "received_at", "timestamp with time zone"},
-			{"screens", "title", "text"},
-			{"screens", "uuid_ts", "timestamp with time zone"},
-			{"screens", "context_destination_id", "text"},
-			{"screens", "name", "text"},
-			{"screens", "id", "text"},
-			{"screens", "_as", "text"},
-			{"identifies", "context_ip", "text"},
-			{"identifies", "context_destination_id", "text"},
-			{"identifies", "email", "text"},
-			{"identifies", "context_request_ip", "text"},
-			{"identifies", "sent_at", "timestamp with time zone"},
-			{"identifies", "uuid_ts", "timestamp with time zone"},
-			{"identifies", "_as", "text"},
-			{"identifies", "logins", "bigint"},
-			{"identifies", "context_source_type", "text"},
-			{"identifies", "context_traits_logins", "bigint"},
-			{"identifies", "name", "text"},
-			{"identifies", "context_destination_type", "text"},
-			{"identifies", "_between", "text"},
-			{"identifies", "id", "text"},
-			{"identifies", "timestamp", "timestamp with time zone"},
-			{"identifies", "received_at", "timestamp with time zone"},
-			{"identifies", "user_id", "text"},
-			{"identifies", "context_traits_email", "text"},
-			{"identifies", "context_traits_as", "text"},
-			{"identifies", "context_traits_name", "text"},
-			{"identifies", "original_timestamp", "timestamp with time zone"},
-			{"identifies", "context_traits_between", "text"},
-			{"identifies", "context_source_id", "text"},
-			{"users", "context_traits_name", "text"},
-			{"users", "context_traits_between", "text"},
-			{"users", "context_request_ip", "text"},
-			{"users", "context_traits_logins", "bigint"},
-			{"users", "context_destination_id", "text"},
-			{"users", "email", "text"},
-			{"users", "logins", "bigint"},
-			{"users", "_as", "text"},
-			{"users", "context_source_id", "text"},
-			{"users", "uuid_ts", "timestamp with time zone"},
-			{"users", "context_source_type", "text"},
-			{"users", "context_traits_email", "text"},
-			{"users", "name", "text"},
-			{"users", "id", "text"},
-			{"users", "_between", "text"},
-			{"users", "context_ip", "text"},
-			{"users", "received_at", "timestamp with time zone"},
-			{"users", "sent_at", "timestamp with time zone"},
-			{"users", "context_traits_as", "text"},
-			{"users", "context_destination_type", "text"},
-			{"users", "timestamp", "timestamp with time zone"},
-			{"users", "original_timestamp", "timestamp with time zone"},
-			{"product_track", "review_id", "text"},
-			{"product_track", "context_source_id", "text"},
-			{"product_track", "user_id", "text"},
-			{"product_track", "timestamp", "timestamp with time zone"},
-			{"product_track", "uuid_ts", "timestamp with time zone"},
-			{"product_track", "review_body", "text"},
-			{"product_track", "context_source_type", "text"},
-			{"product_track", "_as", "text"},
-			{"product_track", "_between", "text"},
-			{"product_track", "id", "text"},
-			{"product_track", "rating", "bigint"},
-			{"product_track", "event", "text"},
-			{"product_track", "original_timestamp", "timestamp with time zone"},
-			{"product_track", "context_destination_type", "text"},
-			{"product_track", "context_ip", "text"},
-			{"product_track", "context_destination_id", "text"},
-			{"product_track", "sent_at", "timestamp with time zone"},
-			{"product_track", "received_at", "timestamp with time zone"},
-			{"product_track", "event_text", "text"},
-			{"product_track", "product_id", "text"},
-			{"product_track", "context_request_ip", "text"},
-			{"tracks", "original_timestamp", "timestamp with time zone"},
-			{"tracks", "context_destination_id", "text"},
-			{"tracks", "event", "text"},
-			{"tracks", "context_request_ip", "text"},
-			{"tracks", "uuid_ts", "timestamp with time zone"},
-			{"tracks", "context_destination_type", "text"},
-			{"tracks", "user_id", "text"},
-			{"tracks", "sent_at", "timestamp with time zone"},
-			{"tracks", "context_source_type", "text"},
-			{"tracks", "context_ip", "text"},
-			{"tracks", "timestamp", "timestamp with time zone"},
-			{"tracks", "received_at", "timestamp with time zone"},
-			{"tracks", "context_source_id", "text"},
-			{"tracks", "event_text", "text"},
-			{"tracks", "id", "text"},
-			{"aliases", "context_request_ip", "text"},
-			{"aliases", "context_destination_type", "text"},
-			{"aliases", "context_destination_id", "text"},
-			{"aliases", "previous_id", "text"},
-			{"aliases", "context_ip", "text"},
-			{"aliases", "sent_at", "timestamp with time zone"},
-			{"aliases", "id", "text"},
-			{"aliases", "uuid_ts", "timestamp with time zone"},
-			{"aliases", "timestamp", "timestamp with time zone"},
-			{"aliases", "original_timestamp", "timestamp with time zone"},
-			{"aliases", "context_source_id", "text"},
-			{"aliases", "user_id", "text"},
-			{"aliases", "context_source_type", "text"},
-			{"aliases", "received_at", "timestamp with time zone"},
-			{"pages", "name", "text"},
-			{"pages", "url", "text"},
-			{"pages", "id", "text"},
-			{"pages", "timestamp", "timestamp with time zone"},
-			{"pages", "title", "text"},
-			{"pages", "user_id", "text"},
-			{"pages", "context_source_id", "text"},
-			{"pages", "context_source_type", "text"},
-			{"pages", "original_timestamp", "timestamp with time zone"},
-			{"pages", "context_request_ip", "text"},
-			{"pages", "received_at", "timestamp with time zone"},
-			{"pages", "_between", "text"},
-			{"pages", "context_destination_type", "text"},
-			{"pages", "uuid_ts", "timestamp with time zone"},
-			{"pages", "context_destination_id", "text"},
-			{"pages", "sent_at", "timestamp with time zone"},
-			{"pages", "context_ip", "text"},
-			{"pages", "_as", "text"},
-			{"groups", "_as", "text"},
-			{"groups", "user_id", "text"},
-			{"groups", "context_destination_type", "text"},
-			{"groups", "sent_at", "timestamp with time zone"},
-			{"groups", "context_source_type", "text"},
-			{"groups", "received_at", "timestamp with time zone"},
-			{"groups", "context_ip", "text"},
-			{"groups", "industry", "text"},
-			{"groups", "timestamp", "timestamp with time zone"},
-			{"groups", "group_id", "text"},
-			{"groups", "uuid_ts", "timestamp with time zone"},
-			{"groups", "context_source_id", "text"},
-			{"groups", "context_request_ip", "text"},
-			{"groups", "_between", "text"},
-			{"groups", "original_timestamp", "timestamp with time zone"},
-			{"groups", "name", "text"},
-			{"groups", "plan", "text"},
-			{"groups", "context_destination_id", "text"},
-			{"groups", "employees", "bigint"},
-			{"groups", "id", "text"},
+		expectedUploadJobSchema := model.Schema{
+			"screens":       {"context_source_id": "text", "user_id": "text", "sent_at": "timestamp with time zone", "context_request_ip": "text", "original_timestamp": "timestamp with time zone", "url": "text", "context_source_type": "text", "_between": "text", "timestamp": "timestamp with time zone", "context_ip": "text", "context_destination_type": "text", "received_at": "timestamp with time zone", "title": "text", "uuid_ts": "timestamp with time zone", "context_destination_id": "text", "name": "text", "id": "text", "_as": "text"},
+			"identifies":    {"context_ip": "text", "context_destination_id": "text", "email": "text", "context_request_ip": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "_as": "text", "logins": "bigint", "context_source_type": "text", "context_traits_logins": "bigint", "name": "text", "context_destination_type": "text", "_between": "text", "id": "text", "timestamp": "timestamp with time zone", "received_at": "timestamp with time zone", "user_id": "text", "context_traits_email": "text", "context_traits_as": "text", "context_traits_name": "text", "original_timestamp": "timestamp with time zone", "context_traits_between": "text", "context_source_id": "text"},
+			"users":         {"context_traits_name": "text", "context_traits_between": "text", "context_request_ip": "text", "context_traits_logins": "bigint", "context_destination_id": "text", "email": "text", "logins": "bigint", "_as": "text", "context_source_id": "text", "uuid_ts": "timestamp with time zone", "context_source_type": "text", "context_traits_email": "text", "name": "text", "id": "text", "_between": "text", "context_ip": "text", "received_at": "timestamp with time zone", "sent_at": "timestamp with time zone", "context_traits_as": "text", "context_destination_type": "text", "timestamp": "timestamp with time zone", "original_timestamp": "timestamp with time zone"},
+			"product_track": {"review_id": "text", "context_source_id": "text", "user_id": "text", "timestamp": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "review_body": "text", "context_source_type": "text", "_as": "text", "_between": "text", "id": "text", "rating": "bigint", "event": "text", "original_timestamp": "timestamp with time zone", "context_destination_type": "text", "context_ip": "text", "context_destination_id": "text", "sent_at": "timestamp with time zone", "received_at": "timestamp with time zone", "event_text": "text", "product_id": "text", "context_request_ip": "text"},
+			"tracks":        {"original_timestamp": "timestamp with time zone", "context_destination_id": "text", "context_destination_type": "text", "user_id": "text", "context_source_type": "text", "timestamp": "timestamp with time zone", "id": "text", "event": "text", "sent_at": "timestamp with time zone", "context_ip": "text", "event_text": "text", "context_source_id": "text", "context_request_ip": "text", "received_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone"},
+			"pages":         {"user_id": "text", "context_source_id": "text", "id": "text", "title": "text", "timestamp": "timestamp with time zone", "context_source_type": "text", "_as": "text", "received_at": "timestamp with time zone", "context_destination_id": "text", "context_ip": "text", "context_destination_type": "text", "name": "text", "original_timestamp": "timestamp with time zone", "_between": "text", "context_request_ip": "text", "sent_at": "timestamp with time zone", "url": "text", "uuid_ts": "timestamp with time zone"},
+			"aliases":       {"context_source_id": "text", "context_destination_id": "text", "context_ip": "text", "sent_at": "timestamp with time zone", "id": "text", "user_id": "text", "uuid_ts": "timestamp with time zone", "previous_id": "text", "original_timestamp": "timestamp with time zone", "context_source_type": "text", "received_at": "timestamp with time zone", "context_destination_type": "text", "context_request_ip": "text", "timestamp": "timestamp with time zone"},
+			"groups":        {"context_destination_type": "text", "id": "text", "_between": "text", "plan": "text", "original_timestamp": "timestamp with time zone", "user_id": "text", "context_source_id": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "group_id": "text", "industry": "text", "context_request_ip": "text", "context_source_type": "text", "timestamp": "timestamp with time zone", "employees": "bigint", "_as": "text", "context_destination_id": "text", "received_at": "timestamp with time zone", "name": "text", "context_ip": "text"},
 		}
+		userIDFormat := "userId_postgres"
+		userIDSQL := "SUBSTRING(user_id from 1 for 15)"
+		uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
 
 		testcases := []struct {
 			name                           string
 			tables                         []string
 			eventFilePath1, eventFilePath2 string
 			verifySchema                   func(t *testing.T, db *sql.DB, namespace string)
-			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
+			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
 		}{
 			{
 				name:           "upload job through ssh tunnelling",
@@ -612,14 +472,12 @@ func TestIntegration(t *testing.T) {
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-2.json",
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_postgres"
-					userIDSQL := "SUBSTRING(user_id from 1 for 15)"
-					uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
-
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -770,7 +628,7 @@ func TestIntegration(t *testing.T) {
 				tc.verifySchema(t, db, namespace)
 
 				t.Log("verifying records")
-				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 			})
 		}
 	})

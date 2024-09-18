@@ -151,7 +151,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -188,7 +188,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -234,7 +234,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -281,7 +281,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -318,7 +318,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -371,7 +371,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -412,7 +412,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedSourceJobSchema)
+					require.Equal(t, expectedSourceJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()

@@ -134,18 +134,22 @@ func TestIntegration(t *testing.T) {
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		expectedUploadJobSchema := model.Schema{
-			"SCREENS":       {"CONTEXT_SOURCE_ID": "TEXT", "USER_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_REQUEST_IP": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "URL": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "_BETWEEN": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "TITLE": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "NAME": "TEXT", "ID": "TEXT", "_AS": "TEXT"},
-			"IDENTIFIES":    {"CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "EMAIL": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "LOGINS": "NUMBER", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "NAME": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "_BETWEEN": "TEXT", "ID": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "USER_ID": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_TRAITS_NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_SOURCE_ID": "TEXT"},
-			"USERS":         {"CONTEXT_TRAITS_NAME": "TEXT", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "CONTEXT_DESTINATION_ID": "TEXT", "EMAIL": "TEXT", "LOGINS": "NUMBER", "_AS": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "NAME": "TEXT", "ID": "TEXT", "_BETWEEN": "TEXT", "CONTEXT_IP": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ"},
-			"PRODUCT_TRACK": {"REVIEW_ID": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "USER_ID": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "_AS": "TEXT", "_BETWEEN": "TEXT", "ID": "TEXT", "RATING": "NUMBER", "EVENT": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "EVENT_TEXT": "TEXT", "PRODUCT_ID": "TEXT", "CONTEXT_REQUEST_IP": "TEXT"},
-			"TRACKS":        {"ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "EVENT": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_TYPE": "TEXT", "USER_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT"},
-			"ALIASES":       {"CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "PREVIOUS_ID": "TEXT", "CONTEXT_IP": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "USER_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ"},
-			"PAGES":         {"NAME": "TEXT", "URL": "TEXT", "ID": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "TITLE": "TEXT", "USER_ID": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_REQUEST_IP": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "_BETWEEN": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_IP": "TEXT", "_AS": "TEXT"},
-			"GROUPS":        {"_AS": "TEXT", "USER_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_SOURCE_TYPE": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "CONTEXT_IP": "TEXT", "INDUSTRY": "TEXT", "TIMESTAMP": "TIMESTAMP_TZ", "GROUP_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "_BETWEEN": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "NAME": "TEXT", "PLAN": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "EMPLOYEES": "NUMBER", "ID": "TEXT"},
+			"SCREENS":                     {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "TITLE": "TEXT", "URL": "TEXT", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"IDENTIFIES":                  {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "CONTEXT_TRAITS_NAME": "TEXT", "EMAIL": "TEXT", "ID": "TEXT", "LOGINS": "NUMBER", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"USERS":                       {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "CONTEXT_TRAITS_NAME": "TEXT", "EMAIL": "TEXT", "ID": "TEXT", "LOGINS": "NUMBER", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"PRODUCT_TRACK":               {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"TRACKS":                      {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"ALIASES":                     {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PREVIOUS_ID": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"PAGES":                       {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "TITLE": "TEXT", "URL": "TEXT", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"GROUPS":                      {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EMPLOYEES": "NUMBER", "GROUP_ID": "TEXT", "ID": "TEXT", "INDUSTRY": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PLAN": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"RUDDER_IDENTITY_MERGE_RULES": {"MERGE_PROPERTY_1_TYPE": "TEXT", "MERGE_PROPERTY_1_VALUE": "TEXT", "MERGE_PROPERTY_2_TYPE": "TEXT", "MERGE_PROPERTY_2_VALUE": "TEXT"},
+			"RUDDER_IDENTITY_MAPPINGS":    {"MERGE_PROPERTY_TYPE": "TEXT", "MERGE_PROPERTY_VALUE": "TEXT", "RUDDER_ID": "TEXT", "UPDATED_AT": "TIMESTAMP_TZ"},
 		}
 		expectedSourceJobSchema := model.Schema{
-			"TRACKS":       {"ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "EVENT_TEXT": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "ID": "TEXT", "CHANNEL": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "USER_ID": "TEXT", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "EVENT": "TEXT"},
-			"GOOGLE_SHEET": {"_AS": "TEXT", "REVIEW_BODY": "TEXT", "RATING": "NUMBER", "CONTEXT_SOURCE_TYPE": "TEXT", "_BETWEEN": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "REVIEW_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "ID": "TEXT", "USER_ID": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "EVENT": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CHANNEL": "TEXT", "EVENT_TEXT": "TEXT"},
+			"TRACKS":                      {"ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "EVENT_TEXT": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "ID": "TEXT", "CHANNEL": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "USER_ID": "TEXT", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "EVENT": "TEXT"},
+			"GOOGLE_SHEET":                {"_AS": "TEXT", "REVIEW_BODY": "TEXT", "RATING": "NUMBER", "CONTEXT_SOURCE_TYPE": "TEXT", "_BETWEEN": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "REVIEW_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "ID": "TEXT", "USER_ID": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "EVENT": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CHANNEL": "TEXT", "EVENT_TEXT": "TEXT"},
+			"RUDDER_IDENTITY_MERGE_RULES": {"MERGE_PROPERTY_1_VALUE": "TEXT", "MERGE_PROPERTY_2_VALUE": "TEXT", "MERGE_PROPERTY_2_TYPE": "TEXT", "MERGE_PROPERTY_1_TYPE": "TEXT"},
+			"RUDDER_IDENTITY_MAPPINGS":    {"MERGE_PROPERTY_VALUE": "TEXT", "MERGE_PROPERTY_TYPE": "TEXT", "RUDDER_ID": "TEXT", "UPDATED_AT": "TIMESTAMP_TZ"},
 		}
 		userIDFormat := "userId_snowflake"
 		userIDSQL := "SUBSTR(user_id, 1, 16)"
@@ -180,7 +184,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -217,7 +221,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -253,7 +257,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -291,7 +295,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -329,7 +333,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -370,7 +374,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedSourceJobSchema)
+					require.Equal(t, expectedSourceJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -399,7 +403,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
@@ -435,7 +439,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, whth.ConvertRecordsToSchema(schema), expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
 					t.Helper()
