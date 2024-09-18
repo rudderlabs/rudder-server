@@ -418,16 +418,6 @@ func (rt *Handle) backendConfigSubscriber() {
 		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range configData {
-			for connectionID := range wConfig.Connections {
-				connection := wConfig.Connections[connectionID]
-				connectionsMap[types.SourceDest{
-					SourceID:      connection.SourceID,
-					DestinationID: connection.DestinationID,
-				}] = types.ConnectionWithID{
-					ConnectionID: connectionID,
-					Connection:   connection,
-				}
-			}
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				for i := range source.Destinations {
@@ -453,6 +443,19 @@ func (rt *Handle) backendConfigSubscriber() {
 							m := types.NewEventTypeThrottlingCost(value)
 							rt.throttlingCosts.Store(&m)
 						}
+					}
+				}
+			}
+			for connectionID := range wConfig.Connections {
+				connection := wConfig.Connections[connectionID]
+				if dest, ok := destinationsMap[connection.DestinationID]; ok &&
+					dest.Destination.DestinationDefinition.Name == rt.destType {
+					connectionsMap[types.SourceDest{
+						SourceID:      connection.SourceID,
+						DestinationID: connection.DestinationID,
+					}] = types.ConnectionWithID{
+						ConnectionID: connectionID,
+						Connection:   connection,
 					}
 				}
 			}
