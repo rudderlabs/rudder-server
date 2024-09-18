@@ -140,7 +140,7 @@ func TestIntegration(t *testing.T) {
 			configOverride                 map[string]any
 			eventFilePath1, eventFilePath2 string
 			useSameUserID                  bool
-			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
+			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
 		}{
 			{
 				name:           "Merge Mode",
@@ -150,7 +150,7 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"preferAppend": false,
 				},
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
@@ -182,7 +182,7 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"preferAppend": true,
 				},
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
@@ -207,7 +207,7 @@ func TestIntegration(t *testing.T) {
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
@@ -236,7 +236,7 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"preferAppend": false,
 				},
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
 					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
@@ -390,7 +390,7 @@ func TestIntegration(t *testing.T) {
 				verifySchema(t, db, namespace)
 
 				t.Log("verifying records")
-				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 			})
 		}
 	})
