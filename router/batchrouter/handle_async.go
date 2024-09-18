@@ -16,6 +16,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -320,7 +321,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(10 * time.Second):
+		case <-time.After(brt.asyncUploadWorkerTimeout.Load()):
 			brt.configSubscriberMu.RLock()
 			destinationsMap := brt.destinationsMap
 			uploadIntervalMap := brt.uploadIntervalMap

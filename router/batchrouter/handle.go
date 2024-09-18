@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -76,6 +77,7 @@ type Handle struct {
 	maxFailedCountForJob         config.ValueLoader[int]
 	maxFailedCountForSourcesJob  config.ValueLoader[int]
 	asyncUploadTimeout           config.ValueLoader[time.Duration]
+	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
 	reportingEnabled             bool
