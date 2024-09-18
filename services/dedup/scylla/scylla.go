@@ -45,7 +45,7 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	}
 	d.createTableMu.Unlock()
 	once.Do(func() {
-		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceID)
+		query := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%q (id text PRIMARY KEY,size bigint) WITH bloom_filter_fp_chance = 0.005;", d.keyspace, kv.WorkspaceID)
 		err = d.scylla.Query(query).Exec()
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 
 	// Check if the key exists in the DB
 	var value int64
-	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%s WHERE id = ?", d.keyspace, kv.WorkspaceID), kv.Key).Scan(&value)
+	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%q WHERE id = ?", d.keyspace, kv.WorkspaceID), kv.Key).Scan(&value)
 	if err != nil && !errors.Is(err, gocql.ErrNotFound) {
 		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
@@ -95,7 +95,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 			for _, key := range batch {
 				scyllaBatch.Entries = append(scyllaBatch.Entries, gocql.BatchEntry{
-					Stmt: fmt.Sprintf("INSERT INTO %s.%s (id,size) VALUES (?,?) USING TTL %d", d.keyspace, key.WorkspaceID, d.ttl),
+					Stmt: fmt.Sprintf("INSERT INTO %s.%q (id,size) VALUES (?,?) USING TTL %d", d.keyspace, key.WorkspaceID, d.ttl),
 					Args: []interface{}{key.Key, key.Value},
 				})
 			}
