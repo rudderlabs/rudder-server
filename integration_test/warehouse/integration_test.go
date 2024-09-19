@@ -14,8 +14,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
 	"go.uber.org/atomic"
 	"go.uber.org/mock/gomock"
 
@@ -33,6 +35,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -40,7 +43,9 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -1498,6 +1503,150 @@ func TestUploads(t *testing.T) {
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
+	})
+	t.Run("destination transformation", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		conf := config.New()
+		conf.Set("DEST_TRANSFORM_URL", transformerURL)
+		conf.Set("USER_TRANSFORM_URL", transformerURL)
+
+		type output struct {
+			Metadata struct {
+				Table   string            `mapstructure:"table"`
+				Columns map[string]string `mapstructure:"columns"`
+			} `mapstructure:"metadata"`
+			Data map[string]any `mapstructure:"data"`
+		}
+
+		t.Run("users additional fields (sent_at, timestamp, original_timestamp)", func(t *testing.T) {
+			testcases := []struct {
+				name           string
+				destType       string
+				configOverride map[string]any
+				validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			}{
+				{
+					name:     "for non-datalake destinations should be present",
+					destType: whutils.BQ,
+					configOverride: map[string]any{
+						"allowUsersContextTraits": true,
+					},
+					validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+						var identifyEvent output
+						err := mapstructure.Decode(events[0].Output, &identifyEvent)
+						require.NoError(t, err)
+						require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+						require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+						require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+						require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+						var userEvent output
+						err = mapstructure.Decode(events[1].Output, &userEvent)
+						require.NoError(t, err)
+						require.Equal(t, "users", userEvent.Metadata.Table)
+						require.Contains(t, userEvent.Metadata.Columns, "sent_at")
+						require.Contains(t, userEvent.Metadata.Columns, "timestamp")
+						require.Contains(t, userEvent.Metadata.Columns, "original_timestamp")
+						require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["sent_at"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["timestamp"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["original_timestamp"])
+					},
+				},
+				{
+					name:     "for datalake destinations should not be present",
+					destType: whutils.GCSDatalake,
+					configOverride: map[string]any{
+						"allowUsersContextTraits": false,
+					},
+					validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+						var identifyEvent output
+						err := mapstructure.Decode(events[0].Output, &identifyEvent)
+						require.NoError(t, err)
+						require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+						require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+						require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+						require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+						require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+						var userEvent output
+						err = mapstructure.Decode(events[1].Output, &userEvent)
+						require.NoError(t, err)
+						require.Equal(t, "users", userEvent.Metadata.Table)
+						require.NotContains(t, userEvent.Metadata.Columns, "sent_at")
+						require.NotContains(t, userEvent.Metadata.Columns, "timestamp")
+						require.NotContains(t, userEvent.Metadata.Columns, "original_timestamp")
+						require.NotContains(t, userEvent.Data, "sent_at")
+						require.NotContains(t, userEvent.Data, "timestamp")
+						require.NotContains(t, userEvent.Data, "original_timestamp")
+					},
+				},
+			}
+
+			for _, tc := range testcases {
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(tc.destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID)
+				for k, v := range tc.configOverride {
+					destinationBuilder.WithConfigOption(k, v)
+				}
+				destination := destinationBuilder.Build()
+
+				destinationJSON, err := json.Marshal(destination)
+				require.NoError(t, err)
+
+				eventTemplate := `
+				[
+				 {
+					"message": {
+					  "context": {
+						"traits": {
+						  "firstname": "Mickey"
+						}
+					  },
+					  "traits": {
+						"lastname": "Mouse"
+					  },
+					  "type": "identify",
+					  "userId": "9bb5d4c2-a7aa-4a36-9efb-dd2b1aec5d33",
+                      "originalTimestamp": "2023-05-12T04:08:48.750+00:00",
+                      "sentAt": "2023-05-12T04:08:48.750+00:00",
+                      "timestamp": "2023-05-12T04:08:48.750+00:00"
+					},
+					"destination": {{.destination}}
+				 }
+				]
+`
+
+				tpl, err := template.New(uuid.New().String()).Parse(eventTemplate)
+				require.NoError(t, err)
+
+				b := new(strings.Builder)
+				err = tpl.Execute(b, map[string]any{
+					"destination": string(destinationJSON),
+				})
+				require.NoError(t, err)
+
+				var transformerEvents []transformer.TransformerEvent
+				err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+				require.NoError(t, err)
+
+				tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
+				response := tr.Transform(context.Background(), transformerEvents, 100)
+				require.Zero(t, len(response.FailedEvents))
+				require.Len(t, response.Events, 2)
+
+				tc.validateEvents(t, response.Events)
+			}
+		})
 	})
 }
 
