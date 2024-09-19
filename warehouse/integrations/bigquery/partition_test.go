@@ -7,6 +7,8 @@ import (
 	stdbigquery "cloud.google.com/go/bigquery"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -163,9 +165,103 @@ func TestBigquery_PartitionDate(t *testing.T) {
 				require.ErrorIs(t, err, tc.expectedError)
 				return
 			}
-
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedPartition, output)
+		})
+	}
+}
+
+func TestBigQuery_AvoidPartitionDecorator(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		destConfig              map[string]interface{}
+		configOverride          map[string]interface{}
+		avoidPartitionDecorator bool
+	}{
+		{
+			name:                    "partition not defined",
+			destConfig:              map[string]interface{}{},
+			avoidPartitionDecorator: false,
+		},
+		{
+			name: "loaded_at partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "loaded_at",
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name: "received_at partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "received_at",
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name: "ingenstion partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "_PARTITIONTIME",
+			},
+			avoidPartitionDecorator: false,
+		},
+		{
+			name: "unsupported partition column",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "invalid",
+			},
+			avoidPartitionDecorator: false,
+		},
+		{
+			name:       "custom`partition enabled",
+			destConfig: map[string]interface{}{},
+			configOverride: map[string]interface{}{
+				"Warehouse.bigquery.customPartitionsEnabled": true,
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:       "custom`partition enabled workspaceIDs",
+			destConfig: map[string]interface{}{},
+			configOverride: map[string]interface{}{
+				"Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs": "workspaceID",
+			},
+			avoidPartitionDecorator: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.New()
+			for k, v := range tc.configOverride {
+				c.Set(k, v)
+			}
+
+			bq := New(c, logger.NOP)
+			bq.warehouse = model.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: tc.destConfig,
+				},
+				WorkspaceID: "workspaceID",
+			}
+			require.Equal(t, tc.avoidPartitionDecorator, bq.avoidPartitionDecorator())
+		})
+	}
+}
+
+func TestPartitionedTable(t *testing.T) {
+	testCases := []struct {
+		name           string
+		partitionTable string
+		expected       string
+	}{
+		{
+			name:           "partitioned table",
+			partitionTable: "2023-04-05T06",
+			expected:       "table$2023040506",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, partitionedTable("table", tc.partitionTable))
 		})
 	}
 }

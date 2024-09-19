@@ -148,7 +148,9 @@ func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err erro
 
 // CreateTable creates a table in BigQuery with the provided schema
 // It also creates a view for the table to deduplicate the data
-// If custom partitioning is enabled, it creates a table with custom partitioning based on the partition column and type only if the partition column exists in the schema. Otherwise, it creates a table with ingestion-time partitioning
+// If custom partitioning is enabled, it creates a table with custom partitioning based on the partition column and type
+// only if the partition column exists in the schema.
+// Otherwise, it creates a table with ingestion-time partitioning
 func (bq *BigQuery) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) error {
 	log := bq.logger.Withn(
 		logger.NewStringField(logfield.ProjectID, bq.projectID),

@@ -69,24 +69,28 @@ func TestIntegration(t *testing.T) {
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
-		expectedUploadJobSchema := [][]string{
-			[]string{"pages", "sent_at", "TIMESTAMP"}, []string{"pages", "id", "STRING"}, []string{"pages", "loaded_at", "TIMESTAMP"}, []string{"pages", "_as", "STRING"}, []string{"pages", "title", "STRING"}, []string{"pages", "context_request_ip", "STRING"}, []string{"pages", "context_destination_type", "STRING"}, []string{"pages", "timestamp", "TIMESTAMP"}, []string{"pages", "context_ip", "STRING"}, []string{"pages", "received_at", "TIMESTAMP"}, []string{"pages", "url", "STRING"}, []string{"pages", "uuid_ts", "TIMESTAMP"}, []string{"pages", "name", "STRING"}, []string{"pages", "context_destination_id", "STRING"}, []string{"pages", "user_id", "STRING"}, []string{"pages", "context_source_type", "STRING"}, []string{"pages", "_between", "STRING"}, []string{"pages", "context_source_id", "STRING"}, []string{"pages", "original_timestamp", "TIMESTAMP"},
-			[]string{"users", "context_source_id", "STRING"}, []string{"users", "received_at", "TIMESTAMP"}, []string{"users", "context_destination_id", "STRING"}, []string{"users", "context_source_type", "STRING"}, []string{"users", "context_traits_logins", "INT64"}, []string{"users", "_as", "STRING"}, []string{"users", "sent_at", "TIMESTAMP"}, []string{"users", "original_timestamp", "TIMESTAMP"}, []string{"users", "context_traits_as", "STRING"}, []string{"users", "context_traits_between", "STRING"}, []string{"users", "name", "STRING"}, []string{"users", "email", "STRING"}, []string{"users", "context_traits_name", "STRING"}, []string{"users", "timestamp", "TIMESTAMP"}, []string{"users", "context_traits_email", "STRING"}, []string{"users", "id", "STRING"}, []string{"users", "_between", "STRING"}, []string{"users", "context_ip", "STRING"}, []string{"users", "context_destination_type", "STRING"}, []string{"users", "uuid_ts", "TIMESTAMP"}, []string{"users", "context_request_ip", "STRING"}, []string{"users", "logins", "INT64"}, []string{"users", "loaded_at", "TIMESTAMP"},
-			[]string{"rudder_identity_mappings", "merge_property_type", "STRING"}, []string{"rudder_identity_mappings", "merge_property_value", "STRING"}, []string{"rudder_identity_mappings", "rudder_id", "STRING"}, []string{"rudder_identity_mappings", "updated_at", "TIMESTAMP"},
-			[]string{"identifies", "context_traits_email", "STRING"}, []string{"identifies", "uuid_ts", "TIMESTAMP"}, []string{"identifies", "loaded_at", "TIMESTAMP"}, []string{"identifies", "user_id", "STRING"}, []string{"identifies", "email", "STRING"}, []string{"identifies", "logins", "INT64"}, []string{"identifies", "received_at", "TIMESTAMP"}, []string{"identifies", "_as", "STRING"}, []string{"identifies", "context_traits_as", "STRING"}, []string{"identifies", "context_traits_between", "STRING"}, []string{"identifies", "sent_at", "TIMESTAMP"}, []string{"identifies", "original_timestamp", "TIMESTAMP"}, []string{"identifies", "context_source_type", "STRING"}, []string{"identifies", "context_traits_logins", "INT64"}, []string{"identifies", "context_source_id", "STRING"}, []string{"identifies", "context_traits_name", "STRING"}, []string{"identifies", "id", "STRING"}, []string{"identifies", "context_ip", "STRING"}, []string{"identifies", "context_destination_type", "STRING"}, []string{"identifies", "_between", "STRING"}, []string{"identifies", "timestamp", "TIMESTAMP"}, []string{"identifies", "name", "STRING"}, []string{"identifies", "context_request_ip", "STRING"}, []string{"identifies", "context_destination_id", "STRING"},
-			[]string{"product_track", "event", "STRING"}, []string{"product_track", "context_source_id", "STRING"}, []string{"product_track", "review_id", "STRING"}, []string{"product_track", "event_text", "STRING"}, []string{"product_track", "id", "STRING"}, []string{"product_track", "uuid_ts", "TIMESTAMP"}, []string{"product_track", "context_destination_type", "STRING"}, []string{"product_track", "sent_at", "TIMESTAMP"}, []string{"product_track", "review_body", "STRING"}, []string{"product_track", "context_request_ip", "STRING"}, []string{"product_track", "_between", "STRING"}, []string{"product_track", "timestamp", "TIMESTAMP"}, []string{"product_track", "original_timestamp", "TIMESTAMP"}, []string{"product_track", "context_destination_id", "STRING"}, []string{"product_track", "product_id", "STRING"}, []string{"product_track", "context_ip", "STRING"}, []string{"product_track", "_as", "STRING"}, []string{"product_track", "loaded_at", "TIMESTAMP"}, []string{"product_track", "context_source_type", "STRING"}, []string{"product_track", "user_id", "STRING"}, []string{"product_track", "received_at", "TIMESTAMP"}, []string{"product_track", "rating", "INT64"},
-			[]string{"rudder_identity_merge_rules", "merge_property_1_type", "STRING"}, []string{"rudder_identity_merge_rules", "merge_property_1_value", "STRING"}, []string{"rudder_identity_merge_rules", "merge_property_2_type", "STRING"}, []string{"rudder_identity_merge_rules", "merge_property_2_value", "STRING"},
-			[]string{"screens", "original_timestamp", "TIMESTAMP"}, []string{"screens", "context_destination_type", "STRING"}, []string{"screens", "title", "STRING"}, []string{"screens", "context_ip", "STRING"}, []string{"screens", "received_at", "TIMESTAMP"}, []string{"screens", "context_request_ip", "STRING"}, []string{"screens", "user_id", "STRING"}, []string{"screens", "_between", "STRING"}, []string{"screens", "context_destination_id", "STRING"}, []string{"screens", "_as", "STRING"}, []string{"screens", "context_source_id", "STRING"}, []string{"screens", "sent_at", "TIMESTAMP"}, []string{"screens", "timestamp", "TIMESTAMP"}, []string{"screens", "context_source_type", "STRING"}, []string{"screens", "id", "STRING"}, []string{"screens", "uuid_ts", "TIMESTAMP"}, []string{"screens", "loaded_at", "TIMESTAMP"}, []string{"screens", "name", "STRING"}, []string{"screens", "url", "STRING"},
-			[]string{"_groups", "sent_at", "TIMESTAMP"}, []string{"_groups", "context_source_id", "STRING"}, []string{"_groups", "context_destination_id", "STRING"}, []string{"_groups", "employees", "INT64"}, []string{"_groups", "group_id", "STRING"}, []string{"_groups", "industry", "STRING"}, []string{"_groups", "timestamp", "TIMESTAMP"}, []string{"_groups", "user_id", "STRING"}, []string{"_groups", "loaded_at", "TIMESTAMP"}, []string{"_groups", "plan", "STRING"}, []string{"_groups", "original_timestamp", "TIMESTAMP"}, []string{"_groups", "context_source_type", "STRING"}, []string{"_groups", "id", "STRING"}, []string{"_groups", "context_request_ip", "STRING"}, []string{"_groups", "uuid_ts", "TIMESTAMP"}, []string{"_groups", "_between", "STRING"}, []string{"_groups", "_as", "STRING"}, []string{"_groups", "name", "STRING"}, []string{"_groups", "context_ip", "STRING"}, []string{"_groups", "received_at", "TIMESTAMP"}, []string{"_groups", "context_destination_type", "STRING"},
-			[]string{"tracks", "user_id", "STRING"}, []string{"tracks", "context_source_id", "STRING"}, []string{"tracks", "uuid_ts", "TIMESTAMP"}, []string{"tracks", "original_timestamp", "TIMESTAMP"}, []string{"tracks", "loaded_at", "TIMESTAMP"}, []string{"tracks", "context_ip", "STRING"}, []string{"tracks", "id", "STRING"}, []string{"tracks", "context_destination_type", "STRING"}, []string{"tracks", "received_at", "TIMESTAMP"}, []string{"tracks", "context_destination_id", "STRING"}, []string{"tracks", "sent_at", "TIMESTAMP"}, []string{"tracks", "context_request_ip", "STRING"}, []string{"tracks", "context_source_type", "STRING"}, []string{"tracks", "event_text", "STRING"}, []string{"tracks", "event", "STRING"}, []string{"tracks", "timestamp", "TIMESTAMP"},
-			[]string{"aliases", "context_destination_id", "STRING"}, []string{"aliases", "context_ip", "STRING"}, []string{"aliases", "loaded_at", "TIMESTAMP"}, []string{"aliases", "received_at", "TIMESTAMP"}, []string{"aliases", "uuid_ts", "TIMESTAMP"}, []string{"aliases", "sent_at", "TIMESTAMP"}, []string{"aliases", "context_source_type", "STRING"}, []string{"aliases", "context_destination_type", "STRING"}, []string{"aliases", "previous_id", "STRING"}, []string{"aliases", "original_timestamp", "TIMESTAMP"}, []string{"aliases", "timestamp", "TIMESTAMP"}, []string{"aliases", "context_request_ip", "STRING"}, []string{"aliases", "user_id", "STRING"}, []string{"aliases", "context_source_id", "STRING"}, []string{"aliases", "id", "STRING"},
+
+		expectedUploadJobSchema := model.Schema{
+			"pages":                       {"sent_at": "TIMESTAMP", "id": "STRING", "loaded_at": "TIMESTAMP", "_as": "STRING", "title": "STRING", "context_request_ip": "STRING", "context_destination_type": "STRING", "timestamp": "TIMESTAMP", "context_ip": "STRING", "received_at": "TIMESTAMP", "url": "STRING", "uuid_ts": "TIMESTAMP", "name": "STRING", "context_destination_id": "STRING", "user_id": "STRING", "context_source_type": "STRING", "_between": "STRING", "context_source_id": "STRING", "original_timestamp": "TIMESTAMP"},
+			"users":                       {"context_source_id": "STRING", "received_at": "TIMESTAMP", "context_destination_id": "STRING", "context_source_type": "STRING", "context_traits_logins": "INT64", "_as": "STRING", "sent_at": "TIMESTAMP", "original_timestamp": "TIMESTAMP", "context_traits_as": "STRING", "context_traits_between": "STRING", "name": "STRING", "email": "STRING", "context_traits_name": "STRING", "timestamp": "TIMESTAMP", "context_traits_email": "STRING", "id": "STRING", "_between": "STRING", "context_ip": "STRING", "context_destination_type": "STRING", "uuid_ts": "TIMESTAMP", "context_request_ip": "STRING", "logins": "INT64", "loaded_at": "TIMESTAMP"},
+			"rudder_identity_mappings":    {"merge_property_type": "STRING", "merge_property_value": "STRING", "rudder_id": "STRING", "updated_at": "TIMESTAMP"},
+			"identifies":                  {"context_traits_email": "STRING", "uuid_ts": "TIMESTAMP", "loaded_at": "TIMESTAMP", "user_id": "STRING", "email": "STRING", "logins": "INT64", "received_at": "TIMESTAMP", "_as": "STRING", "context_traits_as": "STRING", "context_traits_between": "STRING", "sent_at": "TIMESTAMP", "original_timestamp": "TIMESTAMP", "context_source_type": "STRING", "context_traits_logins": "INT64", "context_source_id": "STRING", "context_traits_name": "STRING", "id": "STRING", "context_ip": "STRING", "context_destination_type": "STRING", "_between": "STRING", "timestamp": "TIMESTAMP", "name": "STRING", "context_request_ip": "STRING", "context_destination_id": "STRING"},
+			"product_track":               {"event": "STRING", "context_source_id": "STRING", "review_id": "STRING", "event_text": "STRING", "id": "STRING", "uuid_ts": "TIMESTAMP", "context_destination_type": "STRING", "sent_at": "TIMESTAMP", "review_body": "STRING", "context_request_ip": "STRING", "_between": "STRING", "timestamp": "TIMESTAMP", "original_timestamp": "TIMESTAMP", "context_destination_id": "STRING", "product_id": "STRING", "context_ip": "STRING", "_as": "STRING", "loaded_at": "TIMESTAMP", "context_source_type": "STRING", "user_id": "STRING", "received_at": "TIMESTAMP", "rating": "INT64"},
+			"rudder_identity_merge_rules": {"merge_property_1_type": "STRING", "merge_property_1_value": "STRING", "merge_property_2_type": "STRING", "merge_property_2_value": "STRING"},
+			"screens":                     {"original_timestamp": "TIMESTAMP", "context_destination_type": "STRING", "title": "STRING", "context_ip": "STRING", "received_at": "TIMESTAMP", "context_request_ip": "STRING", "user_id": "STRING", "_between": "STRING", "context_destination_id": "STRING", "_as": "STRING", "context_source_id": "STRING", "sent_at": "TIMESTAMP", "timestamp": "TIMESTAMP", "context_source_type": "STRING", "id": "STRING", "uuid_ts": "TIMESTAMP", "loaded_at": "TIMESTAMP", "name": "STRING", "url": "STRING"},
+			"_groups":                     {"sent_at": "TIMESTAMP", "context_source_id": "STRING", "context_destination_id": "STRING", "employees": "INT64", "group_id": "STRING", "industry": "STRING", "timestamp": "TIMESTAMP", "user_id": "STRING", "loaded_at": "TIMESTAMP", "plan": "STRING", "original_timestamp": "TIMESTAMP", "context_source_type": "STRING", "id": "STRING", "context_request_ip": "STRING", "uuid_ts": "TIMESTAMP", "_between": "STRING", "_as": "STRING", "name": "STRING", "context_ip": "STRING", "received_at": "TIMESTAMP", "context_destination_type": "STRING"},
+			"tracks":                      {"user_id": "STRING", "context_source_id": "STRING", "uuid_ts": "TIMESTAMP", "original_timestamp": "TIMESTAMP", "loaded_at": "TIMESTAMP", "context_ip": "STRING", "id": "STRING", "context_destination_type": "STRING", "received_at": "TIMESTAMP", "context_destination_id": "STRING", "sent_at": "TIMESTAMP", "context_request_ip": "STRING", "context_source_type": "STRING", "event_text": "STRING", "event": "STRING", "timestamp": "TIMESTAMP"},
+			"aliases":                     {"context_destination_id": "STRING", "context_ip": "STRING", "loaded_at": "TIMESTAMP", "received_at": "TIMESTAMP", "uuid_ts": "TIMESTAMP", "sent_at": "TIMESTAMP", "context_source_type": "STRING", "context_destination_type": "STRING", "previous_id": "STRING", "original_timestamp": "TIMESTAMP", "timestamp": "TIMESTAMP", "context_request_ip": "STRING", "user_id": "STRING", "context_source_id": "STRING", "id": "STRING"},
 		}
-		expectedSourcesSchema := [][]string{
-			{"rudder_identity_mappings", "merge_property_type", "STRING"}, {"rudder_identity_mappings", "merge_property_value", "STRING"}, {"rudder_identity_mappings", "rudder_id", "STRING"}, {"rudder_identity_mappings", "updated_at", "TIMESTAMP"},
-			{"google_sheet", "sent_at", "TIMESTAMP"}, {"google_sheet", "review_id", "STRING"}, {"google_sheet", "rating", "INT64"}, {"google_sheet", "received_at", "TIMESTAMP"}, {"google_sheet", "original_timestamp", "TIMESTAMP"}, {"google_sheet", "context_sources_job_run_id", "STRING"}, {"google_sheet", "context_sources_job_id", "STRING"}, {"google_sheet", "context_sources_version", "STRING"}, {"google_sheet", "context_destination_type", "STRING"}, {"google_sheet", "context_source_type", "STRING"}, {"google_sheet", "_as", "STRING"}, {"google_sheet", "loaded_at", "TIMESTAMP"}, {"google_sheet", "context_destination_id", "STRING"}, {"google_sheet", "context_source_id", "STRING"}, {"google_sheet", "event", "STRING"}, {"google_sheet", "user_id", "STRING"}, {"google_sheet", "id", "STRING"}, {"google_sheet", "review_body", "STRING"}, {"google_sheet", "product_id", "STRING"}, {"google_sheet", "channel", "STRING"}, {"google_sheet", "event_text", "STRING"}, {"google_sheet", "context_request_ip", "STRING"}, {"google_sheet", "timestamp", "TIMESTAMP"}, {"google_sheet", "context_sources_task_run_id", "STRING"}, {"google_sheet", "context_ip", "STRING"}, {"google_sheet", "_between", "STRING"}, {"google_sheet", "uuid_ts", "TIMESTAMP"},
-			{"rudder_identity_merge_rules", "merge_property_1_type", "STRING"}, {"rudder_identity_merge_rules", "merge_property_1_value", "STRING"}, {"rudder_identity_merge_rules", "merge_property_2_type", "STRING"}, {"rudder_identity_merge_rules", "merge_property_2_value", "STRING"},
-			{"tracks", "context_sources_version", "STRING"}, {"tracks", "user_id", "STRING"}, {"tracks", "context_destination_type", "STRING"}, {"tracks", "event_text", "STRING"}, {"tracks", "context_source_type", "STRING"}, {"tracks", "event", "STRING"}, {"tracks", "id", "STRING"}, {"tracks", "loaded_at", "TIMESTAMP"}, {"tracks", "received_at", "TIMESTAMP"}, {"tracks", "timestamp", "TIMESTAMP"}, {"tracks", "channel", "STRING"}, {"tracks", "context_destination_id", "STRING"}, {"tracks", "context_ip", "STRING"}, {"tracks", "context_sources_job_run_id", "STRING"}, {"tracks", "original_timestamp", "TIMESTAMP"}, {"tracks", "context_sources_task_run_id", "STRING"}, {"tracks", "sent_at", "TIMESTAMP"}, {"tracks", "uuid_ts", "TIMESTAMP"}, {"tracks", "context_request_ip", "STRING"}, {"tracks", "context_source_id", "STRING"}, {"tracks", "context_sources_job_id", "STRING"},
+		expectedSourcesSchema := model.Schema{
+			"rudder_identity_mappings":    {"merge_property_type": "STRING", "merge_property_value": "STRING", "rudder_id": "STRING", "updated_at": "TIMESTAMP"},
+			"google_sheet":                {"sent_at": "TIMESTAMP", "review_id": "STRING", "rating": "INT64", "received_at": "TIMESTAMP", "original_timestamp": "TIMESTAMP", "context_sources_job_run_id": "STRING", "context_sources_job_id": "STRING", "context_sources_version": "STRING", "context_destination_type": "STRING", "context_source_type": "STRING", "_as": "STRING", "loaded_at": "TIMESTAMP", "context_destination_id": "STRING", "context_source_id": "STRING", "event": "STRING", "user_id": "STRING", "id": "STRING", "review_body": "STRING", "product_id": "STRING", "channel": "STRING", "event_text": "STRING", "context_request_ip": "STRING", "timestamp": "TIMESTAMP", "context_sources_task_run_id": "STRING", "context_ip": "STRING", "_between": "STRING", "uuid_ts": "TIMESTAMP"},
+			"rudder_identity_merge_rules": {"merge_property_1_type": "STRING", "merge_property_1_value": "STRING", "merge_property_2_type": "STRING", "merge_property_2_value": "STRING"},
+			"tracks":                      {"context_sources_version": "STRING", "user_id": "STRING", "context_destination_type": "STRING", "event_text": "STRING", "context_source_type": "STRING", "event": "STRING", "id": "STRING", "loaded_at": "TIMESTAMP", "received_at": "TIMESTAMP", "timestamp": "TIMESTAMP", "channel": "STRING", "context_destination_id": "STRING", "context_ip": "STRING", "context_sources_job_run_id": "STRING", "original_timestamp": "TIMESTAMP", "context_sources_task_run_id": "STRING", "sent_at": "TIMESTAMP", "uuid_ts": "TIMESTAMP", "context_request_ip": "STRING", "context_source_id": "STRING", "context_sources_job_id": "STRING"},
 		}
+		userIDFormat := "userId_bq"
+		userIDSQL := "SUBSTRING(user_id, 1, 9)"
+		uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
 
 		testcase := []struct {
 			name                               string
@@ -100,8 +104,8 @@ func TestIntegration(t *testing.T) {
 			configOverride                     map[string]any
 			preLoading                         func(testing.TB, context.Context, *bigquery.Client, string)
 			postLoading                        func(testing.TB, context.Context, *bigquery.Client, string)
-			verifySchema                       func(*testing.T, *bigquery.Client, string)
-			verifyRecords                      func(*testing.T, *bigquery.Client, string, string, string, string, string)
+			verifySchema                       func(testing.TB, *bigquery.Client, string)
+			verifyRecords                      func(testing.TB, *bigquery.Client, string, string, string, string, string)
 		}{
 			{
 				name:             "Source Job",
@@ -113,15 +117,13 @@ func TestIntegration(t *testing.T) {
 				taskRunID2:       misc.FastUUID().String(),
 				stagingFilePath1: "../testdata/source-job.events-1.json",
 				stagingFilePath2: "../testdata/source-job.events-2.json",
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedSourcesSchema)
+					require.Equal(t, expectedSourcesSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					tracksRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT channel, context_sources_job_id, received_at, context_sources_version, %s, sent_at, context_ip, event, event_text, %s, context_destination_id, id, context_request_ip, context_source_type, original_timestamp, context_sources_job_run_id, context_sources_task_run_id, context_source_id, context_destination_type, timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
 					require.ElementsMatch(t, tracksRecords, whth.SourceJobTracksRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
 					googleSheetRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT product_id, sent_at, _between, context_request_ip, context_sources_job_run_id, channel, review_body, context_source_id, original_timestamp, context_destination_id, context_sources_job_id, event, context_sources_task_run_id, context_source_type, %s, context_ip, timestamp, id, received_at, review_id, %s, context_sources_version, context_destination_type, event_text, _as, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "google_sheet"))
@@ -129,7 +131,7 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name:                          "Append mode",
+				name:   "Append mode",
 				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
 				warehouseEventsMap2: whth.EventsCountMap{
 					// For all tables we will be appending because of preferAppend config
@@ -157,15 +159,13 @@ func TestIntegration(t *testing.T) {
 						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
 					})
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -217,15 +217,13 @@ func TestIntegration(t *testing.T) {
 					"partitionColumn": "_PARTITIONTIME",
 					"partitionType":   "day",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -277,15 +275,13 @@ func TestIntegration(t *testing.T) {
 					"partitionColumn": "_PARTITIONTIME",
 					"partitionType":   "hour",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -337,15 +333,13 @@ func TestIntegration(t *testing.T) {
 					"partitionColumn": "_PARTITIONTIME",
 					"partitionType":   "month",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -397,15 +391,13 @@ func TestIntegration(t *testing.T) {
 					"partitionColumn": "_PARTITIONTIME",
 					"partitionType":   "year",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -455,24 +447,18 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "2023051204")
 					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
-					})
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "hour",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -522,24 +508,18 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "20230512")
 					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
-					})
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "day",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -589,24 +569,18 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "202305")
 					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
-					})
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "month",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -656,24 +630,18 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "2023")
 					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
-					})
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "year",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -744,24 +712,18 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "20230512")
 					}
-
-					verifyEventsUsingView(t, ctx, db, namespace, whth.EventsCountMap{
-						"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
-					})
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "day",
 				},
-				verifySchema: func(t *testing.T, db *bigquery.Client, namespace string) {
+				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
+					t.Helper()
 					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
-					require.ElementsMatch(t, schema, expectedUploadJobSchema)
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				verifyRecords: func(t *testing.T, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					userIDFormat := "userId_bq"
-					userIDSQL := "SUBSTRING(user_id, 1, 9)"
-					uuidTSSQL := "FORMAT_TIMESTAMP('%Y-%m-%d', uuid_ts)"
-
+				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
 					identifiesRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
 					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
 					usersRecords := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, SUBSTRING(id, 1, 9), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
@@ -1602,7 +1564,7 @@ func verifyEventsUsingView(t testing.TB, ctx context.Context, db *bigquery.Clien
 	}
 }
 
-func dropSchema(t *testing.T, db *bigquery.Client, namespace string) {
+func dropSchema(t testing.TB, db *bigquery.Client, namespace string) {
 	t.Helper()
 	t.Log("Dropping schema", namespace)
 
