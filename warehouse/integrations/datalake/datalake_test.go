@@ -10,10 +10,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-	"github.com/trinodb/trino-go-client/trino"
-
 	"cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v7"
+	"github.com/samber/lo"
+	"github.com/spf13/cast"
+	"github.com/trinodb/trino-go-client/trino"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/reader"
+	"github.com/xitongsys/parquet-go/types"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"google.golang.org/api/option"
 
@@ -22,6 +29,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -61,7 +69,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml", "testdata/docker-compose.gcs.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.azure.yml", "testdata/docker-compose.gcs.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
@@ -69,17 +77,19 @@ func TestIntegration(t *testing.T) {
 		azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 		gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testCases := []struct {
-			name              string
-			tables            []string
-			destType          string
-			conf              map[string]interface{}
-			prerequisite      func(t testing.TB, ctx context.Context)
-			stagingFilePrefix string
-			configOverride    map[string]any
+			name           string
+			tables         []string
+			destType       string
+			conf           map[string]interface{}
+			prerequisite   func(t testing.TB, ctx context.Context)
+			configOverride map[string]any
+			verifySchema   func(*testing.T, filemanager.FileManager, string)
+			verifyRecords  func(*testing.T, filemanager.FileManager, string, string, string)
 		}{
 			{
 				name:     "S3Datalake",
@@ -98,9 +108,9 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency":    "30",
 				},
 				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
 					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
-				stagingFilePrefix: "testdata/upload-job-s3-datalake",
 				configOverride: map[string]any{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
@@ -111,10 +121,60 @@ func TestIntegration(t *testing.T) {
 					"s3ForcePathStyle": true,
 					"disableSSL":       true,
 				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"groups":        {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "PARGO_PREFIX__timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, fileSchema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "PARGO_PREFIX__timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "PARGO_PREFIX__timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "PARGO_PREFIX__timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"PARGO_PREFIX__timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "PARGO_PREFIX__timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "PARGO_PREFIX__timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "PARGO_PREFIX__timestamp"},
+						"groups":        {"Context_destination_type", "Id", "PARGO_PREFIX__between", "Plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "PARGO_PREFIX__timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_s3_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+					require.ElementsMatch(t, er["groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.S3Datalake))
+				},
 			},
 			{
 				name:     "GCSDatalake",
-				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups"},
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases"},
 				destType: whutils.GCSDatalake,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
@@ -125,14 +185,64 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency": "30",
 				},
 				prerequisite: func(t testing.TB, ctx context.Context) {
+					t.Helper()
 					createGCSBucket(t, ctx, gcsEndPoint, gcsBucketName)
 				},
-				stagingFilePrefix: "testdata/upload-job-gcs-datalake",
 				configOverride: map[string]any{
 					"bucketName": gcsBucketName,
 					"endPoint":   gcsEndPoint,
 					"disableSSL": true,
 					"jsonReads":  true,
+				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"_groups":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, fileSchema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "Timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"Timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "Timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "Timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "Timestamp"},
+						"_groups":       {"Context_destination_type", "Id", "PARGO_PREFIX__between", "Plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "Timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_gcs_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
+					require.ElementsMatch(t, er["_groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.GCSDatalake))
 				},
 			},
 			{
@@ -149,7 +259,6 @@ func TestIntegration(t *testing.T) {
 					"forcePathStyle": true,
 					"disableSSL":     true,
 				},
-				stagingFilePrefix: "testdata/upload-job-azure-datalake",
 				configOverride: map[string]any{
 					"containerName":  azContainerName,
 					"accountName":    azAccountName,
@@ -157,6 +266,56 @@ func TestIntegration(t *testing.T) {
 					"endPoint":       azEndPoint,
 					"forcePathStyle": true,
 					"disableSSL":     true,
+				},
+				verifySchema: func(t *testing.T, fm filemanager.FileManager, namespace string) {
+					t.Helper()
+					schema := model.Schema{
+						"aliases":       {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Previous_id": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"groups":        {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Employees": "INT64", "Group_id": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Industry": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "PARGO_PREFIX__plan": "BYTE_ARRAY", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"identifies":    {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"pages":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"product_track": {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Product_id": "BYTE_ARRAY", "Rating": "INT64", "Received_at": "INT64", "Review_body": "BYTE_ARRAY", "Review_id": "BYTE_ARRAY", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"screens":       {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Title": "BYTE_ARRAY", "Url": "BYTE_ARRAY", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"tracks":        {"Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Event": "BYTE_ARRAY", "Event_text": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "User_id": "BYTE_ARRAY", "Uuid_ts": "INT64"},
+						"users":         {"PARGO_PREFIX__as": "BYTE_ARRAY", "PARGO_PREFIX__between": "BYTE_ARRAY", "Timestamp": "INT64", "Context_destination_id": "BYTE_ARRAY", "Context_destination_type": "BYTE_ARRAY", "Context_ip": "BYTE_ARRAY", "Context_request_ip": "BYTE_ARRAY", "Context_source_id": "BYTE_ARRAY", "Context_source_type": "BYTE_ARRAY", "Context_traits_as": "BYTE_ARRAY", "Context_traits_between": "BYTE_ARRAY", "Context_traits_email": "BYTE_ARRAY", "Context_traits_logins": "INT64", "Context_traits_name": "BYTE_ARRAY", "Email": "BYTE_ARRAY", "Id": "BYTE_ARRAY", "Logins": "INT64", "Name": "BYTE_ARRAY", "Original_timestamp": "INT64", "Received_at": "INT64", "Sent_at": "INT64", "Uuid_ts": "INT64"},
+					}
+
+					fs := filesSchema(t, fm, "rudder-datalake/"+namespace+"/")
+					for fileName, fileSchema := range fs {
+						fileNameSplits := strings.Split(fileName, "/")
+						require.GreaterOrEqual(t, len(fileNameSplits), 2)
+						tableName := fileNameSplits[2]
+						require.EqualValues(t, schema[tableName], lo.SliceToMap(fileSchema, func(col []string) (string, string) {
+							return col[0], col[1]
+						}))
+					}
+				},
+				verifyRecords: func(t *testing.T, fm filemanager.FileManager, sourceID, destinationID, namespace string) {
+					t.Helper()
+					outputFormat := map[string][]string{
+						"identifies":    {"User_id", "Uuid_ts", "Context_traits_logins", "PARGO_PREFIX__as", "Name", "Logins", "Email", "Original_timestamp", "Context_ip", "Context_traits_as", "Timestamp", "Received_at", "Context_destination_type", "Sent_at", "Context_source_type", "Context_traits_between", "Context_source_id", "Context_traits_name", "Context_request_ip", "PARGO_PREFIX__between", "Context_traits_email", "Context_destination_id", "Id"},
+						"users":         {"Context_source_id", "Context_destination_type", "Context_request_ip", "Context_traits_name", "Context_traits_between", "PARGO_PREFIX__as", "Logins", "Sent_at", "Context_traits_logins", "Context_ip", "PARGO_PREFIX__between", "Context_traits_email", "Timestamp", "Context_destination_id", "Email", "Context_traits_as", "Context_source_type", "Id", "Uuid_ts", "Received_at", "Name", "Original_timestamp"},
+						"tracks":        {"Original_timestamp", "Context_destination_id", "Context_destination_type", "Uuid_ts", "Context_source_type", "Timestamp", "Id", "Event", "Sent_at", "Context_ip", "Event_text", "Context_source_id", "Context_request_ip", "Received_at", "User_id"},
+						"product_track": {"Timestamp", "User_id", "Product_id", "Received_at", "Context_source_id", "Sent_at", "Context_source_type", "Context_ip", "Context_destination_type", "Original_timestamp", "Context_request_ip", "Context_destination_id", "Uuid_ts", "PARGO_PREFIX__as", "Review_body", "PARGO_PREFIX__between", "Review_id", "Event_text", "Id", "Event", "Rating"},
+						"pages":         {"User_id", "Context_source_id", "Id", "Title", "Timestamp", "Context_source_type", "PARGO_PREFIX__as", "Received_at", "Context_destination_id", "Context_ip", "Context_destination_type", "Name", "Original_timestamp", "PARGO_PREFIX__between", "Context_request_ip", "Sent_at", "Url", "Uuid_ts"},
+						"screens":       {"Context_destination_type", "Url", "Context_source_type", "Title", "Original_timestamp", "User_id", "PARGO_PREFIX__between", "Context_ip", "Name", "Context_request_ip", "Uuid_ts", "Context_source_id", "Id", "Received_at", "Context_destination_id", "Timestamp", "Sent_at", "PARGO_PREFIX__as"},
+						"aliases":       {"Context_source_id", "Context_destination_id", "Context_ip", "Sent_at", "Id", "User_id", "Uuid_ts", "Previous_id", "Original_timestamp", "Context_source_type", "Received_at", "Context_destination_type", "Context_request_ip", "Timestamp"},
+						"groups":        {"Context_destination_type", "Id", "PARGO_PREFIX__between", "PARGO_PREFIX__plan", "Original_timestamp", "Uuid_ts", "Context_source_id", "Sent_at", "User_id", "Group_id", "Industry", "Context_request_ip", "Context_source_type", "Timestamp", "Employees", "PARGO_PREFIX__as", "Context_destination_id", "Received_at", "Name", "Context_ip"},
+					}
+
+					userIDFormat := "userId_azure_datalake"
+					uuidFormat := "2023-01-01"
+
+					er := eventRecords(t, fm, namespace, outputFormat, userIDFormat, uuidFormat)
+
+					require.ElementsMatch(t, er["identifies"], whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["users"], whth.UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["tracks"], whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["product_track"], whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["pages"], whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["screens"], whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["aliases"], whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
+					require.ElementsMatch(t, er["groups"], whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, whutils.AzureDatalake))
 				},
 			},
 		}
@@ -178,6 +337,7 @@ func TestIntegration(t *testing.T) {
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
+				destination := destinationBuilder.Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -185,7 +345,7 @@ func TestIntegration(t *testing.T) {
 							WithID(sourceID).
 							WithWriteKey(writeKey).
 							WithWorkspaceID(workspaceID).
-							WithConnection(destinationBuilder.Build()).
+							WithConnection(destination).
 							Build(),
 					).
 					WithWorkspaceID(workspaceID).
@@ -216,7 +376,9 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:        httpPort,
 					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
-					StagingFilePath: tc.stagingFilePrefix + ".staging-1.json",
+					EventsFilePath:  "../testdata/upload-job.events-1.json",
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
@@ -234,9 +396,29 @@ func TestIntegration(t *testing.T) {
 					HTTPPort:        httpPort,
 					UserID:          whth.GetUserId(tc.destType),
 					SkipWarehouse:   true,
-					StagingFilePath: tc.stagingFilePrefix + ".staging-2.json",
+					EventsFilePath:  "../testdata/upload-job.events-2.json",
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
+
+				storageProvider := whutils.ObjectStorageType(tc.destType, tc.conf, false)
+				fm, err := filemanager.New(&filemanager.Settings{
+					Provider: storageProvider,
+					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+						Provider:         storageProvider,
+						Config:           tc.conf,
+						UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
+						WorkspaceID:      workspaceID,
+					}),
+				})
+				require.NoError(t, err)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, fm, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, fm, sourceID, destinationID, namespace)
 			})
 		}
 	})
@@ -356,7 +538,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.trino.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.trino.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		destType := whutils.S3Datalake
@@ -364,6 +546,7 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
@@ -373,28 +556,28 @@ func TestIntegration(t *testing.T) {
 		writeKey := whutils.RandHex()
 		namespace := whth.RandSchema(destType)
 
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("namespace", namespace).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("region", s3Region).
+			WithConfigOption("bucketName", s3BucketName).
+			WithConfigOption("accessKeyID", s3AccessKeyID).
+			WithConfigOption("accessKey", s3AccessKey).
+			WithConfigOption("endPoint", s3EndPoint).
+			WithConfigOption("enableSSE", false).
+			WithConfigOption("s3ForcePathStyle", true).
+			WithConfigOption("disableSSL", true).
+			WithConfigOption("prefix", "some-prefix").
+			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
 				backendconfigtest.NewSourceBuilder().
 					WithID(sourceID).
 					WithWriteKey(writeKey).
 					WithWorkspaceID(workspaceID).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder(destType).
-							WithID(destinationID).
-							WithRevisionID(destinationID).
-							WithConfigOption("namespace", namespace).
-							WithConfigOption("syncFrequency", "30").
-							WithConfigOption("region", s3Region).
-							WithConfigOption("bucketName", s3BucketName).
-							WithConfigOption("accessKeyID", s3AccessKeyID).
-							WithConfigOption("accessKey", s3AccessKey).
-							WithConfigOption("endPoint", s3EndPoint).
-							WithConfigOption("enableSSE", false).
-							WithConfigOption("s3ForcePathStyle", true).
-							WithConfigOption("disableSSL", true).
-							WithConfigOption("prefix", "some-prefix").Build(),
-					).
+					WithConnection(destination).
 					Build(),
 			).
 			WithWorkspaceID(workspaceID).
@@ -405,16 +588,12 @@ func TestIntegration(t *testing.T) {
 		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 		ts := whth.TestConfig{
-			WriteKey:              writeKey,
-			Schema:                namespace,
-			Tables:                []string{"tracks"},
-			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
-			LoadFilesEventsMap:    map[string]int{"tracks": 8},
-			TableUploadsEventsMap: map[string]int{"tracks": 8},
-			WarehouseEventsMap:    map[string]int{"tracks": 8},
-			SourceID:              sourceID,
-			DestinationID:         destinationID,
-			DestinationType:       destType,
+			WriteKey:        writeKey,
+			Schema:          namespace,
+			Tables:          []string{"tracks"},
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destType,
 			Config: map[string]interface{}{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
@@ -427,12 +606,14 @@ func TestIntegration(t *testing.T) {
 				"prefix":           "some-prefix",
 				"syncFrequency":    "30",
 			},
-			WorkspaceID:     workspaceID,
-			JobsDB:          jobsDB,
-			HTTPPort:        httpPort,
-			UserID:          whth.GetUserId(destType),
-			SkipWarehouse:   true,
-			StagingFilePath: "testdata/trino.staging.json",
+			WorkspaceID:    workspaceID,
+			JobsDB:         jobsDB,
+			HTTPPort:       httpPort,
+			UserID:         whth.GetUserId(destType),
+			SkipWarehouse:  true,
+			EventsFilePath: "../testdata/upload-job.events-1.json",
+			TransformerURL: transformerURL,
+			Destination:    destination,
 		}
 		ts.VerifyEvents(t)
 
@@ -468,13 +649,11 @@ func TestIntegration(t *testing.T) {
 		)
 		require.Eventually(t, func() bool {
 			_, err = db.ExecContext(ctx, `
-				CREATE TABLE IF NOT EXISTS minio.rudderstack.tracks (
+				CREATE TABLE IF NOT EXISTS minio.rudderstack.product_track (
 					"_timestamp" TIMESTAMP,
 					context_destination_id VARCHAR,
 					context_destination_type VARCHAR,
 					context_ip VARCHAR,
-					context_library_name VARCHAR,
-					context_passed_ip VARCHAR,
 					context_request_ip VARCHAR,
 					context_source_id VARCHAR,
 					context_source_type VARCHAR,
@@ -486,10 +665,16 @@ func TestIntegration(t *testing.T) {
 					sent_at TIMESTAMP,
 					"timestamp" TIMESTAMP,
 					user_id VARCHAR,
-					uuid_ts TIMESTAMP
+					uuid_ts TIMESTAMP,
+					_as VARCHAR,
+					review_body VARCHAR,
+					_between VARCHAR,
+					product_id VARCHAR,
+					review_id VARCHAR,
+					rating VARCHAR
 				)
 				WITH (
-					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/',
+					external_location = 's3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/product_track/2023/05/12/04/',
 					format = 'PARQUET'
 				)
 			`)
@@ -509,7 +694,7 @@ func TestIntegration(t *testing.T) {
 				select
 				    count(*)
 				from
-				     minio.rudderstack.tracks
+				     minio.rudderstack.product_track
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count: ", err)
@@ -520,14 +705,14 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(8), count)
+		require.Equal(t, int64(4), count)
 
 		require.Eventually(t, func() bool {
 			err := db.QueryRowContext(ctx, `
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
 					context_destination_id = '`+destinationID+`'
 			`).Scan(&count)
@@ -540,7 +725,7 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(8), count)
+		require.Equal(t, int64(4), count)
 
 		t.Log("By default parquet_use_column_index=true and parquet_ignore_statistics=false")
 		t.Log("parquet_use_column_index=true")
@@ -549,9 +734,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -585,9 +770,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -598,7 +783,7 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(3), count)
+		require.Equal(t, int64(1), count)
 
 		t.Logf("parquet_ignore_statistics=true")
 		dsnIgnoreStatistics := fmt.Sprintf("http://user@localhost:%d?catalog=minio&schema=default&session_properties=minio.parquet_ignore_statistics=true",
@@ -615,9 +800,9 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					minio.rudderstack.tracks
+					minio.rudderstack.product_track
 				where
-					context_library_name = 'http'
+					_as = 'non escaped column'
 			`).Scan(&count)
 			if err != nil {
 				t.Log("select count with where clause: ", err)
@@ -628,7 +813,7 @@ func TestIntegration(t *testing.T) {
 			60*time.Second,
 			1*time.Second,
 		)
-		require.Equal(t, int64(3), count)
+		require.Equal(t, int64(1), count)
 	})
 
 	t.Run("Spark", func(t *testing.T) {
@@ -636,7 +821,7 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.spark.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.spark.yml", "testdata/docker-compose.hive-metastore.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		destType := whutils.S3Datalake
@@ -644,6 +829,7 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
@@ -653,28 +839,28 @@ func TestIntegration(t *testing.T) {
 		writeKey := whutils.RandHex()
 		namespace := whth.RandSchema(destType)
 
+		destination := backendconfigtest.NewDestinationBuilder(destType).
+			WithID(destinationID).
+			WithRevisionID(destinationID).
+			WithConfigOption("namespace", namespace).
+			WithConfigOption("syncFrequency", "30").
+			WithConfigOption("region", s3Region).
+			WithConfigOption("bucketName", s3BucketName).
+			WithConfigOption("accessKeyID", s3AccessKeyID).
+			WithConfigOption("accessKey", s3AccessKey).
+			WithConfigOption("endPoint", s3EndPoint).
+			WithConfigOption("enableSSE", false).
+			WithConfigOption("s3ForcePathStyle", true).
+			WithConfigOption("disableSSL", true).
+			WithConfigOption("prefix", "some-prefix").
+			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
 				backendconfigtest.NewSourceBuilder().
 					WithID(sourceID).
 					WithWriteKey(writeKey).
 					WithWorkspaceID(workspaceID).
-					WithConnection(
-						backendconfigtest.NewDestinationBuilder(destType).
-							WithID(destinationID).
-							WithRevisionID(destinationID).
-							WithConfigOption("namespace", namespace).
-							WithConfigOption("syncFrequency", "30").
-							WithConfigOption("region", s3Region).
-							WithConfigOption("bucketName", s3BucketName).
-							WithConfigOption("accessKeyID", s3AccessKeyID).
-							WithConfigOption("accessKey", s3AccessKey).
-							WithConfigOption("endPoint", s3EndPoint).
-							WithConfigOption("enableSSE", false).
-							WithConfigOption("s3ForcePathStyle", true).
-							WithConfigOption("disableSSL", true).
-							WithConfigOption("prefix", "some-prefix").Build(),
-					).
+					WithConnection(destination).
 					Build(),
 			).
 			WithWorkspaceID(workspaceID).
@@ -685,16 +871,12 @@ func TestIntegration(t *testing.T) {
 		createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 		ts := whth.TestConfig{
-			WriteKey:              writeKey,
-			Schema:                namespace,
-			Tables:                []string{"tracks"},
-			StagingFilesEventsMap: whth.EventsCountMap{"wh_staging_files": 8},
-			LoadFilesEventsMap:    map[string]int{"tracks": 8},
-			TableUploadsEventsMap: map[string]int{"tracks": 8},
-			WarehouseEventsMap:    map[string]int{"tracks": 8},
-			SourceID:              sourceID,
-			DestinationID:         destinationID,
-			DestinationType:       destType,
+			WriteKey:        writeKey,
+			Schema:          namespace,
+			Tables:          []string{"tracks"},
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destType,
 			Config: map[string]interface{}{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
@@ -707,12 +889,14 @@ func TestIntegration(t *testing.T) {
 				"prefix":           "some-prefix",
 				"syncFrequency":    "30",
 			},
-			WorkspaceID:     workspaceID,
-			JobsDB:          jobsDB,
-			HTTPPort:        httpPort,
-			UserID:          whth.GetUserId(destType),
-			SkipWarehouse:   true,
-			StagingFilePath: "testdata/spark.staging.json",
+			WorkspaceID:    workspaceID,
+			JobsDB:         jobsDB,
+			HTTPPort:       httpPort,
+			UserID:         whth.GetUserId(destType),
+			SkipWarehouse:  true,
+			EventsFilePath: "../testdata/upload-job.events-2.json",
+			TransformerURL: transformerURL,
+			Destination:    destination,
 		}
 		ts.VerifyEvents(t)
 
@@ -721,27 +905,32 @@ func TestIntegration(t *testing.T) {
 			"spark-sql",
 			"-e",
 			`
-			CREATE EXTERNAL TABLE tracks (
+			CREATE EXTERNAL TABLE product_track (
 			  	_timestamp timestamp,
 				context_destination_id string,
 			  	context_destination_type string,
 			  	context_ip string,
-				context_library_name string,
-			  	context_passed_ip string,
 				context_request_ip string,
 			  	context_source_id string,
 				context_source_type string,
 			  	event string,
-				event_text string, id string,
+				event_text string,
+                id string,
 			  	original_timestamp timestamp,
 				received_at timestamp,
 			  	sent_at timestamp,
 				timestamp timestamp,
 			  	user_id string,
-			  	uuid_ts timestamp
+			  	uuid_ts timestamp,
+				_as string,
+				review_body string,
+				_between string,
+				product_id string,
+				review_id string,
+				rating string
 			)
 			STORED AS PARQUET
-			location "s3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/tracks/2023/05/12/04/";
+			location "s3a://`+s3BucketName+`/some-prefix/rudder-datalake/`+namespace+`/product_track/2023/05/12/04/";
 		`,
 			"-S",
 		)
@@ -754,13 +943,13 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					tracks;
+					product_track;
 			`,
 			"-S",
 		)
 		countOutput = strings.ReplaceAll(strings.ReplaceAll(countOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, countOutput)
-		require.Equal(t, string(countOutput[len(countOutput)-1]), "8", countOutput) // last character is the count
+		require.Equal(t, string(countOutput[len(countOutput)-1]), "4", countOutput) // last character is the count
 
 		filteredCountOutput := c.Exec(ctx,
 			"spark-master",
@@ -770,7 +959,7 @@ func TestIntegration(t *testing.T) {
 				select
 					count(*)
 				from
-					tracks
+					product_track
 				where
 					context_destination_id = '`+destinationID+`';
 			`,
@@ -778,8 +967,187 @@ func TestIntegration(t *testing.T) {
 		)
 		filteredCountOutput = strings.ReplaceAll(strings.ReplaceAll(filteredCountOutput, "\n", ""), "\r", "") // remove trailing newline
 		require.NotEmpty(t, filteredCountOutput)
-		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "8", filteredCountOutput) // last character is the count
+		require.Equal(t, string(filteredCountOutput[len(filteredCountOutput)-1]), "4", filteredCountOutput) // last character is the count
 	})
+}
+
+func filesSchema(t testing.TB, fm filemanager.FileManager, prefix string) map[string][][]string {
+	t.Helper()
+
+	ctx := context.Background()
+	schemasMap := make(map[string][][]string)
+
+	fileIter := fm.ListFilesWithPrefix(ctx, "", prefix, 1000)
+	files, err := getAllFileNames(fileIter)
+	require.NoError(t, err)
+
+	for _, file := range files {
+		f, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		require.NoError(t, fm.Download(ctx, f, file))
+		t.Cleanup(func() {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+		})
+
+		pf, err := local.NewLocalFileReader(f.Name())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = pf.Close()
+		})
+
+		pr, err := reader.NewParquetReader(pf, nil, int64(100))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pr.ReadStop()
+		})
+
+		schemasMap[file] = lo.Map(pr.SchemaHandler.SchemaElements, func(item *parquet.SchemaElement, index int) []string {
+			if item.Type == nil {
+				return []string{item.Name, ""}
+			}
+			return []string{item.Name, item.Type.String()}
+		})
+
+		// Remove the root element from the schema
+		schemasMap[file] = lo.Filter(schemasMap[file], func(item []string, index int) bool {
+			return item[0] != "Parquet_go_root"
+		})
+	}
+	return schemasMap
+}
+
+func eventRecords(t testing.TB, fm filemanager.FileManager, namespace string, outputFormat map[string][]string, userIDFormat, uuidFormat string) map[string][][]string {
+	t.Helper()
+
+	prefix := "rudder-datalake/" + namespace + "/"
+	ctx := context.Background()
+	recordsMap := make(map[string][][]string)
+
+	fs := filesSchema(t, fm, prefix)
+
+	for file, schema := range fs {
+		fileNameSplits := strings.Split(file, "/")
+		require.GreaterOrEqual(t, len(fileNameSplits), 2)
+		tableName := fileNameSplits[2]
+
+		f, err := os.CreateTemp(t.TempDir(), "")
+		require.NoError(t, err)
+		require.NoError(t, fm.Download(ctx, f, file))
+		t.Cleanup(func() {
+			_ = f.Close()
+			_ = os.Remove(f.Name())
+		})
+
+		pf, err := local.NewLocalFileReader(f.Name())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = pf.Close()
+		})
+
+		pr, err := reader.NewParquetReader(pf, nil, int64(100))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			pr.ReadStop()
+		})
+
+		data := make([][]string, pr.GetNumRows())
+		for i := 0; i < int(pr.GetNumRows()); i++ {
+			data[i] = make([]string, len(pr.SchemaHandler.SchemaElements)-1)
+		}
+
+		for i := 0; i < len(pr.SchemaHandler.SchemaElements)-1; i++ {
+			// Read the column data
+			d, _, _, err := pr.ReadColumnByIndex(int64(i), pr.GetNumRows())
+			require.NoError(t, err)
+
+			// Map the column data to a string slice
+			nd := lo.Map(d, func(item any, index int) string {
+				switch item := item.(type) {
+				case time.Time:
+					return item.Format(time.RFC3339)
+				case string:
+					if t, err := time.Parse(time.RFC3339Nano, item); err == nil {
+						return t.Format(time.RFC3339)
+					}
+					return item
+				case int64:
+					// Check if the int64 value is a plausible Unix timestamp
+					if item > 1_000_000_000 && item < 10_000_000_000_000_000 {
+						return types.TIMESTAMP_MICROSToTime(item, true).UTC().Format(time.RFC3339)
+					}
+					return cast.ToString(item) // Otherwise, handle it as a normal int64
+				default:
+					return cast.ToString(item)
+				}
+			})
+
+			// Assign the column data to the data slice
+			for j := 0; j < int(pr.GetNumRows()); j++ {
+				data[j][i] = nd[j]
+			}
+		}
+
+		// Truncate the user ID and UUID to the length of the format
+		for _, record := range data {
+			if tableName == whutils.UsersTable {
+				if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+					return item[0] == "Id"
+				}); found {
+					record[idx] = record[idx][0:len(userIDFormat)]
+				}
+			} else {
+				if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+					return item[0] == "User_id"
+				}); found {
+					record[idx] = record[idx][0:len(userIDFormat)]
+				}
+			}
+			if _, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+				return item[0] == "Uuid_ts"
+			}); found {
+				record[idx] = record[idx][0:len(uuidFormat)]
+			}
+		}
+
+		// Reorder the data based on the output format
+		outputData := make([][]string, len(data))
+		for i := range data {
+			outputData[i] = make([]string, len(data[i]))
+		}
+
+		// Find the index of the field in the schema and assign the data to the output data
+		for i, field := range outputFormat[tableName] {
+			_, idx, found := lo.FindIndexOf(schema, func(item []string) bool {
+				return item[0] == field
+			})
+			require.True(t, found)
+
+			for j := range data {
+				outputData[j][i] = data[j][idx]
+			}
+		}
+
+		recordsMap[tableName] = append(recordsMap[tableName], outputData...)
+	}
+	return recordsMap
+}
+
+func getAllFileNames(fileIter filemanager.ListSession) ([]string, error) {
+	files := make([]string, 0)
+	for {
+		fileInfo, err := fileIter.Next()
+		if err != nil {
+			return files, err
+		}
+		if len(fileInfo) == 0 {
+			break
+		}
+		for _, file := range fileInfo {
+			files = append(files, file.Key)
+		}
+	}
+	return files, nil
 }
 
 func createGCSBucket(t testing.TB, ctx context.Context, endpoint, bucketName string) {
