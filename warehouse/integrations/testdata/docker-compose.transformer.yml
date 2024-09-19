@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  transformer:
+    image: "rudderstack/rudder-transformer:latest"
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://0.0.0.0:9090/health || exit 1
+      interval: 1s
+      retries: 25
