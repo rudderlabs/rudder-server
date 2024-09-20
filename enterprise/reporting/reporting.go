@@ -21,7 +21,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -157,6 +156,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 
 	if !config.GetBool("Reporting.syncer.enabled", true) {
 		return func() {}
+	}
+	if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
+		r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
+		panic(err)
 	}
 	return func() {
 		r.g.Go(func() error {
@@ -377,6 +380,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	})
 
 	g.Go(func() error {
+		var deletedRows int
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -449,25 +453,19 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				} else {
+					deletedRows += len(reports)
 				}
 
 				vacuumStart := time.Now()
-				var sizeEstimate int64
-				if err := dbHandle.QueryRowContext(
-					ctx,
-					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
-				).Scan(&sizeEstimate); err != nil {
-					r.log.Errorn(
-						`[ Reporting ]: Error getting table size estimate`,
-						logger.NewErrorField(err),
-					)
-				}
-				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
+				if deletedRows >= config.GetInt("Reporting.vacuumThresholdDeletedRows", 100000) {
 					if _, err := dbHandle.ExecContext(ctx, `vacuum analyze reports;`); err != nil {
 						r.log.Errorn(
 							`[ Reporting ]: Error vacuuming reports table`,
 							logger.NewErrorField(err),
 						)
+					} else {
+						deletedRows = 0
 					}
 					vacuumDuration.Since(vacuumStart)
 				}
