@@ -326,7 +326,7 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 	}
 	if sizeEstimate > f.vacuumThresholdBytes.Load() {
 		vacuumStart := time.Now()
-		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
+		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
 			return fmt.Errorf("error vacuuming table %w", err)
 		}
 		f.vacuumReportsTimer.Since(vacuumStart)

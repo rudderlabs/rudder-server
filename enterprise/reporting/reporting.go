@@ -463,7 +463,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					)
 				}
 				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
-					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+					if _, err := dbHandle.ExecContext(ctx, `vacuum analyze reports;`); err != nil {
 						r.log.Errorn(
 							`[ Reporting ]: Error vacuuming reports table`,
 							logger.NewErrorField(err),

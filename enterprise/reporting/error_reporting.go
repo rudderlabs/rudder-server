@@ -460,7 +460,7 @@ func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, c 
 	if sizeEstimate > edr.config.GetInt64("Reporting.errorReporting.vacuumThresholdBytes", 5*bytesize.GB) {
 		vacuumStart := time.Now()
 		vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
-		vaccumStatement := fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
+		vaccumStatement := fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
 		if _, err := dbHandle.ExecContext(ctx, vaccumStatement); err != nil {
 			edr.log.Errorn(
 				fmt.Sprintf(`Error vacuuming %s table`, ErrorDetailReportsTable),
