@@ -532,7 +532,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 	}
 
 	// Jobs which have either succeeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
+	sqlStatement = fmt.Sprintf(`SELECT COUNT(*)
                                       from %q
                                       WHERE job_state IN ('%s')`,
 		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
@@ -544,7 +544,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 
 	if jd.conf.minDSRetentionPeriod.Load() > 0 {
 		var maxCreatedAt time.Time
-		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
+		sqlStatement = fmt.Sprintf(`SELECT created_at FROM %q ORDER BY job_id DESC LIMIT 1`, ds.JobTable)
 		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&maxCreatedAt); err != nil {
 			return false, false, 0, fmt.Errorf("error getting max created_at from %s: %w", ds.JobTable, err)
 		}
