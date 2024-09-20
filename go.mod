@@ -24,7 +24,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.62.0
+	cloud.google.com/go/bigquery v1.63.0
 	cloud.google.com/go/pubsub v1.43.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -41,7 +41,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.3.0
-	github.com/docker/docker v27.2.1+incompatible
+	github.com/docker/docker v27.3.0+incompatible
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -78,12 +78,12 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.42.0
+	github.com/rudderlabs/rudder-go-kit v0.42.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.2
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
 	github.com/rudderlabs/sql-tunnels v0.1.7
-	github.com/rudderlabs/sqlconnect-go v1.10.0
+	github.com/rudderlabs/sqlconnect-go v1.11.1
 	github.com/samber/lo v1.47.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.47
@@ -110,19 +110,19 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.23.0
 	golang.org/x/sync v0.8.0
-	google.golang.org/api v0.197.0
+	google.golang.org/api v0.198.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1
-	google.golang.org/grpc v1.66.2
+	google.golang.org/grpc v1.67.0
 	google.golang.org/protobuf v1.34.2
 )
 
-require github.com/rudderlabs/goqu/v10 v10.3.0 // indirect
+require github.com/rudderlabs/goqu/v10 v10.3.1 // indirect
 
 require (
 	cloud.google.com/go v0.115.1 // indirect
-	cloud.google.com/go/auth v0.9.3 // indirect
+	cloud.google.com/go/auth v0.9.4 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	cloud.google.com/go/compute/metadata v0.5.1 // indirect
 	cloud.google.com/go/iam v1.2.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -149,8 +149,8 @@ require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.30.5 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.4 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.27.33 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.32 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.27.35 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.33 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.13 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.18 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.17 // indirect
@@ -163,9 +163,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.17.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.28.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.61.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.22.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.30.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.22.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.30.8 // indirect
 	github.com/aws/smithy-go v1.20.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitfield/gotestdox v0.2.2 // indirect
