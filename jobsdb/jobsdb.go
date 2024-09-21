@@ -748,10 +748,10 @@ func (jd *Handle) init() {
 		jd.assertError(err)
 	}
 
+	maxOpenConnections := 2
 	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		maxOpenConnections = jd.conf.maxOpenConnections
 	} else {
-		maxOpenConnections := 2 // buffer
 		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
 		switch jd.ownerType {
 		case Read:
@@ -761,12 +761,12 @@ func (jd *Handle) init() {
 		case ReadWrite:
 			maxOpenConnections += 3 // migrate, addNewDS, archive
 		}
-		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
-		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		if maxOpenConnections >= jd.conf.maxOpenConnections {
+			maxOpenConnections = jd.conf.maxOpenConnections
 		}
 	}
+	jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
+	jd.dbHandle.SetMaxIdleConns(maxOpenConnections)
 
 	jd.assertError(jd.dbHandle.Ping())
 
