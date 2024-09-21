@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -69,7 +70,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		return err
 	}
 
-	migrateFrom, pendingJobsCount, insertBeforeDS, err := jd.getMigrationList(dsList)
+	migrateFrom, pendingJobsCount, insertBeforeDS, err := jd.getMigrationList(ctx, dsList)
 	if err != nil {
 		return fmt.Errorf("could not get migration list: %w", err)
 	}
@@ -89,7 +90,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			defer jd.dsMigrationLock.Unlock()
 			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
 			// the pending jobs count cannot change after the dsMigrationLock is acquired
-			migrateFrom, pendingJobsCount, insertBeforeDS, err = jd.getMigrationList(dsList)
+			migrateFrom, pendingJobsCount, insertBeforeDS, err = jd.getMigrationList(ctx, dsList)
 			if err != nil {
 				return fmt.Errorf("could not get migration list: %w", err)
 			}
@@ -364,35 +365,43 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 // getMigrationList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
-func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
+func (jd *Handle) getMigrationList(ctx context.Context, dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
 	var (
-		liveDSCount, migrateDSProbeCount int
+		liveDSCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
-		maxDSSize = jd.conf.MaxDSSize.Load()
-		waiting   *smallDS
+		maxDSSize         = jd.conf.MaxDSSize.Load()
+		waiting           *smallDS
+		maxMigrateOnce    = jd.conf.migration.maxMigrateOnce.Load()
+		maxMigrateDSProbe = jd.conf.migration.maxMigrateDSProbe.Load()
 	)
 
 	jd.logger.Debugf("[[ migrateDSLoop ]]: DS list %+v", dsList)
 
-	for idx, ds := range dsList {
-		var idxCheck bool
-		if jd.ownerType == Read {
-			// if jobsdb owner is read, exempting the last two datasets from migration.
-			// This is done to avoid dsList conflicts between reader and writer
-			idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
-		} else {
-			idxCheck = idx == len(dsList)-1
-		}
+	// get datasets of interest
+	var dsListOfInterest []dataSetT
+	switch jd.ownerType {
+	case Read:
+		// if jobsdb owner is read, exempting the last two datasets from migration.
+		// This is done to avoid dsList conflicts between reader and writer
+		dsListOfInterest = dsList[:len(dsList)-2]
+	default:
+		dsListOfInterest = dsList[:len(dsList)-1]
+	}
+	if maxMigrateDSProbe < len(dsListOfInterest) {
+		dsListOfInterest = dsListOfInterest[:maxMigrateDSProbe]
+	}
 
-		if liveDSCount >= jd.conf.migration.maxMigrateOnce.Load() || pendingJobsCount >= maxDSSize || idxCheck {
+	// get migration checks for datasets of interest
+	dsMigrationChecks, err := jd.dsListMigrationChecks(ctx, dsListOfInterest)
+	if err != nil {
+		return nil, 0, dataSetT{}, fmt.Errorf("dsListMigrationChecks: %w", err)
+	}
+	for idx, ds := range dsListOfInterest {
+		if liveDSCount >= maxMigrateOnce || pendingJobsCount >= maxDSSize {
 			break
 		}
 
-		migrate, isSmall, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds)
-		if migrateErr != nil {
-			err = migrateErr
-			return
-		}
+		migrate, isSmall, recordsLeft := dsMigrationChecks[idx].migrate, dsMigrationChecks[idx].small, dsMigrationChecks[idx].recordsLeft
 		jd.logger.Debugf(
 			"[[ migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
 			migrate, isSmall, recordsLeft, ds,
@@ -415,12 +424,11 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 			}
 		} else {
 			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
-			if liveDSCount > 0 || migrateDSProbeCount > jd.conf.migration.maxMigrateDSProbe.Load() {
+			if liveDSCount > 0 {
 				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
 			}
 		}
-		migrateDSProbeCount++
 	}
 	return
 }
@@ -514,59 +522,83 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	return result.String(), nil
 }
 
-// checkIfMigrateDS checks when DB is full or DB needs to be migrated.
-// We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
-// Or when the job_status table gets too big because of lots of retries/failures
-func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
-	migrate, small bool, recordsLeft int, err error,
-) {
+type dsMigrationStats struct {
+	recordsLeft    int
+	migrate, small bool
+}
+
+func (jd *Handle) dsListMigrationChecks(ctx context.Context, dsList []dataSetT) ([]dsMigrationStats, error) {
 	defer jd.getTimerStat(
-		"migration_ds_check",
+		"migration_dsList_check",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	).RecordDuration()()
-
-	var delCount, totalCount int
-	var terminalJobsExist bool
-	var maxCreatedAt time.Time
-
-	query := fmt.Sprintf(
-		`with combinedResult as (
+	smallDSThresholdSize := jd.conf.migration.jobMinRowsMigrateThres() * float64(jd.conf.MaxDSSize.Load())
+	retentionExpiredThreshold := jd.conf.maxDSRetentionPeriod.Load()
+	minDSRetentionThreshold := jd.conf.minDSRetentionPeriod.Load()
+	jobsDoneThreshold := jd.conf.migration.jobDoneMigrateThres()
+	checks := make([]dsMigrationStats, len(dsList))
+	dsSql := `
+		(
 			select
 			(select count(*) from %[1]q) as totalJobCount,
 			(select count(*) from %[2]q where job_state = ANY($1)) as terminalJobCount,
 			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
 			(select exists (select id from %[2]q where job_state = ANY($1) and exec_time < $2)) as retentionExpired
-		)
-		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`,
-		ds.JobTable, ds.JobStatusTable)
-
-	if err := jd.dbHandle.QueryRow(
+		)`
+	dsSqls := make([]string, len(dsList))
+	for i, ds := range dsList {
+		dsSqls[i] = fmt.Sprintf(dsSql, ds.JobTable, ds.JobStatusTable)
+	}
+	query := fmt.Sprintf(`with combinedResult as (%s)
+		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`, strings.Join(dsSqls, " union all "))
+	rows, err := jd.dbHandle.QueryContext(
+		ctx,
 		query,
 		pq.Array(validTerminalStates),
 		time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load()),
-	).Scan(&totalCount, &delCount, &maxCreatedAt, &terminalJobsExist); err != nil {
-		return false, false, 0, fmt.Errorf("error running check query in %s: %w", ds.JobStatusTable, err)
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error running dsList migration check query: %w", err)
 	}
-
-	recordsLeft = totalCount - delCount
-
-	if jd.conf.minDSRetentionPeriod.Load() > 0 && time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
-		return false, false, recordsLeft, nil
+	defer func() { _ = rows.Close() }()
+	for i := range checks {
+		if !rows.Next() {
+			break
+		}
+		var (
+			totalJobCount, terminalJobCount int
+			maxCreatedAt                    time.Time
+			retentionExpired                bool
+		)
+		if err = rows.Scan(&totalJobCount, &terminalJobCount, &maxCreatedAt, &retentionExpired); err != nil {
+			return nil, fmt.Errorf("error scanning dsList migration check query: %w", err)
+		}
+		jd.logger.Debugn("dsList migration check",
+			logger.NewField("ds", dsList[i].Index),
+			logger.NewField("totalJobCount", totalJobCount),
+			logger.NewField("terminalJobCount", terminalJobCount),
+			logger.NewTimeField("maxCreatedAt", maxCreatedAt),
+			logger.NewBoolField("retentionExpired", retentionExpired),
+		)
+		checks[i].recordsLeft = totalJobCount - terminalJobCount
+		if minDSRetentionThreshold > 0 && time.Since(maxCreatedAt) < minDSRetentionThreshold {
+			continue
+		}
+		if retentionExpired && retentionExpiredThreshold > 0 {
+			checks[i].migrate = true
+			continue
+		}
+		if float64(totalJobCount) < smallDSThresholdSize {
+			checks[i].small = true
+			checks[i].migrate = true
+			continue
+		}
+		if float64(terminalJobCount)/float64(totalJobCount) > jobsDoneThreshold {
+			checks[i].migrate = true
+		}
 	}
-
-	if jd.conf.maxDSRetentionPeriod.Load() > 0 && terminalJobsExist {
-		return true, false, recordsLeft, nil
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows.Err dsList migration check query: %w", err)
 	}
-
-	isSmall := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres()*float64(jd.conf.MaxDSSize.Load())
-
-	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres() {
-		return true, isSmall, recordsLeft, nil
-	}
-
-	if isSmall {
-		return true, true, recordsLeft, nil
-	}
-
-	return false, false, recordsLeft, nil
+	return checks, nil
 }
