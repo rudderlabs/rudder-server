@@ -383,8 +383,14 @@ func (jd *Handle) getMigrationList(ctx context.Context, dsList []dataSetT) (migr
 	case Read:
 		// if jobsdb owner is read, exempting the last two datasets from migration.
 		// This is done to avoid dsList conflicts between reader and writer
+		if len(dsList) <= 2 {
+			return
+		}
 		dsListOfInterest = dsList[:len(dsList)-2]
 	default:
+		if len(dsList) <= 1 {
+			return
+		}
 		dsListOfInterest = dsList[:len(dsList)-1]
 	}
 	if maxMigrateDSProbe < len(dsListOfInterest) {
