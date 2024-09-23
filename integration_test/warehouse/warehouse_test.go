@@ -33,6 +33,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"

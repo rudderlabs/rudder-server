@@ -1392,7 +1392,7 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 			schema[tableName] = make(map[string]string)
 		}
 
-		if datatype, ok := calculateDataType(columnType, numericScale); ok {
+		if datatype, ok := CalculateDataType(columnType, numericScale); ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tableName]; !ok {
