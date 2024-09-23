@@ -34,13 +34,3 @@ func (gw *Handle) newSourceStatTagsWithReason(s *backendconfig.SourceT, reqType,
 	}
 	return tags
 }
-
-func (gw *Handle) newReqTypeStatsTagsWithReason(reqType, reason string) stats.Tags {
-	tags := stats.Tags{
-		"req_type": reqType,
-	}
-	if reason != "" {
-		tags["reason"] = reason
-	}
-	return tags
-}

@@ -680,8 +680,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	failCount := inputCount - outputCount
 	reportingStatus := jobsdb.Failed.State
+	isTerminalPU := false
+
 	if state == model.Aborted {
 		reportingStatus = jobsdb.Aborted.State
+		isTerminalPU = true
 	}
 	reportingMetrics := []*types.PUReportedMetric{{
 		ConnectionDetails: types.ConnectionDetails{
@@ -694,7 +697,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		PUDetails: types.PUDetails{
 			InPU:       types.BATCH_ROUTER,
 			PU:         types.WAREHOUSE,
-			TerminalPU: true,
+			TerminalPU: isTerminalPU,
 		},
 		StatusDetail: &types.StatusDetail{
 			Status:         reportingStatus,
@@ -716,12 +719,12 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			PUDetails: types.PUDetails{
 				InPU:       types.BATCH_ROUTER,
 				PU:         types.WAREHOUSE,
-				TerminalPU: true,
+				TerminalPU: isTerminalPU,
 			},
 			StatusDetail: &types.StatusDetail{
 				Status:         jobsdb.Succeeded.State,
-				StatusCode:     400, // TODO: Change this to error specific code
-				Count:          failCount,
+				StatusCode:     200, // TODO: Change this to error specific code
+				Count:          outputCount,
 				SampleEvent:    []byte("{}"),
 				SampleResponse: string(serializedErr),
 			},

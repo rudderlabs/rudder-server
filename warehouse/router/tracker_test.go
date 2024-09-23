@@ -215,16 +215,17 @@ func TestRouter_CronTracker(t *testing.T) {
 
 		mockLogger.EXPECT().Infon("context is cancelled, stopped running tracking").Times(1)
 
+		executionTime := time.Now().Unix()
 		err = r.CronTracker(ctx)
 		require.NoError(t, err)
 
-		m := statsStore.GetByName("warehouse_cron_tracker_tick")
+		m := statsStore.GetByName("warehouse_cron_tracker_timestamp_seconds")
 		require.Equal(t, len(m), 1)
-		require.Equal(t, m[0].Name, "warehouse_cron_tracker_tick")
+		require.Equal(t, m[0].Name, "warehouse_cron_tracker_timestamp_seconds")
 		require.Equal(t, m[0].Tags, stats.Tags{
 			"module":   moduleName,
 			"destType": warehouseutils.POSTGRES,
 		})
-		require.GreaterOrEqual(t, m[0].Value, 1.0)
+		require.GreaterOrEqual(t, m[0].Value, float64(executionTime))
 	})
 }
