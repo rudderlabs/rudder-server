@@ -147,14 +147,18 @@ jobs:
           - router
           - services
           - services/rsources
+          - services/dedup
           - suppression-backup-service
           - warehouse
         include:
           - package: services
             exclude: services/rsources
+          - package: services
+            exclude: services/dedup
 
     steps:
       - name: Disable IPv6 (temporary fix)
+        if: matrix.package != 'services/dedup'
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
