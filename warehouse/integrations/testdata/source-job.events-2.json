@@ -1,0 +1,194 @@
+[
+  {
+    "message": {
+      "channel": "sources",
+      "event": "google_sheet",
+      "messageId": "9b9b5940-ab21-4f07-8de6-cf8e70cb9c06",
+      "recordId": "9b9b5940-ab21-4f07-8de6-cf8e70cb9c06",
+      "originalTimestamp": "2023-05-12T04:12:48.750+00:00",
+      "properties": {
+        "product_id": "5",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "context": {
+        "sources": {
+          "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+          "version": "v2.1.1",
+          "job_run_id": "{{.jobRunID}}",
+          "task_run_id": "{{.taskRunID}}"
+        }
+      },
+      "receivedAt": "2023-05-12T04:12:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:12:48.750+00:00",
+      "timestamp": "2023-05-12T04:12:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceJobId": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+      "sourceJobRunId": "{{.jobRunID}}",
+      "sourceTaskRunId": "{{.taskRunID}}",
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample Google Sheets Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "singer-google-sheets",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "9b9b5940-ab21-4f07-8de6-cf8e70cb9c06",
+      "receivedAt": "2023-05-12T04:12:48.750+00:00",
+      "eventName": "google_sheet",
+      "eventType": "track",
+      "recordId": "9b9b5940-ab21-4f07-8de6-cf8e70cb9c06",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "channel": "sources",
+      "event": "google_sheet",
+      "messageId": "f623fe31-6ef3-4835-ad2c-c252be290f3b",
+      "recordId": "f623fe31-6ef3-4835-ad2c-c252be290f3b",
+      "originalTimestamp": "2023-05-12T04:13:48.750+00:00",
+      "properties": {
+        "product_id": "6",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "context": {
+        "sources": {
+          "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+          "version": "v2.1.1",
+          "job_run_id": "{{.jobRunID}}",
+          "task_run_id": "{{.taskRunID}}"
+        }
+      },
+      "receivedAt": "2023-05-12T04:13:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:13:48.750+00:00",
+      "timestamp": "2023-05-12T04:13:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceJobId": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+      "sourceJobRunId": "{{.jobRunID}}",
+      "sourceTaskRunId": "{{.taskRunID}}",
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample Google Sheets Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "singer-google-sheets",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "f623fe31-6ef3-4835-ad2c-c252be290f3b",
+      "receivedAt": "2023-05-12T04:13:48.750+00:00",
+      "eventName": "google_sheet",
+      "eventType": "track",
+      "recordId": "f623fe31-6ef3-4835-ad2c-c252be290f3b",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "channel": "sources",
+      "event": "google_sheet",
+      "messageId": "c50d846f-4add-40bd-8697-f94d63b1aa64",
+      "recordId": "c50d846f-4add-40bd-8697-f94d63b1aa64",
+      "originalTimestamp": "2023-05-12T04:14:48.750+00:00",
+      "properties": {
+        "product_id": "7",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "context": {
+        "sources": {
+          "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+          "version": "v2.1.1",
+          "job_run_id": "{{.jobRunID}}",
+          "task_run_id": "{{.taskRunID}}"
+        }
+      },
+      "receivedAt": "2023-05-12T04:14:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:14:48.750+00:00",
+      "timestamp": "2023-05-12T04:14:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceJobId": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+      "sourceJobRunId": "{{.jobRunID}}",
+      "sourceTaskRunId": "{{.taskRunID}}",
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample Google Sheets Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "singer-google-sheets",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "c50d846f-4add-40bd-8697-f94d63b1aa64",
+      "receivedAt": "2023-05-12T04:14:48.750+00:00",
+      "eventName": "google_sheet",
+      "eventType": "track",
+      "recordId": "c50d846f-4add-40bd-8697-f94d63b1aa64",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "channel": "sources",
+      "event": "google_sheet",
+      "messageId": "664cac3b-ff37-4a4d-9992-ad25da52f5c2",
+      "recordId": "664cac3b-ff37-4a4d-9992-ad25da52f5c2",
+      "originalTimestamp": "2023-05-12T04:15:48.750+00:00",
+      "properties": {
+        "product_id": "8",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "context": {
+        "sources": {
+          "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+          "version": "v2.1.1",
+          "job_run_id": "{{.jobRunID}}",
+          "task_run_id": "{{.taskRunID}}"
+        }
+      },
+      "receivedAt": "2023-05-12T04:15:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:15:48.750+00:00",
+      "timestamp": "2023-05-12T04:15:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceJobId": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+      "sourceJobRunId": "{{.jobRunID}}",
+      "sourceTaskRunId": "{{.taskRunID}}",
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample Google Sheets Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "singer-google-sheets",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "664cac3b-ff37-4a4d-9992-ad25da52f5c2",
+      "receivedAt": "2023-05-12T04:15:48.750+00:00",
+      "eventName": "google_sheet",
+      "eventType": "track",
+      "recordId": "664cac3b-ff37-4a4d-9992-ad25da52f5c2",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  }
+]
