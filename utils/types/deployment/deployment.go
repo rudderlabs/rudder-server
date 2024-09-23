@@ -12,9 +12,8 @@ import (
 type Type string // skipcq: RVV-B0009
 
 const (
-	DedicatedType   Type   = "DEDICATED"
-	MultiTenantType Type   = "MULTITENANT"
-	hostedNamespace string = "free-us-1" // Having it here to support legacy cp-router hosted
+	DedicatedType   Type = "DEDICATED"
+	MultiTenantType Type = "MULTITENANT"
 )
 
 // Types of tokens that can be used to authenticate with CP router
@@ -64,11 +63,6 @@ func GetConnectionToken() (string, string, bool, error) {
 		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
 			connectionToken = config.GetString("WORKSPACE_NAMESPACE", "")
-			if connectionToken == hostedNamespace {
-				// CP Router still has some things hardcoded for hosted
-				// which needs to be supported
-				connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
-			}
 		} else {
 			if !config.IsSet("HOSTED_SERVICE_SECRET") {
 				pkgLogger.Error("hosted service secret not set")
