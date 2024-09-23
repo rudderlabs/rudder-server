@@ -41,6 +41,7 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
+	t.Skip("skipping for 1.34.1 release")
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}

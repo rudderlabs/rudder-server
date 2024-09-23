@@ -43,6 +43,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
@@ -743,30 +744,31 @@ func (jd *Handle) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
+		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 	}
 
+	var maxConns int
 	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		maxConns = jd.conf.maxOpenConnections
 	} else {
-		maxOpenConnections := 2 // buffer
-		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
+		maxConns = 2 // buffer
+		maxConns += jd.conf.maxReaders + jd.conf.maxWriters
 		switch jd.ownerType {
 		case Read:
-			maxOpenConnections += 2 // migrate, refreshDsList
+			maxConns += 2 // migrate, refreshDsList
 		case Write:
-			maxOpenConnections += 1 // addNewDS
+			maxConns += 1 // addNewDS
 		case ReadWrite:
-			maxOpenConnections += 3 // migrate, addNewDS, archive
+			maxConns += 3 // migrate, addNewDS, archive
 		}
-		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
-		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		if maxConns >= jd.conf.maxOpenConnections {
+			maxConns = jd.conf.maxOpenConnections
 		}
 	}
+	jd.dbHandle.SetMaxOpenConns(maxConns)
+	jd.dbHandle.SetMaxIdleConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
@@ -969,7 +971,59 @@ func (jd *Handle) Start() error {
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
 	}
+	g.Go(crash.Wrapper(func() error {
+		for {
+			select {
+			case <-time.After(jd.config.GetDuration("JobsDB.ConnStatsFrequency", 15, time.Second)):
+			case <-ctx.Done():
+				return nil
+			}
+			stats := jd.dbHandle.Stats()
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_open_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxOpenConnections))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_open_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.OpenConnections))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_in_use_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.InUse))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_idle_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.Idle))
+
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_wait_count_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.WaitCount))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_wait_duration_seconds_total", tablePrefix: jd.tablePrefix},
+			).Set(stats.WaitDuration.Seconds())
+
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_idle_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxIdleClosed))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_idle_time_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxIdleTimeClosed))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_lifetime_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxLifetimeClosed))
+
+		}
+	}))
 	return nil
+}
+
+type dbConnStats struct {
+	name, tablePrefix string
+}
+
+func (dbs dbConnStats) GetName() string {
+	return dbs.name
+}
+
+func (dbs dbConnStats) GetTags() map[string]string {
+	return map[string]string{"name": "jobsdb_" + dbs.tablePrefix}
 }
 
 func (jd *Handle) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
