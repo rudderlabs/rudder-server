@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   transformer:
-    image: "rudderstack/rudder-transformer:latest"
+    image: "rudderstack/develop-rudder-transformer:fix.context-traits-underscore-divide"
     ports:
       - "9090:9090"
     healthcheck:
