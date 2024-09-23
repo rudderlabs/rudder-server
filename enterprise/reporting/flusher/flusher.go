@@ -109,10 +109,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	if _, err := db.Exec(
 		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(table)),
 	); err != nil {
-		log.Errorn(
-			fmt.Sprintf(`Error full vacuuming %s table`, table),
-			logger.NewErrorField(err),
-		)
+		log.Errorn("error full vacuuming", logger.NewStringField("table", table), obskit.Error(err))
 		return nil, fmt.Errorf("error full vacuuming %s table %w", table, err)
 	}
 	return &f, nil

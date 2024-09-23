@@ -160,10 +160,7 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 		context.Background(),
 		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
 	); err != nil {
-		edr.log.Errorn(
-			fmt.Sprintf(`Error full vacuuming %s table`, ErrorDetailReportsTable),
-			logger.NewErrorField(err),
-		)
+		edr.log.Errorn("error full vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
 		panic(err)
 	}
 
@@ -447,10 +444,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 						ctx,
 						fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
 					); err != nil {
-						edr.log.Errorn(
-							fmt.Sprintf(`Error vacuuming %s table`, ErrorDetailReportsTable),
-							logger.NewErrorField(err),
-						)
+						edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
 					} else {
 						deletedRows = 0
 					}
