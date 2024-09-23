@@ -99,6 +99,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 					Args: []interface{}{key.Key, key.Value},
 				})
 			}
+
 			if err := d.scylla.ExecuteBatch(scyllaBatch); err != nil {
 				return fmt.Errorf("error committing keys: %v", err)
 			}
