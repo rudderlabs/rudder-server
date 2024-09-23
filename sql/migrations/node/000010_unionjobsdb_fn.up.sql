@@ -35,7 +35,7 @@ SELECT string_agg(
     format('SELECT %1$L, j.job_id, j.workspace_id, j.uuid, j.user_id, j.parameters, j.custom_val, j.event_payload, j.event_count, j.created_at, j.expire_at, latest_status.id, latest_status.job_state, latest_status.attempt, latest_status.exec_time, latest_status.error_code, latest_status.error_response FROM %1$I j LEFT JOIN %2$I latest_status on latest_status.job_id = j.job_id', alltables.table_name, 'v_last_' || prefix || '_job_status_'|| substring(alltables.table_name, char_length(prefix)+7,30)),
     ' UNION ') INTO qry
   FROM (select table_name from information_schema.tables
-WHERE table_name LIKE prefix || '_jobs_%' order by table_name asc LIMIT num) alltables;
+WHERE table_name LIKE prefix || '_jobs_%' order by split_part(split_part(table_name, '_jobs_', 2), '_', 1)::integer asc LIMIT num) alltables;
 RETURN QUERY EXECUTE qry;
 END;
 $$ LANGUAGE plpgsql;
@@ -74,7 +74,7 @@ SELECT string_agg(
     format('SELECT %1$L, j.job_id, j.workspace_id, j.uuid, j.user_id, j.parameters, j.custom_val, j.event_count, j.created_at, j.expire_at, latest_status.id, latest_status.job_state, latest_status.attempt, latest_status.exec_time, latest_status.error_code, latest_status.error_response FROM %1$I j LEFT JOIN %2$I latest_status on latest_status.job_id = j.job_id', alltables.table_name, 'v_last_' || prefix || '_job_status_'|| substring(alltables.table_name, char_length(prefix)+7,30)),
     ' UNION ') INTO qry
   FROM (select table_name from information_schema.tables
-WHERE table_name LIKE prefix || '_jobs_%' order by table_name asc LIMIT num) alltables;
+WHERE table_name LIKE prefix || '_jobs_%' order by split_part(split_part(table_name, '_jobs_', 2), '_', 1)::integer asc LIMIT num) alltables;
 RETURN QUERY EXECUTE qry;
 END;
 $$ LANGUAGE plpgsql;
