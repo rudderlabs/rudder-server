@@ -1801,6 +1801,131 @@ func TestDestinationTransformation(t *testing.T) {
 			tc.validateEvents(t, response.Events)
 		}
 	})
+	t.Run("users additional fields (sent_at, timestamp, original_timestamp)", func(t *testing.T) {
+		testcases := []struct {
+			name           string
+			destType       string
+			configOverride map[string]any
+			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+		}{
+			{
+				name:     "for non-datalake destinations should be present",
+				destType: whutils.BQ,
+				configOverride: map[string]any{
+					"allowUsersContextTraits": true,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.Contains(t, userEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, userEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, userEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["original_timestamp"])
+				},
+			},
+			{
+				name:     "for datalake destinations should not be present",
+				destType: whutils.GCSDatalake,
+				configOverride: map[string]any{
+					"allowUsersContextTraits": false,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.NotContains(t, userEvent.Metadata.Columns, "sent_at")
+					require.NotContains(t, userEvent.Metadata.Columns, "timestamp")
+					require.NotContains(t, userEvent.Metadata.Columns, "original_timestamp")
+					require.NotContains(t, userEvent.Data, "sent_at")
+					require.NotContains(t, userEvent.Data, "timestamp")
+					require.NotContains(t, userEvent.Data, "original_timestamp")
+				},
+			},
+		}
+
+		for _, tc := range testcases {
+			destinationBuilder := backendconfigtest.NewDestinationBuilder(tc.destType).
+				WithID(destinationID).
+				WithRevisionID(destinationID)
+			for k, v := range tc.configOverride {
+				destinationBuilder.WithConfigOption(k, v)
+			}
+			destination := destinationBuilder.Build()
+
+			destinationJSON, err := json.Marshal(destination)
+			require.NoError(t, err)
+
+			eventTemplate := `
+				[
+				 {
+					"message": {
+					  "context": {
+						"traits": {
+						  "firstname": "Mickey"
+						}
+					  },
+					  "traits": {
+						"lastname": "Mouse"
+					  },
+					  "type": "identify",
+					  "userId": "9bb5d4c2-a7aa-4a36-9efb-dd2b1aec5d33",
+                      "originalTimestamp": "2023-05-12T04:08:48.750+00:00",
+                      "sentAt": "2023-05-12T04:08:48.750+00:00",
+                      "timestamp": "2023-05-12T04:08:48.750+00:00"
+					},
+					"destination": {{.destination}}
+				 }
+				]
+`
+
+			tpl, err := template.New(uuid.New().String()).Parse(eventTemplate)
+			require.NoError(t, err)
+
+			b := new(strings.Builder)
+			err = tpl.Execute(b, map[string]any{
+				"destination": string(destinationJSON),
+			})
+			require.NoError(t, err)
+
+			var transformerEvents []transformer.TransformerEvent
+			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			require.NoError(t, err)
+
+			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
+			response := tr.Transform(context.Background(), transformerEvents, 100)
+			require.Zero(t, len(response.FailedEvents))
+			require.Len(t, response.Events, 2)
+
+			tc.validateEvents(t, response.Events)
+		}
+	})
 }
 
 func runWarehouseServer(
