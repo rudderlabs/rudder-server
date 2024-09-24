@@ -44,6 +44,7 @@ type Flusher struct {
 	lagThresholdForAggresiveFlushInMins config.ValueLoader[time.Duration]
 	vacuumThresholdDeletedRows          config.ValueLoader[int]
 	deletedRows                         int
+	vacuumFull                          config.ValueLoader[bool]
 
 	reportingURL          string
 	minConcurrentRequests config.ValueLoader[int]
@@ -94,6 +95,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		stats:                               stats,
 		batchSizeFromDB:                     batchSizeFromDB,
 		vacuumThresholdDeletedRows:          vacuumThresholdDeletedRows,
+		vacuumFull:                          conf.GetReloadableBoolVar(false, "Reporting.flusher.vacuumFull", "Reporting.vacuumFull"),
 		table:                               table,
 		aggregator:                          aggregator,
 		batchSizeToReporting:                batchSizeToReporting,
@@ -329,10 +331,16 @@ func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.
 func (f *Flusher) vacuum(ctx context.Context) error {
 	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() {
 		vacuumStart := time.Now()
+		defer f.vacuumReportsTimer.Since(vacuumStart)
+		if f.vacuumFull.Load() {
+			if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
+				return fmt.Errorf("error full vacuuming table %w", err)
+			}
+			return nil
+		}
 		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
 			return fmt.Errorf("error vacuuming table %w", err)
 		}
-		f.vacuumReportsTimer.Since(vacuumStart)
 	}
 	return nil
 }

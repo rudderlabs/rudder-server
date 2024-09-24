@@ -75,6 +75,7 @@ type ErrorDetailReporter struct {
 	mainLoopSleepInterval config.ValueLoader[time.Duration]
 	maxConcurrentRequests config.ValueLoader[int]
 	maxOpenConnections    int
+	vacuumFull            config.ValueLoader[bool]
 
 	httpClient *http.Client
 
@@ -122,6 +123,7 @@ func NewErrorDetailReporter(
 		sleepInterval:         sleepInterval,
 		mainLoopSleepInterval: mainLoopSleepInterval,
 		maxConcurrentRequests: maxConcurrentRequests,
+		vacuumFull:            conf.GetReloadableBoolVar(true, "Reporting.errorReporting.vacuumFull", "Reporting.vacuumFull"),
 		httpClient:            netClient,
 
 		namespace:  config.GetKubeNamespace(),
@@ -440,13 +442,24 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				// vacuum error_reports_details table
 				if deletedRows >= edr.config.GetInt("Reporting.errorReporting.vacuumThresholdDeletedRows", 100000) {
 					vacuumStart := time.Now()
-					if _, err := dbHandle.ExecContext(
-						ctx,
-						fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
-					); err != nil {
-						edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
+					if edr.vacuumFull.Load() {
+						if _, err := dbHandle.ExecContext(
+							ctx,
+							fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
+						); err != nil {
+							edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
+						} else {
+							deletedRows = 0
+						}
 					} else {
-						deletedRows = 0
+						if _, err := dbHandle.ExecContext(
+							ctx,
+							fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
+						); err != nil {
+							edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
+						} else {
+							deletedRows = 0
+						}
 					}
 					vacuumDuration.Since(vacuumStart)
 				}

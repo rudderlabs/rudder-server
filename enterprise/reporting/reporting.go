@@ -66,6 +66,7 @@ type DefaultReporter struct {
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 	maxConcurrentRequests                config.ValueLoader[int]
+	vacuumFull                           config.ValueLoader[bool]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -105,6 +106,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		whActionsOnly:                        whActionsOnly,
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
+		vacuumFull:                           config.GetReloadableBoolVar(false, "Reporting.vacuumFull"),
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
@@ -459,15 +461,26 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 				vacuumStart := time.Now()
 				if deletedRows >= config.GetInt("Reporting.vacuumThresholdDeletedRows", 100000) {
-					if _, err := dbHandle.ExecContext(ctx, `vacuum analyze reports;`); err != nil {
-						r.log.Errorn(
-							`[ Reporting ]: Error vacuuming reports table`,
-							logger.NewErrorField(err),
-						)
+					if r.vacuumFull.Load() {
+						if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+							r.log.Errorn(
+								`[ Reporting ]: Error full vacuuming reports table`,
+								logger.NewErrorField(err),
+							)
+						} else {
+							deletedRows = 0
+						}
 					} else {
-						deletedRows = 0
+						if _, err := dbHandle.ExecContext(ctx, `vacuum analyze reports;`); err != nil {
+							r.log.Errorn(
+								`[ Reporting ]: Error vacuuming reports table`,
+								logger.NewErrorField(err),
+							)
+						} else {
+							deletedRows = 0
+						}
+						vacuumDuration.Since(vacuumStart)
 					}
-					vacuumDuration.Since(vacuumStart)
 				}
 			}
 
