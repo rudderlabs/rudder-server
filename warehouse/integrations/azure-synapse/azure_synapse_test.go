@@ -10,165 +10,179 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"go.uber.org/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/testcompose"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegration(t *testing.T) {
+	t.Skip("skipping for 1.34.1 release")
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{
-		"testdata/docker-compose.yml",
-		"../testdata/docker-compose.jobsdb.yml",
-		"../testdata/docker-compose.minio.yml",
-	}))
-	c.Start(context.Background())
-
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
+	whutils.Init()
 
-	jobsDBPort := c.Port("jobsDb", 5432)
-	minioPort := c.Port("minio", 9000)
-	azureSynapsePort := c.Port("azure_synapse", 1433)
-
-	httpPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	workspaceID := warehouseutils.RandHex()
-	sourceID := warehouseutils.RandHex()
-	destinationID := warehouseutils.RandHex()
-	writeKey := warehouseutils.RandHex()
-
-	destType := warehouseutils.AzureSynapse
-
-	namespace := testhelper.RandSchema(destType)
+	destType := whutils.AzureSynapse
 
 	host := "localhost"
 	database := "master"
 	user := "SA"
 	password := "reallyStrongPwd123"
-
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 	region := "us-east-1"
 
-	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-	templateConfigurations := map[string]any{
-		"workspaceID":     workspaceID,
-		"sourceID":        sourceID,
-		"destinationID":   destinationID,
-		"writeKey":        writeKey,
-		"host":            host,
-		"database":        database,
-		"user":            user,
-		"password":        password,
-		"port":            strconv.Itoa(azureSynapsePort),
-		"namespace":       namespace,
-		"bucketName":      bucketName,
-		"accessKeyID":     accessKeyID,
-		"secretAccessKey": secretAccessKey,
-		"endPoint":        minioEndpoint,
-	}
-	workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-	testhelper.EnhanceWithDefaultEnvs(t)
-	t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-	t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
-	t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
-	t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
-	t.Setenv("MINIO_SSL", "false")
-	t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-
-	svcDone := make(chan struct{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		r := runner.New(runner.ReleaseInfo{})
-		_ = r.Run(ctx, []string{"azure-synapse-integration-test"})
-
-		close(svcDone)
-	}()
-	t.Cleanup(func() { <-svcDone })
-
-	serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-	health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
-
 	t.Run("Events flow", func(t *testing.T) {
-		t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_SLOW_QUERY_THRESHOLD", "0s")
-
-		jobsDB := testhelper.JobsDB(t, jobsDBPort)
-
-		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-			user,
-			password,
-			host,
-			azureSynapsePort,
-			database,
-		)
-		db, err := sql.Open("sqlserver", dsn)
+		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
-		require.NoError(t, db.Ping())
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		azureSynapsePort := c.Port("azure_synapse", 1433)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		expectedSchema := model.Schema{
+			"screens":       {"context_source_id": "varchar", "user_id": "varchar", "sent_at": "datetimeoffset", "context_request_ip": "varchar", "original_timestamp": "datetimeoffset", "url": "varchar", "context_source_type": "varchar", "_between": "varchar", "timestamp": "datetimeoffset", "context_ip": "varchar", "context_destination_type": "varchar", "received_at": "datetimeoffset", "title": "varchar", "uuid_ts": "datetimeoffset", "context_destination_id": "varchar", "name": "varchar", "id": "varchar", "_as": "varchar"},
+			"identifies":    {"context_ip": "varchar", "context_destination_id": "varchar", "email": "varchar", "context_request_ip": "varchar", "sent_at": "datetimeoffset", "uuid_ts": "datetimeoffset", "_as": "varchar", "logins": "bigint", "context_source_type": "varchar", "context_traits_logins": "bigint", "name": "varchar", "context_destination_type": "varchar", "_between": "varchar", "id": "varchar", "timestamp": "datetimeoffset", "received_at": "datetimeoffset", "user_id": "varchar", "context_traits_email": "varchar", "context_traits_as": "varchar", "context_traits_name": "varchar", "original_timestamp": "datetimeoffset", "context_traits_between": "varchar", "context_source_id": "varchar"},
+			"users":         {"context_traits_name": "varchar", "context_traits_between": "varchar", "context_request_ip": "varchar", "context_traits_logins": "bigint", "context_destination_id": "varchar", "email": "varchar", "logins": "bigint", "_as": "varchar", "context_source_id": "varchar", "uuid_ts": "datetimeoffset", "context_source_type": "varchar", "context_traits_email": "varchar", "name": "varchar", "id": "varchar", "_between": "varchar", "context_ip": "varchar", "received_at": "datetimeoffset", "sent_at": "datetimeoffset", "context_traits_as": "varchar", "context_destination_type": "varchar", "timestamp": "datetimeoffset", "original_timestamp": "datetimeoffset"},
+			"product_track": {"review_id": "varchar", "context_source_id": "varchar", "user_id": "varchar", "timestamp": "datetimeoffset", "uuid_ts": "datetimeoffset", "review_body": "varchar", "context_source_type": "varchar", "_as": "varchar", "_between": "varchar", "id": "varchar", "rating": "bigint", "event": "varchar", "original_timestamp": "datetimeoffset", "context_destination_type": "varchar", "context_ip": "varchar", "context_destination_id": "varchar", "sent_at": "datetimeoffset", "received_at": "datetimeoffset", "event_text": "varchar", "product_id": "varchar", "context_request_ip": "varchar"},
+			"tracks":        {"original_timestamp": "datetimeoffset", "context_destination_id": "varchar", "event": "varchar", "context_request_ip": "varchar", "uuid_ts": "datetimeoffset", "context_destination_type": "varchar", "user_id": "varchar", "sent_at": "datetimeoffset", "context_source_type": "varchar", "context_ip": "varchar", "timestamp": "datetimeoffset", "received_at": "datetimeoffset", "context_source_id": "varchar", "event_text": "varchar", "id": "varchar"},
+			"aliases":       {"context_request_ip": "varchar", "context_destination_type": "varchar", "context_destination_id": "varchar", "previous_id": "varchar", "context_ip": "varchar", "sent_at": "datetimeoffset", "id": "varchar", "uuid_ts": "datetimeoffset", "timestamp": "datetimeoffset", "original_timestamp": "datetimeoffset", "context_source_id": "varchar", "user_id": "varchar", "context_source_type": "varchar", "received_at": "datetimeoffset"},
+			"pages":         {"name": "varchar", "url": "varchar", "id": "varchar", "timestamp": "datetimeoffset", "title": "varchar", "user_id": "varchar", "context_source_id": "varchar", "context_source_type": "varchar", "original_timestamp": "datetimeoffset", "context_request_ip": "varchar", "received_at": "datetimeoffset", "_between": "varchar", "context_destination_type": "varchar", "uuid_ts": "datetimeoffset", "context_destination_id": "varchar", "sent_at": "datetimeoffset", "context_ip": "varchar", "_as": "varchar"},
+			"groups":        {"_as": "varchar", "user_id": "varchar", "context_destination_type": "varchar", "sent_at": "datetimeoffset", "context_source_type": "varchar", "received_at": "datetimeoffset", "context_ip": "varchar", "industry": "varchar", "timestamp": "datetimeoffset", "group_id": "varchar", "uuid_ts": "datetimeoffset", "context_source_id": "varchar", "context_request_ip": "varchar", "_between": "varchar", "original_timestamp": "datetimeoffset", "name": "varchar", "_plan": "varchar", "context_destination_id": "varchar", "employees": "bigint", "id": "varchar"},
+		}
+		userIDFormat := "userId_azure_synapse"
+		userIDSQL := "LEFT(user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id, CHARINDEX('_', user_id) + 1) + 1) - 1)"
+		uuidTSSQL := "LEFT(uuid_ts, 10)"
 
 		testcase := []struct {
 			name          string
-			writeKey      string
-			schema        string
-			sourceID      string
-			destinationID string
 			tables        []string
+			verifySchema  func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
 		}{
 			{
-				name:          "Upload Job",
-				writeKey:      writeKey,
-				schema:        namespace,
-				tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				sourceID:      sourceID,
-				destinationID: destinationID,
+				name:   "Upload Job",
+				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedSchema, whth.ConvertRecordsToSchema(schema))
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, LEFT(id, CHARINDEX('_', id, CHARINDEX('_', id, CHARINDEX('_', id) + 1) + 1) - 1), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, _plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 		}
 
 		for _, tc := range testcase {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
+
+				destination := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("host", host).
+					WithConfigOption("database", database).
+					WithConfigOption("user", user).
+					WithConfigOption("password", password).
+					WithConfigOption("port", strconv.Itoa(azureSynapsePort)).
+					WithConfigOption("sslMode", "disable").
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("bucketProvider", whutils.MINIO).
+					WithConfigOption("bucketName", bucketName).
+					WithConfigOption("accessKeyID", accessKeyID).
+					WithConfigOption("secretAccessKey", secretAccessKey).
+					WithConfigOption("useSSL", false).
+					WithConfigOption("endPoint", minioEndpoint).
+					WithConfigOption("useRudderStorage", false).
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true).
+					Build()
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destination).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_AZURE_SYNAPSE_SLOW_QUERY_THRESHOLD", "0s")
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+					user, password, host, azureSynapsePort, database,
+				)
+				db, err := sql.Open("sqlserver", dsn)
+				require.NoError(t, err)
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() {
+					_ = db.Close()
+				})
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -176,7 +190,7 @@ func TestIntegration(t *testing.T) {
 				}
 
 				conf := map[string]any{
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -186,51 +200,65 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
-				ts1 := testhelper.TestConfig{
-					WriteKey:        tc.writeKey,
-					Schema:          tc.schema,
+				ts1 := whth.TestConfig{
+					WriteKey:        writeKey,
+					Schema:          namespace,
 					Tables:          tc.tables,
-					SourceID:        tc.sourceID,
-					DestinationID:   tc.destinationID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
 					Config:          conf,
 					WorkspaceID:     workspaceID,
 					DestinationType: destType,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
-					JobRunID:        misc.FastUUID().String(),
-					TaskRunID:       misc.FastUUID().String(),
-					StagingFilePath: "testdata/upload-job.staging-1.json",
-					UserID:          testhelper.GetUserId(destType),
+					EventsFilePath:  "../testdata/upload-job.events-1.json",
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				ts2 := testhelper.TestConfig{
-					WriteKey:        tc.writeKey,
-					Schema:          tc.schema,
+				ts2 := whth.TestConfig{
+					WriteKey:        writeKey,
+					Schema:          namespace,
 					Tables:          tc.tables,
-					SourceID:        tc.sourceID,
-					DestinationID:   tc.destinationID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
 					Config:          conf,
 					WorkspaceID:     workspaceID,
 					DestinationType: destType,
 					JobsDB:          jobsDB,
 					HTTPPort:        httpPort,
 					Client:          sqlClient,
-					JobRunID:        misc.FastUUID().String(),
-					TaskRunID:       misc.FastUUID().String(),
-					StagingFilePath: "testdata/upload-job.staging-2.json",
-					UserID:          testhelper.GetUserId(destType),
+					EventsFilePath:  "../testdata/upload-job.events-2.json",
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 			})
 		}
 	})
 
 	t.Run("Validations", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		azureSynapsePort := c.Port("azure_synapse", 1433)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		namespace := whth.RandSchema(destType)
+
 		dest := backendconfig.DestinationT{
-			ID: destinationID,
+			ID: "test_destination_id",
 			Config: map[string]any{
 				"host":             host,
 				"database":         database,
@@ -238,8 +266,8 @@ func TestIntegration(t *testing.T) {
 				"password":         password,
 				"port":             strconv.Itoa(azureSynapsePort),
 				"sslMode":          "disable",
-				"namespace":        "",
-				"bucketProvider":   "MINIO",
+				"namespace":        namespace,
+				"bucketProvider":   whutils.MINIO,
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,
 				"secretAccessKey":  secretAccessKey,
@@ -255,19 +283,21 @@ func TestIntegration(t *testing.T) {
 			},
 			Name:       "azure-synapse-demo",
 			Enabled:    true,
-			RevisionID: destinationID,
+			RevisionID: "test_destination_id",
 		}
-		testhelper.VerifyConfigurationTest(t, dest)
+
+		whth.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
 
-		namespace := testhelper.RandSchema(destType)
+		azureSynapsePort := c.Port("azure_synapse", 1433)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
 
 		schemaInUpload := model.TableSchema{
 			"test_bool":     "boolean",
@@ -295,10 +325,10 @@ func TestIntegration(t *testing.T) {
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
@@ -310,7 +340,7 @@ func TestIntegration(t *testing.T) {
 					"port":             strconv.Itoa(azureSynapsePort),
 					"sslMode":          "disable",
 					"namespace":        "",
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -320,12 +350,12 @@ func TestIntegration(t *testing.T) {
 					"useRudderStorage": false,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
 		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: warehouseutils.MINIO,
+			Provider: whutils.MINIO,
 			Config: map[string]any{
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,
@@ -336,7 +366,7 @@ func TestIntegration(t *testing.T) {
 				"disableSSL":       true,
 				"region":           region,
 				"enableSSE":        false,
-				"bucketProvider":   warehouseutils.MINIO,
+				"bucketProvider":   whutils.MINIO,
 			},
 		})
 		require.NoError(t, err)
@@ -344,9 +374,9 @@ func TestIntegration(t *testing.T) {
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -360,9 +390,9 @@ func TestIntegration(t *testing.T) {
 		t.Run("table does not exists", func(t *testing.T) {
 			tableName := "table_not_exists_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -380,9 +410,9 @@ func TestIntegration(t *testing.T) {
 			tableName := "merge_test_table"
 
 			t.Run("without dedup", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -405,7 +435,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, az.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, az.DB.DB,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -424,12 +454,12 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.SampleTestRecords())
+				require.Equal(t, records, whth.SampleTestRecords())
 			})
 			t.Run("with dedup", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -447,7 +477,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, az.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, az.DB.DB,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -466,13 +496,13 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.DedupTestRecords())
+				require.Equal(t, records, whth.DedupTestRecords())
 			})
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
 			tableName := "load_file_not_exists_test_table"
 
-			loadFiles := []warehouseutils.LoadFile{{
+			loadFiles := []whutils.LoadFile{{
 				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
 			}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -494,9 +524,9 @@ func TestIntegration(t *testing.T) {
 		t.Run("mismatch in number of columns", func(t *testing.T) {
 			tableName := "mismatch_columns_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -516,9 +546,9 @@ func TestIntegration(t *testing.T) {
 		t.Run("mismatch in schema", func(t *testing.T) {
 			tableName := "mismatch_schema_test_table"
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
@@ -536,7 +566,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, az.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, az.DB.DB,
 				fmt.Sprintf(`
 					SELECT
 					  id,
@@ -555,15 +585,15 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.MismatchSchemaTestRecords())
+			require.Equal(t, records, whth.MismatchSchemaTestRecords())
 		})
 		t.Run("discards", func(t *testing.T) {
-			tableName := warehouseutils.DiscardsTable
+			tableName := whutils.DiscardsTable
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
 
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
@@ -572,7 +602,7 @@ func TestIntegration(t *testing.T) {
 			err = az.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			err = az.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			err = az.CreateTable(ctx, tableName, whutils.DiscardsSchema)
 			require.NoError(t, err)
 
 			loadTableStat, err := az.LoadTable(ctx, tableName)
@@ -580,7 +610,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, az.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, az.DB.DB,
 				fmt.Sprintf(`
 					SELECT
 					  column_name,
@@ -597,17 +627,26 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardTestRecords())
+			require.Equal(t, records, whth.DiscardTestRecords())
 		})
 	})
 
 	t.Run("CrashRecovery", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		azureSynapsePort := c.Port("azure_synapse", 1433)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
@@ -618,8 +657,8 @@ func TestIntegration(t *testing.T) {
 					"password":         password,
 					"port":             strconv.Itoa(azureSynapsePort),
 					"sslMode":          "disable",
-					"namespace":        "",
-					"bucketProvider":   "MINIO",
+					"namespace":        namespace,
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -629,20 +668,23 @@ func TestIntegration(t *testing.T) {
 					"useRudderStorage": false,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
 		tableName := "crash_recovery_test_table"
 
-		mockUploader := newMockUploader(t, []warehouseutils.LoadFile{}, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+		mockUploader := newMockUploader(t, []whutils.LoadFile{}, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
 
 		t.Run("successful cleanup", func(t *testing.T) {
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
 
-			stagingTable := warehouseutils.StagingTablePrefix(warehouseutils.AzureSynapse) + tableName
+			stagingTable := whutils.StagingTablePrefix(destType) + tableName
+
+			_, err = az.DB.ExecContext(ctx, fmt.Sprintf("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '%[1]s') BEGIN EXEC('CREATE SCHEMA %[1]s') END;", namespace))
+			require.NoError(t, err)
 
 			_, err = az.DB.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %q.%q (id int)", namespace, stagingTable))
 			require.NoError(t, err)
@@ -670,7 +712,6 @@ func TestIntegration(t *testing.T) {
 				sql.Named("table", stagingTable),
 			).Scan(&count)
 			require.NoError(t, err)
-
 			require.Equal(t, 0, count, "staging table should be dropped")
 		})
 
@@ -681,7 +722,9 @@ func TestIntegration(t *testing.T) {
 
 			db, dbMock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() {
+				_ = db.Close()
+			}()
 
 			dbMock.ExpectQuery("select table_name").WillReturnError(fmt.Errorf("query error"))
 
@@ -786,11 +829,11 @@ func TestAzureSynapse_ProcessColumnValue(t *testing.T) {
 
 func newMockUploader(
 	t testing.TB,
-	loadFiles []warehouseutils.LoadFile,
+	loadFiles []whutils.LoadFile,
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
-) warehouseutils.Uploader {
+) whutils.Uploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 

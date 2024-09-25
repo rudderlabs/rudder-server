@@ -2,12 +2,12 @@ package snowflake_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -31,15 +31,13 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -86,358 +84,441 @@ func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
-	for _, key := range []string{
-		testKey,
-		testRBACKey,
-		testKeyPairEncrypted,
-		testKeyPairUnencrypted,
-	} {
-		if _, exists := os.LookupEnv(key); !exists {
-			t.Skipf("Skipping %s as %s is not set", t.Name(), key)
+	if _, exists := os.LookupEnv(testKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", testKey)
 		}
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
 	}
-
-	credentials, err := getSnowflakeTestCredentials(testKey)
-	require.NoError(t, err)
-
-	rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
-	require.NoError(t, err)
-
-	credentialsKeyPairEncrypted, err := getSnowflakeTestCredentials(testKeyPairEncrypted)
-	require.NoError(t, err)
-
-	credentialsKeyPairUnencrypted, err := getSnowflakeTestCredentials(testKeyPairUnencrypted)
-	require.NoError(t, err)
-
-	c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml"}))
-	c.Start(context.Background())
 
 	misc.Init()
 	validations.Init()
 	whutils.Init()
 
-	jobsDBPort := c.Port("jobsDb", 5432)
-
-	httpPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	workspaceID := whutils.RandHex()
-	sourceID := whutils.RandHex()
-	destinationID := whutils.RandHex()
-	writeKey := whutils.RandHex()
-	caseSensitiveSourceID := whutils.RandHex()
-	caseSensitiveDestinationID := whutils.RandHex()
-	caseSensitiveWriteKey := whutils.RandHex()
-	rbacSourceID := whutils.RandHex()
-	rbacDestinationID := whutils.RandHex()
-	rbacWriteKey := whutils.RandHex()
-	sourcesSourceID := whutils.RandHex()
-	sourcesDestinationID := whutils.RandHex()
-	sourcesWriteKey := whutils.RandHex()
-	keypairEncryptedSourceID := whutils.RandHex()
-	keypairEncryptedDestinationID := whutils.RandHex()
-	keypairEncryptedWriteKey := whutils.RandHex()
-	keypairUnencryptedSourceID := whutils.RandHex()
-	keypairUnencryptedDestinationID := whutils.RandHex()
-	keypairUnencryptedWriteKey := whutils.RandHex()
-
 	destType := whutils.SNOWFLAKE
 
-	namespace := testhelper.RandSchema(destType)
-	rbacNamespace := testhelper.RandSchema(destType)
-	sourcesNamespace := testhelper.RandSchema(destType)
-	caseSensitiveNamespace := testhelper.RandSchema(destType)
-	keypairEncryptedNamespace := testhelper.RandSchema(destType)
-	keypairUnencryptedNamespace := testhelper.RandSchema(destType)
-
-	bootstrapSvc := func(t testing.TB, preferAppend *bool) {
-		var preferAppendStr string
-		if preferAppend != nil {
-			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
-		}
-		templateConfigurations := map[string]any{
-			"workspaceID":                     workspaceID,
-			"sourceID":                        sourceID,
-			"destinationID":                   destinationID,
-			"writeKey":                        writeKey,
-			"caseSensitiveSourceID":           caseSensitiveSourceID,
-			"caseSensitiveDestinationID":      caseSensitiveDestinationID,
-			"caseSensitiveWriteKey":           caseSensitiveWriteKey,
-			"rbacSourceID":                    rbacSourceID,
-			"rbacDestinationID":               rbacDestinationID,
-			"rbacWriteKey":                    rbacWriteKey,
-			"sourcesSourceID":                 sourcesSourceID,
-			"sourcesDestinationID":            sourcesDestinationID,
-			"sourcesWriteKey":                 sourcesWriteKey,
-			"keypairEncryptedSourceID":        keypairEncryptedSourceID,
-			"keypairEncryptedDestinationID":   keypairEncryptedDestinationID,
-			"keypairEncryptedWriteKey":        keypairEncryptedWriteKey,
-			"keypairUnencryptedSourceID":      keypairUnencryptedSourceID,
-			"keypairUnencryptedDestinationID": keypairUnencryptedDestinationID,
-			"keypairUnencryptedWriteKey":      keypairUnencryptedWriteKey,
-			"account":                         credentials.Account,
-			"user":                            credentials.User,
-			"password":                        credentials.Password,
-			"database":                        credentials.Database,
-			"caseSensitiveDatabase":           strings.ToLower(credentials.Database),
-			"warehouse":                       credentials.Warehouse,
-			"bucketName":                      credentials.BucketName,
-			"accessKeyID":                     credentials.AccessKeyID,
-			"accessKey":                       credentials.AccessKey,
-			"namespace":                       namespace,
-			"sourcesNamespace":                sourcesNamespace,
-			"caseSensitiveNamespace":          caseSensitiveNamespace,
-			"keypairEncryptedNamespace":       keypairEncryptedNamespace,
-			"keypairUnencryptedNamespace":     keypairUnencryptedNamespace,
-			"rbacNamespace":                   rbacNamespace,
-			"rbacAccount":                     rbacCredentials.Account,
-			"rbacUser":                        rbacCredentials.User,
-			"rbacPassword":                    rbacCredentials.Password,
-			"rbacRole":                        rbacCredentials.Role,
-			"rbacDatabase":                    rbacCredentials.Database,
-			"rbacWarehouse":                   rbacCredentials.Warehouse,
-			"rbacBucketName":                  rbacCredentials.BucketName,
-			"rbacAccessKeyID":                 rbacCredentials.AccessKeyID,
-			"rbacAccessKey":                   rbacCredentials.AccessKey,
-			"keypairEncryptedUser":            credentialsKeyPairEncrypted.User,
-			"keypairEncryptedPrivateKey":      strings.ReplaceAll(credentialsKeyPairEncrypted.PrivateKey, "\n", "\\n"),
-			"keypairEncryptedPassphrase":      credentialsKeyPairEncrypted.PrivateKeyPassphrase,
-			"keypairUnencryptedUser":          credentialsKeyPairUnencrypted.User,
-			"keypairUnencryptedPrivateKey":    strings.ReplaceAll(credentialsKeyPairUnencrypted.PrivateKey, "\n", "\\n"),
-			"preferAppend":                    preferAppendStr,
-		}
-		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-		testhelper.EnhanceWithDefaultEnvs(t)
-		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
-		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_WORKSPACE_IDS", workspaceID)
-		t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_TABLES", strings.Join(
-			[]string{
-				"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-			},
-			" ",
-		))
-
-		ctx, cancel := context.WithCancel(context.Background())
-		svcDone := make(chan struct{})
-
-		go func() {
-			r := runner.New(runner.ReleaseInfo{})
-			_ = r.Run(ctx, []string{"snowflake-integration-test"})
-			close(svcDone)
-		}()
-
-		t.Cleanup(func() { <-svcDone })
-		t.Cleanup(cancel)
-
-		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-		health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, 100*time.Millisecond, "serviceHealthEndpoint")
-	}
+	credentials, err := getSnowflakeTestCredentials(testKey)
+	require.NoError(t, err)
 
 	t.Run("Event flow", func(t *testing.T) {
-		jobsDB := testhelper.JobsDB(t, jobsDBPort)
+		for _, key := range []string{
+			testRBACKey,
+			testKeyPairEncrypted,
+			testKeyPairUnencrypted,
+		} {
+			if _, exists := os.LookupEnv(key); !exists {
+				if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+					t.Fatalf("%s environment variable not set", key)
+				}
+				t.Skipf("Skipping %s as %s is not set", t.Name(), key)
+			}
+		}
 
-		database := credentials.Database
+		rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
+		require.NoError(t, err)
+		keyPairEncryptedCredentials, err := getSnowflakeTestCredentials(testKeyPairEncrypted)
+		require.NoError(t, err)
+		keyPairUnEncryptedCredentials, err := getSnowflakeTestCredentials(testKeyPairUnencrypted)
+		require.NoError(t, err)
+
+		httpPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		jobsDB := whth.JobsDB(t, jobsDBPort)
+
+		expectedUploadJobSchema := model.Schema{
+			"SCREENS":                     {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "TITLE": "TEXT", "URL": "TEXT", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"IDENTIFIES":                  {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "CONTEXT_TRAITS_NAME": "TEXT", "EMAIL": "TEXT", "ID": "TEXT", "LOGINS": "NUMBER", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"USERS":                       {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "CONTEXT_TRAITS_AS": "TEXT", "CONTEXT_TRAITS_BETWEEN": "TEXT", "CONTEXT_TRAITS_EMAIL": "TEXT", "CONTEXT_TRAITS_LOGINS": "NUMBER", "CONTEXT_TRAITS_NAME": "TEXT", "EMAIL": "TEXT", "ID": "TEXT", "LOGINS": "NUMBER", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"PRODUCT_TRACK":               {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"TRACKS":                      {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"ALIASES":                     {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PREVIOUS_ID": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"PAGES":                       {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "ID": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "TITLE": "TEXT", "URL": "TEXT", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"GROUPS":                      {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EMPLOYEES": "NUMBER", "GROUP_ID": "TEXT", "ID": "TEXT", "INDUSTRY": "TEXT", "NAME": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PLAN": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "_AS": "TEXT", "_BETWEEN": "TEXT"},
+			"RUDDER_IDENTITY_MERGE_RULES": {"MERGE_PROPERTY_1_TYPE": "TEXT", "MERGE_PROPERTY_1_VALUE": "TEXT", "MERGE_PROPERTY_2_TYPE": "TEXT", "MERGE_PROPERTY_2_VALUE": "TEXT"},
+			"RUDDER_IDENTITY_MAPPINGS":    {"MERGE_PROPERTY_TYPE": "TEXT", "MERGE_PROPERTY_VALUE": "TEXT", "RUDDER_ID": "TEXT", "UPDATED_AT": "TIMESTAMP_TZ"},
+		}
+		expectedSourceJobSchema := model.Schema{
+			"TRACKS":                      {"ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "UUID_TS": "TIMESTAMP_TZ", "EVENT_TEXT": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "ID": "TEXT", "CHANNEL": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "USER_ID": "TEXT", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "EVENT": "TEXT"},
+			"GOOGLE_SHEET":                {"_AS": "TEXT", "REVIEW_BODY": "TEXT", "RATING": "NUMBER", "CONTEXT_SOURCE_TYPE": "TEXT", "_BETWEEN": "TEXT", "CONTEXT_DESTINATION_ID": "TEXT", "REVIEW_ID": "TEXT", "CONTEXT_SOURCES_VERSION": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "ID": "TEXT", "USER_ID": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "CONTEXT_SOURCES_TASK_RUN_ID": "TEXT", "EVENT": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "UUID_TS": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "CONTEXT_SOURCES_JOB_RUN_ID": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_SOURCES_JOB_ID": "TEXT", "CHANNEL": "TEXT", "EVENT_TEXT": "TEXT"},
+			"RUDDER_IDENTITY_MERGE_RULES": {"MERGE_PROPERTY_1_VALUE": "TEXT", "MERGE_PROPERTY_2_VALUE": "TEXT", "MERGE_PROPERTY_2_TYPE": "TEXT", "MERGE_PROPERTY_1_TYPE": "TEXT"},
+			"RUDDER_IDENTITY_MAPPINGS":    {"MERGE_PROPERTY_VALUE": "TEXT", "MERGE_PROPERTY_TYPE": "TEXT", "RUDDER_ID": "TEXT", "UPDATED_AT": "TIMESTAMP_TZ"},
+		}
+		userIDFormat := "userId_snowflake"
+		userIDSQL := "SUBSTR(user_id, 1, 16)"
+		uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
 
 		testcase := []struct {
-			name                          string
-			writeKey                      string
-			schema                        string
-			sourceID                      string
-			destinationID                 string
-			tables                        []string
-			stagingFilesEventsMap         testhelper.EventsCountMap
-			stagingFilesModifiedEventsMap testhelper.EventsCountMap
-			loadFilesEventsMap            testhelper.EventsCountMap
-			tableUploadsEventsMap         testhelper.EventsCountMap
-			warehouseEventsMap            testhelper.EventsCountMap
-			warehouseEventsMap2           testhelper.EventsCountMap
-			cred                          *testCredentials
-			database                      string
-			sourceJob                     bool
-			stagingFilePrefix             string
-			emptyJobRunID                 bool
-			preferAppend                  *bool
-			customUserID                  string
+			name                           string
+			tables                         []string
+			cred                           *testCredentials
+			database                       string
+			warehouseEventsMap2            whth.EventsCountMap
+			sourceJob                      bool
+			eventFilePath1, eventFilePath2 string
+			jobRunID1, taskRunID1          string
+			jobRunID2, taskRunID2          string
+			useSameUserID                  bool
+			configOverride                 map[string]any
+			verifySchema                   func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
 		}{
 			{
-				name:     "Upload Job with Normal Database",
-				writeKey: writeKey,
-				schema:   namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           credentials,
+				database:       credentials.Database,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend": false,
+					"password":     credentials.Password,
 				},
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				cred:          credentials,
-				database:      database,
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job",
-				preferAppend:      th.Ptr(false),
 			},
 			{
-				name:     "Upload Job with Role",
-				writeKey: rbacWriteKey,
-				schema:   rbacNamespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job with Role",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           rbacCredentials,
+				database:       rbacCredentials.Database,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend": false,
+					"role":         rbacCredentials.Role,
+					"password":     rbacCredentials.Password,
 				},
-				sourceID:      rbacSourceID,
-				destinationID: rbacDestinationID,
-				cred:          rbacCredentials,
-				database:      database,
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job-with-role",
-				preferAppend:      th.Ptr(false),
 			},
 			{
-				name:     "Upload Job with Case Sensitive Database",
-				writeKey: caseSensitiveWriteKey,
-				schema:   caseSensitiveNamespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job with Case Sensitive Database",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           credentials,
+				database:       strings.ToLower(credentials.Database),
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend": false,
+					"password":     credentials.Password,
 				},
-				sourceID:      caseSensitiveSourceID,
-				destinationID: caseSensitiveDestinationID,
-				cred:          credentials,
-				database:      strings.ToLower(database),
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				preferAppend:      th.Ptr(false),
 			},
 			{
-				name:     "Upload Job with Key Pair Unencrypted Key",
-				writeKey: keypairUnencryptedWriteKey,
-				schema:   keypairUnencryptedNamespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job with Key Pair Unencrypted Key",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           keyPairUnEncryptedCredentials,
+				database:       keyPairUnEncryptedCredentials.Database,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend":   false,
+					"useKeyPairAuth": true,
+					"privateKey":     keyPairUnEncryptedCredentials.PrivateKey,
 				},
-				sourceID:      keypairUnencryptedSourceID,
-				destinationID: keypairUnencryptedDestinationID,
-				cred:          credentialsKeyPairUnencrypted,
-				database:      strings.ToLower(database),
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				preferAppend:      th.Ptr(false),
 			},
 			{
-				name:     "Upload Job with Key Pair Encrypted Key",
-				writeKey: keypairEncryptedWriteKey,
-				schema:   keypairEncryptedNamespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job with Key Pair Encrypted Key",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           keyPairEncryptedCredentials,
+				database:       keyPairEncryptedCredentials.Database,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend":         false,
+					"useKeyPairAuth":       true,
+					"privateKey":           keyPairEncryptedCredentials.PrivateKey,
+					"privateKeyPassphrase": keyPairEncryptedCredentials.PrivateKeyPassphrase,
 				},
-				sourceID:      keypairEncryptedSourceID,
-				destinationID: keypairEncryptedDestinationID,
-				cred:          credentialsKeyPairEncrypted,
-				database:      strings.ToLower(database),
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job-case-sensitive",
-				preferAppend:      th.Ptr(false),
 			},
 			{
-				name:          "Source Job with Sources",
-				writeKey:      sourcesWriteKey,
-				schema:        sourcesNamespace,
-				tables:        []string{"tracks", "google_sheet"},
-				sourceID:      sourcesSourceID,
-				destinationID: sourcesDestinationID,
-				cred:          credentials,
-				database:      database,
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+				name:           "Source Job with Sources",
+				tables:         []string{"tracks", "google_sheet"},
+				cred:           credentials,
+				database:       credentials.Database,
+				sourceJob:      true,
+				jobRunID1:      misc.FastUUID().String(),
+				taskRunID1:     misc.FastUUID().String(),
+				jobRunID2:      misc.FastUUID().String(),
+				taskRunID2:     misc.FastUUID().String(),
+				eventFilePath1: "../testdata/source-job.events-1.json",
+				eventFilePath2: "../testdata/source-job.events-2.json",
+				configOverride: map[string]any{
+					"preferAppend": false,
+					"password":     credentials.Password,
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedSourceJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-				sourceJob:             true,
-				stagingFilePrefix:     "testdata/sources-job",
-				preferAppend:          th.Ptr(false),
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT channel, context_sources_job_id, received_at, context_sources_version, %s, sent_at, context_ip, event, event_text, %s, context_destination_id, id, context_request_ip, context_source_type, original_timestamp, context_sources_job_run_id, context_sources_task_run_id, context_source_id, context_destination_type, timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.SourceJobTracksRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+					googleSheetRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT product_id, sent_at, _between, context_request_ip, context_sources_job_run_id, channel, review_body, context_source_id, original_timestamp, context_destination_id, context_sources_job_id, event, context_sources_task_run_id, context_source_type, %s, context_ip, timestamp, id, received_at, review_id, %s, context_sources_version, context_destination_type, event_text, _as, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "GOOGLE_SHEET"))
+					require.ElementsMatch(t, googleSheetRecords, whth.SourceJobGoogleSheetRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+				},
 			},
 			{
-				name:                          "Upload Job in append mode",
-				writeKey:                      writeKey,
-				schema:                        namespace,
-				tables:                        []string{"identifies", "users", "tracks"},
-				sourceID:                      sourceID,
-				destinationID:                 destinationID,
-				cred:                          credentials,
-				database:                      database,
-				stagingFilesEventsMap:         testhelper.EventsCountMap{"wh_staging_files": 3},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{"wh_staging_files": 3},
-				loadFilesEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				tableUploadsEventsMap:         map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				warehouseEventsMap:            map[string]int{"identifies": 1, "users": 1, "tracks": 1},
-				warehouseEventsMap2:           map[string]int{"identifies": 2, "users": 1, "tracks": 2},
-				stagingFilePrefix:             "testdata/append-job",
-				// an empty jobRunID means that the source is not an ETL one
-				// see Uploader.CanAppend()
-				emptyJobRunID: true,
-				preferAppend:  th.Ptr(true),
-				customUserID:  testhelper.GetUserId("append_test"),
+				name:     "Upload Job in append mode",
+				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:     credentials,
+				database: credentials.Database,
+				warehouseEventsMap2: whth.EventsCountMap{
+					// For all tables except users we will be appending because of preferAppend config
+					"identifies": 8, "users": 1, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
+				},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				configOverride: map[string]any{
+					"preferAppend": true,
+					"password":     credentials.Password,
+				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsAppendRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:     "Undefined preferAppend",
-				writeKey: writeKey,
-				schema:   namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Undefined preferAppend",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				cred:           credentials,
+				database:       credentials.Database,
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				configOverride: map[string]any{
+					"password": credentials.Password,
 				},
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				cred:          credentials,
-				database:      database,
-				stagingFilesEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				stagingFilesModifiedEventsMap: testhelper.EventsCountMap{
-					"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
 				},
-				stagingFilePrefix: "testdata/upload-job-undefined-preferAppend-mode",
-				preferAppend:      nil, // not defined in backend config
 			},
 		}
 
 		for _, tc := range testcase {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.preferAppend)
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
 
-				data := sqlconnectconfig.Snowflake{
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("account", tc.cred.Account).
+					WithConfigOption("database", tc.database).
+					WithConfigOption("warehouse", tc.cred.Warehouse).
+					WithConfigOption("user", tc.cred.User).
+					WithConfigOption("cloudProvider", "AWS").
+					WithConfigOption("bucketName", tc.cred.BucketName).
+					WithConfigOption("accessKeyID", tc.cred.AccessKeyID).
+					WithConfigOption("accessKey", tc.cred.AccessKey).
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("enableSSE", false).
+					WithConfigOption("useRudderStorage", false).
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
+				for k, v := range tc.configOverride {
+					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+				}
+				destination := destinationBuilder.Build()
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destination).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_ENABLE_IDRESOLUTION", "true")
+				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_ENABLE_DELETE_BY_JOBS", "true")
+				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_SLOW_QUERY_THRESHOLD", "0s")
+				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_WORKSPACE_IDS", workspaceID)
+				t.Setenv("RSERVER_WAREHOUSE_SNOWFLAKE_DEBUG_DUPLICATE_TABLES", strings.Join(
+					[]string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+					" ",
+				))
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
 					Account:              tc.cred.Account,
 					User:                 tc.cred.User,
 					Role:                 tc.cred.Role,
@@ -447,26 +528,17 @@ func TestIntegration(t *testing.T) {
 					UseKeyPairAuth:       tc.cred.UseKeyPairAuth,
 					PrivateKey:           tc.cred.PrivateKey,
 					PrivateKeyPassphrase: tc.cred.PrivateKeyPassphrase,
-				}
-
-				credentialsJSON, err := json.Marshal(data)
+				})
 				require.NoError(t, err)
 
 				sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
 				require.NoError(t, err)
 
 				db := sqlConnectDB.SqlDB()
-
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() { _ = db.Close() })
 				t.Cleanup(func() {
-					var err error
-					require.Eventuallyf(t,
-						func() bool {
-							_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-							return err == nil
-						},
-						time.Minute, 100*time.Millisecond,
-						"error deleting schema: %v", err,
-					)
+					dropSchema(t, db, namespace)
 				})
 
 				sqlClient := &client.Client{
@@ -486,112 +558,89 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("verifying test case 1")
-				userID := tc.customUserID
-				if userID == "" {
-					userID = testhelper.GetUserId(destType)
-				}
-				jobRunID := ""
-				if !tc.emptyJobRunID {
-					jobRunID = misc.FastUUID().String()
-				}
-				ts1 := testhelper.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                userID,
+				ts1 := whth.TestConfig{
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tc.tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					SourceJob:       tc.sourceJob,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					JobRunID:        tc.jobRunID1,
+					TaskRunID:       tc.taskRunID1,
+					EventsFilePath:  tc.eventFilePath1,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
-				userID = tc.customUserID
-				if userID == "" {
-					userID = testhelper.GetUserId(destType)
+				ts2 := whth.TestConfig{
+					WriteKey:           writeKey,
+					Schema:             namespace,
+					Tables:             tc.tables,
+					SourceID:           sourceID,
+					DestinationID:      destinationID,
+					WarehouseEventsMap: tc.warehouseEventsMap2,
+					SourceJob:          tc.sourceJob,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
+					JobsDB:             jobsDB,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					JobRunID:           tc.jobRunID2,
+					TaskRunID:          tc.taskRunID2,
+					EventsFilePath:     tc.eventFilePath2,
+					UserID:             whth.GetUserId(destType),
+					TransformerURL:     transformerURL,
+					Destination:        destination,
 				}
-				jobRunID = ""
-				if !tc.emptyJobRunID {
-					jobRunID = misc.FastUUID().String()
-				}
-				whEventsMap := tc.warehouseEventsMap2
-				if whEventsMap == nil {
-					whEventsMap = tc.warehouseEventsMap
-				}
-				ts2 := testhelper.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					StagingFilesEventsMap: tc.stagingFilesModifiedEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    whEventsMap,
-					SourceJob:             tc.sourceJob,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                userID,
-				}
-				if tc.sourceJob {
+				if tc.useSameUserID {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
 			})
 		}
 	})
 
 	t.Run("Validation", func(t *testing.T) {
-		data := sqlconnectconfig.Snowflake{
+		namespace := whth.RandSchema(destType)
+
+		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,
 			Password:  credentials.Password,
 			DBName:    credentials.Database,
 			Warehouse: credentials.Warehouse,
-		}
-
-		credentialsJSON, err := json.Marshal(data)
+		})
 		require.NoError(t, err)
 
 		sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
 		require.NoError(t, err)
 
 		db := sqlConnectDB.SqlDB()
-
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
 		t.Cleanup(func() {
-			var err error
-			require.Eventuallyf(t,
-				func() bool {
-					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
-					return err == nil
-				},
-				time.Minute, 100*time.Millisecond,
-				"error deleting schema: %v", err,
-			)
+			dropSchema(t, db, namespace)
 		})
 
 		dest := backendconfig.DestinationT{
-			ID: destinationID,
+			ID: "test_destination_id",
 			Config: map[string]interface{}{
 				"account":            credentials.Account,
 				"database":           credentials.Database,
@@ -617,32 +666,23 @@ func TestIntegration(t *testing.T) {
 			},
 			Name:       "snowflake-demo",
 			Enabled:    true,
-			RevisionID: destinationID,
+			RevisionID: "test_destination_id",
 		}
-		testhelper.VerifyConfigurationTest(t, dest)
+		whth.VerifyConfigurationTest(t, dest)
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
-
-		namespace := testhelper.RandSchema(destType)
-
 		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
 
-		data := sqlconnectconfig.Snowflake{
+		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,
 			Password:  credentials.Password,
 			DBName:    credentials.Database,
 			Warehouse: credentials.Warehouse,
-		}
-
-		credentialsJSON, err := json.Marshal(data)
+		})
 		require.NoError(t, err)
 
 		sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
@@ -650,18 +690,9 @@ func TestIntegration(t *testing.T) {
 
 		db := sqlConnectDB.SqlDB()
 		require.NoError(t, db.Ping())
-
+		t.Cleanup(func() { _ = db.Close() })
 		t.Cleanup(func() {
-			require.Eventually(t, func() bool {
-				if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-					t.Logf("error deleting schema: %v", err)
-					return false
-				}
-				return true
-			},
-				time.Minute,
-				time.Second,
-			)
+			dropSchema(t, db, namespace)
 		})
 
 		schemaInUpload := model.TableSchema{
@@ -690,10 +721,10 @@ func TestIntegration(t *testing.T) {
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
@@ -711,7 +742,7 @@ func TestIntegration(t *testing.T) {
 					"namespace":          namespace,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
@@ -727,9 +758,9 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("schema does not exists", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "schema_not_exists_test_table")
+			tableName := whutils.ToProviderCase(destType, "schema_not_exists_test_table")
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
@@ -743,9 +774,9 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("table does not exists", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "table_not_exists_test_table")
+			tableName := whutils.ToProviderCase(destType, "table_not_exists_test_table")
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
@@ -762,10 +793,10 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("merge", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "merge_test_table")
+			tableName := whutils.ToProviderCase(destType, "merge_test_table")
 
 			t.Run("without dedup", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
@@ -795,7 +826,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsUpdated, int64(0),
 					"2nd copy on the same table with the same data should not have any 'rows_loaded'")
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
 					fmt.Sprintf(
 						`SELECT
 						  id,
@@ -811,10 +842,10 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, testhelper.SampleTestRecords(), records)
+				require.Equal(t, whth.SampleTestRecords(), records)
 			})
 			t.Run("with dedup use new record", func(t *testing.T) {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, true)
@@ -834,7 +865,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := testhelper.RetrieveRecordsFromWarehouse(t, db,
+				records := whth.RetrieveRecordsFromWarehouse(t, db,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -853,14 +884,14 @@ func TestIntegration(t *testing.T) {
 						tableName,
 					),
 				)
-				require.Equal(t, records, testhelper.DedupTestRecords())
+				require.Equal(t, records, whth.DedupTestRecords())
 			})
 		})
 		t.Run("append", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "append_test_table")
+			tableName := whutils.ToProviderCase(destType, "append_test_table")
 
 			run := func() {
-				uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, true, false)
@@ -895,7 +926,7 @@ func TestIntegration(t *testing.T) {
 			run()
 			run()
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, db,
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -914,10 +945,10 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.AppendTestRecords())
+			require.Equal(t, records, whth.AppendTestRecords())
 		})
 		t.Run("load file does not exists", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "load_file_not_exists_test_table")
+			tableName := whutils.ToProviderCase(destType, "load_file_not_exists_test_table")
 
 			loadFiles := []whutils.LoadFile{{
 				Location: "https://bucket.s3.amazonaws.com/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/0ef75cb0-3fd0-4408-98b9-2bea9e476916-load_file_not_exists_test_table/load.csv.gz",
@@ -939,9 +970,9 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("mismatch in number of columns", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "mismatch_columns_test_table")
+			tableName := whutils.ToProviderCase(destType, "mismatch_columns_test_table")
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
@@ -961,7 +992,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
 				fmt.Sprintf(`
 				SELECT
 				  id,
@@ -980,12 +1011,12 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.SampleTestRecords())
+			require.Equal(t, records, whth.SampleTestRecords())
 		})
 		t.Run("mismatch in schema", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, "mismatch_schema_test_table")
+			tableName := whutils.ToProviderCase(destType, "mismatch_schema_test_table")
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, false, false)
@@ -1005,12 +1036,12 @@ func TestIntegration(t *testing.T) {
 			require.Nil(t, loadTableStat)
 		})
 		t.Run("discards", func(t *testing.T) {
-			tableName := whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.DiscardsTable)
+			tableName := whutils.ToProviderCase(destType, whutils.DiscardsTable)
 
-			uploadOutput := testhelper.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 			discardsSchema := lo.MapKeys(whutils.DiscardsSchema, func(_, key string) string {
-				return whutils.ToProviderCase(whutils.SNOWFLAKE, key)
+				return whutils.ToProviderCase(destType, key)
 			})
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
@@ -1031,7 +1062,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := testhelper.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
 				fmt.Sprintf(`
 					SELECT
 					  COLUMN_NAME,
@@ -1048,8 +1079,115 @@ func TestIntegration(t *testing.T) {
 					tableName,
 				),
 			)
-			require.Equal(t, records, testhelper.DiscardTestRecords())
+			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+	})
+
+	t.Run("Delete By", func(t *testing.T) {
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
+			Account:   credentials.Account,
+			User:      credentials.User,
+			Role:      credentials.Role,
+			Password:  credentials.Password,
+			DBName:    credentials.Database,
+			Warehouse: credentials.Warehouse,
+		})
+		require.NoError(t, err)
+
+		sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
+		require.NoError(t, err)
+
+		db := sqlConnectDB.SqlDB()
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			dropSchema(t, db, namespace)
+		})
+
+		conf := config.New()
+		conf.Set("Warehouse.snowflake.enableDeleteByJobs", true)
+
+		sf := snowflake.New(conf, logger.NOP, stats.NOP)
+		sf.DB = sqlquerywrapper.New(db)
+		sf.Namespace = namespace
+
+		now := time.Now()
+
+		_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
+		require.NoError(t, err, "should create schema")
+
+		_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
+		require.NoError(t, err, "should create table")
+
+		_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
+		require.NoError(t, err, "should insert records")
+		_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
+		require.NoError(t, err, "should insert records")
+
+		require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+			SourceId:  "source_id_1",
+			JobRunId:  "new_job_run_id",
+			TaskRunId: "new_task_job_run_id",
+			StartTime: now,
+		}), "should delete records")
+
+		rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+		require.NoError(t, err, "should see a successful query for ids")
+
+		var recordIDs []int
+		for rows.Next() {
+			var id int
+			err := rows.Scan(&id)
+			require.NoError(t, err, "should scan rows")
+
+			recordIDs = append(recordIDs, id)
+		}
+		require.NoError(t, rows.Err())
+		require.Equal(t, []int{2}, recordIDs, "got the correct set of ids after deletion")
+
+		require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+			SourceId:  "source_id_2",
+			JobRunId:  "new_job_run_id",
+			TaskRunId: "new_task_job_run_id",
+			StartTime: time.Time{},
+		}), "delete should succeed even if start time is zero value - no records must be deleted")
+
+		rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+		require.NoError(t, err, "should see a successful query for ids")
+
+		var ids1 []int
+		for rows.Next() {
+			var id int
+			err := rows.Scan(&id)
+			require.NoError(t, err, "should scan rows")
+
+			ids1 = append(ids1, id)
+		}
+		require.NoError(t, rows.Err())
+		require.Equal(t, []int{2}, ids1, "got the same set of ids after deletion")
+
+		require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
+			SourceId:  "source_id_2",
+			JobRunId:  "new_job_run_id",
+			TaskRunId: "new_task_job_run_id",
+			StartTime: now,
+		}), "should delete records")
+
+		rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
+		require.NoError(t, err, "should see a successful query for ids")
+		var ids2 []int
+		for rows.Next() {
+			var id int
+			err := rows.Scan(&id)
+			require.NoError(t, err, "should scan rows")
+
+			ids2 = append(ids2, id)
+		}
+		require.NoError(t, rows.Err())
+		require.Empty(t, ids2, "no more rows left")
 	})
 }
 
@@ -1156,6 +1294,24 @@ func TestSnowflake_ShouldMerge(t *testing.T) {
 	}
 }
 
+func dropSchema(t *testing.T, db *sql.DB, namespace string) {
+	t.Helper()
+	t.Log("dropping schema", namespace)
+
+	require.Eventually(t,
+		func() bool {
+			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
+			if err != nil {
+				t.Logf("error deleting schema %q: %v", namespace, err)
+				return false
+			}
+			return true
+		},
+		time.Minute,
+		time.Second,
+	)
+}
+
 func newMockUploader(
 	t testing.TB,
 	loadFiles []whutils.LoadFile,
@@ -1183,129 +1339,4 @@ func newMockUploader(
 	mockUploader.EXPECT().GetLoadFileType().Return(whutils.LoadFileTypeCsv).AnyTimes()
 
 	return mockUploader
-}
-
-func TestSnowflake_DeleteBy(t *testing.T) {
-	if _, exists := os.LookupEnv(testKey); !exists {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testKey)
-	}
-	namespace := testhelper.RandSchema(whutils.SNOWFLAKE)
-
-	ctx := context.Background()
-
-	credentials, err := getSnowflakeTestCredentials(testKey)
-	require.NoError(t, err)
-
-	data := sqlconnectconfig.Snowflake{
-		Account:   credentials.Account,
-		User:      credentials.User,
-		Role:      credentials.Role,
-		Password:  credentials.Password,
-		DBName:    credentials.Database,
-		Warehouse: credentials.Warehouse,
-	}
-
-	credentialsJSON, err := json.Marshal(data)
-	require.NoError(t, err)
-
-	sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
-	require.NoError(t, err)
-
-	db := sqlConnectDB.SqlDB()
-	require.NoError(t, db.Ping())
-
-	t.Cleanup(func() {
-		require.Eventually(t, func() bool {
-			if _, err := db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace)); err != nil {
-				t.Logf("error deleting schema: %v", err)
-				return false
-			}
-			return true
-		},
-			time.Minute,
-			time.Second,
-		)
-	})
-
-	conf := config.New()
-	conf.Set("Warehouse.snowflake.enableDeleteByJobs", true)
-
-	sf := snowflake.New(conf, logger.NOP, stats.NOP)
-	sf.DB = sqlquerywrapper.New(db)
-	sf.Namespace = namespace
-
-	now := time.Now()
-
-	_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
-	require.NoError(t, err, "should create schema")
-
-	_, err = sf.DB.ExecContext(ctx, "CREATE TABLE "+namespace+".TEST_TABLE (id INT, context_sources_job_run_id STRING, context_sources_task_run_id STRING, context_source_id STRING, received_at DATETIME)")
-	require.NoError(t, err, "should create table")
-
-	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (1, 'job_run_id_2', 'task_run_id_1_2', 'source_id_1', ?)", now.Add(-time.Hour))
-	require.NoError(t, err, "should insert records")
-	_, err = sf.DB.ExecContext(ctx, "INSERT INTO "+namespace+".TEST_TABLE VALUES (2, 'job_run_id_2', 'task_run_id_1', 'source_id_2', ?)", now.Add(-time.Hour))
-	require.NoError(t, err, "should insert records")
-
-	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
-		SourceId:  "source_id_1",
-		JobRunId:  "new_job_run_id",
-		TaskRunId: "new_task_job_run_id",
-		StartTime: now,
-	}), "should delete records")
-
-	rows, err := sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
-	require.NoError(t, err, "should see a successful query for ids")
-
-	var recordIDs []int
-	for rows.Next() {
-		var id int
-		err := rows.Scan(&id)
-		require.NoError(t, err, "should scan rows")
-
-		recordIDs = append(recordIDs, id)
-	}
-	require.NoError(t, rows.Err())
-	require.Equal(t, []int{2}, recordIDs, "got the correct set of ids after deletion")
-
-	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
-		SourceId:  "source_id_2",
-		JobRunId:  "new_job_run_id",
-		TaskRunId: "new_task_job_run_id",
-		StartTime: time.Time{},
-	}), "delete should succeed even if start time is zero value - no records must be deleted")
-
-	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
-	require.NoError(t, err, "should see a successful query for ids")
-
-	var ids1 []int
-	for rows.Next() {
-		var id int
-		err := rows.Scan(&id)
-		require.NoError(t, err, "should scan rows")
-
-		ids1 = append(ids1, id)
-	}
-	require.NoError(t, rows.Err())
-	require.Equal(t, []int{2}, ids1, "got the same set of ids after deletion")
-
-	require.NoError(t, sf.DeleteBy(ctx, []string{"TEST_TABLE"}, whutils.DeleteByParams{
-		SourceId:  "source_id_2",
-		JobRunId:  "new_job_run_id",
-		TaskRunId: "new_task_job_run_id",
-		StartTime: now,
-	}), "should delete records")
-
-	rows, err = sf.DB.QueryContext(ctx, "SELECT id FROM "+namespace+".TEST_TABLE")
-	require.NoError(t, err, "should see a successful query for ids")
-	var ids2 []int
-	for rows.Next() {
-		var id int
-		err := rows.Scan(&id)
-		require.NoError(t, err, "should scan rows")
-
-		ids2 = append(ids2, id)
-	}
-	require.NoError(t, rows.Err())
-	require.Empty(t, ids2, "no more rows left")
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
@@ -125,7 +126,7 @@ func Run(ctx context.Context) error {
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err = misc.WithBugsnag(func() error {
+	err = crash.Wrapper(func() error {
 		return l.Loop(ctx)
 	})()
 	if err != nil && !errors.Is(err, context.Canceled) {

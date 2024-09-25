@@ -151,6 +151,7 @@ func TestTrackedUsersFlush(t *testing.T) {
 	err = migrateDatabase(pgContainer.DBDsn, config.Default)
 	require.NoError(t, err)
 	config.Set("TrackedUsers.enabled", true)
+	config.Set("DB.host", pgContainer.Host)
 	config.Set("DB.port", pgContainer.Port)
 	config.Set("DB.user", pgContainer.User)
 	config.Set("DB.name", pgContainer.Database)

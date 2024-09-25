@@ -59,6 +59,7 @@ func startJobsDBPostgresql(t *testing.T) {
 	require.NoError(t, err)
 	r, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
+	config.Set("DB.host", r.Host)
 	config.Set("DB.port", r.Port)
 	config.Set("DB.user", r.User)
 	config.Set("DB.name", r.Database)

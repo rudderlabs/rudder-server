@@ -329,6 +329,7 @@ func runRudderServer(
 	t.Setenv("CONFIG_BACKEND_URL", tc.configBEServer.URL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
 	t.Setenv("DEST_TRANSFORM_URL", tc.transformerUrl)
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.host"), tc.postgresResource.Host)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.port"), tc.postgresResource.Port)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.user"), tc.postgresResource.User)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.name"), tc.postgresResource.Database)

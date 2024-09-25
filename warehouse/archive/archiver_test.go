@@ -155,7 +155,7 @@ func TestArchiver(t *testing.T) {
 			db := sqlmw.New(pgResource.DB)
 
 			archiver := archive.New(
-				config.New(),
+				c,
 				logger.NOP,
 				mockStats,
 				db,
@@ -212,6 +212,66 @@ func TestArchiver(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestArchiver_Delete(t *testing.T) {
+	var pgResource *postgres.Resource
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pgResource, err = postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	t.Log("db:", pgResource.DBDsn)
+
+	err = (&migrator.Migrator{
+		Handle:          pgResource.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse")
+	require.NoError(t, err)
+
+	sqlStatement, err := os.ReadFile("testdata/dump.sql")
+	require.NoError(t, err)
+
+	_, err = pgResource.DB.Exec(string(sqlStatement))
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	mockStats := mock_stats.NewMockStats(ctrl)
+	mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).Times(1)
+
+	status := model.ExportedData
+	workspaceID := "1"
+	_, err = pgResource.DB.Exec(`
+				UPDATE wh_uploads SET workspace_id = $1, status = $2
+			`, workspaceID, status)
+	require.NoError(t, err)
+
+	c := config.New()
+	c.Set("Warehouse.uploadRetentionTimeInDays", 0)
+	tenantManager := multitenant.New(c, backendConfig.DefaultBackendConfig)
+
+	db := sqlmw.New(pgResource.DB)
+
+	archiver := archive.New(
+		c,
+		logger.NOP,
+		mockStats,
+		db,
+		filemanager.New,
+		tenantManager,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = archiver.Delete(ctx)
+	require.NoError(t, err)
+
+	var count int
+	err = pgResource.DB.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %q`, warehouseutils.WarehouseUploadsTable)).Scan(&count)
+	require.NoError(t, err)
+	require.Zero(t, count, "wh_uploads rows should be deleted")
 }
 
 func jsonTestData(t require.TestingT, file string, value any) {

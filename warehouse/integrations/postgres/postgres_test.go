@@ -12,6 +12,8 @@ import (
 
 	"github.com/lib/pq"
 
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/stretchr/testify/require"
@@ -22,13 +24,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/runner"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
@@ -36,7 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
@@ -45,312 +44,310 @@ func TestIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
 
-	c := testcompose.New(t, compose.FilePaths([]string{
-		"testdata/docker-compose.postgres.yml",
-		"testdata/docker-compose.ssh-server.yml",
-		"testdata/docker-compose.replication.yml",
-		"../testdata/docker-compose.jobsdb.yml",
-		"../testdata/docker-compose.minio.yml",
-	}))
-	c.Start(context.Background())
-
 	misc.Init()
 	validations.Init()
-	warehouseutils.Init()
+	whutils.Init()
 
-	jobsDBPort := c.Port("jobsDb", 5432)
-	minioPort := c.Port("minio", 9000)
-	postgresPort := c.Port("postgres", 5432)
-	sshPort := c.Port("ssh-server", 2222)
-	primaryDBPort := c.Port("primary", 5432)
-	standbyDBPort := c.Port("standby", 5432)
-
-	httpPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	workspaceID := warehouseutils.RandHex()
-	sourceID := warehouseutils.RandHex()
-	destinationID := warehouseutils.RandHex()
-	writeKey := warehouseutils.RandHex()
-	sourcesSourceID := warehouseutils.RandHex()
-	sourcesDestinationID := warehouseutils.RandHex()
-	sourcesWriteKey := warehouseutils.RandHex()
-	tunnelledWriteKey := warehouseutils.RandHex()
-	tunnelledSourceID := warehouseutils.RandHex()
-	tunnelledDestinationID := warehouseutils.RandHex()
-
-	destType := warehouseutils.POSTGRES
-
-	namespace := whth.RandSchema(destType)
-	sourcesNamespace := whth.RandSchema(destType)
-	tunnelledNamespace := whth.RandSchema(destType)
+	destType := whutils.POSTGRES
 
 	host := "localhost"
 	database := "rudderdb"
 	user := "rudder"
 	password := "rudder-password"
-
-	tunnelledHost := "db-private-postgres"
-	tunnelledDatabase := "postgres"
-	tunnelledPassword := "postgres"
-	tunnelledUser := "postgres"
-	tunnelledPort := "5432"
-
-	tunnelledSSHUser := "rudderstack"
-	tunnelledSSHHost := "localhost"
-	tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
-
 	bucketName := "testbucket"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 	region := "us-east-1"
 
-	minioEndpoint := fmt.Sprintf("localhost:%d", minioPort)
-
-	bootstrapSvc := func(t testing.TB, additionalEnvs map[string]string, preferAppend *bool) {
-		var preferAppendStr string
-		if preferAppend != nil {
-			preferAppendStr = fmt.Sprintf(`"preferAppend": %v,`, *preferAppend)
-		}
-		templateConfigurations := map[string]any{
-			"workspaceID":            workspaceID,
-			"sourceID":               sourceID,
-			"destinationID":          destinationID,
-			"writeKey":               writeKey,
-			"sourcesSourceID":        sourcesSourceID,
-			"sourcesDestinationID":   sourcesDestinationID,
-			"sourcesWriteKey":        sourcesWriteKey,
-			"tunnelledWriteKey":      tunnelledWriteKey,
-			"tunnelledSourceID":      tunnelledSourceID,
-			"tunnelledDestinationID": tunnelledDestinationID,
-			"host":                   host,
-			"database":               database,
-			"user":                   user,
-			"password":               password,
-			"port":                   strconv.Itoa(postgresPort),
-			"namespace":              namespace,
-			"sourcesNamespace":       sourcesNamespace,
-			"tunnelledNamespace":     tunnelledNamespace,
-			"tunnelledSSHUser":       tunnelledSSHUser,
-			"tunnelledSSHPort":       strconv.Itoa(sshPort),
-			"tunnelledSSHHost":       tunnelledSSHHost,
-			"tunnelledPrivateKey":    tunnelledPrivateKey,
-			"tunnelledHost":          tunnelledHost,
-			"tunnelledDatabase":      tunnelledDatabase,
-			"tunnelledPort":          tunnelledPort,
-			"tunnelledUser":          tunnelledUser,
-			"tunnelledPassword":      tunnelledPassword,
-			"bucketName":             bucketName,
-			"accessKeyID":            accessKeyID,
-			"secretAccessKey":        secretAccessKey,
-			"endPoint":               minioEndpoint,
-			"preferAppend":           preferAppendStr,
-		}
-		workspaceConfigPath := workspaceConfig.CreateTempFile(t, "testdata/template.json", templateConfigurations)
-
-		whth.EnhanceWithDefaultEnvs(t)
-		t.Setenv("JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("WAREHOUSE_JOBS_DB_PORT", strconv.Itoa(jobsDBPort))
-		t.Setenv("MINIO_ACCESS_KEY_ID", accessKeyID)
-		t.Setenv("MINIO_SECRET_ACCESS_KEY", secretAccessKey)
-		t.Setenv("MINIO_MINIO_ENDPOINT", minioEndpoint)
-		t.Setenv("MINIO_SSL", "false")
-		t.Setenv("RSERVER_WAREHOUSE_WEB_PORT", strconv.Itoa(httpPort))
-		t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", workspaceConfigPath)
-		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
-		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS_WORKSPACE_IDS", workspaceID)
-		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
-		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
-		t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
-		for envKey, envValue := range additionalEnvs {
-			t.Setenv(envKey, envValue)
-		}
-
-		svcDone := make(chan struct{})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			r := runner.New(runner.ReleaseInfo{})
-			_ = r.Run(ctx, []string{"postgres-integration-test"})
-
-			close(svcDone)
-		}()
-		t.Cleanup(func() { <-svcDone })
-		t.Cleanup(cancel)
-
-		serviceHealthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
-		health.WaitUntilReady(ctx, t, serviceHealthEndpoint, time.Minute, time.Second, "serviceHealthEndpoint")
-	}
-
 	t.Run("Events flow", func(t *testing.T) {
-		dsn := fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", strconv.Itoa(postgresPort), "rudderdb",
-		)
-		db, err := sql.Open("postgres", dsn)
+		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
-		require.NoError(t, db.Ping())
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.postgres.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		postgresPort := c.Port("postgres", 5432)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
+		expectedUploadJobSchema := model.Schema{
+			"screens":       {"context_source_id": "text", "user_id": "text", "sent_at": "timestamp with time zone", "context_request_ip": "text", "original_timestamp": "timestamp with time zone", "url": "text", "context_source_type": "text", "_between": "text", "timestamp": "timestamp with time zone", "context_ip": "text", "context_destination_type": "text", "received_at": "timestamp with time zone", "title": "text", "uuid_ts": "timestamp with time zone", "context_destination_id": "text", "name": "text", "id": "text", "_as": "text"},
+			"identifies":    {"context_ip": "text", "context_destination_id": "text", "email": "text", "context_request_ip": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "_as": "text", "logins": "bigint", "context_source_type": "text", "context_traits_logins": "bigint", "name": "text", "context_destination_type": "text", "_between": "text", "id": "text", "timestamp": "timestamp with time zone", "received_at": "timestamp with time zone", "user_id": "text", "context_traits_email": "text", "context_traits_as": "text", "context_traits_name": "text", "original_timestamp": "timestamp with time zone", "context_traits_between": "text", "context_source_id": "text"},
+			"users":         {"context_traits_name": "text", "context_traits_between": "text", "context_request_ip": "text", "context_traits_logins": "bigint", "context_destination_id": "text", "email": "text", "logins": "bigint", "_as": "text", "context_source_id": "text", "uuid_ts": "timestamp with time zone", "context_source_type": "text", "context_traits_email": "text", "name": "text", "id": "text", "_between": "text", "context_ip": "text", "received_at": "timestamp with time zone", "sent_at": "timestamp with time zone", "context_traits_as": "text", "context_destination_type": "text", "timestamp": "timestamp with time zone", "original_timestamp": "timestamp with time zone"},
+			"product_track": {"review_id": "text", "context_source_id": "text", "user_id": "text", "timestamp": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "review_body": "text", "context_source_type": "text", "_as": "text", "_between": "text", "id": "text", "rating": "bigint", "event": "text", "original_timestamp": "timestamp with time zone", "context_destination_type": "text", "context_ip": "text", "context_destination_id": "text", "sent_at": "timestamp with time zone", "received_at": "timestamp with time zone", "event_text": "text", "product_id": "text", "context_request_ip": "text"},
+			"tracks":        {"original_timestamp": "timestamp with time zone", "context_destination_id": "text", "event": "text", "context_request_ip": "text", "uuid_ts": "timestamp with time zone", "context_destination_type": "text", "user_id": "text", "sent_at": "timestamp with time zone", "context_source_type": "text", "context_ip": "text", "timestamp": "timestamp with time zone", "received_at": "timestamp with time zone", "context_source_id": "text", "event_text": "text", "id": "text"},
+			"aliases":       {"context_request_ip": "text", "context_destination_type": "text", "context_destination_id": "text", "previous_id": "text", "context_ip": "text", "sent_at": "timestamp with time zone", "id": "text", "uuid_ts": "timestamp with time zone", "timestamp": "timestamp with time zone", "original_timestamp": "timestamp with time zone", "context_source_id": "text", "user_id": "text", "context_source_type": "text", "received_at": "timestamp with time zone"},
+			"pages":         {"name": "text", "url": "text", "id": "text", "timestamp": "timestamp with time zone", "title": "text", "user_id": "text", "context_source_id": "text", "context_source_type": "text", "original_timestamp": "timestamp with time zone", "context_request_ip": "text", "received_at": "timestamp with time zone", "_between": "text", "context_destination_type": "text", "uuid_ts": "timestamp with time zone", "context_destination_id": "text", "sent_at": "timestamp with time zone", "context_ip": "text", "_as": "text"},
+			"groups":        {"_as": "text", "user_id": "text", "context_destination_type": "text", "sent_at": "timestamp with time zone", "context_source_type": "text", "received_at": "timestamp with time zone", "context_ip": "text", "industry": "text", "timestamp": "timestamp with time zone", "group_id": "text", "uuid_ts": "timestamp with time zone", "context_source_id": "text", "context_request_ip": "text", "_between": "text", "original_timestamp": "timestamp with time zone", "name": "text", "plan": "text", "context_destination_id": "text", "employees": "bigint", "id": "text"},
+		}
+		expectedSourceJobSchema := model.Schema{
+			"google_sheet": {"_as": "text", "review_body": "text", "rating": "bigint", "context_source_type": "text", "_between": "text", "context_destination_id": "text", "review_id": "text", "context_sources_version": "text", "context_destination_type": "text", "id": "text", "user_id": "text", "context_request_ip": "text", "original_timestamp": "timestamp with time zone", "received_at": "timestamp with time zone", "product_id": "text", "context_sources_task_run_id": "text", "event": "text", "context_source_id": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "timestamp": "timestamp with time zone", "context_sources_job_run_id": "text", "context_ip": "text", "context_sources_job_id": "text", "channel": "text", "event_text": "text"},
+			"tracks":       {"original_timestamp": "timestamp with time zone", "sent_at": "timestamp with time zone", "timestamp": "timestamp with time zone", "context_source_id": "text", "context_ip": "text", "context_destination_type": "text", "uuid_ts": "timestamp with time zone", "event_text": "text", "context_request_ip": "text", "context_sources_job_id": "text", "context_sources_version": "text", "context_sources_task_run_id": "text", "id": "text", "channel": "text", "received_at": "timestamp with time zone", "context_destination_id": "text", "context_source_type": "text", "user_id": "text", "context_sources_job_run_id": "text", "event": "text"},
+		}
+		userIDFormat := "userId_postgres"
+		userIDSQL := "SUBSTRING(user_id from 1 for 15)"
+		uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
 		testCases := []struct {
-			name                  string
-			writeKey              string
-			schema                string
-			sourceID              string
-			destinationID         string
-			tables                []string
-			stagingFilesEventsMap whth.EventsCountMap
-			loadFilesEventsMap    whth.EventsCountMap
-			tableUploadsEventsMap whth.EventsCountMap
-			warehouseEventsMap    whth.EventsCountMap
-			warehouseEventsMap2   whth.EventsCountMap
-			sourceJob             bool
-			stagingFilePrefix     string
-			preferAppend          *bool
-			jobRunID              string
-			useSameUserID         bool
-			additionalEnvs        map[string]string
+			name                           string
+			tables                         []string
+			warehouseEventsMap2            whth.EventsCountMap
+			sourceJob                      bool
+			eventFilePath1, eventFilePath2 string
+			jobRunID1, taskRunID1          string
+			jobRunID2, taskRunID2          string
+			useSameUserID                  bool
+			additionalEnvs                 func(destinationID string) map[string]string
+			configOverride                 map[string]any
+			verifySchema                   func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string)
 		}{
 			{
-				name:     "Upload Job",
-				writeKey: writeKey,
-				schema:   namespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "Upload Job",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				sourceID:          sourceID,
-				destinationID:     destinationID,
-				stagingFilePrefix: "testdata/upload-job",
-				jobRunID:          misc.FastUUID().String(),
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 			{
-				name:     "Append Mode",
-				writeKey: writeKey,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
+				name:   "Append Mode",
+				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				warehouseEventsMap2: whth.EventsCountMap{
-					"identifies":    8,
-					"users":         1,
-					"tracks":        8,
-					"product_track": 8,
-					"pages":         8,
-					"screens":       8,
-					"aliases":       8,
-					"groups":        8,
-				},
-				preferAppend:      th.Ptr(true),
-				stagingFilePrefix: "testdata/upload-job-append-mode",
-				// an empty jobRunID means that the source is not an ETL one
-				// see Uploader.CanAppend()
-				jobRunID:      "",
-				useSameUserID: true,
-			},
-			{
-				name:     "Undefined preferAppend",
-				writeKey: writeKey,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				warehouseEventsMap2: whth.EventsCountMap{
-					// let's use the same data as "testdata/upload-job-append-mode"
-					// but then for the 2nd sync we expect 4 for each table instead of 8 due to the merge
-					"identifies":    4,
-					"users":         1,
-					"tracks":        4,
-					"product_track": 4,
-					"pages":         4,
-					"screens":       4,
-					"aliases":       4,
-					"groups":        4,
-				},
-				preferAppend:      nil, // not defined in backend config
-				stagingFilePrefix: "testdata/upload-job-append-mode",
-				// an empty jobRunID means that the source is not an ETL one
-				// see Uploader.CanAppend()
-				jobRunID:      "",
-				useSameUserID: true,
-			},
-			{
-				name:     "Append Users",
-				writeKey: writeKey,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
-				},
-				schema:        namespace,
-				sourceID:      sourceID,
-				destinationID: destinationID,
-				warehouseEventsMap: whth.EventsCountMap{
-					// In the first sync we get 4 events for each table, 1 for users
-					"identifies":    4,
-					"users":         1,
-					"tracks":        4,
-					"product_track": 4,
-					"pages":         4,
-					"screens":       4,
-					"aliases":       4,
-					"groups":        4,
-				},
-				warehouseEventsMap2: whth.EventsCountMap{
-					// WARNING: the uploader.CanAppend() method will return false due to the jobRunID
-					// We will still merge the other tables because of that but not the users table
-					// and that is because of these settings:
+					// For all tables except users we will be appending because of:
+					// * preferAppend
+					// For users table we will not be appending since the following config are not set
 					// * Warehouse.postgres.skipDedupDestinationIDs
 					// * Warehouse.postgres.skipComputingUserLatestTraits
-					// See hyperverge users use case
-					"identifies":    4,
-					"users":         2, // same data as "testdata/upload-job-append-mode" but we have to append users
-					"tracks":        4,
-					"product_track": 4,
-					"pages":         4,
-					"screens":       4,
-					"aliases":       4,
-					"groups":        4,
+					"identifies": 8, "users": 1, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
 				},
-				preferAppend:      th.Ptr(true),
-				stagingFilePrefix: "testdata/upload-job-append-mode",
-				// we set the jobRunID to make sure the uploader says we cannot append!
-				// same behaviour as redshift, see hyperverge users use case
-				jobRunID:      misc.FastUUID().String(),
-				useSameUserID: true,
-				additionalEnvs: map[string]string{
-					"RSERVER_WAREHOUSE_POSTGRES_SKIP_DEDUP_DESTINATION_IDS":        destinationID,
-					"RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS": "true",
+				configOverride: map[string]any{
+					"preferAppend": true,
+				},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsAppendRecords(userIDFormat, sourceID, destinationID, destType))
 				},
 			},
 			{
-				name:                  "Source Job",
-				writeKey:              sourcesWriteKey,
-				schema:                sourcesNamespace,
-				tables:                []string{"tracks", "google_sheet"},
-				sourceID:              sourcesSourceID,
-				destinationID:         sourcesDestinationID,
-				stagingFilesEventsMap: whth.SourcesStagingFilesEventsMap(),
-				loadFilesEventsMap:    whth.SourcesLoadFilesEventsMap(),
-				tableUploadsEventsMap: whth.SourcesTableUploadsEventsMap(),
-				warehouseEventsMap:    whth.SourcesWarehouseEventsMap(),
-				warehouseEventsMap2: whth.EventsCountMap{
-					"google_sheet": 8,
-					"tracks":       8,
+				name:           "Undefined preferAppend",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				sourceJob:         true,
-				stagingFilePrefix: "testdata/sources-job",
-				jobRunID:          misc.FastUUID().String(),
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
+			},
+			{
+				name:   "Append Users",
+				tables: []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				warehouseEventsMap2: whth.EventsCountMap{
+					// For all tables except users we will be appending because of:
+					// * preferAppend
+					// * Warehouse.postgres.skipComputingUserLatestTraits
+					// For users table we will be appending because of:
+					// * Warehouse.postgres.skipDedupDestinationIDs
+					// * Warehouse.postgres.skipComputingUserLatestTraits
+					"identifies": 8, "users": 2, "tracks": 8, "product_track": 8, "pages": 8, "screens": 8, "aliases": 8, "groups": 8,
+				},
+				configOverride: map[string]any{
+					"preferAppend": true,
+				},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				additionalEnvs: func(destinationID string) map[string]string {
+					return map[string]string{
+						"RSERVER_WAREHOUSE_POSTGRES_SKIP_DEDUP_DESTINATION_IDS":        destinationID,
+						"RSERVER_WAREHOUSE_POSTGRES_SKIP_COMPUTING_USER_LATEST_TRAITS": "true",
+					}
+				},
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersAppendRecordsUsingUsersLoadFiles(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesAppendRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsAppendRecords(userIDFormat, sourceID, destinationID, destType))
+				},
+			},
+			{
+				name:           "Source Job",
+				tables:         []string{"tracks", "google_sheet"},
+				sourceJob:      true,
+				eventFilePath1: "../testdata/source-job.events-1.json",
+				eventFilePath2: "../testdata/source-job.events-2.json",
+				jobRunID1:      misc.FastUUID().String(),
+				taskRunID1:     misc.FastUUID().String(),
+				jobRunID2:      misc.FastUUID().String(),
+				taskRunID2:     misc.FastUUID().String(),
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedSourceJobSchema, whth.ConvertRecordsToSchema(schema))
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
+					t.Helper()
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT channel, context_sources_job_id, received_at, context_sources_version, %s, sent_at, context_ip, event, event_text, %s, context_destination_id, id, context_request_ip, context_source_type, original_timestamp, context_sources_job_run_id, context_sources_task_run_id, context_source_id, context_destination_type, timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.SourceJobTracksRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+					googleSheetRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT product_id, sent_at, _between, context_request_ip, context_sources_job_run_id, channel, review_body, context_source_id, original_timestamp, context_destination_id, context_sources_job_id, event, context_sources_task_run_id, context_source_type, %s, context_ip, timestamp, id, received_at, review_id, %s, context_sources_version, context_destination_type, event_text, _as, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "google_sheet"))
+					require.ElementsMatch(t, googleSheetRecords, whth.SourceJobGoogleSheetRecords(userIDFormat, sourceID, destinationID, destType, jobRunID, taskRunID))
+				},
 			},
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
-				bootstrapSvc(t, tc.additionalEnvs, tc.preferAppend)
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
+
+				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("host", host).
+					WithConfigOption("database", database).
+					WithConfigOption("user", user).
+					WithConfigOption("password", password).
+					WithConfigOption("port", strconv.Itoa(postgresPort)).
+					WithConfigOption("sslMode", "disable").
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("bucketProvider", whutils.MINIO).
+					WithConfigOption("bucketName", bucketName).
+					WithConfigOption("accessKeyID", accessKeyID).
+					WithConfigOption("secretAccessKey", secretAccessKey).
+					WithConfigOption("useSSL", false).
+					WithConfigOption("endPoint", minioEndpoint).
+					WithConfigOption("useRudderStorage", false).
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
+				for k, v := range tc.configOverride {
+					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+				}
+				destination := destinationBuilder.Build()
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destination).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+				if tc.additionalEnvs != nil {
+					for envKey, envValue := range tc.additionalEnvs(destinationID) {
+						t.Setenv(envKey, envValue)
+					}
+				}
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					user, password, host, strconv.Itoa(postgresPort), database,
+				)
+				db, err := sql.Open("postgres", dsn)
+				require.NoError(t, err)
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() {
+					_ = db.Close()
+				})
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -358,7 +355,7 @@ func TestIntegration(t *testing.T) {
 				}
 
 				conf := map[string]any{
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -369,121 +366,220 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              tc.jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					Tables:          tc.tables,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					SourceJob:       tc.sourceJob,
+					Client:          sqlClient,
+					JobRunID:        tc.jobRunID1,
+					TaskRunID:       tc.taskRunID1,
+					EventsFilePath:  tc.eventFilePath1,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
 				ts2 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					Tables:                tc.tables,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap2,
-					SourceJob:             tc.sourceJob,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              tc.jobRunID,
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:           writeKey,
+					Schema:             namespace,
+					Tables:             tc.tables,
+					SourceID:           sourceID,
+					DestinationID:      destinationID,
+					WarehouseEventsMap: tc.warehouseEventsMap2,
+					SourceJob:          tc.sourceJob,
+					Config:             conf,
+					WorkspaceID:        workspaceID,
+					DestinationType:    destType,
+					JobsDB:             jobsDB,
+					HTTPPort:           httpPort,
+					Client:             sqlClient,
+					JobRunID:           tc.jobRunID2,
+					TaskRunID:          tc.taskRunID2,
+					EventsFilePath:     tc.eventFilePath2,
+					UserID:             whth.GetUserId(destType),
+					TransformerURL:     transformerURL,
+					Destination:        destination,
 				}
-				if tc.sourceJob || tc.useSameUserID {
+				if tc.useSameUserID {
 					ts2.UserID = ts1.UserID
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace, ts2.JobRunID, ts2.TaskRunID)
 			})
 		}
 	})
 
-	t.Run("Events flow with ssh tunnel", func(t *testing.T) {
-		bootstrapSvc(t, nil, nil)
-
-		dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			tunnelledUser,
-			tunnelledPassword,
-			tunnelledHost,
-			tunnelledPort,
-			tunnelledDatabase,
-		)
-		tunnelInfo := &tunnelling.TunnelInfo{
-			Config: map[string]interface{}{
-				"sshUser":       tunnelledSSHUser,
-				"sshPort":       strconv.Itoa(sshPort),
-				"sshHost":       tunnelledSSHHost,
-				"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
-			},
-		}
-
-		db, err := tunnelling.Connect(dsn, tunnelInfo.Config)
+	t.Run("Events flow with SSH Tunnel", func(t *testing.T) {
+		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
-		require.NoError(t, db.Ping())
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.ssh-server.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c.Start(context.Background())
+
+		workspaceID := whutils.RandHex()
+		jobsDBPort := c.Port("jobsDb", 5432)
+		sshPort := c.Port("ssh-server", 2222)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+		tunnelledHost := "db-private-postgres"
+		tunnelledDatabase := "postgres"
+		tunnelledPassword := "postgres"
+		tunnelledUser := "postgres"
+		tunnelledPort := "5432"
+		tunnelledSSHUser := "rudderstack"
+		tunnelledSSHHost := "localhost"
+		tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
+		expectedUploadJobSchema := model.Schema{
+			"screens":       {"context_source_id": "text", "user_id": "text", "sent_at": "timestamp with time zone", "context_request_ip": "text", "original_timestamp": "timestamp with time zone", "url": "text", "context_source_type": "text", "_between": "text", "timestamp": "timestamp with time zone", "context_ip": "text", "context_destination_type": "text", "received_at": "timestamp with time zone", "title": "text", "uuid_ts": "timestamp with time zone", "context_destination_id": "text", "name": "text", "id": "text", "_as": "text"},
+			"identifies":    {"context_ip": "text", "context_destination_id": "text", "email": "text", "context_request_ip": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "_as": "text", "logins": "bigint", "context_source_type": "text", "context_traits_logins": "bigint", "name": "text", "context_destination_type": "text", "_between": "text", "id": "text", "timestamp": "timestamp with time zone", "received_at": "timestamp with time zone", "user_id": "text", "context_traits_email": "text", "context_traits_as": "text", "context_traits_name": "text", "original_timestamp": "timestamp with time zone", "context_traits_between": "text", "context_source_id": "text"},
+			"users":         {"context_traits_name": "text", "context_traits_between": "text", "context_request_ip": "text", "context_traits_logins": "bigint", "context_destination_id": "text", "email": "text", "logins": "bigint", "_as": "text", "context_source_id": "text", "uuid_ts": "timestamp with time zone", "context_source_type": "text", "context_traits_email": "text", "name": "text", "id": "text", "_between": "text", "context_ip": "text", "received_at": "timestamp with time zone", "sent_at": "timestamp with time zone", "context_traits_as": "text", "context_destination_type": "text", "timestamp": "timestamp with time zone", "original_timestamp": "timestamp with time zone"},
+			"product_track": {"review_id": "text", "context_source_id": "text", "user_id": "text", "timestamp": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "review_body": "text", "context_source_type": "text", "_as": "text", "_between": "text", "id": "text", "rating": "bigint", "event": "text", "original_timestamp": "timestamp with time zone", "context_destination_type": "text", "context_ip": "text", "context_destination_id": "text", "sent_at": "timestamp with time zone", "received_at": "timestamp with time zone", "event_text": "text", "product_id": "text", "context_request_ip": "text"},
+			"tracks":        {"original_timestamp": "timestamp with time zone", "context_destination_id": "text", "context_destination_type": "text", "user_id": "text", "context_source_type": "text", "timestamp": "timestamp with time zone", "id": "text", "event": "text", "sent_at": "timestamp with time zone", "context_ip": "text", "event_text": "text", "context_source_id": "text", "context_request_ip": "text", "received_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone"},
+			"pages":         {"user_id": "text", "context_source_id": "text", "id": "text", "title": "text", "timestamp": "timestamp with time zone", "context_source_type": "text", "_as": "text", "received_at": "timestamp with time zone", "context_destination_id": "text", "context_ip": "text", "context_destination_type": "text", "name": "text", "original_timestamp": "timestamp with time zone", "_between": "text", "context_request_ip": "text", "sent_at": "timestamp with time zone", "url": "text", "uuid_ts": "timestamp with time zone"},
+			"aliases":       {"context_source_id": "text", "context_destination_id": "text", "context_ip": "text", "sent_at": "timestamp with time zone", "id": "text", "user_id": "text", "uuid_ts": "timestamp with time zone", "previous_id": "text", "original_timestamp": "timestamp with time zone", "context_source_type": "text", "received_at": "timestamp with time zone", "context_destination_type": "text", "context_request_ip": "text", "timestamp": "timestamp with time zone"},
+			"groups":        {"context_destination_type": "text", "id": "text", "_between": "text", "plan": "text", "original_timestamp": "timestamp with time zone", "user_id": "text", "context_source_id": "text", "sent_at": "timestamp with time zone", "uuid_ts": "timestamp with time zone", "group_id": "text", "industry": "text", "context_request_ip": "text", "context_source_type": "text", "timestamp": "timestamp with time zone", "employees": "bigint", "_as": "text", "context_destination_id": "text", "received_at": "timestamp with time zone", "name": "text", "context_ip": "text"},
+		}
+		userIDFormat := "userId_postgres"
+		userIDSQL := "SUBSTRING(user_id from 1 for 15)"
+		uuidTSSQL := "TO_CHAR(uuid_ts, 'YYYY-MM-DD')"
+
 		testcases := []struct {
-			name                  string
-			writeKey              string
-			schema                string
-			sourceID              string
-			destinationID         string
-			tables                []string
-			stagingFilesEventsMap whth.EventsCountMap
-			loadFilesEventsMap    whth.EventsCountMap
-			tableUploadsEventsMap whth.EventsCountMap
-			warehouseEventsMap    whth.EventsCountMap
-			stagingFilePrefix     string
+			name                           string
+			tables                         []string
+			eventFilePath1, eventFilePath2 string
+			verifySchema                   func(t *testing.T, db *sql.DB, namespace string)
+			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
 		}{
 			{
-				name:     "upload job through ssh tunnelling",
-				writeKey: tunnelledWriteKey,
-				schema:   tunnelledNamespace,
-				tables: []string{
-					"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups",
+				name:           "upload job through ssh tunnelling",
+				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-2.json",
+				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
+					t.Helper()
+					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
-				sourceID:          tunnelledSourceID,
-				destinationID:     tunnelledDestinationID,
-				stagingFilePrefix: "testdata/upload-ssh-job",
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id from 1 for 15), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
+				},
 			},
 		}
 
 		for _, tc := range testcases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
+				var (
+					sourceID      = whutils.RandHex()
+					destinationID = whutils.RandHex()
+					writeKey      = whutils.RandHex()
+					namespace     = whth.RandSchema(destType)
+				)
+
+				destination := backendconfigtest.NewDestinationBuilder(destType).
+					WithID(destinationID).
+					WithRevisionID(destinationID).
+					WithConfigOption("host", tunnelledHost).
+					WithConfigOption("database", tunnelledDatabase).
+					WithConfigOption("user", tunnelledUser).
+					WithConfigOption("password", tunnelledPassword).
+					WithConfigOption("port", tunnelledPort).
+					WithConfigOption("sslMode", "disable").
+					WithConfigOption("namespace", namespace).
+					WithConfigOption("bucketProvider", whutils.MINIO).
+					WithConfigOption("bucketName", bucketName).
+					WithConfigOption("accessKeyID", accessKeyID).
+					WithConfigOption("secretAccessKey", secretAccessKey).
+					WithConfigOption("useSSH", true).
+					WithConfigOption("useSSL", false).
+					WithConfigOption("endPoint", minioEndpoint).
+					WithConfigOption("useRudderStorage", false).
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("sshUser", tunnelledSSHUser).
+					WithConfigOption("sshHost", tunnelledSSHHost).
+					WithConfigOption("sshPort", strconv.Itoa(sshPort)).
+					WithConfigOption("sshPrivateKey", strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n")).
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true).
+					Build()
+
+				workspaceConfig := backendconfigtest.NewConfigBuilder().
+					WithSource(
+						backendconfigtest.NewSourceBuilder().
+							WithID(sourceID).
+							WithWriteKey(writeKey).
+							WithWorkspaceID(workspaceID).
+							WithConnection(destination).
+							Build(),
+					).
+					WithWorkspaceID(workspaceID).
+					Build()
+
+				t.Setenv("RSERVER_WAREHOUSE_POSTGRES_MAX_PARALLEL_LOADS", "8")
+				t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_SQLSTATEMENT_EXECUTION_PLAN_WORKSPACE_IDS", workspaceID)
+				t.Setenv("RSERVER_WAREHOUSE_POSTGRES_ENABLE_DELETE_BY_JOBS", "true")
+
+				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+
+				dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+					tunnelledUser, tunnelledPassword, tunnelledHost, tunnelledPort, tunnelledDatabase,
+				)
+				tunnelInfo := &tunnelling.TunnelInfo{
+					Config: map[string]interface{}{
+						"sshUser":       tunnelledSSHUser,
+						"sshPort":       strconv.Itoa(sshPort),
+						"sshHost":       tunnelledSSHHost,
+						"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
+					},
+				}
+
+				db, err := tunnelling.Connect(dsn, tunnelInfo.Config)
+				require.NoError(t, err)
+				require.NoError(t, db.Ping())
+				t.Cleanup(func() {
+					_ = db.Close()
+				})
+
 				sqlClient := &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
 				}
 
 				conf := map[string]interface{}{
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -494,58 +590,62 @@ func TestIntegration(t *testing.T) {
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Tables:                tc.tables,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-1.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					Tables:          tc.tables,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					EventsFilePath:  tc.eventFilePath1,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts1.VerifyEvents(t)
 
 				t.Log("verifying test case 2")
 				ts2 := whth.TestConfig{
-					WriteKey:              tc.writeKey,
-					Schema:                tc.schema,
-					SourceID:              tc.sourceID,
-					DestinationID:         tc.destinationID,
-					Tables:                tc.tables,
-					StagingFilesEventsMap: tc.stagingFilesEventsMap,
-					LoadFilesEventsMap:    tc.loadFilesEventsMap,
-					TableUploadsEventsMap: tc.tableUploadsEventsMap,
-					WarehouseEventsMap:    tc.warehouseEventsMap,
-					Config:                conf,
-					WorkspaceID:           workspaceID,
-					DestinationType:       destType,
-					JobsDB:                jobsDB,
-					HTTPPort:              httpPort,
-					Client:                sqlClient,
-					JobRunID:              misc.FastUUID().String(),
-					TaskRunID:             misc.FastUUID().String(),
-					StagingFilePath:       tc.stagingFilePrefix + ".staging-2.json",
-					UserID:                whth.GetUserId(destType),
+					WriteKey:        writeKey,
+					Schema:          namespace,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					Tables:          tc.tables,
+					Config:          conf,
+					WorkspaceID:     workspaceID,
+					DestinationType: destType,
+					JobsDB:          jobsDB,
+					HTTPPort:        httpPort,
+					Client:          sqlClient,
+					EventsFilePath:  tc.eventFilePath2,
+					UserID:          whth.GetUserId(destType),
+					TransformerURL:  transformerURL,
+					Destination:     destination,
 				}
 				ts2.VerifyEvents(t)
+
+				t.Log("verifying schema")
+				tc.verifySchema(t, db, namespace)
+
+				t.Log("verifying records")
+				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 			})
 		}
 	})
 
 	t.Run("Validations", func(t *testing.T) {
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		postgresPort := c.Port("postgres", 5432)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
 		dest := backendconfig.DestinationT{
-			ID: destinationID,
+			ID: "test_destination_id",
 			Config: map[string]interface{}{
 				"host":             host,
 				"database":         database,
@@ -554,7 +654,7 @@ func TestIntegration(t *testing.T) {
 				"port":             strconv.Itoa(postgresPort),
 				"sslMode":          "disable",
 				"namespace":        "",
-				"bucketProvider":   "MINIO",
+				"bucketProvider":   whutils.MINIO,
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,
 				"secretAccessKey":  secretAccessKey,
@@ -576,11 +676,11 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		const (
-			sourceID      = "test_source_id"
-			destinationID = "test_destination_id"
-			workspaceID   = "test_workspace_id"
-		)
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.postgres.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		postgresPort := c.Port("postgres", 5432)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 
 		namespace := whth.RandSchema(destType)
 
@@ -610,10 +710,10 @@ func TestIntegration(t *testing.T) {
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
@@ -625,7 +725,7 @@ func TestIntegration(t *testing.T) {
 					"port":             strconv.Itoa(postgresPort),
 					"sslMode":          "disable",
 					"namespace":        "",
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -635,12 +735,12 @@ func TestIntegration(t *testing.T) {
 					"useRudderStorage": false,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
 		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: warehouseutils.MINIO,
+			Provider: whutils.MINIO,
 			Config: map[string]any{
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,
@@ -651,7 +751,7 @@ func TestIntegration(t *testing.T) {
 				"disableSSL":       true,
 				"region":           region,
 				"enableSSE":        false,
-				"bucketProvider":   warehouseutils.MINIO,
+				"bucketProvider":   whutils.MINIO,
 			},
 		})
 		require.NoError(t, err)
@@ -662,7 +762,7 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -679,7 +779,7 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -699,11 +799,11 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_without_dedup_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				c := config.New()
-				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", "test_workspace_id")
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -754,11 +854,11 @@ func TestIntegration(t *testing.T) {
 				tableName := "merge_with_dedup_test_table"
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
-				loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 				mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 				c := config.New()
-				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", workspaceID)
+				c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", "test_workspace_id")
 
 				pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 				err := pg.Setup(ctx, warehouse, mockUploader)
@@ -808,11 +908,11 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			c := config.New()
-			c.Set("Warehouse.postgres.skipDedupDestinationIDs", destinationID)
+			c.Set("Warehouse.postgres.skipDedupDestinationIDs", "test_destination_id")
 
 			appendWarehouse := th.Clone(t, warehouse)
 			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -862,7 +962,7 @@ func TestIntegration(t *testing.T) {
 			ctx := context.Background()
 			tableName := "load_file_not_exists_test_table"
 
-			loadFiles := []warehouseutils.LoadFile{{
+			loadFiles := []whutils.LoadFile{{
 				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
 			}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
@@ -887,7 +987,7 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -910,7 +1010,7 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -929,12 +1029,12 @@ func TestIntegration(t *testing.T) {
 		})
 		t.Run("discards", func(t *testing.T) {
 			ctx := context.Background()
-			tableName := warehouseutils.DiscardsTable
+			tableName := whutils.DiscardsTable
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := mockUploader(t, loadFiles, tableName, warehouseutils.DiscardsSchema, warehouseutils.DiscardsSchema)
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := mockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
 
 			pg := postgres.New(config.New(), logger.NOP, stats.NOP)
 			err := pg.Setup(ctx, warehouse, mockUploader)
@@ -943,7 +1043,7 @@ func TestIntegration(t *testing.T) {
 			err = pg.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			err = pg.CreateTable(ctx, tableName, warehouseutils.DiscardsSchema)
+			err = pg.CreateTable(ctx, tableName, whutils.DiscardsSchema)
 			require.NoError(t, err)
 
 			loadTableStat, err := pg.LoadTable(ctx, tableName)
@@ -973,19 +1073,21 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Logical Replication", func(t *testing.T) {
-		const (
-			namespace   = "test_namespace"
-			sourceID    = "test_source_id"
-			destType    = "test_dest_type"
-			workspaceID = "test_workspace_id"
-		)
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.replication.yml", "../testdata/docker-compose.minio.yml"}))
+		c.Start(context.Background())
+
+		primaryDBPort := c.Port("primary", 5432)
+		standbyDBPort := c.Port("standby", 5432)
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		namespace := whth.RandSchema(destType)
 
 		warehouse := model.Warehouse{
 			Source: backendconfig.SourceT{
-				ID: sourceID,
+				ID: "test_source_id",
 			},
 			Destination: backendconfig.DestinationT{
-				ID: destinationID,
+				ID: "test_destination_id",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destType,
 				},
@@ -997,7 +1099,7 @@ func TestIntegration(t *testing.T) {
 					"port":             strconv.Itoa(primaryDBPort),
 					"sslMode":          "disable",
 					"namespace":        "",
-					"bucketProvider":   "MINIO",
+					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
 					"secretAccessKey":  secretAccessKey,
@@ -1007,7 +1109,7 @@ func TestIntegration(t *testing.T) {
 					"useRudderStorage": false,
 				},
 			},
-			WorkspaceID: workspaceID,
+			WorkspaceID: "test_workspace_id",
 			Namespace:   namespace,
 		}
 
@@ -1017,7 +1119,7 @@ func TestIntegration(t *testing.T) {
 		standByWarehouse.Destination.Config["port"] = strconv.Itoa(standbyDBPort)
 
 		fm, err := filemanager.New(&filemanager.Settings{
-			Provider: warehouseutils.MINIO,
+			Provider: whutils.MINIO,
 			Config: map[string]any{
 				"bucketName":       bucketName,
 				"accessKeyID":      accessKeyID,
@@ -1028,25 +1130,29 @@ func TestIntegration(t *testing.T) {
 				"disableSSL":       true,
 				"region":           region,
 				"enableSSE":        false,
-				"bucketProvider":   warehouseutils.MINIO,
+				"bucketProvider":   whutils.MINIO,
 			},
 		})
 		require.NoError(t, err)
 
-		primaryDSN := fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", strconv.Itoa(primaryDBPort), "rudderdb",
+		primaryDSN := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			user, password, host, strconv.Itoa(primaryDBPort), database,
 		)
 		primaryDB, err := sql.Open("postgres", primaryDSN)
 		require.NoError(t, err)
 		require.NoError(t, primaryDB.Ping())
-		standByDSN := fmt.Sprintf(
-			"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			"rudder", "rudder-password", "localhost", strconv.Itoa(standbyDBPort), "rudderdb",
+		t.Cleanup(func() {
+			_ = primaryDB.Close()
+		})
+		standByDSN := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+			user, password, host, strconv.Itoa(standbyDBPort), database,
 		)
 		standByDB, err := sql.Open("postgres", standByDSN)
 		require.NoError(t, err)
 		require.NoError(t, standByDB.Ping())
+		t.Cleanup(func() {
+			_ = standByDB.Close()
+		})
 
 		t.Run("Regular table", func(t *testing.T) {
 			ctx := context.Background()
@@ -1065,7 +1171,7 @@ func TestIntegration(t *testing.T) {
 
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
-			loadFiles := []warehouseutils.LoadFile{{Location: uploadOutput.Location}}
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
 			mockUploader := mockUploader(t, loadFiles, tableName, replicationTableSchema, replicationTableSchema)
 
 			primaryPG := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -1158,59 +1264,59 @@ func TestIntegration(t *testing.T) {
 				"received_at":   "datetime",
 			}
 
-			usersUploadOutput := whth.UploadLoadFile(t, fm, "testdata/users.csv.gz", warehouseutils.UsersTable)
-			identifiesUploadOutput := whth.UploadLoadFile(t, fm, "testdata/identifies.csv.gz", warehouseutils.IdentifiesTable)
+			usersUploadOutput := whth.UploadLoadFile(t, fm, "testdata/users.csv.gz", whutils.UsersTable)
+			identifiesUploadOutput := whth.UploadLoadFile(t, fm, "testdata/identifies.csv.gz", whutils.IdentifiesTable)
 
 			ctrl := gomock.NewController(t)
 			mockUploader := mockuploader.NewMockUploader(ctrl)
 			mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
-			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), warehouseutils.GetLoadFilesOptions{Table: warehouseutils.UsersTable}).Return([]warehouseutils.LoadFile{{Location: usersUploadOutput.Location}}, nil).AnyTimes()
-			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), warehouseutils.GetLoadFilesOptions{Table: warehouseutils.IdentifiesTable}).Return([]warehouseutils.LoadFile{{Location: identifiesUploadOutput.Location}}, nil).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInUpload(warehouseutils.UsersTable).Return(usersTableSchema).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInUpload(warehouseutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInWarehouse(warehouseutils.UsersTable).Return(usersTableSchema).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), whutils.GetLoadFilesOptions{Table: whutils.UsersTable}).Return([]whutils.LoadFile{{Location: usersUploadOutput.Location}}, nil).AnyTimes()
+			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), whutils.GetLoadFilesOptions{Table: whutils.IdentifiesTable}).Return([]whutils.LoadFile{{Location: identifiesUploadOutput.Location}}, nil).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInUpload(whutils.UsersTable).Return(usersTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInUpload(whutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(whutils.UsersTable).Return(usersTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchemaInWarehouse(whutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
 			mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
 
 			primaryPG := postgres.New(config.New(), logger.NOP, stats.NOP)
 			require.NoError(t, primaryPG.Setup(ctx, primaryWarehouse, mockUploader))
 			require.NoError(t, primaryPG.CreateSchema(ctx))
-			require.NoError(t, primaryPG.CreateTable(ctx, warehouseutils.IdentifiesTable, IdentifiesTableSchema))
-			require.NoError(t, primaryPG.CreateTable(ctx, warehouseutils.UsersTable, usersTableSchema))
+			require.NoError(t, primaryPG.CreateTable(ctx, whutils.IdentifiesTable, IdentifiesTableSchema))
+			require.NoError(t, primaryPG.CreateTable(ctx, whutils.UsersTable, usersTableSchema))
 			standByPG := postgres.New(config.New(), logger.NOP, stats.NOP)
 			require.NoError(t, standByPG.Setup(ctx, standByWarehouse, mockUploader))
 			require.NoError(t, standByPG.CreateSchema(ctx))
-			require.NoError(t, standByPG.CreateTable(ctx, warehouseutils.IdentifiesTable, IdentifiesTableSchema))
-			require.NoError(t, standByPG.CreateTable(ctx, warehouseutils.UsersTable, usersTableSchema))
+			require.NoError(t, standByPG.CreateTable(ctx, whutils.IdentifiesTable, IdentifiesTableSchema))
+			require.NoError(t, standByPG.CreateTable(ctx, whutils.UsersTable, usersTableSchema))
 
 			// Creating publication and subscription
-			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION users_publication FOR TABLE %[1]s.%[2]s, %[1]s.%[3]s;", namespace, warehouseutils.IdentifiesTable, warehouseutils.UsersTable))
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf("CREATE PUBLICATION users_publication FOR TABLE %[1]s.%[2]s, %[1]s.%[3]s;", namespace, whutils.IdentifiesTable, whutils.UsersTable))
 			require.NoError(t, err)
 			_, err = standByDB.ExecContext(ctx, fmt.Sprintf("CREATE SUBSCRIPTION users_subscription CONNECTION 'host=primary port=5432 user=%s password=%s dbname=%s' PUBLICATION users_publication;", user, password, database))
 			require.NoError(t, err)
 
 			// Adding primary key to identifies table
-			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, warehouseutils.IdentifiesTable))
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, whutils.IdentifiesTable))
 			require.NoError(t, err)
 
 			// Loading data should fail for the users table because of the missing primary key
 			errorsMap := primaryPG.LoadUserTables(ctx)
-			require.NoError(t, errorsMap[warehouseutils.IdentifiesTable])
+			require.NoError(t, errorsMap[whutils.IdentifiesTable])
 			var pgErr *pq.Error
-			require.ErrorAs(t, errorsMap[warehouseutils.UsersTable], &pgErr)
+			require.ErrorAs(t, errorsMap[whutils.UsersTable], &pgErr)
 			require.EqualValues(t, pq.ErrorCode("55000"), pgErr.Code)
 
 			// Adding primary key to users table
-			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, warehouseutils.UsersTable))
+			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, whutils.UsersTable))
 			require.NoError(t, err)
 
 			// Loading data should work now
 			errorsMap = primaryPG.LoadUserTables(ctx)
-			require.NoError(t, errorsMap[warehouseutils.IdentifiesTable])
-			require.NoError(t, errorsMap[warehouseutils.UsersTable])
+			require.NoError(t, errorsMap[whutils.IdentifiesTable])
+			require.NoError(t, errorsMap[whutils.UsersTable])
 
 			// Checking the number of rows in both primary and standby databases
-			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
+			for _, tableName := range []string{whutils.IdentifiesTable, whutils.UsersTable} {
 				var (
 					countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.%s;", namespace, tableName)
 					count      int
@@ -1252,11 +1358,11 @@ func TestIntegration(t *testing.T) {
 
 func mockUploader(
 	t testing.TB,
-	loadFiles []warehouseutils.LoadFile,
+	loadFiles []whutils.LoadFile,
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
-) warehouseutils.Uploader {
+) whutils.Uploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 

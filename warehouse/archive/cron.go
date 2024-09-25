@@ -3,6 +3,8 @@ package archive
 import (
 	"context"
 	"time"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 func CronArchiver(ctx context.Context, a *Archiver) {
@@ -15,7 +17,13 @@ func CronArchiver(ctx context.Context, a *Archiver) {
 			if a.config.archiveUploadRelatedRecords.Load() {
 				err := a.Do(ctx)
 				if err != nil {
-					a.log.Errorf(`Error archiving uploads: %v`, err)
+					a.log.Errorn(`Error archiving uploads`, obskit.Error(err))
+				}
+			}
+			if a.config.canDeleteUploads.Load() {
+				err := a.Delete(ctx)
+				if err != nil {
+					a.log.Errorn(`Error deleting uploads`, obskit.Error(err))
 				}
 			}
 		}

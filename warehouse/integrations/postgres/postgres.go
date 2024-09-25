@@ -496,7 +496,7 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.logger.Error(err.Error())
-			return client.Client{}, fmt.Errorf(err.Error())
+			return client.Client{}, errors.New(err.Error())
 		}
 	}
 	pg.Warehouse = warehouse

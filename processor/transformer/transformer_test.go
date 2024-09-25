@@ -15,6 +15,8 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -147,23 +150,6 @@ func TestTransformer(t *testing.T) {
 		srv := httptest.NewServer(ft)
 		defer srv.Close()
 
-		tr := handle{}
-		tr.stat = stats.Default
-		tr.logger = logger.NOP
-		tr.conf = config.Default
-		tr.client = srv.Client()
-		tr.guardConcurrency = make(chan struct{}, 200)
-		tr.sentStat = tr.stat.NewStat("transformer_sent", stats.CountType)
-		tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
-		tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
-		tr.config.timeoutDuration = 1 * time.Second
-		tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
-		tr.config.failOnError = config.SingleValueLoader(true)
-
-		tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
-
-		tr.config.maxRetry = config.SingleValueLoader(1)
-
 		tc := []struct {
 			batchSize   int
 			eventsCount int
@@ -180,12 +166,42 @@ func TestTransformer(t *testing.T) {
 		}
 
 		for _, tt := range tc {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			tr := handle{}
+			tr.stat = statsStore
+			tr.logger = logger.NOP
+			tr.conf = config.Default
+			tr.client = srv.Client()
+			tr.guardConcurrency = make(chan struct{}, 200)
+			tr.sentStat = tr.stat.NewStat("transformer_sent", stats.CountType)
+			tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
+			tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
+			tr.config.timeoutDuration = 1 * time.Second
+			tr.config.failOnUserTransformTimeout = config.SingleValueLoader(true)
+			tr.config.failOnError = config.SingleValueLoader(true)
+			tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
+			tr.config.maxRetry = config.SingleValueLoader(1)
+
 			batchSize := tt.batchSize
 			eventsCount := tt.eventsCount
 			failEvery := tt.failEvery
 
 			events := make([]TransformerEvent, eventsCount)
 			expectedResponse := Response{}
+
+			transformationID := rand.String(10)
+
+			destinationConfig := backendconfigtest.NewDestinationBuilder("WEBHOOK").
+				WithUserTransformation(transformationID, rand.String(10)).Build()
+
+			metadata := Metadata{
+				DestinationType:  destinationConfig.DestinationDefinition.Name,
+				SourceID:         rand.String(10),
+				DestinationID:    destinationConfig.ID,
+				TransformationID: destinationConfig.Transformations[0].ID,
+			}
 
 			for i := range events {
 				msgID := fmt.Sprintf("messageID-%d", i)
@@ -195,14 +211,16 @@ func TestTransformer(t *testing.T) {
 					statusCode = http.StatusBadRequest
 				}
 
+				metadata := metadata
+				metadata.MessageID = msgID
+
 				events[i] = TransformerEvent{
-					Metadata: Metadata{
-						MessageID: msgID,
-					},
+					Metadata: metadata,
 					Message: map[string]interface{}{
 						"src-key-1":       msgID,
 						"forceStatusCode": statusCode,
 					},
+					Destination: destinationConfig,
 					Credentials: []Credential{
 						{
 							ID:       "test-credential",
@@ -214,9 +232,7 @@ func TestTransformer(t *testing.T) {
 				}
 
 				tResp := TransformerResponse{
-					Metadata: Metadata{
-						MessageID: msgID,
-					},
+					Metadata:   metadata,
 					StatusCode: statusCode,
 					Output: map[string]interface{}{
 						"src-key-1":  msgID,
@@ -234,6 +250,25 @@ func TestTransformer(t *testing.T) {
 
 			rsp := tr.transform(context.TODO(), events, srv.URL, batchSize, "test-stage")
 			require.Equal(t, expectedResponse, rsp)
+
+			metrics := statsStore.GetByName("processor.transformer_request_time")
+			if tt.eventsCount > 0 {
+				require.NotEmpty(t, metrics)
+				for _, m := range metrics {
+					require.Equal(t, stats.Tags{
+						"stage":            "test-stage",
+						"sourceId":         metadata.SourceID,
+						"destinationType":  destinationConfig.DestinationDefinition.Name,
+						"destinationId":    destinationConfig.ID,
+						"transformationId": destinationConfig.Transformations[0].ID,
+
+						// Legacy tags: to be removed
+						"dest_type": destinationConfig.DestinationDefinition.Name,
+						"dest_id":   destinationConfig.ID,
+						"src_id":    metadata.SourceID,
+					}, m.Tags)
+				}
+			}
 		}
 	})
 

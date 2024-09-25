@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -38,7 +39,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		}
 		pw.workers[i] = worker
 
-		pw.g.Go(misc.WithBugsnag(func() error {
+		pw.g.Go(crash.Wrapper(func() error {
 			worker.workLoop()
 			return nil
 		}))

@@ -9,6 +9,8 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/k3a/html2text"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -30,7 +32,7 @@ var (
 	spaceRegex       = regexp.MustCompile(`\s+`)
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	defaultErrorMessageKeys = []string{"message", "description", "detail", "title", errorKey, "error_message"}
+	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
 	deprecationKeywords     = map[string]int{
 		"deprecated":               2,
 		"deprecation":              2,
@@ -128,6 +130,11 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 				}
 				return getErrorMessageFromResponse(unmarshalledJson, ext.ErrorMessageKeys)
 			}
+			lowerErResStr := strings.ToLower(erResStr)
+			if strings.Contains(lowerErResStr, "<body") && strings.Contains(lowerErResStr, "</body>") {
+				return getHTMLErrorMessage(erResStr)
+			}
+
 			if len(erResStr) == 0 {
 				return ""
 			}
@@ -144,6 +151,10 @@ func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
 	}
 
 	return ""
+}
+
+func getHTMLErrorMessage(erResStr string) string {
+	return html2text.HTML2Text(erResStr)
 }
 
 func (ext *ExtractorHandle) GetErrorMessage(sampleResponse string) string {

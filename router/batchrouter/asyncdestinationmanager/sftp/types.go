@@ -3,12 +3,14 @@ package sftp
 import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 // defaultManager is the default manager for SFTP
 type defaultManager struct {
-	FileManager    sftp.FileManager
 	logger         logger.Logger
+	statsFactory   stats.Stats
+	FileManager    sftp.FileManager
 	filePathPrefix string
 }
 

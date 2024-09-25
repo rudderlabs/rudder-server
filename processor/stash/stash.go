@@ -3,8 +3,10 @@ package stash
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,9 +19,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -121,7 +126,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
 	for i := 0; i < st.config.noOfErrStashWorkers.Load(); i++ {
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			for jobs := range st.errProcessQ {
 				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
@@ -143,7 +148,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.New().String()
-	st.logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
+	st.logger.Debugn("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -153,8 +158,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	jobsPerWorkspace := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
 		return job.WorkspaceId
 	})
-	gzWriter := fileuploader.NewGzMultiFileWriter()
-	dumps := make(map[string]string)
+	writerMap := make(map[string]string)
 
 	errorJobs := make([]ErrorJob, 0)
 
@@ -162,7 +166,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(ctx, workspaceID)
 		if err != nil {
-			st.logger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
+			st.logger.Errorn("Skipping Storing errors for workspace since no storage preferences are found", obskit.WorkspaceID(workspaceID), obskit.Error(err))
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{
@@ -173,7 +177,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			continue
 		}
 		if !preferences.ProcErrors {
-			st.logger.Infof("Skipping Storing errors for workspace: %s since ProcErrors is set to false", workspaceID)
+			st.logger.Infon("Skipping Storing errors for workspace since ProcErrors is set to false", obskit.WorkspaceID(workspaceID))
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{
@@ -183,61 +187,80 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			})
 			continue
 		}
-		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
-		dumps[workspaceID] = path
+		path := filepath.Join(
+			tmpDirPath,
+			localTmpDirName,
+			fmt.Sprintf(
+				"%v.%v.%v.%v.%v.json.gz",
+				time.Now().Unix(),
+				config.GetString("INSTANCE_ID", "1"),
+				fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID),
+				uuid,
+				workspaceID,
+			),
+		)
+		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
+			panic(fmt.Errorf("creating gz file %q: mkdir error: %w", path, err))
+		}
+		writer, err := misc.CreateGZ(path)
+		if err != nil {
+			panic(err)
+		}
+		writerMap[workspaceID] = path
 		newline := []byte("\n")
 		lo.ForEach(jobsForWorkspace, func(job *jobsdb.JobT, _ int) {
 			rawJob, err := json.Marshal(job)
 			if err != nil {
 				panic(err)
 			}
-			if _, err := gzWriter.Write(path, append(rawJob, newline...)); err != nil {
+			if _, err := writer.Write(append(rawJob, newline...)); err != nil {
+				_ = writer.Close()
 				panic(err)
 			}
 		})
+		if err := writer.Close(); err != nil {
+			panic(err)
+		}
 	}
 
-	err = gzWriter.Close()
-	if err != nil {
-		panic(err)
-	}
 	defer func() {
-		for _, path := range dumps {
-			os.Remove(path)
+		for _, path := range writerMap {
+			_ = os.Remove(path)
 		}
 	}()
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
+	g, ctx := kitsync.NewEagerGroup(ctx, config.GetInt("Processor.errorBackupWorkers", 100))
 	var mu sync.Mutex
-	for workspaceID, filePath := range dumps {
-		wrkId := workspaceID
-		path := filePath
-		errFileUploader, err := st.fileuploader.GetFileManager(ctx, wrkId)
+	for workspaceID, path := range writerMap {
+		errFileUploader, err := st.fileuploader.GetFileManager(ctx, workspaceID)
 		if err != nil {
-			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
-			mu.Lock()
-			errorJobs = append(errorJobs, ErrorJob{
-				jobs: jobsPerWorkspace[workspaceID],
-				errorOutput: StoreErrorOutputT{
-					Location: "",
-					Error:    err,
-				},
-			})
-			mu.Unlock()
+			st.logger.Errorn("Skipping Storing errors for workspace since no file manager is found", obskit.WorkspaceID(workspaceID), obskit.Error(err))
+			if !errors.Is(err, fileuploader.ErrNotSubscribed) {
+				mu.Lock()
+				errorJobs = append(errorJobs, ErrorJob{
+					jobs: jobsPerWorkspace[workspaceID],
+					errorOutput: StoreErrorOutputT{
+						Error: err,
+					},
+				})
+				mu.Unlock()
+			}
 			continue
 		}
-		g.Go(misc.WithBugsnag(func() error {
+		g.Go(crash.Wrapper(func() error {
 			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
 			uploadOutput, err := errFileUploader.Upload(ctx, outputFile, prefixes...)
-			st.logger.Infof("Uploaded error logs to %s for workspaceId %s", uploadOutput.Location, wrkId)
+			st.logger.Infon("Uploaded error logs for workspaceId",
+				logger.NewStringField("location", uploadOutput.Location),
+				obskit.WorkspaceID(workspaceID),
+			)
 			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{
-				jobs: jobsPerWorkspace[wrkId],
+				jobs: jobsPerWorkspace[workspaceID],
 				errorOutput: StoreErrorOutputT{
 					Location: uploadOutput.Location,
 					Error:    err,

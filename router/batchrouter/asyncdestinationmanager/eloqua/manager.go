@@ -8,11 +8,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, error) {
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*EloquaBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	if err != nil {
@@ -30,7 +31,7 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 	}
 	eloqua := NewEloquaServiceImpl("2.0")
 	baseEndpoint, err := eloqua.GetBaseEndpoint(&eloquaData)
-	unableToGetBaseEndpointStat := stats.Default.NewTaggedStat("unable_to_get_base_endpoint", stats.CountType, map[string]string{
+	unableToGetBaseEndpointStat := statsFactory.NewTaggedStat("unable_to_get_base_endpoint", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": destName,
 	})
@@ -39,13 +40,14 @@ func NewManager(destination *backendconfig.DestinationT) (*EloquaBulkUploader, e
 		return nil, fmt.Errorf("error in getting base endpoint: %v", err)
 	}
 
-	return NewEloquaBulkUploader(destName, encodedAuthorizationString, baseEndpoint, eloqua), nil
+	return NewEloquaBulkUploader(logger, statsFactory, destName, encodedAuthorizationString, baseEndpoint, eloqua), nil
 }
 
-func NewEloquaBulkUploader(destinationName, authorization, baseEndpoint string, eloqua EloquaService) *EloquaBulkUploader {
+func NewEloquaBulkUploader(logger logger.Logger, statsFactory stats.Stats, destinationName, authorization, baseEndpoint string, eloqua EloquaService) *EloquaBulkUploader {
 	return &EloquaBulkUploader{
 		destName:          destinationName,
-		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Eloqua").Child("EloquaBulkUploader"),
+		logger:            logger.Child("Eloqua").Child("EloquaBulkUploader"),
+		statsFactory:      statsFactory,
 		authorization:     authorization,
 		baseEndpoint:      baseEndpoint,
 		fileSizeLimit:     common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 32*bytesize.MB),

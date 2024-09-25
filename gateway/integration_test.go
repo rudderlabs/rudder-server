@@ -134,6 +134,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		fmt.Sprintf("APP_TYPE=%s", appType),
 		fmt.Sprintf("INSTANCE_ID=%s", "rudderstackmt-v0-rudderstack-0"),
 		fmt.Sprintf("RELEASE_NAME=%s", releaseName),
+		fmt.Sprintf("JOBS_DB_HOST=%s", postgresContainer.Host),
 		fmt.Sprintf("JOBS_DB_PORT=%s", postgresContainer.Port),
 		fmt.Sprintf("JOBS_DB_USER=%s", postgresContainer.User),
 		fmt.Sprintf("JOBS_DB_DB_NAME=%s", postgresContainer.Database),

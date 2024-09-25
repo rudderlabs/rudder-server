@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
@@ -24,7 +24,7 @@ import (
 // completed (state is failed or waiting or waiting_retry or executiong) are copied
 // over. Then the status (only the latest) is set for those jobs
 func (jd *Handle) startMigrateDSLoop(ctx context.Context) {
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		jd.migrateDSLoop(ctx)
 		return nil
 	}))

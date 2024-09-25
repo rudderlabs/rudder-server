@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/rudderlabs/rudder-server/runner"
 )
 
@@ -141,7 +142,7 @@ func setup(t testing.TB) testConfig {
 												}`,
 	})
 	// initialise un-started config BE server, to be started later
-	unStartedTransformerConfigBEServer := httptest.NewUnStartedServer(transformerBEConfigHandler)
+	unStartedTransformerConfigBEServer := httptest.NewUnstartedServer(transformerBEConfigHandler)
 	_, transformerConfigBEPort, err := net.SplitHostPort(unStartedTransformerConfigBEServer.Listener.Addr().String())
 	require.NoError(t, err)
 	transformerConfigBEServerUrl := fmt.Sprintf("http://%s:%s", "localhost", transformerConfigBEPort)
@@ -172,6 +173,7 @@ func runRudderServer(
 	t.Setenv("WORKSPACE_TOKEN", "token")
 	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.host"), postgresContainer.Host)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.port"), postgresContainer.Port)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.user"), postgresContainer.User)
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.name"), postgresContainer.Database)

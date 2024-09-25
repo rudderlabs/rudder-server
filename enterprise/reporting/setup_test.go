@@ -51,6 +51,7 @@ func TestSetupForDelegates(t *testing.T) {
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
 
+	config.Set("DB.host", postgresContainer.Host)
 	config.Set("DB.port", postgresContainer.Port)
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)

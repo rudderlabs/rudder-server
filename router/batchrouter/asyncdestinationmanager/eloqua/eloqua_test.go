@@ -9,6 +9,8 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	. "github.com/onsi/ginkgo/v2"
 
 	. "github.com/onsi/gomega"
@@ -16,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mock_bulkservice "github.com/rudderlabs/rudder-server/mocks/router/eloqua"
@@ -72,7 +75,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -95,7 +98,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -121,7 +124,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -164,7 +167,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -211,7 +214,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -258,7 +261,7 @@ var _ = Describe("Eloqua test", func() {
 			initEloqua()
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
@@ -321,7 +324,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaFailedToGetSyncStatus", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
@@ -339,7 +342,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaReceivedSuccess", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
@@ -358,7 +361,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaReceivedPending", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			pollInput := common.AsyncPoll{
 				ImportId: "/syncs/384:/contacts/imports/384",
 			}
@@ -383,7 +386,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaErrorOccurredWhileUploading", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 
 			pollInput := common.GetUploadStatsInput{
 				FailedJobURLs: "/syncs/384",
@@ -415,7 +418,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaFailedToFetchRejectedData", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 
 			pollInput := common.GetUploadStatsInput{
 				WarningJobURLs: "/syncs/384",
@@ -432,7 +435,7 @@ var _ = Describe("Eloqua test", func() {
 		It("TestEloquaSucceedToFetchRejectedData", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			eloquaService := mock_bulkservice.NewMockEloquaService(ctrl)
-			bulkUploader := eloqua.NewEloquaBulkUploader("Eloqua", "", "", eloquaService)
+			bulkUploader := eloqua.NewEloquaBulkUploader(logger.NOP, stats.NOP, "Eloqua", "", "", eloquaService)
 			pollInput := common.GetUploadStatsInput{
 				WarningJobURLs: "/syncs/384",
 				ImportingList:  jobs,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -141,7 +142,7 @@ func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT)
 }
 
 func (jd *Handle) startCleanupLoop(ctx context.Context) {
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():

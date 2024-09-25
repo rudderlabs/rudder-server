@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -27,7 +26,6 @@ import (
 	"unicode"
 
 	"github.com/araddon/dateparse"
-	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
 	"github.com/tidwall/sjson"
@@ -41,7 +39,6 @@ import (
 
 var (
 	reservedFolderPaths []*RFP
-	notifyOnce          sync.Once
 
 	regexGwHa               = regexp.MustCompile(`^.*-gw-ha-\d+-\w+-\w+$`)
 	regexGwNonHaOrProcessor = regexp.MustCompile(`^.*-\d+$`)
@@ -99,7 +96,7 @@ func Init() {
 }
 
 func BatchDestinations() []string {
-	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BINGADS_AUDIENCE", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "SFTP", "BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD"}
+	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE", "BINGADS_AUDIENCE", "ELOQUA", "YANDEX_METRICA_OFFLINE_EVENTS", "SFTP", "BINGADS_OFFLINE_CONVERSIONS", "KLAVIYO_BULK_UPLOAD", "LYTICS_BULK_UPLOAD"}
 	return batchDestinations
 }
 
@@ -794,49 +791,6 @@ func GetWarehouseURL() (url string) {
 		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
 	}
 	return
-}
-
-func WithBugsnagForWarehouse(fn func() error) func() error {
-	return func() error {
-		ctx := bugsnag.StartSession(context.Background())
-		defer BugsnagNotify(ctx, "Warehouse")()
-		return fn()
-	}
-}
-
-func BugsnagNotify(ctx context.Context, team string) func() {
-	return func() {
-		if r := recover(); r != nil {
-			notifyOnce.Do(func() {
-				defer bugsnag.AutoNotify(ctx, bugsnag.SeverityError, bugsnag.MetaData{
-					"GoRoutines": {
-						"Number": runtime.NumGoroutine(),
-					},
-					"Team": {
-						"Name": team,
-					},
-				})
-				pkgLogger.Fatalw("Panic detected. Application will crash.",
-					"stack", string(debug.Stack()),
-					"panic", r,
-					"team", team,
-					"goRoutines", runtime.NumGoroutine(),
-					"version", bugsnag.Config.AppVersion,
-					"releaseStage", bugsnag.Config.ReleaseStage,
-				)
-				logger.Sync()
-				panic(r)
-			})
-		}
-	}
-}
-
-func WithBugsnag(fn func() error) func() error {
-	return func() error {
-		ctx := bugsnag.StartSession(context.Background())
-		defer BugsnagNotify(ctx, "Core")()
-		return fn()
-	}
 }
 
 // MergeMaps merging with one level of nesting.

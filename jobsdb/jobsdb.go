@@ -43,10 +43,12 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -742,30 +744,31 @@ func (jd *Handle) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
+		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 	}
 
+	var maxConns int
 	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		maxConns = jd.conf.maxOpenConnections
 	} else {
-		maxOpenConnections := 2 // buffer
-		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
+		maxConns = 2 // buffer
+		maxConns += jd.conf.maxReaders + jd.conf.maxWriters
 		switch jd.ownerType {
 		case Read:
-			maxOpenConnections += 2 // migrate, refreshDsList
+			maxConns += 2 // migrate, refreshDsList
 		case Write:
-			maxOpenConnections += 1 // addNewDS
+			maxConns += 1 // addNewDS
 		case ReadWrite:
-			maxOpenConnections += 3 // migrate, addNewDS, archive
+			maxConns += 3 // migrate, addNewDS, archive
 		}
-		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
-		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		if maxConns >= jd.conf.maxOpenConnections {
+			maxConns = jd.conf.maxOpenConnections
 		}
 	}
+	jd.dbHandle.SetMaxOpenConns(maxConns)
+	jd.dbHandle.SetMaxIdleConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
@@ -968,7 +971,59 @@ func (jd *Handle) Start() error {
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
 	}
+	g.Go(crash.Wrapper(func() error {
+		for {
+			select {
+			case <-time.After(jd.config.GetDuration("JobsDB.ConnStatsFrequency", 15, time.Second)):
+			case <-ctx.Done():
+				return nil
+			}
+			stats := jd.dbHandle.Stats()
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_open_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxOpenConnections))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_open_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.OpenConnections))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_in_use_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.InUse))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_idle_connections", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.Idle))
+
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_wait_count_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.WaitCount))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_wait_duration_seconds_total", tablePrefix: jd.tablePrefix},
+			).Set(stats.WaitDuration.Seconds())
+
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_idle_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxIdleClosed))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_idle_time_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxIdleTimeClosed))
+			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
+				dbConnStats{name: "sql_db_max_lifetime_closed_total", tablePrefix: jd.tablePrefix},
+			).Set(float64(stats.MaxLifetimeClosed))
+
+		}
+	}))
 	return nil
+}
+
+type dbConnStats struct {
+	name, tablePrefix string
+}
+
+func (dbs dbConnStats) GetName() string {
+	return dbs.name
+}
+
+func (dbs dbConnStats) GetTags() map[string]string {
+	return map[string]string{"name": "jobsdb_" + dbs.tablePrefix}
 }
 
 func (jd *Handle) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
@@ -993,7 +1048,7 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	jd.assertError(jd.doRefreshDSRangeList(l))
 
 	g := jd.backgroundGroup
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		jd.refreshDSListLoop(ctx)
 		return nil
 	}))
@@ -1014,7 +1069,7 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
 
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		jd.addNewDSLoop(ctx)
 		return nil
 	}))
@@ -1482,8 +1537,9 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pqError, ok := err.(*pq.Error)
-		if ok && pqError.Code == pq.ErrorCode("42P01") {
+		var pqError *pq.Error
+		ok := errors.As(err, &pqError)
+		if ok && pqError.Code == ("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
@@ -3177,7 +3233,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
 	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		jd.assertError(err)
 	}
 	return &job

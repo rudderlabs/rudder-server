@@ -100,16 +100,16 @@ func GetArgs(request string) error {
 	if request == "Jobs between JobID's of a User" {
 		fmt.Printf("Enter DS Type:")
 		var table string
-		fmt.Scanf("%s", &table)
+		_, _ = fmt.Scanf("%s", &table)
 		fmt.Print("Enter JobID 1: ")
 		var input string
-		fmt.Scanf("%s", &input)
+		_, _ = fmt.Scanf("%s", &input)
 		fmt.Print("Enter JobID 2: ")
 		var input2 string
-		fmt.Scanf("%s", &input2)
+		_, _ = fmt.Scanf("%s", &input2)
 		fmt.Printf("Enter UserID:")
 		var input3 string
-		fmt.Scanf("%s", &input3)
+		_, _ = fmt.Scanf("%s", &input3)
 		argString := table + ":" + request + ":" + input + ":" + input2 + ":" + input3
 		var reply string
 		err := client.GetUDSClient().Call("JobsdbUtilsHandler.RunSQLQuery", argString, &reply)
@@ -120,10 +120,10 @@ func GetArgs(request string) error {
 	} else if request == "Error Code Count By Destination" {
 		fmt.Printf("Enter DS Type:")
 		var table string
-		fmt.Scanf("%s", &table)
+		_, _ = fmt.Scanf("%s", &table)
 		fmt.Print("Enter DS Number: ")
 		var dsNum string
-		fmt.Scanf("%s", &dsNum)
+		_, _ = fmt.Scanf("%s", &dsNum)
 		argString := table + ":" + request + ":" + dsNum
 		var reply string
 		err := client.GetUDSClient().Call("JobsdbUtilsHandler.RunSQLQuery", argString, &reply)

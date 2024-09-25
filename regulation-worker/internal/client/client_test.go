@@ -106,7 +106,7 @@ func TestGet(t *testing.T) {
 				path := r.URL.Path
 				require.Equal(t, tt.expectedPath, path)
 				time.Sleep(time.Duration(tt.serverDelay) * time.Millisecond)
-				fmt.Fprintf(w, tt.respBody)
+				_, _ = w.Write([]byte(tt.respBody))
 			}))
 			defer svr.Close()
 			httpClient := &http.Client{}
