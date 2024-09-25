@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.1](https://github.com/rudderlabs/rudder-server/compare/v1.34.0...v1.34.1) (2024-09-23)
+
+
+### Miscellaneous
+
+* set maxIdleConns for jobsdb handles and emit (*sql.DB).Stats ([#5123](https://github.com/rudderlabs/rudder-server/issues/5123)) ([2aafc50](https://github.com/rudderlabs/rudder-server/commit/2aafc5054295b42b107d94543f50e0cabdb24fdd))
+
 ## [1.34.0](https://github.com/rudderlabs/rudder-server/compare/v1.33.1...v1.34.0) (2024-09-18)
 
 

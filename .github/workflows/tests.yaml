@@ -17,6 +17,10 @@ jobs:
       matrix:
         FEATURES: [ oss ,enterprise ]
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -63,6 +67,10 @@ jobs:
           - package: warehouse/integrations/snowflake
             destination: snowflake
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Go
@@ -101,6 +109,10 @@ jobs:
     name: Unit
     runs-on: ubuntu-latest
     steps:
+      - name: Disable IPv6 (temporary fix)
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -135,13 +147,21 @@ jobs:
           - router
           - services
           - services/rsources
+          - services/dedup
           - suppression-backup-service
           - warehouse
         include:
           - package: services
             exclude: services/rsources
+          - package: services
+            exclude: services/dedup
 
     steps:
+      - name: Disable IPv6 (temporary fix)
+        if: matrix.package != 'services/dedup'
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
