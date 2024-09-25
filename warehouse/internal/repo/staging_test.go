@@ -306,7 +306,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			require.Equal(t, stagingFiles[ind].FirstEventAt, etr.FirstEventAt.UTC())
 			require.Equal(t, stagingFiles[ind].LastEventAt, etr.LastEventAt.UTC())
 		}
-
 	})
 }
 

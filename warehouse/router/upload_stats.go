@@ -125,7 +125,6 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Name:  "tableName",
 		Value: capturedTableName,
 	}).Count(int(numEvents))
-
 }
 
 func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) error {
