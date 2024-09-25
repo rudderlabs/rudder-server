@@ -281,7 +281,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("enableSSE", false).
 					WithConfigOption("accountName", credentials.AccountName).
 					WithConfigOption("accountKey", credentials.AccountKey).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
