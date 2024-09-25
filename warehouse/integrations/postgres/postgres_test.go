@@ -309,7 +309,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useSSL", false).
 					WithConfigOption("endPoint", minioEndpoint).
 					WithConfigOption("useRudderStorage", false).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -530,6 +532,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("sshHost", tunnelledSSHHost).
 					WithConfigOption("sshPort", strconv.Itoa(sshPort)).
 					WithConfigOption("sshPrivateKey", strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n")).
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true).
 					Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
