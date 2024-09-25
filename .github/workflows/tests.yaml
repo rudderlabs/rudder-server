@@ -168,6 +168,11 @@ jobs:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download
+      - name: Login to DockerHub
+        uses: docker/login-action@v3.3.0
+        with:
+          username: rudderlabs
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
