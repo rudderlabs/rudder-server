@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -366,7 +367,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
 	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
-	vacuumDuration := r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
@@ -382,7 +382,12 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	})
 
 	g.Go(func() error {
-		var deletedRows int
+		var (
+			deletedRows                int
+			vacuumDeletedRowsThreshold = config.GetReloadableIntVar(100000, 1, "Reporting.vacuumThresholdDeletedRows")
+			lastVaccum                 time.Time
+			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
+		)
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -459,27 +464,11 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					deletedRows += len(reports)
 				}
 
-				vacuumStart := time.Now()
-				if deletedRows >= config.GetInt("Reporting.vacuumThresholdDeletedRows", 100000) {
-					if r.vacuumFull.Load() {
-						if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
-							r.log.Errorn(
-								`[ Reporting ]: Error full vacuuming reports table`,
-								logger.NewErrorField(err),
-							)
-						} else {
-							deletedRows = 0
-						}
-					} else {
-						if _, err := dbHandle.ExecContext(ctx, `vacuum analyze reports;`); err != nil {
-							r.log.Errorn(
-								`[ Reporting ]: Error vacuuming reports table`,
-								logger.NewErrorField(err),
-							)
-						} else {
-							deletedRows = 0
-						}
-						vacuumDuration.Since(vacuumStart)
+				if deletedRows >= vacuumDeletedRowsThreshold.Load() ||
+					time.Since(lastVaccum) > vacuumInterval.Load() {
+					if err := r.vacuum(ctx, dbHandle, tags); err == nil {
+						deletedRows = 0
+						lastVaccum = time.Now()
 					}
 				}
 			}
@@ -497,6 +486,29 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err)
 	}
+}
+
+func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tags) error {
+	defer r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags).RecordDuration()()
+	var (
+		query string
+		full  bool
+	)
+	if r.vacuumFull.Load() {
+		full = true
+		query = `vacuum full analyze reports;`
+	} else {
+		query = `vacuum analyze reports;`
+	}
+	_, err := db.ExecContext(ctx, query)
+	if err != nil {
+		r.log.Errorn(
+			`[ Reporting ]: Error vacuuming reports table`,
+			obskit.Error(err),
+			logger.NewBoolField("full", full),
+		)
+	}
+	return nil
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {

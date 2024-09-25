@@ -346,7 +346,6 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	edr.minReportedAtQueryTime = edr.stats.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
 	edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
 	edr.edReportingRequestLatency = edr.stats.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
-	vacuumDuration := edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
@@ -363,7 +362,21 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 		// Aggregate
 		// Send in a separate go-routine
 		// Delete in a separate go-routine
-		var deletedRows int
+		var (
+			deletedRows               int
+			vacuumDeletedRowThreshold = edr.config.GetReloadableIntVar(
+				100000, 1,
+				"Reporting.errorReporting.vacuumThresholdDeletedRows",
+				"Reporting.vacuumThresholdDeletedRows",
+			)
+			lastVacuum     time.Time
+			vacuumInterval = edr.config.GetReloadableDurationVar(
+				15,
+				time.Minute,
+				"Reporting.errorReporting.vacuumInterval",
+				"Reporting.vacuumInterval",
+			)
+		)
 		for {
 			if ctx.Err() != nil {
 				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -440,28 +453,12 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					deletedRows += len(reports)
 				}
 				// vacuum error_reports_details table
-				if deletedRows >= edr.config.GetInt("Reporting.errorReporting.vacuumThresholdDeletedRows", 100000) {
-					vacuumStart := time.Now()
-					if edr.vacuumFull.Load() {
-						if _, err := dbHandle.ExecContext(
-							ctx,
-							fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
-						); err != nil {
-							edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
-						} else {
-							deletedRows = 0
-						}
-					} else {
-						if _, err := dbHandle.ExecContext(
-							ctx,
-							fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
-						); err != nil {
-							edr.log.Errorn("error vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
-						} else {
-							deletedRows = 0
-						}
+				if deletedRows >= vacuumDeletedRowThreshold.Load() ||
+					time.Since(lastVacuum) >= vacuumInterval.Load() {
+					if err := edr.vacuum(ctx, dbHandle, tags); err == nil {
+						deletedRows = 0
+						lastVacuum = time.Now()
 					}
-					vacuumDuration.Since(vacuumStart)
 				}
 			}
 
@@ -477,6 +474,30 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err)
 	}
+}
+
+func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, tags stats.Tags) error {
+	defer edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags).RecordDuration()()
+	var query string
+	var full bool
+	if edr.vacuumFull.Load() {
+		query = fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
+		full = true
+	} else {
+		query = fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable))
+	}
+	_, err := dbHandle.ExecContext(ctx, query)
+	if err != nil {
+		edr.log.Errorn(
+			"error vacuuming",
+			logger.NewStringField("table", ErrorDetailReportsTable),
+			obskit.Error(err),
+			logger.NewBoolField("full", full),
+		)
+		return err
+	}
+
+	return nil
 }
 
 func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
