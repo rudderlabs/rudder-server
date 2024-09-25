@@ -1190,6 +1190,7 @@ func TestIntegration(t *testing.T) {
 							SELECT
 							  column_name,
 							  column_value,
+						      reason,
 							  received_at,
 							  row_id,
 							  table_name,

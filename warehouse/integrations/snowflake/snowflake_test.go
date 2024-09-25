@@ -1067,6 +1067,7 @@ func TestIntegration(t *testing.T) {
 					SELECT
 					  COLUMN_NAME,
 					  COLUMN_VALUE,
+					  REASON,
 					  RECEIVED_AT,
 					  ROW_ID,
 					  TABLE_NAME,
