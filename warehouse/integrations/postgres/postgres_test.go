@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	dockerpg "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -443,10 +444,11 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		var (
-			group             errgroup.Group
-			postgresResource  *dockerpg.Resource
-			sshServerResource *sshserver.Resource
-			minioResource     *minio.Resource
+			group               errgroup.Group
+			postgresResource    *dockerpg.Resource
+			sshServerResource   *sshserver.Resource
+			minioResource       *minio.Resource
+			transformerResource *transformer.Resource
 		)
 		group.Go(func() (err error) {
 			postgresResource, err = dockerpg.Setup(pool, t, dockerpg.WithNetwork(network))
@@ -464,12 +466,15 @@ func TestIntegration(t *testing.T) {
 			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
 			return err
 		})
+		group.Go(func() (err error) {
+			transformerResource, err = transformer.Setup(pool, t, transformer.WithDockerNetwork(network))
+			return err
+		})
 		require.NoError(t, group.Wait())
 
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		// TODO add transformer?
 		workspaceID := whutils.RandHex()
 		jobsDBPort, err := strconv.Atoi(postgresResource.Port)
 		require.NoError(t, err)
@@ -478,6 +483,7 @@ func TestIntegration(t *testing.T) {
 		postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
 		require.NoError(t, err)
 
+		transformerURL := transformerResource.TransformerURL
 		tunnelledHost := postgresContainer.NetworkSettings.Networks[network.Name].IPAddress
 		tunnelledDatabase := "jobsdb"
 		tunnelledUser := "rudder"
@@ -574,7 +580,7 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("sshUser", tunnelledSSHUser).
 					WithConfigOption("sshHost", tunnelledSSHHost).
 					WithConfigOption("sshPort", strconv.Itoa(sshPort)).
-					WithConfigOption("sshPrivateKey", strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"))
+					WithConfigOption("sshPrivateKey", strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n")).
 					WithConfigOption("allowUsersContextTraits", true).
 					WithConfigOption("underscoreDivideNumbers", true).
 					Build()
