@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"time"
 
 	"github.com/lib/pq"
@@ -302,6 +304,19 @@ func (n *repo) deleteByBatchID(
 	)
 	if err != nil {
 		return fmt.Errorf("deleting by batchID: %w", err)
+	}
+
+	var sizeEstimate int64
+	if err := n.db.QueryRowContext(
+		ctx,
+		fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, notifierTableName),
+	).Scan(&sizeEstimate); err != nil {
+		return fmt.Errorf("size estimate for notifierTable failed with: %w", err)
+	}
+	if sizeEstimate > config.GetInt64("Notifier.vacuumThresholdBytes", 5*bytesize.GB) {
+		if _, err := n.db.ExecContext(ctx, fmt.Sprintf(`vacuum full analyze %q;`, notifierTableName)); err != nil {
+			return fmt.Errorf("deleting by batchID: vacuum: %w", err)
+		}
 	}
 	return nil
 }
