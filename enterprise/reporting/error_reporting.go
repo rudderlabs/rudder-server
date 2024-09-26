@@ -21,6 +21,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -376,6 +377,11 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				"Reporting.errorReporting.vacuumInterval",
 				"Reporting.vacuumInterval",
 			)
+			vacuumThresholdBytes = config.GetReloadableInt64Var(
+				10*bytesize.GB, 1,
+				"Reporting.errorReporting.vacuumThresholdBytes",
+				"Reporting.vacuumThresholdBytes",
+			)
 		)
 		for {
 			if ctx.Err() != nil {
@@ -453,8 +459,18 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					deletedRows += len(reports)
 				}
 				// vacuum error_reports_details table
+				var sizeEstimate int64
+				if err := dbHandle.QueryRowContext(
+					ctx,
+					`SELECT pg_table_size(oid) from pg_class where relname = $1`, ErrorDetailReportsTable,
+				).Scan(&sizeEstimate); err != nil {
+					edr.log.Errorn(
+						fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
+						logger.NewErrorField(err),
+					)
+				}
 				if deletedRows >= vacuumDeletedRowThreshold.Load() ||
-					time.Since(lastVacuum) >= vacuumInterval.Load() {
+					(sizeEstimate >= vacuumThresholdBytes.Load() && time.Since(lastVacuum) >= vacuumInterval.Load()) {
 					if err := edr.vacuum(ctx, dbHandle, tags); err == nil {
 						deletedRows = 0
 						lastVacuum = time.Now()

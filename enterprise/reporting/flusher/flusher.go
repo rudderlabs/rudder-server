@@ -15,6 +15,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -43,6 +44,7 @@ type Flusher struct {
 	aggressiveFlushEnabled              config.ValueLoader[bool]
 	lagThresholdForAggresiveFlushInMins config.ValueLoader[time.Duration]
 	vacuumThresholdDeletedRows          config.ValueLoader[int]
+	vacuumThresholdBytes                config.ValueLoader[int64]
 	deletedRows                         int
 	lastVacuum                          time.Time
 	vacuumFull                          config.ValueLoader[bool]
@@ -81,6 +83,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	lagThresholdForAggresiveFlushInMins := conf.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.lagThresholdForAggresiveFlushInMins")
 	vacuumThresholdDeletedRows := conf.GetReloadableIntVar(100000, 1, "Reporting.flusher.vacuumThresholdDeletedRows")
 	vacuumInterval := conf.GetReloadableDurationVar(15, time.Minute, "Reporting.flusher.vacuumInterval", "Reporting.vacuumInterval")
+	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
@@ -100,6 +103,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		vacuumThresholdDeletedRows: vacuumThresholdDeletedRows,
 		vacuumFull:                 conf.GetReloadableBoolVar(false, "Reporting.flusher.vacuumFull", "Reporting.vacuumFull"),
 		vacuumInterval:             vacuumInterval,
+		vacuumThresholdBytes:       vacuumThresholdBytes,
 
 		table:                               table,
 		aggregator:                          aggregator,
@@ -336,8 +340,14 @@ func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.
 func (f *Flusher) vacuum(ctx context.Context) error {
 	var query string
 	var full bool
+	var sizeEstimate int64
+	if err := f.db.QueryRowContext(
+		ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
+	).Scan(&sizeEstimate); err != nil {
+		return fmt.Errorf("error getting table size %w", err)
+	}
 	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() ||
-		time.Since(f.lastVacuum) >= f.vacuumInterval.Load() {
+		(sizeEstimate >= f.vacuumThresholdBytes.Load() && time.Since(f.lastVacuum) >= f.vacuumInterval.Load()) {
 		vacuumStart := time.Now()
 		defer f.vacuumReportsTimer.Since(vacuumStart)
 		if f.vacuumFull.Load() {
@@ -356,6 +366,7 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 			return fmt.Errorf("error vacuuming table %w", err)
 		}
 		f.lastVacuum = time.Now()
+		f.deletedRows = 0
 	}
 	return nil
 }

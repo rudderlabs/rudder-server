@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -385,8 +386,9 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		var (
 			deletedRows                int
 			vacuumDeletedRowsThreshold = config.GetReloadableIntVar(100000, 1, "Reporting.vacuumThresholdDeletedRows")
-			lastVaccum                 time.Time
+			lastVacuum                 time.Time
 			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
+			vacuumThresholdBytes       = config.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.vacuumThresholdBytes")
 		)
 		for {
 			if ctx.Err() != nil {
@@ -464,11 +466,21 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					deletedRows += len(reports)
 				}
 
+				var sizeEstimate int64
+				if err := dbHandle.QueryRowContext(
+					ctx,
+					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
+				).Scan(&sizeEstimate); err != nil {
+					r.log.Errorn(
+						`[ Reporting ]: Error getting table size estimate`,
+						logger.NewErrorField(err),
+					)
+				}
 				if deletedRows >= vacuumDeletedRowsThreshold.Load() ||
-					time.Since(lastVaccum) > vacuumInterval.Load() {
+					(sizeEstimate >= vacuumThresholdBytes.Load() && time.Since(lastVacuum) > vacuumInterval.Load()) {
 					if err := r.vacuum(ctx, dbHandle, tags); err == nil {
 						deletedRows = 0
-						lastVaccum = time.Now()
+						lastVacuum = time.Now()
 					}
 				}
 			}
