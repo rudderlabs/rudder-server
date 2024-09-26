@@ -374,7 +374,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
 
-	lf.Logger.Infof("[WH]: Getting destination history for %s", job.Warehouse.Destination.RevisionID)
 	revisionIDMap[job.Warehouse.Destination.RevisionID] = job.Warehouse.Destination
 	revisionIds := lo.Uniq(
 		lo.Map(
