@@ -153,6 +153,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("endPoint", minioEndpoint).
 					WithConfigOption("useRudderStorage", false).
 					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true).
 					Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
@@ -613,6 +615,7 @@ func TestIntegration(t *testing.T) {
 					SELECT
 					  column_name,
 					  column_value,
+					  reason,
 					  received_at,
 					  row_id,
 					  table_name,
