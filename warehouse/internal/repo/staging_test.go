@@ -292,9 +292,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	})
 
 	t.Run("GetEventTimeRangesByUploadID", func(t *testing.T) {
-
 		t.Run("get all", func(t *testing.T) {
-
 			u := repo.NewUploads(db)
 			uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 			require.NoError(t, err)
