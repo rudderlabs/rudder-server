@@ -123,7 +123,7 @@ type UploadJob struct {
 		numStagedEvents                    stats.Measurement
 		uploadSuccess                      stats.Measurement
 		stagingLoadFileEventsCountMismatch stats.Measurement
-		eventDeliveryTime                  stats.Measurement
+		eventDeliveryTime                  stats.Timer
 	}
 }
 
@@ -222,7 +222,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
 	)
 
-	syncFrequency := "1440"
+	syncFrequency := "1440" // 24h
 	if frequency := uj.warehouse.GetStringDestinationConfig(uj.conf, model.SyncFrequencySetting); frequency != "" {
 		syncFrequency = frequency
 	}

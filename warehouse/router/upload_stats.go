@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -70,7 +71,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 
 	eventTimeRanges, err := job.stagingFileRepo.GetEventTimeRangesByUploadID(job.ctx, job.upload.ID)
 	if err != nil {
-		job.logger.Warnw("event time ranges for upload", logfield.Error, err.Error())
+		job.logger.Warnn("event time ranges for upload", obskit.Error(err))
 		return
 	}
 

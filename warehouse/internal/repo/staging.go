@@ -401,7 +401,7 @@ func (sf *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.U
 	return total.Int64, nil
 }
 
-func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, uploadID int64) ([]*model.EventTimeRange, error) {
+func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, uploadID int64) ([]model.EventTimeRange, error) {
 	rows, err := sf.db.QueryContext(ctx, `
 		SELECT
 			first_event_at, last_event_at
@@ -419,14 +419,14 @@ func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, upload
 	}
 	defer func() { _ = rows.Close() }()
 
-	var eventTimeRanges []*model.EventTimeRange
+	var eventTimeRanges []model.EventTimeRange
 	for rows.Next() {
 		var firstEventAt, lastEventAt time.Time
 		err = rows.Scan(&firstEventAt, &lastEventAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan event time range: %w", err)
 		}
-		eventTimeRanges = append(eventTimeRanges, &model.EventTimeRange{
+		eventTimeRanges = append(eventTimeRanges, model.EventTimeRange{
 			FirstEventAt: firstEventAt,
 			LastEventAt:  lastEventAt,
 		})
