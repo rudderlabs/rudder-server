@@ -163,13 +163,14 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 	job.LoadFileGenStartTime = timeutil.Now()
 
+	startTime := time.Now()
 	// Getting distinct destination revision ID from staging files metadata
 	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
 	if err != nil {
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
+	lf.Logger.Infof("[WH]: Populated destination revision ID for %s", time.Since(startTime))
 
-	startTime := time.Now()
 	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
@@ -381,7 +382,7 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *
 			revisionIDMap[revisionID] = job.Warehouse.Destination
 			continue
 		}
-
+		lf.Logger.Infof("[WH]: Fetching destination history for revision ID %s", revisionID)
 		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionID)
 		if err != nil {
 			return nil, err
