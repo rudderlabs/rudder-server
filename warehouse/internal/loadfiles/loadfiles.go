@@ -374,20 +374,19 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
 
-	// TODO: ensure DestinationRevisionID is populated
-	for _, file := range job.StagingFiles {
-		revisionID := file.DestinationRevisionID
-		// No need to make config backend api call for the current config
-		if revisionID == job.Warehouse.Destination.RevisionID {
-			revisionIDMap[revisionID] = job.Warehouse.Destination
-			continue
-		}
-		lf.Logger.Infof("[WH]: Fetching destination history for revision ID %s", revisionID)
-		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionID)
+	revisionIds := lo.Uniq(
+		lo.Map(
+			lo.Filter(job.StagingFiles, func(file *model.StagingFile, _ int) bool {
+				return file.DestinationRevisionID != job.Warehouse.Destination.RevisionID
+			}), func(file *model.StagingFile, _ int) string {
+				return file.DestinationRevisionID
+			}))
+	for _, revisionId := range revisionIds {
+		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionId)
 		if err != nil {
 			return nil, err
 		}
-		revisionIDMap[revisionID] = destination
+		revisionIDMap[revisionId] = destination
 	}
 	return
 }
