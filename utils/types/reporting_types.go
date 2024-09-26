@@ -21,8 +21,6 @@ const (
 	DefaultReplayEnabled    = false
 )
 
-const MaxLengthExceeded = ":max-length-exceeded:"
-
 const (
 	DiffStatus = "diff"
 
