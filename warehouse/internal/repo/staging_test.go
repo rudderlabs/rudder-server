@@ -292,18 +292,28 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	})
 
 	t.Run("GetEventTimeRangesByUploadID", func(t *testing.T) {
-		u := repo.NewUploads(db)
-		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
-		require.NoError(t, err)
 
-		eventTimeRanges, err := r.GetEventTimeRangesByUploadID(ctx, uploadId)
-		require.NoError(t, err)
-		require.Len(t, eventTimeRanges, len(stagingFiles))
+		t.Run("get all", func(t *testing.T) {
 
-		for ind, etr := range eventTimeRanges {
-			require.Equal(t, stagingFiles[ind].FirstEventAt, etr.FirstEventAt.UTC())
-			require.Equal(t, stagingFiles[ind].LastEventAt, etr.LastEventAt.UTC())
-		}
+			u := repo.NewUploads(db)
+			uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
+			require.NoError(t, err)
+
+			eventTimeRanges, err := r.GetEventTimeRangesByUploadID(ctx, uploadId)
+			require.NoError(t, err)
+			require.Len(t, eventTimeRanges, len(stagingFiles))
+
+			for ind, etr := range eventTimeRanges {
+				require.Equal(t, stagingFiles[ind].FirstEventAt, etr.FirstEventAt.UTC())
+				require.Equal(t, stagingFiles[ind].LastEventAt, etr.LastEventAt.UTC())
+			}
+		})
+
+		t.Run("empty staging files", func(t *testing.T) {
+			eventTimeRanges, err := r.GetEventTimeRangesByUploadID(ctx, 100)
+			require.NoError(t, err)
+			require.Empty(t, eventTimeRanges)
+		})
 	})
 }
 
