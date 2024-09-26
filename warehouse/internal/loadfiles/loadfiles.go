@@ -169,11 +169,13 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
 
+	startTime := time.Now()
 	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
+	lf.Logger.Infof("[WH]: Deleted previous load files for staging files %v for %v", time.Since(startTime), destID)
 
 	// Set staging file status to executing
 	if err := lf.StageRepo.SetStatuses(
@@ -184,6 +186,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
 
+	lf.Logger.Infof("[WH]: Set staging file status to executing for staging files %v for %v", time.Since(startTime), destID)
 	defer func() {
 		// ensure that if there is an error, we set the staging file status to failed
 		if err != nil {
@@ -238,6 +241,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
+		lf.Logger.Infof("[WH]: Publishing %d staging files in %v for %v", len(messages), time.Since(startTime), destID)
 		uploadSchemaJSON, err := json.Marshal(struct {
 			UploadSchema model.Schema
 		}{
