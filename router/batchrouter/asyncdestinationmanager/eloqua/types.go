@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type EloquaService interface {
@@ -23,6 +24,7 @@ type EloquaService interface {
 type EloquaBulkUploader struct {
 	destName          string
 	logger            logger.Logger
+	statsFactory      stats.Stats
 	authorization     string
 	baseEndpoint      string
 	fileSizeLimit     int64

@@ -75,6 +75,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
+	reportJobsdbPayload                config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
 
@@ -358,7 +359,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sampleEvent := workerJobStatus.job.EventPayload
+			sampleEvent := workerJobStatus.payload
 			if rt.transientSources.Apply(parameters.SourceID) {
 				sampleEvent = routerutils.EmptyPayload
 			}

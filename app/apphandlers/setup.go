@@ -52,10 +52,6 @@ func rudderCoreNodeSetup() error {
 	return validators.InitializeNodeMigrations()
 }
 
-func rudderCoreWorkSpaceTableSetup() error {
-	return validators.CheckAndValidateWorkspaceToken()
-}
-
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
 func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig

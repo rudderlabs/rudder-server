@@ -16,6 +16,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -28,18 +29,22 @@ type MarketoBulkUploader struct {
 	destinationConfig map[string]interface{}
 	transformUrl      string
 	pollUrl           string
+	conf              *config.Config
 	logger            logger.Logger
+	statsFactory      stats.Stats
 	timeout           time.Duration
 }
 
-func NewManager(destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
+func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
 	marketoBulkUpload := &MarketoBulkUploader{
 		destName:          destination.DestinationDefinition.Name,
 		destinationConfig: destination.Config,
 		pollUrl:           "/pollStatus",
-		transformUrl:      config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
-		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("MarketoBulkUploader"),
-		timeout:           config.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second),
+		transformUrl:      conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		conf:              conf,
+		logger:            logger.Child("Marketo").Child("MarketoBulkUploader"),
+		statsFactory:      statsFactory,
+		timeout:           conf.GetDuration("HttpClient.marketoBulkUpload.timeout", 30, time.Second),
 	}
 	return marketoBulkUpload, nil
 }
@@ -287,12 +292,12 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := b.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
+	payloadSizeStat := b.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
@@ -300,7 +305,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	startTime := time.Now()
 	payloadSizeStat.Observe(float64(len(payload)))
 	b.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v", destType)
-	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(uploadURL, payload, config.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
+	responseBody, statusCodeHTTP := misc.HTTPCallWithRetryWithTimeout(uploadURL, payload, b.conf.GetDuration("HttpClient.marketoBulkUpload.timeout", 10, time.Minute))
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 	uploadTimeStat.Since(startTime)
 	var bodyBytes []byte
@@ -365,7 +370,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 				DestinationID: destinationID,
 			}
 		}
-		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+		eventsAbortedStat := b.statsFactory.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": destType,
 		})

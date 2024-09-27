@@ -14,15 +14,18 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
-	"go.uber.org/atomic"
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -33,6 +36,8 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -40,7 +45,9 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -75,9 +82,11 @@ func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false, nil, nil)
 
-		ctx := context.Background()
-		events := 100
-		jobs := 1
+		var (
+			ctx    = context.Background()
+			events = 100
+			jobs   = 1
+		)
 
 		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
@@ -108,10 +117,6 @@ func TestUploads(t *testing.T) {
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
-		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
 		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
@@ -174,10 +179,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -231,10 +232,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -282,10 +279,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -412,10 +405,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -431,71 +420,126 @@ func TestUploads(t *testing.T) {
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 		require.True(t, hasRevisionEndpointBeenCalled.Load())
 	})
-	t.Run("tunnelling", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.ssh-server.yml"}))
-		c.Start(context.Background())
+	t.Run("tunneling", func(t *testing.T) {
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
 
-		tunnelledHost := "db-private-postgres"
-		tunnelledDatabase := "postgres"
-		tunnelledPassword := "postgres"
-		tunnelledUser := "postgres"
+		// Start shared Docker network
+		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "uploads_tunneling_network"})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				t.Logf("Error while removing Docker network: %v", err)
+			}
+		})
+
+		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
+		require.NoError(t, err)
+
+		var (
+			group             errgroup.Group
+			postgresResource  *postgres.Resource
+			sshServerResource *sshserver.Resource
+			minioResource     *minio.Resource
+		)
+		group.Go(func() (err error) {
+			postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
+			return err
+		})
+		group.Go(func() (err error) {
+			sshServerResource, err = sshserver.Setup(pool, t,
+				sshserver.WithPublicKeyPath(publicKeyPath),
+				sshserver.WithCredentials("linuxserver.io", ""),
+				sshserver.WithDockerNetwork(network),
+			)
+			return err
+		})
+		group.Go(func() (err error) {
+			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
+			return
+		})
+		require.NoError(t, group.Wait())
+
+		postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
+		require.NoError(t, err)
+
+		tunnelledHost := postgresContainer.NetworkSettings.Networks[network.Name].IPAddress
+		tunnelledDatabase := "jobsdb"
+		tunnelledUser := "rudder"
+		tunnelledPassword := "password"
 		tunnelledPort := "5432"
-		tunnelledSSHUser := "rudderstack"
+		tunnelledSSHUser := "linuxserver.io"
 		tunnelledSSHHost := "localhost"
-		tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
-		sshPort := c.Port("ssh-server", 2222)
+		tunnelledSSHPort := strconv.Itoa(sshServerResource.Port)
+		tunnelledPrivateKey, err := os.ReadFile(privateKeyPath)
+		require.NoError(t, err)
 
-		db, minioResource, whClient := setupServer(t, false,
-			func(m map[string]backendconfig.ConfigT, minioResource *minio.Resource) {
-				m[workspaceID] = backendconfig.ConfigT{
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
+		bcConfig := defaultBackendConfig(postgresResource, minioResource, false)
+		bcConfig[workspaceID] = backendconfig.ConfigT{
+			WorkspaceID: workspaceID,
+			Sources: []backendconfig.SourceT{
+				{
+					ID:      sourceID,
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{
 						{
-							ID:      sourceID,
+							ID:      destinationID,
 							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]any{
-										"host":             tunnelledHost,
-										"database":         tunnelledDatabase,
-										"user":             tunnelledUser,
-										"password":         tunnelledPassword,
-										"port":             tunnelledPort,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"useSSH":           true,
-										"sshUser":          tunnelledSSHUser,
-										"sshPort":          strconv.Itoa(sshPort),
-										"sshHost":          tunnelledSSHHost,
-										"sshPrivateKey":    strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
-									},
-									RevisionID: destinationID,
-								},
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: whutils.POSTGRES,
 							},
+							Config: map[string]any{
+								"host":             tunnelledHost,
+								"database":         tunnelledDatabase,
+								"user":             tunnelledUser,
+								"password":         tunnelledPassword,
+								"port":             tunnelledPort,
+								"sslMode":          "disable",
+								"namespace":        namespace,
+								"bucketProvider":   whutils.MINIO,
+								"bucketName":       minioResource.BucketName,
+								"accessKeyID":      minioResource.AccessKeyID,
+								"secretAccessKey":  minioResource.AccessKeySecret,
+								"useSSL":           false,
+								"endPoint":         minioResource.Endpoint,
+								"syncFrequency":    "0",
+								"useRudderStorage": false,
+								"useSSH":           true,
+								"sshUser":          tunnelledSSHUser,
+								"sshPort":          tunnelledSSHPort,
+								"sshHost":          tunnelledSSHHost,
+								"sshPrivateKey":    strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
+							},
+							RevisionID: destinationID,
 						},
 					},
-				}
+				},
 			},
-			nil,
+		}
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			require.NoError(t, runWarehouseServer(t, ctx, webPort, postgresResource, bcConfig))
+		}()
+		t.Cleanup(func() {
+			cancel()
+			<-done
+		})
+
+		serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+		health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
+
+		var (
+			db       = sqlmw.New(postgresResource.DB)
+			whClient = whclient.NewWarehouse(serverURL)
+			events   = 100
+			jobs     = 1
 		)
-
-		ctx := context.Background()
-		events := 100
-		jobs := 1
-
 		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 				uuid.New().String(),
@@ -526,10 +570,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -553,9 +593,9 @@ func TestUploads(t *testing.T) {
 		tunnelInfo := &tunnelling.TunnelInfo{
 			Config: map[string]any{
 				"sshUser":       tunnelledSSHUser,
-				"sshPort":       strconv.Itoa(sshPort),
+				"sshPort":       tunnelledSSHPort,
 				"sshHost":       tunnelledSSHHost,
-				"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
+				"sshPrivateKey": strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
 			},
 		}
 
@@ -601,10 +641,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -688,7 +724,7 @@ func TestUploads(t *testing.T) {
 				{A: "in_pu", B: "batch_router"},
 				{A: "pu", B: "warehouse"},
 				{A: "initial_state", B: false},
-				{A: "terminal_state", B: true},
+				{A: "terminal_state", B: false},
 			}...)
 			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
@@ -802,10 +838,6 @@ func TestUploads(t *testing.T) {
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
-		}...)
-		requireLoadFileEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
 		}...)
 		requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
@@ -929,10 +961,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -953,10 +981,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1018,10 +1042,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1042,10 +1062,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1107,10 +1123,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1131,10 +1143,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1196,10 +1204,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1220,10 +1224,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1288,10 +1288,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1312,10 +1308,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1380,10 +1372,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1404,10 +1392,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1472,10 +1456,6 @@ func TestUploads(t *testing.T) {
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireLoadFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-			}...)
 			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
@@ -1496,10 +1476,6 @@ func TestUploads(t *testing.T) {
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
-			}...)
-			requireLoadFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
 			}...)
 			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
@@ -1574,10 +1550,6 @@ func TestUploads(t *testing.T) {
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireLoadFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-		}...)
 		requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
 			{A: "status", B: waiting},
 			{A: "wh_uploads.source_id", B: sourceID},
@@ -1590,6 +1562,428 @@ func TestUploads(t *testing.T) {
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
+	})
+}
+
+func TestDestinationTransformation(t *testing.T) {
+	c := testcompose.New(t, compose.FilePaths([]string{"../../warehouse/integrations/testdata/docker-compose.transformer.yml"}))
+	c.Start(context.Background())
+
+	transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+
+	conf := config.New()
+	conf.Set("DEST_TRANSFORM_URL", transformerURL)
+	conf.Set("USER_TRANSFORM_URL", transformerURL)
+
+	type output struct {
+		Metadata struct {
+			Table   string            `mapstructure:"table"`
+			Columns map[string]string `mapstructure:"columns"`
+		} `mapstructure:"metadata"`
+		Data map[string]any `mapstructure:"data"`
+	}
+
+	t.Run("allowUsersContextTraits", func(t *testing.T) {
+		testcases := []struct {
+			name           string
+			configOverride map[string]any
+			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+		}{
+			{
+				name: "with allowUsersContextTraits=true",
+				configOverride: map[string]any{
+					"allowUsersContextTraits": true,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.Contains(t, identifyEvent.Metadata.Columns, "firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "lastname")
+					require.Equal(t, "Mickey", identifyEvent.Data["firstname"])
+					require.Equal(t, "Mouse", identifyEvent.Data["lastname"])
+					require.Equal(t, "Mickey", identifyEvent.Data["context_traits_firstname"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.Contains(t, userEvent.Metadata.Columns, "firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "lastname")
+					require.Equal(t, "Mickey", userEvent.Data["firstname"])
+					require.Equal(t, "Mouse", userEvent.Data["lastname"])
+					require.Equal(t, "Mickey", userEvent.Data["context_traits_firstname"])
+				},
+			},
+			{
+				name: "with allowUsersContextTraits=false",
+				configOverride: map[string]any{
+					"allowUsersContextTraits": false,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.NotContains(t, identifyEvent.Metadata.Columns, "firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "lastname")
+					require.NotContains(t, identifyEvent.Data, "firstname")
+					require.Equal(t, "Mouse", identifyEvent.Data["lastname"])
+					require.Equal(t, "Mickey", identifyEvent.Data["context_traits_firstname"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.NotContains(t, userEvent.Metadata.Columns, "firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "lastname")
+					require.NotContains(t, userEvent.Data, "firstname")
+					require.Equal(t, "Mouse", userEvent.Data["lastname"])
+					require.Equal(t, "Mickey", userEvent.Data["context_traits_firstname"])
+				},
+			},
+			{
+				name:           "without allowUsersContextTraits",
+				configOverride: map[string]any{},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.NotContains(t, identifyEvent.Metadata.Columns, "firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, identifyEvent.Metadata.Columns, "lastname")
+					require.NotContains(t, identifyEvent.Data, "firstname")
+					require.Equal(t, "Mouse", identifyEvent.Data["lastname"])
+					require.Equal(t, "Mickey", identifyEvent.Data["context_traits_firstname"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.NotContains(t, userEvent.Metadata.Columns, "firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "context_traits_firstname")
+					require.Contains(t, userEvent.Metadata.Columns, "lastname")
+					require.NotContains(t, userEvent.Data, "firstname")
+					require.Equal(t, "Mouse", userEvent.Data["lastname"])
+					require.Equal(t, "Mickey", userEvent.Data["context_traits_firstname"])
+				},
+			},
+		}
+
+		for _, tc := range testcases {
+			destinationBuilder := backendconfigtest.NewDestinationBuilder(whutils.BQ).
+				WithID(destinationID).
+				WithRevisionID(destinationID)
+			for k, v := range tc.configOverride {
+				destinationBuilder.WithConfigOption(k, v)
+			}
+			destination := destinationBuilder.Build()
+
+			destinationJSON, err := json.Marshal(destination)
+			require.NoError(t, err)
+
+			eventTemplate := `
+				[
+				 {
+					"message": {
+					  "context": {
+						"traits": {
+						  "firstname": "Mickey"
+						}
+					  },
+					  "traits": {
+						"lastname": "Mouse"
+					  },
+					  "type": "identify",
+					  "userId": "9bb5d4c2-a7aa-4a36-9efb-dd2b1aec5d33"
+					},
+					"destination": {{.destination}}
+				 }
+				]
+`
+
+			tpl, err := template.New(uuid.New().String()).Parse(eventTemplate)
+			require.NoError(t, err)
+
+			b := new(strings.Builder)
+			err = tpl.Execute(b, map[string]any{
+				"destination": string(destinationJSON),
+			})
+			require.NoError(t, err)
+
+			var transformerEvents []transformer.TransformerEvent
+			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			require.NoError(t, err)
+
+			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
+			response := tr.Transform(context.Background(), transformerEvents, 100)
+			require.Zero(t, len(response.FailedEvents))
+			require.Len(t, response.Events, 2)
+
+			tc.validateEvents(t, response.Events)
+		}
+	})
+	t.Run("underscoreDivideNumbers", func(t *testing.T) {
+		testcases := []struct {
+			name           string
+			configOverride map[string]any
+			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+		}{
+			{
+				name: "with underscoreDivideNumbers=true",
+				configOverride: map[string]any{
+					"underscoreDivideNumbers": true,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var trackOutput output
+					err := mapstructure.Decode(events[0].Output, &trackOutput)
+					require.NoError(t, err)
+					require.Equal(t, "tracks", trackOutput.Metadata.Table)
+					require.Contains(t, trackOutput.Metadata.Columns, "context_traits_attribute_v_3")
+					require.Equal(t, "button_clicked_v_2", trackOutput.Data["event"])
+					require.Equal(t, "button clicked v2", trackOutput.Data["event_text"])
+					require.Equal(t, "some value", trackOutput.Data["context_traits_attribute_v_3"])
+
+					var buttonClickedOutput output
+					err = mapstructure.Decode(events[1].Output, &buttonClickedOutput)
+					require.NoError(t, err)
+					require.Equal(t, "button_clicked_v_2", buttonClickedOutput.Metadata.Table)
+					require.Contains(t, buttonClickedOutput.Metadata.Columns, "context_traits_attribute_v_3")
+					require.Equal(t, "button_clicked_v_2", buttonClickedOutput.Data["event"])
+					require.Equal(t, "button clicked v2", buttonClickedOutput.Data["event_text"])
+					require.Equal(t, "some value", buttonClickedOutput.Data["context_traits_attribute_v_3"])
+				},
+			},
+			{
+				name: "with underscoreDivideNumbers=false",
+				configOverride: map[string]any{
+					"underscoreDivideNumbers": false,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var trackOutput output
+					err := mapstructure.Decode(events[0].Output, &trackOutput)
+					require.NoError(t, err)
+					require.Equal(t, "tracks", trackOutput.Metadata.Table)
+					require.Contains(t, trackOutput.Metadata.Columns, "context_traits_attribute_v3")
+					require.Equal(t, "button_clicked_v2", trackOutput.Data["event"])
+					require.Equal(t, "button clicked v2", trackOutput.Data["event_text"])
+					require.Equal(t, "some value", trackOutput.Data["context_traits_attribute_v3"])
+
+					var buttonClickedOutput output
+					err = mapstructure.Decode(events[1].Output, &buttonClickedOutput)
+					require.NoError(t, err)
+					require.Equal(t, "button_clicked_v2", buttonClickedOutput.Metadata.Table)
+					require.Contains(t, buttonClickedOutput.Metadata.Columns, "context_traits_attribute_v3")
+					require.Equal(t, "button_clicked_v2", buttonClickedOutput.Data["event"])
+					require.Equal(t, "button clicked v2", buttonClickedOutput.Data["event_text"])
+					require.Equal(t, "some value", buttonClickedOutput.Data["context_traits_attribute_v3"])
+				},
+			},
+			{
+				name:           "without underscoreDivideNumbers",
+				configOverride: map[string]any{},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var trackOutput output
+					err := mapstructure.Decode(events[0].Output, &trackOutput)
+					require.NoError(t, err)
+					require.Equal(t, "tracks", trackOutput.Metadata.Table)
+					require.Contains(t, trackOutput.Metadata.Columns, "context_traits_attribute_v3")
+					require.Equal(t, "button_clicked_v2", trackOutput.Data["event"])
+					require.Equal(t, "button clicked v2", trackOutput.Data["event_text"])
+					require.Equal(t, "some value", trackOutput.Data["context_traits_attribute_v3"])
+
+					var buttonClickedOutput output
+					err = mapstructure.Decode(events[1].Output, &buttonClickedOutput)
+					require.NoError(t, err)
+					require.Equal(t, "button_clicked_v2", buttonClickedOutput.Metadata.Table)
+					require.Contains(t, buttonClickedOutput.Metadata.Columns, "context_traits_attribute_v3")
+					require.Equal(t, "button_clicked_v2", buttonClickedOutput.Data["event"])
+					require.Equal(t, "button clicked v2", buttonClickedOutput.Data["event_text"])
+					require.Equal(t, "some value", buttonClickedOutput.Data["context_traits_attribute_v3"])
+				},
+			},
+		}
+
+		for _, tc := range testcases {
+			destinationBuilder := backendconfigtest.NewDestinationBuilder(whutils.BQ).
+				WithID(destinationID).
+				WithRevisionID(destinationID)
+			for k, v := range tc.configOverride {
+				destinationBuilder.WithConfigOption(k, v)
+			}
+			destination := destinationBuilder.Build()
+
+			destinationJSON, err := json.Marshal(destination)
+			require.NoError(t, err)
+
+			eventTemplate := `
+				[
+				 {
+					"message": {
+					  "context": {
+						"traits": {
+						  "attribute v3": "some value"
+						}
+					  },
+					  "event": "button clicked v2",
+					  "type": "track"
+					},
+					"destination": {{.destination}}
+				  }
+				]
+`
+
+			tpl, err := template.New(uuid.New().String()).Parse(eventTemplate)
+			require.NoError(t, err)
+
+			b := new(strings.Builder)
+			err = tpl.Execute(b, map[string]any{
+				"destination": string(destinationJSON),
+			})
+			require.NoError(t, err)
+
+			var transformerEvents []transformer.TransformerEvent
+			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			require.NoError(t, err)
+
+			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
+			response := tr.Transform(context.Background(), transformerEvents, 100)
+			require.Zero(t, len(response.FailedEvents))
+			require.Len(t, response.Events, 2)
+
+			tc.validateEvents(t, response.Events)
+		}
+	})
+	t.Run("users additional fields (sent_at, timestamp, original_timestamp)", func(t *testing.T) {
+		testcases := []struct {
+			name           string
+			destType       string
+			configOverride map[string]any
+			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+		}{
+			{
+				name:     "for non-datalake destinations should be present",
+				destType: whutils.BQ,
+				configOverride: map[string]any{
+					"allowUsersContextTraits": true,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.Contains(t, userEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, userEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, userEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", userEvent.Data["original_timestamp"])
+				},
+			},
+			{
+				name:     "for datalake destinations should not be present",
+				destType: whutils.GCSDatalake,
+				configOverride: map[string]any{
+					"allowUsersContextTraits": false,
+				},
+				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+					var identifyEvent output
+					err := mapstructure.Decode(events[0].Output, &identifyEvent)
+					require.NoError(t, err)
+					require.Equal(t, "identifies", identifyEvent.Metadata.Table)
+					require.Contains(t, identifyEvent.Metadata.Columns, "sent_at")
+					require.Contains(t, identifyEvent.Metadata.Columns, "timestamp")
+					require.Contains(t, identifyEvent.Metadata.Columns, "original_timestamp")
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["sent_at"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["timestamp"])
+					require.Equal(t, "2023-05-12T04:08:48.750Z", identifyEvent.Data["original_timestamp"])
+
+					var userEvent output
+					err = mapstructure.Decode(events[1].Output, &userEvent)
+					require.NoError(t, err)
+					require.Equal(t, "users", userEvent.Metadata.Table)
+					require.NotContains(t, userEvent.Metadata.Columns, "sent_at")
+					require.NotContains(t, userEvent.Metadata.Columns, "timestamp")
+					require.NotContains(t, userEvent.Metadata.Columns, "original_timestamp")
+					require.NotContains(t, userEvent.Data, "sent_at")
+					require.NotContains(t, userEvent.Data, "timestamp")
+					require.NotContains(t, userEvent.Data, "original_timestamp")
+				},
+			},
+		}
+
+		for _, tc := range testcases {
+			destinationBuilder := backendconfigtest.NewDestinationBuilder(tc.destType).
+				WithID(destinationID).
+				WithRevisionID(destinationID)
+			for k, v := range tc.configOverride {
+				destinationBuilder.WithConfigOption(k, v)
+			}
+			destination := destinationBuilder.Build()
+
+			destinationJSON, err := json.Marshal(destination)
+			require.NoError(t, err)
+
+			eventTemplate := `
+				[
+				 {
+					"message": {
+					  "context": {
+						"traits": {
+						  "firstname": "Mickey"
+						}
+					  },
+					  "traits": {
+						"lastname": "Mouse"
+					  },
+					  "type": "identify",
+					  "userId": "9bb5d4c2-a7aa-4a36-9efb-dd2b1aec5d33",
+                      "originalTimestamp": "2023-05-12T04:08:48.750+00:00",
+                      "sentAt": "2023-05-12T04:08:48.750+00:00",
+                      "timestamp": "2023-05-12T04:08:48.750+00:00"
+					},
+					"destination": {{.destination}}
+				 }
+				]
+`
+
+			tpl, err := template.New(uuid.New().String()).Parse(eventTemplate)
+			require.NoError(t, err)
+
+			b := new(strings.Builder)
+			err = tpl.Execute(b, map[string]any{
+				"destination": string(destinationJSON),
+			})
+			require.NoError(t, err)
+
+			var transformerEvents []transformer.TransformerEvent
+			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			require.NoError(t, err)
+
+			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
+			response := tr.Transform(context.Background(), transformerEvents, 100)
+			require.Zero(t, len(response.FailedEvents))
+			require.Len(t, response.Events, 2)
+
+			tc.validateEvents(t, response.Events)
+		}
 	})
 }
 
@@ -1784,41 +2178,6 @@ func requireStagingFileEventsCount(
 		10*time.Second,
 		250*time.Millisecond,
 		"expected staging file events count to be %d", expectedCount,
-	)
-}
-
-// nolint:unparam
-func requireLoadFileEventsCount(
-	t testing.TB,
-	ctx context.Context,
-	db *sqlmw.DB,
-	expectedCount int,
-	filters ...lo.Tuple2[string, any],
-) {
-	t.Helper()
-
-	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_load_files WHERE 1 = 1"
-	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
-		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
-	}), "")
-	queryArgs := lo.Map(filters, func(t lo.Tuple2[string, any], _ int) any {
-		return t.B
-	})
-
-	require.Eventuallyf(t,
-		func() bool {
-			var eventsCount int
-			err := db.QueryRowContext(ctx, query, queryArgs...).Scan(&eventsCount)
-			if err != nil {
-				t.Logf("error getting load file events count: %v", err)
-				return false
-			}
-			t.Logf("Load file events count: %d", eventsCount)
-			return eventsCount == expectedCount
-		},
-		10*time.Second,
-		250*time.Millisecond,
-		"expected load file events count to be %d", expectedCount,
 	)
 }
 

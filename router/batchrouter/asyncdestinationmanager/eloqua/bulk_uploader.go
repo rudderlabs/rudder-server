@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -31,7 +32,7 @@ func (*EloquaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 
 func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
+	uploadRetryableStat := b.statsFactory.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
@@ -94,14 +95,14 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to create csv file. ", err, destination.ID, asyncDestStruct)
 	}
-	CSVFileSizeStat := stats.Default.NewTaggedStat("csv_file_size", stats.HistogramType,
+	CSVFileSizeStat := b.statsFactory.NewTaggedStat("csv_file_size", stats.HistogramType,
 		map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})
 	CSVFileSizeStat.Observe(float64(fileSize))
 	defer os.Remove(filePAth)
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := b.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
@@ -216,13 +217,13 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 	var uploadStatusResponse common.GetUploadStatsResponse
 	defer func() {
 		b.clearJobToCsvMap()
-		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+		eventsAbortedStat := b.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})
 		eventsAbortedStat.Count(len(uploadStatusResponse.Metadata.FailedKeys))
 
-		eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
+		eventsSuccessStat := b.statsFactory.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": b.destName,
 		})

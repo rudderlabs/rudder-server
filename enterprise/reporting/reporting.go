@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -67,6 +68,7 @@ type DefaultReporter struct {
 	sourcesWithEventNameTrackingDisabled []string
 	maxOpenConnections                   int
 	maxConcurrentRequests                config.ValueLoader[int]
+	vacuumFull                           config.ValueLoader[bool]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -106,6 +108,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		whActionsOnly:                        whActionsOnly,
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
+		vacuumFull:                           config.GetReloadableBoolVar(false, "Reporting.vacuumFull"),
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
@@ -157,6 +160,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 
 	if !config.GetBool("Reporting.syncer.enabled", true) {
 		return func() {}
+	}
+	if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
+		r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
+		panic(err)
 	}
 	return func() {
 		r.g.Go(func() error {
@@ -361,7 +368,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
 	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
-	vacuumDuration := r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags)
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
@@ -377,6 +383,13 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	})
 
 	g.Go(func() error {
+		var (
+			deletedRows                int
+			vacuumDeletedRowsThreshold = config.GetReloadableIntVar(100000, 1, "Reporting.vacuumThresholdDeletedRows")
+			lastVacuum                 time.Time
+			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
+			vacuumThresholdBytes       = config.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.vacuumThresholdBytes")
+		)
 		for {
 			if ctx.Err() != nil {
 				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
@@ -449,27 +462,33 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+				} else {
+					deletedRows += len(reports)
 				}
 
-				vacuumStart := time.Now()
-				var sizeEstimate int64
-				if err := dbHandle.QueryRowContext(
-					ctx,
-					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
-				).Scan(&sizeEstimate); err != nil {
-					r.log.Errorn(
-						`[ Reporting ]: Error getting table size estimate`,
-						logger.NewErrorField(err),
-					)
-				}
-				if sizeEstimate > config.GetInt64("Reporting.vacuumThresholdBytes", 5*bytesize.GB) {
-					if _, err := dbHandle.ExecContext(ctx, `vacuum full analyze reports;`); err != nil {
+				// vacuum the table
+				if deletedRows >= vacuumDeletedRowsThreshold.Load() {
+					if err := r.vacuum(ctx, dbHandle, tags); err == nil {
+						deletedRows = 0
+						lastVacuum = time.Now()
+					}
+				} else if time.Since(lastVacuum) > vacuumInterval.Load() {
+					var sizeEstimate int64
+					if err := dbHandle.QueryRowContext(
+						ctx,
+						fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
+					).Scan(&sizeEstimate); err != nil {
 						r.log.Errorn(
-							`[ Reporting ]: Error vacuuming reports table`,
+							`[ Reporting ]: Error getting table size estimate`,
 							logger.NewErrorField(err),
 						)
 					}
-					vacuumDuration.Since(vacuumStart)
+					if sizeEstimate >= vacuumThresholdBytes.Load() {
+						if err := r.vacuum(ctx, dbHandle, tags); err == nil {
+							deletedRows = 0
+							lastVacuum = time.Now()
+						}
+					}
 				}
 			}
 
@@ -486,6 +505,29 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err)
 	}
+}
+
+func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tags) error {
+	defer r.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags).RecordDuration()()
+	var (
+		query string
+		full  bool
+	)
+	if r.vacuumFull.Load() {
+		full = true
+		query = `vacuum full analyze reports;`
+	} else {
+		query = `vacuum analyze reports;`
+	}
+	_, err := db.ExecContext(ctx, query)
+	if err != nil {
+		r.log.Errorn(
+			`[ Reporting ]: Error vacuuming reports table`,
+			obskit.Error(err),
+			logger.NewBoolField("full", full),
+		)
+	}
+	return nil
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
@@ -607,7 +649,6 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	}
 	defer func() { _ = stmt.Close() }()
 
-	eventNameMaxLength := config.GetInt("Reporting.eventNameMaxLength", 0)
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
@@ -621,8 +662,9 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		if eventNameMaxLength > 0 && len(metric.StatusDetail.EventName) > eventNameMaxLength {
-			metric.StatusDetail.EventName = types.MaxLengthExceeded
+		eventName := metric.StatusDetail.EventName
+		if len(eventName) > 50 {
+			metric.StatusDetail.EventName = fmt.Sprintf("%s...%s", eventName[:40], eventName[len(eventName)-10:])
 		}
 
 		_, err = stmt.Exec(

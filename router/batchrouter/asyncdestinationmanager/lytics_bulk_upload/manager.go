@@ -6,14 +6,17 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewLyticsBulkUploader(destinationName, authorization, endpoint string, lytics LyticsService) common.AsyncUploadAndTransformManager {
+func NewLyticsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destinationName, authorization, endpoint string, lytics LyticsService) common.AsyncUploadAndTransformManager {
 	return &LyticsBulkUploader{
 		destName:      destinationName,
-		logger:        logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Lytics").Child("LyticsBulkUploader"),
+		logger:        logger.Child("Lytics").Child("LyticsBulkUploader"),
+		statsFactory:  statsFactory,
 		authorization: authorization,
 		baseEndpoint:  endpoint,
 		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 10*bytesize.MB),
@@ -22,7 +25,7 @@ func NewLyticsBulkUploader(destinationName, authorization, endpoint string, lyti
 	}
 }
 
-func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
@@ -38,6 +41,6 @@ func NewManager(destination *backendconfig.DestinationT) (common.AsyncDestinatio
 	lyticsImpl := lyticsService.getBulkApi(destConfig)
 
 	return common.SimpleAsyncDestinationManager{
-		UploaderAndTransformer: NewLyticsBulkUploader(destName, destConfig.LyticsApiKey, lyticsImpl.BulkApi, lyticsService),
+		UploaderAndTransformer: NewLyticsBulkUploader(logger, statsFactory, destName, destConfig.LyticsApiKey, lyticsImpl.BulkApi, lyticsService),
 	}, nil
 }

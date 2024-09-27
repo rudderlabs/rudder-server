@@ -10,13 +10,17 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 type LyticsBulkUploader struct {
 	destName      string
 	logger        logger.Logger
+	statsFactory  stats.Stats
 	authorization string
 	baseEndpoint  string
 	fileSizeLimit int64

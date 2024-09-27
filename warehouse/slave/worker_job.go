@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -451,7 +452,7 @@ func (jr *jobRun) cleanup() {
 	}
 }
 
-func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter) error {
+func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter, reason string) error {
 	rowID, hasID := columnData[jr.job.columnName("id")]
 	receivedAt, hasReceivedAt := columnData[jr.job.columnName("received_at")]
 
@@ -469,6 +470,7 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 		eventLoader := jr.encodingFactory.NewEventLoader(discardWriter, jr.job.LoadFileType, jr.job.DestinationType)
 		eventLoader.AddColumn("column_name", warehouseutils.DiscardsSchema["column_name"], columnName)
 		eventLoader.AddColumn("column_value", warehouseutils.DiscardsSchema["column_value"], fmt.Sprintf("%v", columnVal))
+		eventLoader.AddColumn("reason", warehouseutils.DiscardsSchema["reason"], reason)
 		eventLoader.AddColumn("received_at", warehouseutils.DiscardsSchema["received_at"], receivedAt)
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
@@ -477,7 +479,6 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
 			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jr.uuidTS.Format(timestampFormat))
 		}
-
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
 			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
 			eventLoader.AddColumn("loaded_at", "datetime", jr.uuidTS.Format(timestampFormat))

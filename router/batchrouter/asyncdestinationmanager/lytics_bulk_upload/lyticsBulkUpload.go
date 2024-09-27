@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -74,7 +75,7 @@ func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	filePath := asyncDestStruct.FileName
 	destConfig, err := jsoniter.Marshal(destination.Config)
 	if err != nil {
-		eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+		eventsAbortedStat := u.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": u.destName,
 		})
@@ -108,14 +109,14 @@ func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 			DestinationID: destination.ID,
 		}
 	}
-	uploadRetryableStat := stats.Default.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
+	uploadRetryableStat := u.statsFactory.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": u.destName,
 	})
 
 	uploadRetryableStat.Count(len(actionFiles.FailedJobIDs))
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := u.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": u.destName,
 	})

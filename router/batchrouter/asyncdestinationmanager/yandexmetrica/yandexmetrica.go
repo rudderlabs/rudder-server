@@ -23,6 +23,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -86,11 +87,12 @@ func getID(id interface{}, headerName string) (idStruct, error) {
 
 type YandexMetricaBulkUploader struct {
 	logger          logger.Logger
+	statsFactory    stats.Stats
 	Client          *http.Client
 	destinationInfo *oauthv2.DestinationInfo
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
+func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
 	destinationInfo := &oauthv2.DestinationInfo{
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestinationDefinition.Config,
@@ -100,7 +102,8 @@ func NewManager(destination *backendconfig.DestinationT, backendConfig backendco
 	}
 	yandexUploadManager := &YandexMetricaBulkUploader{
 		destinationInfo: destinationInfo,
-		logger:          logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
+		logger:          logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
+		statsFactory:    statsFactory,
 	}
 	cache := oauthv2.NewCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
@@ -259,7 +262,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 }
 
 func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err error, importingJobIds []int64) common.AsyncUploadOutput {
-	eventsAbortedStat := stats.Default.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+	eventsAbortedStat := ym.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": ym.destinationInfo.DefinitionName,
 	})
@@ -330,11 +333,11 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		return ym.generateErrorOutput("joining uploadUrl with counterId", err, importingJobIDs)
 	}
 
-	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
+	uploadTimeStat := ym.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, statLabels)
 
-	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
+	payloadSizeStat := ym.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, statLabels)
 
-	eventsSuccessStat := stats.Default.NewTaggedStat("success_job_count", stats.CountType, statLabels)
+	eventsSuccessStat := ym.statsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	payloadSizeStat.Observe(float64(len(ympayload)))
 	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v\n", destType)

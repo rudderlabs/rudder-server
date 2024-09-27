@@ -10,13 +10,14 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
 	if err != nil {
@@ -49,16 +50,22 @@ func newManagerInternal(destination *backendconfig.DestinationT, oauthClient oau
 	session := bingads.NewSession(sessionConfig)
 
 	clientNew := Client{}
-	bingUploader := NewBingAdsBulkUploader(destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
+	bingUploader := NewBingAdsBulkUploader(logger, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
 	return bingUploader, nil
 }
 
-func NewManager(destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*BingAdsBulkUploader, error) {
+func NewManager(
+	conf *config.Config,
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	destination *backendconfig.DestinationT,
+	backendConfig backendconfig.BackendConfig,
+) (*BingAdsBulkUploader, error) {
 	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
-		oauthv2.WithLogger(logger.NewLogger().Child("BatchRouter")),
-		oauthv2.WithCPConnectorTimeout(config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
-		oauthv2.WithStats(stats.Default),
+		oauthv2.WithLogger(logger),
+		oauthv2.WithCPConnectorTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
+		oauthv2.WithStats(statsFactory),
 	)
-	return newManagerInternal(destination, oauthClient, oauthClientV2)
+	return newManagerInternal(logger, statsFactory, destination, oauthClient, oauthClientV2)
 }

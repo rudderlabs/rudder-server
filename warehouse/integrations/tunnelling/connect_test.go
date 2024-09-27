@@ -1,43 +1,80 @@
 package tunnelling
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
-	"github.com/rudderlabs/compose-test/compose"
-	"github.com/rudderlabs/compose-test/testcompose"
-
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 )
 
 func TestConnect(t *testing.T) {
-	privateKey, err := os.ReadFile("testdata/test_key")
-	require.Nil(t, err)
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
-	ctx := context.Background()
+	// Start shared Docker network
+	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "uploads_tunneling_network"})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+			t.Logf("Error while removing Docker network: %v", err)
+		}
+	})
 
-	c := testcompose.New(t, compose.FilePaths{"./testdata/docker-compose.yml"})
-	c.Start(context.Background())
+	privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
+	require.NoError(t, err)
 
-	host := "0.0.0.0"
-	user := c.Env("openssh-server", "USER_NAME")
-	port := c.Port("openssh-server", 2222)
-	postgresPort := c.Port("postgres", 5432)
+	var (
+		group             errgroup.Group
+		postgresResource  *postgres.Resource
+		sshServerResource *sshserver.Resource
+	)
+	group.Go(func() (err error) {
+		postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
+		return err
+	})
+	group.Go(func() (err error) {
+		sshServerResource, err = sshserver.Setup(pool, t,
+			sshserver.WithPublicKeyPath(publicKeyPath),
+			sshserver.WithCredentials("linuxserver.io", ""),
+			sshserver.WithDockerNetwork(network),
+		)
+		return err
+	})
+	require.NoError(t, group.Wait())
+
+	postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
+	require.NoError(t, err)
+
+	tunnelledHost := postgresContainer.NetworkSettings.Networks[network.Name].IPAddress
+	tunnelledDatabase := "jobsdb"
+	tunnelledUser := "rudder"
+	tunnelledPassword := "password"
+	tunnelledSSHUser := "linuxserver.io"
+	tunnelledSSHHost := "localhost"
+	tunnelledSSHPort := strconv.Itoa(sshServerResource.Port)
+	tunnelledPrivateKey, err := os.ReadFile(privateKeyPath)
+	require.NoError(t, err)
 
 	testCases := []struct {
-		name      string
-		dsn       string
-		config    Config
-		wantError error
+		name          string
+		dsn           string
+		config        Config
+		errorContains string
 	}{
 		{
-			name:      "empty config",
-			dsn:       "dsn",
-			config:    Config{},
-			wantError: ErrMissingKey,
+			name:          "empty config",
+			dsn:           "dsn",
+			config:        Config{},
+			errorContains: ErrMissingKey.Error(),
 		},
 		{
 			name: "invalid config",
@@ -48,7 +85,7 @@ func TestConnect(t *testing.T) {
 				sshPort:       22,
 				sshPrivateKey: "privateKey",
 			},
-			wantError: errors.New("invalid type"),
+			errorContains: "unexpected type: sshPort expected string",
 		},
 		{
 			name: "missing sshUser",
@@ -58,7 +95,7 @@ func TestConnect(t *testing.T) {
 				sshPort:       "port",
 				sshPrivateKey: "privateKey",
 			},
-			wantError: ErrMissingKey,
+			errorContains: ErrMissingKey.Error(),
 		},
 		{
 			name: "missing sshHost",
@@ -68,7 +105,7 @@ func TestConnect(t *testing.T) {
 				sshPort:       "port",
 				sshPrivateKey: "privateKey",
 			},
-			wantError: ErrMissingKey,
+			errorContains: ErrMissingKey.Error(),
 		},
 		{
 			name: "missing sshPort",
@@ -78,7 +115,7 @@ func TestConnect(t *testing.T) {
 				sshHost:       "host",
 				sshPrivateKey: "privateKey",
 			},
-			wantError: ErrMissingKey,
+			errorContains: ErrMissingKey.Error(),
 		},
 		{
 			name: "missing sshPrivateKey",
@@ -88,7 +125,7 @@ func TestConnect(t *testing.T) {
 				sshHost: "host",
 				sshPort: "port",
 			},
-			wantError: ErrMissingKey,
+			errorContains: ErrMissingKey.Error(),
 		},
 		{
 			name: "invalid sshPort",
@@ -99,42 +136,45 @@ func TestConnect(t *testing.T) {
 				sshPort:       "port",
 				sshPrivateKey: "privateKey",
 			},
-			wantError: errors.New("invalid port"),
+			errorContains: `parsing "port": invalid syntax`,
 		},
 		{
 			name: "invalid dsn",
 			dsn:  "postgres://user:password@host:5439/db?query1=val1&query2=val2",
 			config: Config{
-				sshUser:       "user",
-				sshHost:       "0.0.0.0",
-				sshPort:       "22",
-				sshPrivateKey: "privateKey",
+				sshUser:       tunnelledSSHUser,
+				sshHost:       tunnelledSSHHost,
+				sshPort:       tunnelledSSHPort,
+				sshPrivateKey: string(tunnelledPrivateKey),
 			},
-			wantError: errors.New("invalid dsn"),
+			errorContains: "connection reset by peer",
 		},
 		{
 			name: "valid dsn",
-			dsn:  fmt.Sprintf("postgres://postgres:postgres@db_postgres:%d/postgres?sslmode=disable", postgresPort),
+			dsn: fmt.Sprintf(
+				"postgres://%s:%s@%s:5432/%s?sslmode=disable",
+				tunnelledUser, tunnelledPassword, tunnelledHost, tunnelledDatabase,
+			),
 			config: Config{
-				sshUser:       user,
-				sshHost:       host,
-				sshPort:       port,
-				sshPrivateKey: privateKey,
+				sshUser:       tunnelledSSHUser,
+				sshHost:       tunnelledSSHHost,
+				sshPort:       tunnelledSSHPort,
+				sshPrivateKey: string(tunnelledPrivateKey),
 			},
-			wantError: errors.New("invalid dsn"),
+			errorContains: "", // No error expected
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			db, err := Connect(tc.dsn, tc.config)
-			t.Log(err)
-			if tc.wantError != nil {
-				require.Error(t, err, tc.wantError)
-				return
+			if tc.errorContains != "" {
+				require.Nil(t, db)
+				require.ErrorContains(t, err, tc.errorContains)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, db)
 			}
-			require.NoError(t, err)
-			require.NoError(t, db.PingContext(ctx))
 		})
 	}
 }
