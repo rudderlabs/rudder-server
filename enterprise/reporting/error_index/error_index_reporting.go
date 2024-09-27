@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -187,6 +188,10 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 	dbHandle, err := sql.Open("postgres", c.ConnInfo)
 	if err != nil {
 		panic(fmt.Errorf("failed to open error index db: %w", err))
+	}
+	err = eir.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("jobsdb-err_idx", dbHandle))
+	if err != nil {
+		panic(fmt.Errorf("failed to register collector: %w", err))
 	}
 	errIndexDB := jobsdb.NewForReadWrite(
 		"err_idx",

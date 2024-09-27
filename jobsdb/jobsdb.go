@@ -53,6 +53,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -747,6 +749,12 @@ func (jd *Handle) init() {
 		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
+
+		jd.assertError(
+			stats.Default.RegisterCollector(
+				collectors.NewDatabaseSQLStats("jobsdb_"+jd.tablePrefix, jd.dbHandle),
+			),
+		)
 	}
 
 	var maxConns int

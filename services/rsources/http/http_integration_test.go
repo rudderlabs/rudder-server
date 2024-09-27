@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
@@ -40,7 +41,10 @@ func prepare(
 		Log:                 logger.NOP,
 		ShouldSetupSharedDB: true,
 	}
-	service, err = rsources.NewJobService(config)
+	sts, err := memstats.New()
+	require.NoError(t, err, "should create stats")
+
+	service, err = rsources.NewJobService(config, sts)
 	require.NoError(t, err)
 	handler = handlerFunc(service, logger.NOP)
 	dbResource = postgresContainer

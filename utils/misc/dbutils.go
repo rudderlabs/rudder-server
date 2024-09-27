@@ -1,7 +1,6 @@
 package misc
 
 import (
-	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -47,47 +46,6 @@ func SetAppNameInDBConnURL(connectionUrl, appName string) (string, error) {
 	queryParams.Set("application_name", appName)
 	connUrl.RawQuery = queryParams.Encode()
 	return connUrl.String(), nil
-}
-
-/*
-ReplaceDB : Rename the OLD DB and create a new one.
-Since we are not journaling, this should be idemponent
-*/
-func ReplaceDB(dbName, targetName string, c *config.Config) {
-	host := c.GetString("DB.host", "localhost")
-	user := c.GetString("DB.user", "ubuntu")
-	port := c.GetInt("DB.port", 5432)
-	password := c.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode := c.GetString("DB.sslMode", "disable")
-	connInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=%s",
-		host, port, user, password, sslmode)
-	db, err := sql.Open("postgres", connInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	// Killing sessions on the db
-	sqlStatement := fmt.Sprintf("SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid <> pg_backend_pid();", dbName)
-	_, err = db.Exec(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-
-	renameDBStatement := fmt.Sprintf(`ALTER DATABASE %q RENAME TO %q`,
-		dbName, targetName)
-	pkgLogger.Debug(renameDBStatement)
-	_, err = db.Exec(renameDBStatement)
-	// If execution of ALTER returns error, pacicking
-	if err != nil {
-		panic(err)
-	}
-
-	createDBStatement := fmt.Sprintf(`CREATE DATABASE %q`, dbName)
-	_, err = db.Exec(createDBStatement)
-	if err != nil {
-		panic(err)
-	}
 }
 
 func QuoteLiteral(literal string) string {

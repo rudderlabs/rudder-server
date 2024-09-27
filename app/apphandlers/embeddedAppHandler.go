@@ -126,7 +126,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(deploymentType, true, stats.Default)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), stats.Default)
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}

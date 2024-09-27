@@ -112,7 +112,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	rsourcesService, err := NewRsourcesService(deploymentType, false)
+	rsourcesService, err := NewRsourcesService(deploymentType, false, stats.Default)
 	if err != nil {
 		return err
 	}
@@ -121,7 +121,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), stats.Default)
 	if err != nil {
 		a.log.Errorw("drain config manager setup failed while starting gateway", "error", err)
 	}

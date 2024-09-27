@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 )
@@ -25,8 +26,10 @@ func TestDrainConfigRoutine(t *testing.T) {
 	conf.Set("drainConfig.cleanupFrequency", "50ms")
 	ctx := context.Background()
 	log := logger.NOP
+	sts, err := memstats.New()
+	require.NoError(t, err, "should create stats")
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log)
+	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log, sts)
 	require.NoError(t, err, "should create drain config manager")
 	go func() {
 		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "drain config routine should exit")
@@ -55,8 +58,10 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 	conf.Set("drainConfig.pollFrequency", "100ms")
 	ctx, cancel := context.WithCancel(context.Background())
 	log := logger.NOP
+	sts, err := memstats.New()
+	require.NoError(t, err, "should create stats")
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log)
+	drainConfigManager, err := drain_config.NewDrainConfigManager(conf, log, sts)
 	require.NoError(t, err, "should create drain config manager")
 	go func() {
 		require.NoError(t, drainConfigManager.DrainConfigRoutine(ctx), "drain config routine should exit")
