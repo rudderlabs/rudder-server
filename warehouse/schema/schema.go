@@ -302,27 +302,28 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
+	sh.SetSchemaInWarehouse(localSchema)
 
-	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
+	//if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
+	//	return false, fmt.Errorf("fetching schema from warehouse: %w", err)
+	//}
 
 	sh.localSchemaMu.Lock()
 	sh.localSchema = localSchema
 	sh.localSchemaMu.Unlock()
 
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
+	//sh.schemaInWarehouseMu.RLock()
+	//defer sh.schemaInWarehouseMu.RUnlock()
 
-	schemaChanged := sh.hasSchemaChanged(localSchema)
-	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
-		if err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
+	//schemaChanged := sh.hasSchemaChanged(localSchema)
+	//if schemaChanged {
+	//	err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+	//	if err != nil {
+	//		return false, fmt.Errorf("updating local schema: %w", err)
+	//	}
+	//}
 
-	return schemaChanged, nil
+	return false, nil
 }
 
 // GetLocalSchema returns the local schema from wh_schemas table
@@ -364,6 +365,12 @@ func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
 
 	return nil
+}
+
+func (sh *Schema) SetSchemaInWarehouse(schemaInWarehouse model.Schema) {
+	sh.schemaInWarehouseMu.Lock()
+	defer sh.schemaInWarehouseMu.Unlock()
+	sh.schemaInWarehouse = schemaInWarehouse
 }
 
 // removeDeprecatedColumns skips deprecated columns from the schema map

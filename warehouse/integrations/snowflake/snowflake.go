@@ -1139,47 +1139,27 @@ func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error
 }
 
 func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
-	var (
-		query            string
-		queryBuilder     strings.Builder
-		schemaIdentifier = sf.schemaIdentifier()
-	)
-
-	queryBuilder.WriteString(fmt.Sprintf(`
-		ALTER TABLE
-		  %s.%q
-		ADD COLUMN`,
-		schemaIdentifier,
-		tableName,
-	))
-
-	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
-	}
-
-	query = strings.TrimSuffix(queryBuilder.String(), ",") + ";"
-
+	schemaIdentifier := sf.schemaIdentifier()
 	log := sf.logger.With(
 		lf.Schema, schemaIdentifier,
 		lf.DestinationID, sf.Warehouse.Destination.ID,
 		lf.TableName, tableName,
 	)
-	log.Infow("Adding columns", lf.Query, query)
-	_, err = sf.DB.ExecContext(ctx, query)
 
-	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
+	for _, columnInfo := range columnsInfo {
+		query := fmt.Sprintf(`ALTER TABLE %s.%q ADD COLUMN IF NOT EXISTS %q %s;`,
+			schemaIdentifier,
+			tableName,
+			columnInfo.Name,
+			dataTypesMap[columnInfo.Type],
+		)
+		log.Infow("Adding columns", lf.Query, query)
+		_, err = sf.DB.ExecContext(ctx, query)
 		if err != nil {
-			if checkAndIgnoreAlreadyExistError(err) {
-				log.Infow("Column already exists",
-					lf.ColumnName, columnsInfo[0].Name,
-					lf.Error, err.Error(),
-				)
-				err = nil
-			}
+			return fmt.Errorf("adding column %q: %w", columnInfo.Name, err)
 		}
 	}
-	return
+	return nil
 }
 
 func (*Snowflake) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
