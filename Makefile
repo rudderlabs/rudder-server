@@ -15,6 +15,7 @@ gotestsum=gotest.tools/gotestsum@v1.11.0
 protoc-gen-go=google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
 protoc-gen-go-grpc=google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 actionlint=github.com/rhysd/actionlint/cmd/actionlint@latest
+gitleaks=github.com/zricethezav/gitleaks/v8@v8.18.4
 
 default: build
 
@@ -129,6 +130,7 @@ generate-openapi-spec: install-tools
 
 .PHONY: sec
 sec: ## Run security checks
+	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
 	./build/scan_docker.sh
 	./build/scan_docker.sh -f ./suppression-backup-service/Dockerfile
