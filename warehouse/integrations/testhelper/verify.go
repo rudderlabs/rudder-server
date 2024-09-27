@@ -54,11 +54,6 @@ func verifyEventsInStagingFiles(t testing.TB, testConfig *TestConfig) {
 			testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 			testConfig.TimestampBeforeSendingEvents,
 		).Scan(&count)
-
-		if err == nil && count.Int64 != expectedCount {
-			t.Logf("Expected staging files events count is %d, got %d", expectedCount, count.Int64)
-		}
-
 		return err == nil && count.Int64 == expectedCount
 	}
 	require.Eventuallyf(t, operation, WaitFor2Minute, DefaultQueryFrequency,
@@ -106,13 +101,6 @@ func verifyEventsInTableUploads(t testing.TB, testConfig *TestConfig) {
 				testConfig.WorkspaceID, testConfig.SourceID, testConfig.DestinationID,
 				testConfig.TimestampBeforeSendingEvents, whutils.ToProviderCase(testConfig.DestinationType, table),
 			).Scan(&count)
-
-			if err == nil && count.Int64 != expectedCount {
-				t.Logf("Expected table uploads events count for table %q is %d, got %d",
-					table, expectedCount, count.Int64,
-				)
-			}
-
 			return err == nil && count.Int64 == expectedCount
 		}
 		require.Eventuallyf(t, operation, WaitFor10Minute, DefaultQueryFrequency,
@@ -161,16 +149,8 @@ func verifyEventsInWareHouse(t testing.TB, testConfig *TestConfig) {
 		require.Eventuallyf(t,
 			func() bool {
 				count, err = queryCount(testConfig.Client, sqlStatement)
-
-				if err == nil && count != expectedCount {
-					t.Logf("Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d", expectedCount,
-						testConfig.Schema, whutils.ToProviderCase(testConfig.DestinationType, table), testConfig.UserID,
-						count,
-					)
-				}
-
 				return err == nil && count == expectedCount
-			}, WaitFor10Minute, DefaultQueryFrequency,
+			}, WaitFor10Minute, DefaultWarehouseQueryFrequency,
 			"Expected %d events in WH (schema: %s, table: %s, userID: %s), got %d: %v",
 			expectedCount,
 			testConfig.Schema, whutils.ToProviderCase(testConfig.DestinationType, table), testConfig.UserID,
