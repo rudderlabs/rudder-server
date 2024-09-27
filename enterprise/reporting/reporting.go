@@ -472,7 +472,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 						deletedRows = 0
 						lastVacuum = time.Now()
 					}
-				} else {
+				} else if time.Since(lastVacuum) > vacuumInterval.Load() {
 					var sizeEstimate int64
 					if err := dbHandle.QueryRowContext(
 						ctx,
@@ -483,7 +483,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 							logger.NewErrorField(err),
 						)
 					}
-					if sizeEstimate >= vacuumThresholdBytes.Load() && time.Since(lastVacuum) > vacuumInterval.Load() {
+					if sizeEstimate >= vacuumThresholdBytes.Load() {
 						if err := r.vacuum(ctx, dbHandle, tags); err == nil {
 							deletedRows = 0
 							lastVacuum = time.Now()

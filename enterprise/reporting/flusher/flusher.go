@@ -343,14 +343,14 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 	var performVacuum bool
 	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() {
 		performVacuum = true
-	} else {
+	} else if time.Since(f.lastVacuum) >= f.vacuumInterval.Load() {
 		var sizeEstimate int64
 		if err := f.db.QueryRowContext(
 			ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
 		).Scan(&sizeEstimate); err != nil {
 			return fmt.Errorf("error getting table size %w", err)
 		}
-		if sizeEstimate >= f.vacuumThresholdBytes.Load() && time.Since(f.lastVacuum) >= f.vacuumInterval.Load() {
+		if sizeEstimate >= f.vacuumThresholdBytes.Load() {
 			performVacuum = true
 		}
 	}
