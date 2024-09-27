@@ -111,12 +111,6 @@ fmt: install-tools ## Formats all go files
 	$(GO) run .github/tools/matrixchecker/main.go
 	./build/docker-go-version.sh Dockerfile ./suppression-backup-service/Dockerfile
 
-.PHONY: sec
-sec: ## Run security checks
-	$(GO) run $(gitleaks) detect .
-	$(GO) run $(govulncheck) ./...
-	trufflehog filesystem . --no-verification -x .trufflehogignore
-
 .PHONY: proto
 proto: install-tools ## Generate protobuf files
 	protoc --go_out=paths=source_relative:. proto/**/*.proto
@@ -136,6 +130,7 @@ generate-openapi-spec: install-tools
 
 .PHONY: sec
 sec: ## Run security checks
+	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
 	./build/scan_docker.sh
 	./build/scan_docker.sh -f ./suppression-backup-service/Dockerfile
