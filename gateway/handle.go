@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buger/jsonparser"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/google/uuid"
@@ -793,11 +792,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			}
 		}
 
-		anonIDFromReq := sanitizeAndTrim(string(getJSONValueBytes(msgPayload, "anonymousId")))
-		userIDFromReq := sanitizeAndTrim(string(getJSONValueBytes(msgPayload, "userId")))
+		anonIDFromReq := sanitizeAndTrim(getJSONValueBytes(msgPayload, "anonymousId"))
+		userIDFromReq := sanitizeAndTrim(getJSONValueBytes(msgPayload, "userId"))
 		messageID, changed := getMessageID(msgPayload)
 		if changed {
-			msgPayload, err = jsonparser.Set(msgPayload, []byte(`"`+messageID+`"`), "messageId")
+			msgPayload, err = sjson.SetBytes(msgPayload, "messageId", messageID)
 			if err != nil {
 				stat.RequestFailed(response.NotRudderEvent)
 				stat.Report(gw.stats)
@@ -810,7 +809,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.Report(gw.stats)
 			return nil, errors.New(response.NotRudderEvent)
 		}
-		msgPayload, err = jsonparser.Set(msgPayload, []byte(`"`+rudderId.String()+`"`), "rudderId")
+		msgPayload, err = sjson.SetBytes(msgPayload, "rudderId", rudderId.String())
 		if err != nil {
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
@@ -925,8 +924,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	return res, nil
 }
 
+// getMessageID returns the messageID from the event payload.
+// If the messageID is not present, it generates a new one.
+// It also returns a boolean indicating if the messageID was changed.
 func getMessageID(event []byte) (string, bool) {
-	messageID := string(getJSONValueBytes(event, "messageId"))
+	messageID := getJSONValueBytes(event, "messageId")
 	sanitizedMessageID := sanitizeAndTrim(messageID)
 	if sanitizedMessageID == "" {
 		return uuid.New().String(), true
@@ -943,9 +945,8 @@ func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
 	return rudderId, nil
 }
 
-func getJSONValueBytes(payload []byte, keys ...string) []byte {
-	value, _, _, _ := jsonparser.Get(payload, keys...)
-	return value
+func getJSONValueBytes(payload []byte, key string) string {
+	return gjson.GetBytes(payload, key).String()
 }
 
 func sanitizeAndTrim(str string) string {
