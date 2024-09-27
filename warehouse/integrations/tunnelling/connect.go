@@ -57,6 +57,12 @@ func Connect(dsn string, config Config) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening warehouse connection sql+ssh driver: %w", err)
 	}
+
+	err = db.Ping()
+	if err != nil {
+		return nil, fmt.Errorf("pinging warehouse connection: %w", err)
+	}
+
 	return db, nil
 }
 

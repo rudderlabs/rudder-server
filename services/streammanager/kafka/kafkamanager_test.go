@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker"
 	dockerKafka "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -211,10 +212,10 @@ func TestNewProducer(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// Read key pair
-		publicKeyPath, err := filepath.Abs("./testdata/test_key.pub")
+		// Prepare key pair
+		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
 		require.NoError(t, err)
-		privateKey, err := os.ReadFile("./testdata/test_key")
+		privateKey, err := os.ReadFile(privateKeyPath)
 		require.NoError(t, err)
 		publicKey, err := os.ReadFile(publicKeyPath)
 		require.NoError(t, err)
