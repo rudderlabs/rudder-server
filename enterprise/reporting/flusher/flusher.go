@@ -340,34 +340,42 @@ func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.
 func (f *Flusher) vacuum(ctx context.Context) error {
 	var query string
 	var full bool
-	var sizeEstimate int64
-	if err := f.db.QueryRowContext(
-		ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
-	).Scan(&sizeEstimate); err != nil {
-		return fmt.Errorf("error getting table size %w", err)
-	}
-	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() ||
-		(sizeEstimate >= f.vacuumThresholdBytes.Load() && time.Since(f.lastVacuum) >= f.vacuumInterval.Load()) {
-		vacuumStart := time.Now()
-		defer f.vacuumReportsTimer.Since(vacuumStart)
-		if f.vacuumFull.Load() {
-			full = true
-			query = fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))
-		} else {
-			query = fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(f.table))
+	var performVacuum bool
+	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() {
+		performVacuum = true
+	} else {
+		var sizeEstimate int64
+		if err := f.db.QueryRowContext(
+			ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
+		).Scan(&sizeEstimate); err != nil {
+			return fmt.Errorf("error getting table size %w", err)
 		}
-		if _, err := f.db.ExecContext(ctx, query); err != nil {
-			f.log.Errorn(
-				"error vacuuming",
-				logger.NewStringField("table", f.table),
-				obskit.Error(err),
-				logger.NewBoolField("full", full),
-			)
-			return fmt.Errorf("error vacuuming table %w", err)
+		if sizeEstimate >= f.vacuumThresholdBytes.Load() && time.Since(f.lastVacuum) >= f.vacuumInterval.Load() {
+			performVacuum = true
 		}
-		f.lastVacuum = time.Now()
-		f.deletedRows = 0
 	}
+	if !performVacuum {
+		return nil
+	}
+	vacuumStart := time.Now()
+	defer f.vacuumReportsTimer.Since(vacuumStart)
+	if f.vacuumFull.Load() {
+		full = true
+		query = fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))
+	} else {
+		query = fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(f.table))
+	}
+	if _, err := f.db.ExecContext(ctx, query); err != nil {
+		f.log.Errorn(
+			"error vacuuming",
+			logger.NewStringField("table", f.table),
+			obskit.Error(err),
+			logger.NewBoolField("full", full),
+		)
+		return fmt.Errorf("error vacuuming table %w", err)
+	}
+	f.lastVacuum = time.Now()
+	f.deletedRows = 0
 	return nil
 }
 

@@ -466,21 +466,28 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					deletedRows += len(reports)
 				}
 
-				var sizeEstimate int64
-				if err := dbHandle.QueryRowContext(
-					ctx,
-					fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
-				).Scan(&sizeEstimate); err != nil {
-					r.log.Errorn(
-						`[ Reporting ]: Error getting table size estimate`,
-						logger.NewErrorField(err),
-					)
-				}
-				if deletedRows >= vacuumDeletedRowsThreshold.Load() ||
-					(sizeEstimate >= vacuumThresholdBytes.Load() && time.Since(lastVacuum) > vacuumInterval.Load()) {
+				// vacuum the table
+				if deletedRows >= vacuumDeletedRowsThreshold.Load() {
 					if err := r.vacuum(ctx, dbHandle, tags); err == nil {
 						deletedRows = 0
 						lastVacuum = time.Now()
+					}
+				} else {
+					var sizeEstimate int64
+					if err := dbHandle.QueryRowContext(
+						ctx,
+						fmt.Sprintf(`SELECT pg_table_size(oid) from pg_class where relname='%s';`, ReportsTable),
+					).Scan(&sizeEstimate); err != nil {
+						r.log.Errorn(
+							`[ Reporting ]: Error getting table size estimate`,
+							logger.NewErrorField(err),
+						)
+					}
+					if sizeEstimate >= vacuumThresholdBytes.Load() && time.Since(lastVacuum) > vacuumInterval.Load() {
+						if err := r.vacuum(ctx, dbHandle, tags); err == nil {
+							deletedRows = 0
+							lastVacuum = time.Now()
+						}
 					}
 				}
 			}
