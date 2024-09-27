@@ -17,14 +17,15 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
-	"go.uber.org/atomic"
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -35,7 +36,8 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -80,9 +82,11 @@ func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false, nil, nil)
 
-		ctx := context.Background()
-		events := 100
-		jobs := 1
+		var (
+			ctx    = context.Background()
+			events = 100
+			jobs   = 1
+		)
 
 		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
@@ -416,71 +420,126 @@ func TestUploads(t *testing.T) {
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 		require.True(t, hasRevisionEndpointBeenCalled.Load())
 	})
-	t.Run("tunnelling", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.ssh-server.yml"}))
-		c.Start(context.Background())
+	t.Run("tunneling", func(t *testing.T) {
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
 
-		tunnelledHost := "db-private-postgres"
-		tunnelledDatabase := "postgres"
-		tunnelledPassword := "postgres"
-		tunnelledUser := "postgres"
+		// Start shared Docker network
+		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "uploads_tunneling_network"})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				t.Logf("Error while removing Docker network: %v", err)
+			}
+		})
+
+		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
+		require.NoError(t, err)
+
+		var (
+			group             errgroup.Group
+			postgresResource  *postgres.Resource
+			sshServerResource *sshserver.Resource
+			minioResource     *minio.Resource
+		)
+		group.Go(func() (err error) {
+			postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
+			return err
+		})
+		group.Go(func() (err error) {
+			sshServerResource, err = sshserver.Setup(pool, t,
+				sshserver.WithPublicKeyPath(publicKeyPath),
+				sshserver.WithCredentials("linuxserver.io", ""),
+				sshserver.WithDockerNetwork(network),
+			)
+			return err
+		})
+		group.Go(func() (err error) {
+			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
+			return
+		})
+		require.NoError(t, group.Wait())
+
+		postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
+		require.NoError(t, err)
+
+		tunnelledHost := postgresContainer.NetworkSettings.Networks[network.Name].IPAddress
+		tunnelledDatabase := "jobsdb"
+		tunnelledUser := "rudder"
+		tunnelledPassword := "password"
 		tunnelledPort := "5432"
-		tunnelledSSHUser := "rudderstack"
+		tunnelledSSHUser := "linuxserver.io"
 		tunnelledSSHHost := "localhost"
-		tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn\\nNhAAAAAwEAAQAAAYEA0f/mqkkZ3c9qw8MTz5FoEO3PGecO/dtUFfJ4g1UBu9E7hi/pyVYY\\nfLfdsd5bqA2pXdU0ROymyVe683I1VzJcihUtwB1eQxP1mUhmoo0ixK0IUUGm4PRieCGv+r\\n0/gMvaYbVGUPCi5tAUVh02vZB7p2cTIaz872lvCnRhYbhGUHSbhNSSQOjnCtZfjuZZnE0l\\nPKjWV/wbJ7Pvoc/FZMlWOqL1AjAKuwFH5zs1RMrPDDv5PCZksq4a7DDxziEdq39jvA3sOm\\npQXvzBBBLBOzu7rM3/MPJb6dvAGJcYxkptfL4YXTscIMINr0g24cn+Thvt9yqA93rkb9RB\\nkw6RIEwMlQKqserA+pfsaoW0SkvnlDKzS1DLwXioL4Uc1Jpr/9jTMEfR+W7v7gJPB1JDnV\\ngen5FBfiMqbsG1amUS+mjgNfC8I00tR+CUHxpqUWANtcWTinhSnLJ2skj/2QnciPHkHurR\\nEKyEwCVecgn+xVKyRgVDCGsJ+QnAdn51+i/kO3nvAAAFqENNbN9DTWzfAAAAB3NzaC1yc2\\nEAAAGBANH/5qpJGd3PasPDE8+RaBDtzxnnDv3bVBXyeINVAbvRO4Yv6clWGHy33bHeW6gN\\nqV3VNETspslXuvNyNVcyXIoVLcAdXkMT9ZlIZqKNIsStCFFBpuD0Ynghr/q9P4DL2mG1Rl\\nDwoubQFFYdNr2Qe6dnEyGs/O9pbwp0YWG4RlB0m4TUkkDo5wrWX47mWZxNJTyo1lf8Gyez\\n76HPxWTJVjqi9QIwCrsBR+c7NUTKzww7+TwmZLKuGuww8c4hHat/Y7wN7DpqUF78wQQSwT\\ns7u6zN/zDyW+nbwBiXGMZKbXy+GF07HCDCDa9INuHJ/k4b7fcqgPd65G/UQZMOkSBMDJUC\\nqrHqwPqX7GqFtEpL55Qys0tQy8F4qC+FHNSaa//Y0zBH0flu7+4CTwdSQ51YHp+RQX4jKm\\n7BtWplEvpo4DXwvCNNLUfglB8aalFgDbXFk4p4UpyydrJI/9kJ3Ijx5B7q0RCshMAlXnIJ\\n/sVSskYFQwhrCfkJwHZ+dfov5Dt57wAAAAMBAAEAAAGAd9pxr+ag2LO0353LBMCcgGz5sn\\nLpX4F6cDw/A9XUc3lrW56k88AroaLe6NFbxoJlk6RHfL8EQg3MKX2Za/bWUgjcX7VjQy11\\nEtL7oPKkUVPgV1/8+o8AVEgFxDmWsM+oB/QJ+dAdaVaBBNUPlQmNSXHOvX2ZrpqiQXlCyx\\n79IpYq3JjmEB3dH5ZSW6CkrExrYD+MdhLw/Kv5rISEyI0Qpc6zv1fkB+8nNpXYRTbrDLR9\\n/xJ6jnBH9V3J5DeKU4MUQ39nrAp6iviyWydB973+MOygpy41fXO6hHyVZ2aSCysn1t6J/K\\nQdeEjqAOI/5CbdtiFGp06et799EFyzPItW0FKetW1UTOL2YHqdb+Q9sNjiNlUSzgxMbJWJ\\nRGO6g9B1mJsHl5mJZUiHQPsG/wgBER8VOP4bLOEB6gzVO2GE9HTJTOh5C+eEfrl52wPfXj\\nTqjtWAnhssxtgmWjkS0ibi+u1KMVXKHfaiqJ7nH0jMx+eu1RpMvuR8JqkU8qdMMGChAAAA\\nwHkQMfpCnjNAo6sllEB5FwjEdTBBOt7gu6nLQ2O3uGv0KNEEZ/BWJLQ5fKOfBtDHO+kl+5\\nQoxc0cE7cg64CyBF3+VjzrEzuX5Tuh4NwrsjT4vTTHhCIbIynxEPmKzvIyCMuglqd/nhu9\\n6CXhghuTg8NrC7lY+cImiBfhxE32zqNITlpHW7exr95Gz1sML2TRJqxDN93oUFfrEuInx8\\nHpXXnvMQxPRhcp9nDMU9/ahUamMabQqVVMwKDi8n3sPPzTiAAAAMEA+/hm3X/yNotAtMAH\\ny11parKQwPgEF4HYkSE0bEe+2MPJmEk4M4PGmmt/MQC5N5dXdUGxiQeVMR+Sw0kN9qZjM6\\nSIz0YHQFMsxVmUMKFpAh4UI0GlsW49jSpVXs34Fg95AfhZOYZmOcGcYosp0huCeRlpLeIH\\n7Vv2bkfQaic3uNaVPg7+cXg7zdY6tZlzwa/4Fj0udfTjGQJOPSzIihdMLHnV81rZ2cUOZq\\nMSk6b02aMpVB4TV0l1w4j2mlF2eGD9AAAAwQDVW6p2VXKuPR7SgGGQgHXpAQCFZPGLYd8K\\nduRaCbxKJXzUnZBn53OX5fuLlFhmRmAMXE6ztHPN1/5JjwILn+O49qel1uUvzU8TaWioq7\\nAre3SJR2ZucR4AKUvzUHGP3GWW96xPN8lq+rgb0th1eOSU2aVkaIdeTJhV1iPfaUUf+15S\\nYcJlSHLGgeqkok+VfuudZ73f3RFFhjoe1oAjlPB4leeMsBD9UBLx2U3xAevnfkecF4Lm83\\n4sVswWATSFAFsAAAAsYWJoaW1hbnl1YmFiYmFyQEFiaGltYW55dXMtTWFjQm9vay1Qcm8u\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
-		sshPort := c.Port("ssh-server", 2222)
+		tunnelledSSHPort := strconv.Itoa(sshServerResource.Port)
+		tunnelledPrivateKey, err := os.ReadFile(privateKeyPath)
+		require.NoError(t, err)
 
-		db, minioResource, whClient := setupServer(t, false,
-			func(m map[string]backendconfig.ConfigT, minioResource *minio.Resource) {
-				m[workspaceID] = backendconfig.ConfigT{
-					WorkspaceID: workspaceID,
-					Sources: []backendconfig.SourceT{
+		bcConfig := defaultBackendConfig(postgresResource, minioResource, false)
+		bcConfig[workspaceID] = backendconfig.ConfigT{
+			WorkspaceID: workspaceID,
+			Sources: []backendconfig.SourceT{
+				{
+					ID:      sourceID,
+					Enabled: true,
+					Destinations: []backendconfig.DestinationT{
 						{
-							ID:      sourceID,
+							ID:      destinationID,
 							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      destinationID,
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										Name: whutils.POSTGRES,
-									},
-									Config: map[string]any{
-										"host":             tunnelledHost,
-										"database":         tunnelledDatabase,
-										"user":             tunnelledUser,
-										"password":         tunnelledPassword,
-										"port":             tunnelledPort,
-										"sslMode":          "disable",
-										"namespace":        namespace,
-										"bucketProvider":   whutils.MINIO,
-										"bucketName":       minioResource.BucketName,
-										"accessKeyID":      minioResource.AccessKeyID,
-										"secretAccessKey":  minioResource.AccessKeySecret,
-										"useSSL":           false,
-										"endPoint":         minioResource.Endpoint,
-										"syncFrequency":    "0",
-										"useRudderStorage": false,
-										"useSSH":           true,
-										"sshUser":          tunnelledSSHUser,
-										"sshPort":          strconv.Itoa(sshPort),
-										"sshHost":          tunnelledSSHHost,
-										"sshPrivateKey":    strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
-									},
-									RevisionID: destinationID,
-								},
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: whutils.POSTGRES,
 							},
+							Config: map[string]any{
+								"host":             tunnelledHost,
+								"database":         tunnelledDatabase,
+								"user":             tunnelledUser,
+								"password":         tunnelledPassword,
+								"port":             tunnelledPort,
+								"sslMode":          "disable",
+								"namespace":        namespace,
+								"bucketProvider":   whutils.MINIO,
+								"bucketName":       minioResource.BucketName,
+								"accessKeyID":      minioResource.AccessKeyID,
+								"secretAccessKey":  minioResource.AccessKeySecret,
+								"useSSL":           false,
+								"endPoint":         minioResource.Endpoint,
+								"syncFrequency":    "0",
+								"useRudderStorage": false,
+								"useSSH":           true,
+								"sshUser":          tunnelledSSHUser,
+								"sshPort":          tunnelledSSHPort,
+								"sshHost":          tunnelledSSHHost,
+								"sshPrivateKey":    strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
+							},
+							RevisionID: destinationID,
 						},
 					},
-				}
+				},
 			},
-			nil,
+		}
+
+		webPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			require.NoError(t, runWarehouseServer(t, ctx, webPort, postgresResource, bcConfig))
+		}()
+		t.Cleanup(func() {
+			cancel()
+			<-done
+		})
+
+		serverURL := fmt.Sprintf("http://localhost:%d", webPort)
+		health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
+
+		var (
+			db       = sqlmw.New(postgresResource.DB)
+			whClient = whclient.NewWarehouse(serverURL)
+			events   = 100
+			jobs     = 1
 		)
-
-		ctx := context.Background()
-		events := 100
-		jobs := 1
-
 		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
 				uuid.New().String(),
@@ -534,9 +593,9 @@ func TestUploads(t *testing.T) {
 		tunnelInfo := &tunnelling.TunnelInfo{
 			Config: map[string]any{
 				"sshUser":       tunnelledSSHUser,
-				"sshPort":       strconv.Itoa(sshPort),
+				"sshPort":       tunnelledSSHPort,
 				"sshHost":       tunnelledSSHHost,
-				"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
+				"sshPrivateKey": strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
 			},
 		}
 
