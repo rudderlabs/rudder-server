@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buger/jsonparser"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/google/uuid"
@@ -401,11 +402,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		}
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-		var rudderId uuid.UUID
-		rudderId, err = kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
 		if err != nil {
-			err = errors.New(response.NonIdentifiableRequest)
-			return
+			return jobData, err
 		}
 		toSet["rudderId"] = rudderId
 		if _, ok := toSet["receivedAt"]; !ok {
@@ -779,7 +778,45 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
-		err := gw.streamMsgValidator(&msg)
+		msgPayload := msg.Payload
+		// TODO: get rid of this check
+		if msg.Properties.RequestType != "" {
+			switch msg.Properties.RequestType {
+			case "batch", "replay", "retl", "import":
+			default:
+				msgPayload, err = sjson.SetBytes(msgPayload, "type", msg.Properties.RequestType)
+				if err != nil {
+					stat.RequestEventsFailed(1, response.NotRudderEvent)
+					stat.Report(gw.stats)
+					return nil, errors.New(response.NotRudderEvent)
+				}
+			}
+		}
+
+		anonIDFromReq := sanitizeAndTrim(string(getJSONValueBytes(msgPayload, "anonymousId")))
+		userIDFromReq := sanitizeAndTrim(string(getJSONValueBytes(msgPayload, "userId")))
+		messageID, changed := getMessageID(msgPayload)
+		if changed {
+			msgPayload, err = jsonparser.Set(msgPayload, []byte(`"`+messageID+`"`), "messageId")
+			if err != nil {
+				stat.RequestFailed(response.NotRudderEvent)
+				stat.Report(gw.stats)
+				return nil, errors.New(response.NotRudderEvent)
+			}
+		}
+		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
+		if err != nil {
+			stat.RequestFailed(response.NotRudderEvent)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
+		}
+		msgPayload, err = jsonparser.Set(msgPayload, []byte(`"`+rudderId.String()+`"`), "rudderId")
+		if err != nil {
+			stat.RequestFailed(response.NotRudderEvent)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
+		}
+		err = gw.streamMsgValidator(&msg)
 		if err != nil {
 			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
 			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
@@ -790,7 +827,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if !ok {
 			// only live-events will not work if writeKey is not found
 			gw.logger.Errorn("unable to get writeKey for job",
-				logger.NewStringField("messageId", msg.Properties.MessageID),
+				logger.NewStringField("messageId", messageID),
 				obskit.SourceID(msg.Properties.SourceID))
 		}
 		stat.SourceID = msg.Properties.SourceID
@@ -817,7 +854,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}).Since(msg.Properties.ReceivedAt)
 
 		jobsDBParams := params{
-			MessageID:       msg.Properties.MessageID,
+			MessageID:       messageID,
 			SourceID:        msg.Properties.SourceID,
 			SourceJobRunID:  msg.Properties.SourceJobRunID,
 			SourceTaskRunID: msg.Properties.SourceTaskRunID,
@@ -838,14 +875,14 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			)
 		}
 
-		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
+		msgPayload, err = fillReceivedAt(msgPayload, msg.Properties.ReceivedAt)
 		if err != nil {
 			err = fmt.Errorf("filling receivedAt: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
 			return nil, fmt.Errorf("filling receivedAt: %w", err)
 		}
-		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
+		msgPayload, err = fillRequestIP(msgPayload, msg.Properties.RequestIP)
 		if err != nil {
 			err = fmt.Errorf("filling request_ip: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
@@ -854,7 +891,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 
 		eventBatch := singularEventBatch{
-			Batch:      []json.RawMessage{msg.Payload},
+			Batch:      []json.RawMessage{msgPayload},
 			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
 			RequestIP:  msg.Properties.RequestIP,
 			WriteKey:   writeKey,
@@ -886,6 +923,33 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return res, nil
+}
+
+func getMessageID(event []byte) (string, bool) {
+	messageID := string(getJSONValueBytes(event, "messageId"))
+	sanitizedMessageID := sanitizeAndTrim(messageID)
+	if sanitizedMessageID == "" {
+		return uuid.New().String(), true
+	}
+	return sanitizedMessageID, messageID != sanitizedMessageID
+}
+
+func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
+	rudderId, err := kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+	if err != nil {
+		err = errors.New(response.NonIdentifiableRequest)
+		return rudderId, err
+	}
+	return rudderId, nil
+}
+
+func getJSONValueBytes(payload []byte, keys ...string) []byte {
+	value, _, _, _ := jsonparser.Get(payload, keys...)
+	return value
+}
+
+func sanitizeAndTrim(str string) string {
+	return strings.TrimSpace(sanitize.Unicode(str))
 }
 
 func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {

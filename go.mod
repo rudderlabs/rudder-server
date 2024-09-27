@@ -35,6 +35,7 @@ require (
 	github.com/apache/pulsar-client-go v0.13.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.55.5
+	github.com/buger/jsonparser v1.1.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.5.3
@@ -80,7 +81,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.42.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
-	github.com/rudderlabs/rudder-schemas v0.5.2
+	github.com/rudderlabs/rudder-schemas v0.5.3-0.20240927013310-2c5ae88df954
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.10.0
