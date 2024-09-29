@@ -2126,7 +2126,7 @@ var _ = Describe("Gateway", func() {
 
 		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
 			properties := stream.MessageProperties{
-				RequestType:   "track",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -2175,7 +2175,7 @@ var _ = Describe("Gateway", func() {
 
 		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
 			properties := stream.MessageProperties{
-				RequestType:   "track",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -2220,7 +2220,7 @@ var _ = Describe("Gateway", func() {
 
 		It("adds messageID, rudderId in the request payload if it's not already present", func() {
 			properties := stream.MessageProperties{
-				RequestType:   "track",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -2265,7 +2265,7 @@ var _ = Describe("Gateway", func() {
 
 		It("doesn't override if messageID already exists in payload", func() {
 			properties := stream.MessageProperties{
-				RequestType:   "track",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -2310,9 +2310,9 @@ var _ = Describe("Gateway", func() {
 			Expect(job.Batch[0].MessageID).To(ContainSubstring("dummyMessageID"))
 		})
 
-		It("adds type and batch in the request payload if it's a non batch call in RequestType Properties", func() {
+		It("adds type in the request payload if RequestType Property is not one of batch, replay, retl, import", func() {
 			properties := stream.MessageProperties{
-				RequestType:   "track",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -2350,7 +2350,53 @@ var _ = Describe("Gateway", func() {
 			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
-			Expect(job.Batch[0].Type).To(ContainSubstring("track"))
+			Expect(job.Batch[0].Type).To(ContainSubstring("dummyRequestType"))
+		})
+
+		It("does not change type if  RequestType Property is batch, replay, retl, import", func() {
+			requestTypes := []string{"batch", "replay", "retl", "import"}
+			for _, reqType := range requestTypes {
+				properties := stream.MessageProperties{
+					RequestType:   reqType,
+					RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+					WorkspaceID:   "workspaceID",
+					SourceID:      "sourceID",
+					ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+					RequestIP:     "dummyIP",
+					DestinationID: "destinationID",
+				}
+				msg := stream.Message{
+					Properties: properties,
+					Payload:    []byte(`{"type": "dummyType"}`),
+				}
+				messages := []stream.Message{msg}
+				payload, err := json.Marshal(messages)
+				Expect(err).To(BeNil())
+				req := &webRequestT{
+					reqType:        "batch",
+					authContext:    rCtxEnabled,
+					done:           make(chan<- string),
+					requestPayload: payload,
+				}
+				jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+				Expect(err).To(BeNil())
+				Expect(jobsWithStats).To(HaveLen(1))
+				Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				}))
+
+				var job struct {
+					Batch []struct {
+						Type string `json:"type"`
+					} `json:"batch"`
+				}
+				err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+				Expect(err).To(BeNil())
+				Expect(job.Batch).To(HaveLen(1))
+				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))
+			}
 		})
 	})
 })

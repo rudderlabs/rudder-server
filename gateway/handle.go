@@ -777,13 +777,19 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
-		msgPayload := msg.Payload
+		err := gw.streamMsgValidator(&msg)
+		if err != nil {
+			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
+			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.InvalidStreamMessage)
+		}
 		// TODO: get rid of this check
 		if msg.Properties.RequestType != "" {
 			switch msg.Properties.RequestType {
 			case "batch", "replay", "retl", "import":
 			default:
-				msgPayload, err = sjson.SetBytes(msgPayload, "type", msg.Properties.RequestType)
+				msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
 				if err != nil {
 					stat.RequestEventsFailed(1, response.NotRudderEvent)
 					stat.Report(gw.stats)
@@ -792,11 +798,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			}
 		}
 
-		anonIDFromReq := sanitizeAndTrim(getJSONValueBytes(msgPayload, "anonymousId"))
-		userIDFromReq := sanitizeAndTrim(getJSONValueBytes(msgPayload, "userId"))
-		messageID, changed := getMessageID(msgPayload)
+		anonIDFromReq := sanitizeAndTrim(getJSONValueBytes(msg.Payload, "anonymousId"))
+		userIDFromReq := sanitizeAndTrim(getJSONValueBytes(msg.Payload, "userId"))
+		messageID, changed := getMessageID(msg.Payload)
 		if changed {
-			msgPayload, err = sjson.SetBytes(msgPayload, "messageId", messageID)
+			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
 			if err != nil {
 				stat.RequestFailed(response.NotRudderEvent)
 				stat.Report(gw.stats)
@@ -809,18 +815,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.Report(gw.stats)
 			return nil, errors.New(response.NotRudderEvent)
 		}
-		msgPayload, err = sjson.SetBytes(msgPayload, "rudderId", rudderId.String())
+		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
 		if err != nil {
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
 			return nil, errors.New(response.NotRudderEvent)
-		}
-		err = gw.streamMsgValidator(&msg)
-		if err != nil {
-			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
-			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
-			stat.Report(gw.stats)
-			return nil, errors.New(response.InvalidStreamMessage)
 		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
@@ -874,14 +873,14 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			)
 		}
 
-		msgPayload, err = fillReceivedAt(msgPayload, msg.Properties.ReceivedAt)
+		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
 		if err != nil {
 			err = fmt.Errorf("filling receivedAt: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
 			return nil, fmt.Errorf("filling receivedAt: %w", err)
 		}
-		msgPayload, err = fillRequestIP(msgPayload, msg.Properties.RequestIP)
+		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
 		if err != nil {
 			err = fmt.Errorf("filling request_ip: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
@@ -890,7 +889,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 
 		eventBatch := singularEventBatch{
-			Batch:      []json.RawMessage{msgPayload},
+			Batch:      []json.RawMessage{msg.Payload},
 			ReceivedAt: msg.Properties.ReceivedAt.Format(misc.RFC3339Milli),
 			RequestIP:  msg.Properties.RequestIP,
 			WriteKey:   writeKey,
