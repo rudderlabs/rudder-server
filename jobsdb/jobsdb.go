@@ -635,6 +635,20 @@ const (
 	ReadWrite OwnerType = ""
 )
 
+func (ot OwnerType) Identifier() string {
+	switch ot {
+	case Read:
+		return "r"
+	case Write:
+		return "w"
+	case ReadWrite:
+		return "rw"
+	default:
+		return ""
+
+	}
+}
+
 func init() {
 	for _, js := range jobStates {
 		if !js.isValid {
@@ -752,7 +766,10 @@ func (jd *Handle) init() {
 
 		jd.assertError(
 			stats.Default.RegisterCollector(
-				collectors.NewDatabaseSQLStats("jobsdb_"+jd.tablePrefix, jd.dbHandle),
+				collectors.NewDatabaseSQLStats(
+					"jobsdb_"+jd.tablePrefix+"_"+jd.ownerType.Identifier(),
+					jd.dbHandle,
+				),
 			),
 		)
 	}

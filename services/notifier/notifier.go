@@ -267,7 +267,7 @@ func (n *Notifier) setupDatabase(
 		return fmt.Errorf("could not open: %w", err)
 	}
 	database.SetMaxOpenConns(n.config.maxOpenConnections)
-	err = n.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("notifier", database))
+	err = n.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("notifier-"+n.workspaceIdentifier, database))
 	if err != nil {
 		return fmt.Errorf("registering collector: %w", err)
 	}
