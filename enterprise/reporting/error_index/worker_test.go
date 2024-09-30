@@ -175,7 +175,7 @@ func TestWorkerWriter(t *testing.T) {
 			c := config.New()
 			c.Set("INSTANCE_ID", instanceID)
 
-			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c))
+			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
 			require.NoError(t, errIndexDB.Start())
 			defer errIndexDB.TearDown()
 
@@ -323,7 +323,7 @@ func TestWorkerWriter(t *testing.T) {
 			c := config.New()
 			c.Set("INSTANCE_ID", instanceID)
 
-			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c))
+			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
 			require.NoError(t, errIndexDB.Start())
 			defer errIndexDB.TearDown()
 
@@ -446,7 +446,7 @@ func TestWorkerWriter(t *testing.T) {
 			c.Set("Reporting.errorIndexReporting.uploadFrequency", "600s")
 			c.Set("Reporting.errorIndexReporting.eventsLimit", strconv.Itoa(eventsLimit))
 
-			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c))
+			errIndexDB := jobsdb.NewForReadWrite("err_idx", jobsdb.WithDBHandle(postgresContainer.DB), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
 			require.NoError(t, errIndexDB.Start())
 			defer errIndexDB.TearDown()
 

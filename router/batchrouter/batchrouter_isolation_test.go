@@ -474,7 +474,7 @@ func (brtIsolationMethods) newMockWarehouse() *httptest.Server {
 
 // seedBrtDB seeds the batch router database with jobs based on the provided spec
 func (m brtIsolationMethods) seedBrtDB(t testing.TB, spec *BrtIsolationScenarioSpec) {
-	brtJobsDB := jobsdb.NewForWrite("batch_rt")
+	brtJobsDB := jobsdb.NewForWrite("batch_rt", jobsdb.WithStats(stats.NOP))
 	require.NoError(t, brtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer brtJobsDB.Stop()
 	for _, batch := range m.generateJobs(spec.jobs, 100) {

@@ -72,6 +72,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer gatewayDB.Close()
 
@@ -84,6 +85,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer errDB.Close()
 

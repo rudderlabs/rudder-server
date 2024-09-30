@@ -143,6 +143,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithStats(stats.Default),
 	)
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
@@ -156,6 +157,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -163,6 +165,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -170,6 +173,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer batchRouterDB.Close()
 
@@ -179,12 +183,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(stats.Default),
 	)
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
@@ -196,6 +202,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(stats.Default),
 	)
 	defer schemaDB.Close()
 
@@ -204,6 +211,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(stats.Default),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)

@@ -3,8 +3,9 @@ package jobsdb
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 const expected = "expected"
