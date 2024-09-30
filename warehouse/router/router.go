@@ -537,7 +537,7 @@ func (r *Router) mainLoop(ctx context.Context) {
 }
 
 func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err error) {
-	if ok, err := r.canCreateUpload(ctx, warehouse); !ok {
+	if err := r.canCreateUpload(ctx, warehouse); err != nil {
 		r.statsFactory.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
 			"workspaceId":   warehouse.WorkspaceID,
 			"destinationID": warehouse.Destination.ID,

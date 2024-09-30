@@ -290,9 +290,7 @@ func (*Uploader) GetTableSchemaInUpload(string) model.TableSchema               
 func (*Uploader) ShouldOnDedupUseNewRecord() bool                                   { return false }
 func (*Uploader) UseRudderStorage() bool                                            { return false }
 func (*Uploader) CanAppend() bool                                                   { return false }
-func (*Uploader) GetLoadFileGenStartTIme() time.Time                                { return time.Time{} }
 func (*Uploader) GetLoadFileType() string                                           { return "" }
-func (*Uploader) GetFirstLastEvent() (time.Time, time.Time)                         { return time.Now(), time.Now() }
 func (*Uploader) GetLocalSchema(context.Context) (model.Schema, error)              { return model.Schema{}, nil }
 func (*Uploader) GetTableSchemaInWarehouse(string) model.TableSchema                { return model.TableSchema{} }
 func (*Uploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
