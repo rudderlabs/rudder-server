@@ -34,6 +34,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
 		mockMeasurement.EXPECT().Count(4).Times(2)
 		mockMeasurement.EXPECT().Count(1).Times(1)
+		mockMeasurement.EXPECT().Since(gomock.Any()).Times(8)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
@@ -52,7 +53,16 @@ func TestUploadJob_Stats(t *testing.T) {
 			Warehouse: model.Warehouse{
 				Type: "POSTGRES",
 			},
+			StagingFiles: []*model.StagingFile{
+				{ID: 1},
+				{ID: 2},
+				{ID: 3},
+				{ID: 4},
+			},
 		}, nil)
+
+		_, err := repo.NewUploads(job.db).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
+		require.NoError(t, err)
 
 		job.generateUploadSuccessMetrics()
 	})
@@ -94,7 +104,6 @@ func TestUploadJob_Stats(t *testing.T) {
 
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
 		mockMeasurement.EXPECT().Count(4).Times(2)
-		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),

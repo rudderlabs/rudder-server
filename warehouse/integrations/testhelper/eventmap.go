@@ -1,5 +1,9 @@
 package testhelper
 
+import (
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
 type EventsCountMap map[string]int
 
 func defaultStagingFilesEventsMap() EventsCountMap {
@@ -14,15 +18,27 @@ func defaultStagingFilesWithIDResolutionEventsMap() EventsCountMap {
 	}
 }
 
-func defaultTableUploadsEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
+func defaultTableUploadsEventsMap(destType string) EventsCountMap {
+	if destType == whutils.BQ {
+		return EventsCountMap{
+			"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
+		}
+	} else {
+		return EventsCountMap{
+			"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
+		}
 	}
 }
 
-func defaultWarehouseEventsMap() EventsCountMap {
-	return EventsCountMap{
-		"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
+func defaultWarehouseEventsMap(destType string) EventsCountMap {
+	if destType == whutils.BQ {
+		return EventsCountMap{
+			"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
+		}
+	} else {
+		return EventsCountMap{
+			"identifies": 4, "users": 1, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
+		}
 	}
 }
 

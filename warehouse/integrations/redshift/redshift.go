@@ -961,19 +961,25 @@ func (rs *Redshift) connectUsingIAMRole() (*sql.DB, error) {
 		user              = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.UserSetting)
 		iamRoleARNForAuth = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.IAMRoleARNForAuthSetting)
 		clusterID         = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterIDSetting)
+		useServerless     = rs.Warehouse.GetBoolDestinationConfig(model.UseServerlessSetting)
+		workgroupName     = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.WorkgroupNameSetting)
 		clusterRegion     = rs.Warehouse.GetStringDestinationConfig(rs.conf, model.ClusterRegionSetting)
 		timeout           = rs.connectTimeout
 	)
 
 	data := sqlconnectconfig.RedshiftData{
-		ClusterIdentifier: clusterID,
-		Database:          database,
-		User:              user,
-		Region:            clusterRegion,
-		RoleARN:           iamRoleARNForAuth,
-		ExternalID:        rs.Warehouse.WorkspaceID,
-		RoleARNExpiry:     time.Hour,
-		Timeout:           timeout,
+		Database:      database,
+		Region:        clusterRegion,
+		RoleARN:       iamRoleARNForAuth,
+		ExternalID:    rs.Warehouse.WorkspaceID,
+		RoleARNExpiry: time.Hour,
+		Timeout:       timeout,
+	}
+	if useServerless {
+		data.WorkgroupName = workgroupName
+	} else {
+		data.User = user
+		data.ClusterIdentifier = clusterID
 	}
 
 	credentialsJSON, err := data.MarshalJSON()
