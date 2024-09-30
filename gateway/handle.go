@@ -798,8 +798,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			}
 		}
 
-		anonIDFromReq := sanitizeAndTrim(getJSONValueBytes(msg.Payload, "anonymousId"))
-		userIDFromReq := sanitizeAndTrim(getJSONValueBytes(msg.Payload, "userId"))
+		anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
+		userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
 		messageID, changed := getMessageID(msg.Payload)
 		if changed {
 			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
@@ -927,7 +927,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 // If the messageID is not present, it generates a new one.
 // It also returns a boolean indicating if the messageID was changed.
 func getMessageID(event []byte) (string, bool) {
-	messageID := getJSONValueBytes(event, "messageId")
+	messageID := gjson.GetBytes(event, "messageId").String()
 	sanitizedMessageID := sanitizeAndTrim(messageID)
 	if sanitizedMessageID == "" {
 		return uuid.New().String(), true
@@ -942,10 +942,6 @@ func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
 		return rudderId, err
 	}
 	return rudderId, nil
-}
-
-func getJSONValueBytes(payload []byte, key string) string {
-	return gjson.GetBytes(payload, key).String()
 }
 
 func sanitizeAndTrim(str string) string {
