@@ -57,4 +57,6 @@ var (
 	SyncFrequencySetting          DestinationConfigSetting = destConfSetting("syncFrequency")
 	SyncStartAtSetting            DestinationConfigSetting = destConfSetting("syncStartAt")
 	ExcludeWindowSetting          DestinationConfigSetting = destConfSetting("excludeWindow")
+	PartitionColumnSetting        DestinationConfigSetting = destConfSetting("partitionColumn")
+	PartitionTypeSetting          DestinationConfigSetting = destConfSetting("partitionType")
 )

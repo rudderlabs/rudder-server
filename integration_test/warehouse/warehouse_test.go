@@ -17,6 +17,8 @@ import (
 	"text/template"
 	"time"
 
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/ory/dockertest/v3"
@@ -27,8 +29,6 @@ import (
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/compose-test/compose"
-	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -38,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -1566,14 +1567,15 @@ func TestUploads(t *testing.T) {
 }
 
 func TestDestinationTransformation(t *testing.T) {
-	c := testcompose.New(t, compose.FilePaths([]string{"../../warehouse/integrations/testdata/docker-compose.transformer.yml"}))
-	c.Start(context.Background())
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
-	transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+	transformerResource, err := transformertest.Setup(pool, t)
+	require.NoError(t, err)
 
 	conf := config.New()
-	conf.Set("DEST_TRANSFORM_URL", transformerURL)
-	conf.Set("USER_TRANSFORM_URL", transformerURL)
+	conf.Set("DEST_TRANSFORM_URL", transformerResource.TransformerURL)
+	conf.Set("USER_TRANSFORM_URL", transformerResource.TransformerURL)
 
 	type output struct {
 		Metadata struct {

@@ -233,7 +233,6 @@ func UploadJobUsersAppendRecords(userIDFormat, sourceID, destID, destType string
 
 // UploadJobUsersAppendRecordsUsingUsersLoadFiles returns a set of records for testing upload job users scenarios.
 // It uses twice upload-job.events-1.json as the source of data.
-// sent_at, timestamp, original_timestamp will not be present in the records.
 func UploadJobUsersAppendRecordsUsingUsersLoadFiles(userIDFormat, sourceID, destID, destType string) [][]string {
 	uuidTS := timeutil.Now().Format("2006-01-02")
 	return [][]string{
@@ -253,7 +252,6 @@ func UploadJobUsersMergeRecord(userIDFormat, sourceID, destID, destType string) 
 
 // UploadJobUsersRecordsUsingUsersLoadFilesForClickhouse returns a set of records for testing upload job users scenarios.
 // It uses upload-job.events-1.json, upload-job.events-2.json as the source of data.
-// sent_at, timestamp, original_timestamp will not be present in the records.
 // For AggregatingMergeTree ClickHouse replaces all rows with the same primary key (or more accurately, with the same sorting key) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 // So received_at will be record for the first record only.
 func UploadJobUsersRecordsUsingUsersLoadFilesForClickhouse(userIDFormat, sourceID, destID, destType string) [][]string {
