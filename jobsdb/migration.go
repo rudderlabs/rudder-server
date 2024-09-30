@@ -43,7 +43,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.migration.migrateDSTimeout.Load())
 			defer cancel()
 			err := jd.doMigrateDS(timeoutCtx)
-			stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+			jd.stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 			if err != nil {
 				return fmt.Errorf("failed to migrate ds: %w", err)
 			}
@@ -170,7 +170,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		})
 	})
 	if l != nil {
-		defer stats.Default.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
+		defer jd.stats.NewTaggedStat("migration_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(lockStart)
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
@@ -293,7 +293,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 		return err
 	}
 	start := time.Now()
-	defer stats.Default.NewTaggedStat(
+	defer jd.stats.NewTaggedStat(
 		"jobsdb_compact_status_tables",
 		stats.TimerType,
 		stats.Tags{"customVal": jd.tablePrefix},

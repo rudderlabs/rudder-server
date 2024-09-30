@@ -450,6 +450,7 @@ type Handle struct {
 	ownerType   OwnerType
 	tablePrefix string
 	logger      logger.Logger
+	stats       stats.Stats
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
@@ -689,6 +690,12 @@ func WithConfig(c *config.Config) OptsFunc {
 	}
 }
 
+func WithStats(s stats.Stats) OptsFunc {
+	return func(jd *Handle) {
+		jd.stats = s
+	}
+}
+
 func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.skipMaintenanceError = ignore
@@ -755,6 +762,10 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
+	if jd.stats == nil {
+		jd.stats = stats.Default
+	}
+
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
@@ -765,7 +776,7 @@ func (jd *Handle) init() {
 		jd.assertError(err)
 
 		jd.assertError(
-			stats.Default.RegisterCollector(
+			jd.stats.RegisterCollector(
 				collectors.NewDatabaseSQLStats(
 					"jobsdb_"+jd.tablePrefix+"_"+jd.ownerType.Identifier(),
 					jd.dbHandle,
@@ -863,10 +874,10 @@ func (jd *Handle) workersAndAuxSetup() {
 	)
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
-	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 func (jd *Handle) loadConfig() {
@@ -2513,7 +2524,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() {
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		jd.stats.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}()
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
@@ -2528,7 +2539,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
-	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
+	defer jd.stats.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
@@ -3170,8 +3181,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 
 	statTags := tags.getStatsTags(jd.tablePrefix)
 	statTags["query"] = "get"
-	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
 
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID
