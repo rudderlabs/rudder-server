@@ -32,10 +32,11 @@ import (
 )
 
 const (
-	WaitFor2Minute          = 2 * time.Minute
-	WaitFor10Minute         = 10 * time.Minute
-	DefaultQueryFrequency   = 100 * time.Millisecond
-	SourceJobQueryFrequency = 1000 * time.Millisecond
+	WaitFor2Minute                 = 2 * time.Minute
+	WaitFor10Minute                = 10 * time.Minute
+	DefaultQueryFrequency          = 100 * time.Millisecond
+	DefaultWarehouseQueryFrequency = 500 * time.Millisecond
+	SourceJobQueryFrequency        = 1000 * time.Millisecond
 )
 
 const (

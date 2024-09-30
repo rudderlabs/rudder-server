@@ -401,22 +401,41 @@ func (sf *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.U
 	return total.Int64, nil
 }
 
-func (sf *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.Upload) (time.Time, error) {
-	var firstEvent sql.NullTime
-	err := sf.db.QueryRowContext(ctx, `
+func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, uploadID int64) ([]model.EventTimeRange, error) {
+	rows, err := sf.db.QueryContext(ctx, `
 		SELECT
-			first_event_at
+			first_event_at, last_event_at
 		FROM
 			`+stagingTableName+`
 		WHERE
-			id = $1;`,
-		upload.StagingFileStartID,
-	).Scan(&firstEvent)
+			upload_id = $1;`,
+		uploadID,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
-		return time.Time{}, fmt.Errorf("querying first event for upload: %w", err)
+		return nil, fmt.Errorf("query event time ranges: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var eventTimeRanges []model.EventTimeRange
+	for rows.Next() {
+		var firstEventAt, lastEventAt time.Time
+		err = rows.Scan(&firstEventAt, &lastEventAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan event time range: %w", err)
+		}
+		eventTimeRanges = append(eventTimeRanges, model.EventTimeRange{
+			FirstEventAt: firstEventAt,
+			LastEventAt:  lastEventAt,
+		})
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate event time range: %w", err)
 	}
 
-	return firstEvent.Time, nil
+	return eventTimeRanges, nil
 }
 
 func (sf *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {

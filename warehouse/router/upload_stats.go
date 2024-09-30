@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -69,6 +69,17 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
+	eventTimeRanges, err := job.stagingFileRepo.GetEventTimeRangesByUploadID(job.ctx, job.upload.ID)
+	if err != nil {
+		job.logger.Warnn("event time ranges for upload", obskit.Error(err))
+		return
+	}
+
+	for _, eventTimeRange := range eventTimeRanges {
+		job.stats.eventDeliveryTime.Since(eventTimeRange.FirstEventAt)
+		job.stats.eventDeliveryTime.Since(eventTimeRange.LastEventAt)
+	}
+
 	job.stats.totalRowsSynced.Count(int(numUploadedEvents))
 	job.stats.numStagedEvents.Count(int(numStagedEvents))
 	job.stats.uploadSuccess.Count(1)
@@ -115,24 +126,6 @@ func (job *UploadJob) recordTableLoad(tableName string, numEvents int64) {
 		Name:  "tableName",
 		Value: capturedTableName,
 	}).Count(int(numEvents))
-
-	// Delay for the oldest event in the batch
-	firstEventAt, err := job.stagingFileRepo.FirstEventForUpload(job.ctx, job.upload)
-	if err != nil {
-		job.logger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
-		return
-	}
-	if !job.upload.Retried {
-		syncFrequency := "1440"
-		if frequency := job.warehouse.GetStringDestinationConfig(job.conf, model.SyncFrequencySetting); frequency != "" {
-			syncFrequency = frequency
-		}
-		job.timerStat("event_delivery_time",
-			warehouseutils.Tag{Name: "tableName", Value: capturedTableName},
-			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
-			warehouseutils.Tag{Name: "sourceCategory", Value: job.warehouse.Source.SourceDefinition.Category},
-		).Since(firstEventAt)
-	}
 }
 
 func (job *UploadJob) recordLoadFileGenerationTimeStat(startID, endID int64) error {
