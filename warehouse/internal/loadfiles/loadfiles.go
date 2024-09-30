@@ -9,10 +9,6 @@ import (
 	"strings"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
 	"github.com/samber/lo"
 
 	"golang.org/x/sync/errgroup"
@@ -21,8 +17,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -163,20 +161,17 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 	job.LoadFileGenStartTime = timeutil.Now()
 
-	startTime := time.Now()
 	// Getting distinct destination revision ID from staging files metadata
 	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
 	if err != nil {
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
-	lf.Logger.Infof("[WH]: Populated destination revision ID for %s", time.Since(startTime))
 
 	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
-	lf.Logger.Infof("[WH]: Deleted previous load files for staging files %v for %s", time.Since(startTime), destID)
 
 	// Set staging file status to executing
 	if err := lf.StageRepo.SetStatuses(
@@ -187,7 +182,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
 
-	lf.Logger.Infof("[WH]: Set staging file status to executing for staging files %v for %s", time.Since(startTime), destID)
 	defer func() {
 		// ensure that if there is an error, we set the staging file status to failed
 		if err != nil {
@@ -242,7 +236,6 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
-		lf.Logger.Infof("[WH]: Publishing %d staging files in %v for %s", len(messages), time.Since(startTime), destID)
 		uploadSchemaJSON, err := json.Marshal(struct {
 			UploadSchema model.Schema
 		}{
@@ -371,25 +364,27 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	return loadFiles[0].ID, loadFiles[len(loadFiles)-1].ID, nil
 }
 
-func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
-	revisionIDMap = make(map[string]backendconfig.DestinationT)
+func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (map[string]backendconfig.DestinationT, error) {
+	revisionIDMap := make(map[string]backendconfig.DestinationT)
 
-	revisionIDMap[job.Warehouse.Destination.RevisionID] = job.Warehouse.Destination
-	revisionIds := lo.Uniq(
-		lo.Map(
-			lo.Filter(job.StagingFiles, func(file *model.StagingFile, _ int) bool {
-				return file.DestinationRevisionID != job.Warehouse.Destination.RevisionID
-			}), func(file *model.StagingFile, _ int) string {
-				return file.DestinationRevisionID
-			}))
-	for _, revisionId := range revisionIds {
-		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionId)
+	for _, file := range job.StagingFiles {
+		revisionID := file.DestinationRevisionID
+		// No need to make config backend api call for the current config
+		if revisionID == job.Warehouse.Destination.RevisionID {
+			revisionIDMap[revisionID] = job.Warehouse.Destination
+			continue
+		}
+		// No need to make config backend api call for the same revision ID
+		if _, ok := revisionIDMap[revisionID]; ok {
+			continue
+		}
+		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionID)
 		if err != nil {
 			return nil, err
 		}
-		revisionIDMap[revisionId] = destination
+		revisionIDMap[revisionID] = destination
 	}
-	return
+	return revisionIDMap, nil
 }
 
 func (lf *LoadFileGenerator) GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
