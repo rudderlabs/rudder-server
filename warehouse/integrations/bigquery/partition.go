@@ -23,10 +23,8 @@ var supportedPartitionColumnMap = map[string]struct{}{
 }
 
 var supportedPartitionTypeMap = map[string]bigquery.TimePartitioningType{
-	"hour":  bigquery.HourPartitioningType,
-	"day":   bigquery.DayPartitioningType,
-	"month": bigquery.MonthPartitioningType,
-	"year":  bigquery.YearPartitioningType,
+	"hour": bigquery.HourPartitioningType,
+	"day":  bigquery.DayPartitioningType,
 }
 
 // avoidPartitionDecorator returns true if custom partition is enabled via destination or global config
@@ -96,10 +94,6 @@ func (bq *BigQuery) partitionDate() (string, error) {
 		return bq.now().Format("2006-01-02T15"), nil
 	case bigquery.DayPartitioningType:
 		return bq.now().Format("2006-01-02"), nil
-	case bigquery.MonthPartitioningType:
-		return bq.now().Format("2006-01"), nil
-	case bigquery.YearPartitioningType:
-		return bq.now().Format("2006"), nil
 	default:
 		return "", errPartitionTypeNotSupported
 	}

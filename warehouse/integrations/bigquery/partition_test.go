@@ -124,22 +124,6 @@ func TestBigquery_PartitionDate(t *testing.T) {
 			expectedError:     nil,
 		},
 		{
-			name: "month partition type",
-			config: map[string]interface{}{
-				"partitionType": "month",
-			},
-			expectedPartition: "2023-04",
-			expectedError:     nil,
-		},
-		{
-			name: "year partition type",
-			config: map[string]interface{}{
-				"partitionType": "year",
-			},
-			expectedPartition: "2023",
-			expectedError:     nil,
-		},
-		{
 			name: "unsupported partition type",
 			config: map[string]interface{}{
 				"partitionType": "invalid",
