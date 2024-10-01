@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
@@ -29,7 +30,7 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	}
 	require.NoError(t, m.Migrate("node"))
 
-	jdb := jobsdb.NewForReadWrite("rt", jobsdb.WithDBHandle(pgContainer.DB))
+	jdb := jobsdb.NewForReadWrite("rt", jobsdb.WithDBHandle(pgContainer.DB), jobsdb.WithStats(stats.NOP))
 	require.NoError(t, jdb.Start())
 	defer jdb.Stop()
 

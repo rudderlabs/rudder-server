@@ -56,7 +56,7 @@ func TestJobsArchival(t *testing.T) {
 	c.Set("DB.password", postgresResource.Password)
 	misc.Init()
 
-	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
+	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
 	require.NoError(t, jd.Start())
 
 	minioResource = make([]*minio.Resource, uniqueWorkspaces)

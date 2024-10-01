@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 )
 
@@ -41,6 +42,8 @@ func TestFailedRecords(t *testing.T) {
 	require.NoError(t, err)
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
+	sts, err := memstats.New()
+	require.NoError(t, err, "should create stats")
 
 	service, err := NewJobService(JobServiceConfig{
 		LocalHostname:       postgresContainer.Host,
@@ -48,7 +51,7 @@ func TestFailedRecords(t *testing.T) {
 		LocalConn:           postgresContainer.DBDsn,
 		Log:                 logger.NOP,
 		ShouldSetupSharedDB: true,
-	})
+	}, sts)
 	require.NoError(t, err)
 	// Create 2 different job run ids with 10 records each
 	_, err = postgresContainer.DB.Exec(`INSERT INTO rsources_failed_keys_v2 (id, job_run_id, task_run_id, source_id, destination_id) SELECT id::text, id::text, '1', '1', '1' FROM generate_series(1, 2) as id`)
@@ -84,6 +87,8 @@ func RunFailedRecordsPerformanceTest(t testing.TB, recordCount, pageSize int) ti
 	require.NoError(t, err)
 	postgresContainer, err := postgres.Setup(pool, t)
 	require.NoError(t, err)
+	sts, err := memstats.New()
+	require.NoError(t, err, "should create stats")
 
 	service, err := NewJobService(JobServiceConfig{
 		LocalHostname:       postgresContainer.Host,
@@ -91,7 +96,7 @@ func RunFailedRecordsPerformanceTest(t testing.TB, recordCount, pageSize int) ti
 		LocalConn:           postgresContainer.DBDsn,
 		Log:                 logger.NOP,
 		ShouldSetupSharedDB: true,
-	})
+	}, sts)
 	require.NoError(t, err)
 
 	// seed the database with records

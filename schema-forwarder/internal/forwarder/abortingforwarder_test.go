@@ -30,6 +30,7 @@ func Test_AbortingForwarder(t *testing.T) {
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)

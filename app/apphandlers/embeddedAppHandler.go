@@ -75,6 +75,8 @@ func (a *embeddedApp) Setup() error {
 
 func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	config := config.Default
+	statsFactory := stats.Default
+
 	if !a.setupDone {
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
@@ -126,7 +128,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(deploymentType, true, statsFactory)
 	if err != nil {
 		return err
 	}
@@ -143,6 +145,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithStats(statsFactory),
 	)
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
@@ -156,6 +159,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -163,6 +167,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -170,6 +175,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer batchRouterDB.Close()
 
@@ -179,12 +185,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
 	)
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
@@ -196,6 +204,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer schemaDB.Close()
 
@@ -204,6 +213,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
@@ -219,9 +229,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -231,7 +241,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, statsFactory)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
@@ -263,7 +273,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		trackedUsersReporter,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := rtThrottler.NewFactory(config, stats.Default)
+	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
@@ -307,16 +317,16 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			archivalDB,
 			fileUploaderProvider,
 			config,
-			stats.Default,
+			statsFactory,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),
 	}
 
-	rateLimiter, err := gwThrottler.New(stats.Default)
+	rateLimiter, err := gwThrottler.New(statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
@@ -329,7 +339,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}))
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
-	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
@@ -378,8 +388,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	})
 
 	g.Go(func() error {
-		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
-		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		replicationLagStat := statsFactory.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := statsFactory.NewStat("rsources_log_replication_slot", stats.GaugeType)
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
 		return nil
 	})

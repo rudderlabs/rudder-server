@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	"golang.org/x/sync/errgroup"
 
@@ -266,6 +267,10 @@ func (n *Notifier) setupDatabase(
 		return fmt.Errorf("could not open: %w", err)
 	}
 	database.SetMaxOpenConns(n.config.maxOpenConnections)
+	err = n.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("notifier-"+n.workspaceIdentifier, database))
+	if err != nil {
+		return fmt.Errorf("registering collector: %w", err)
+	}
 
 	if err := database.PingContext(ctx); err != nil {
 		return fmt.Errorf("could not ping: %w", err)

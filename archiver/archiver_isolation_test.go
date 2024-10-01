@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -311,7 +312,7 @@ func insertJobs(
 	configMap map[string]backendconfig.ConfigT,
 	numJobsPerSource int,
 ) (map[string][]*jobsdb.JobT, int) {
-	gwJobsDB := jobsdb.NewForWrite("gw")
+	gwJobsDB := jobsdb.NewForWrite("gw", jobsdb.WithStats(stats.NOP))
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")
 	defer gwJobsDB.Stop()
 

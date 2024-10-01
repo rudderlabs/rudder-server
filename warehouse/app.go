@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -233,6 +234,10 @@ func (a *App) setupDatabase(ctx context.Context) error {
 		return fmt.Errorf("could not ping: %w", err)
 	}
 
+	err = a.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("warehouse", database))
+	if err != nil {
+		return fmt.Errorf("could not register collector: %w", err)
+	}
 	a.db = sqlquerywrapper.New(
 		database,
 		sqlquerywrapper.WithLogger(a.logger.Child("db")),
