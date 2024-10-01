@@ -1,8 +1,10 @@
 package marketobulkupload
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -101,17 +103,29 @@ func handleMarketoErrorCode(errorCode string) (int64, string, string) {
 }
 
 func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, string) {
-	errorCode := marketoResponse.Errors[0].Code
-	errorMessage := marketoResponse.Errors[0].Message
+	statusCode := int64(200)
+	category := "Success"
+	errorMessage := ""
+	if !marketoResponse.Success {
+		if len(marketoResponse.Errors) > 0 {
+			errorCode := marketoResponse.Errors[0].Code
+			errorMessage = marketoResponse.Errors[0].Message
 
-	statusCode, category, _ := handleMarketoErrorCode(errorCode)
+			statusCode, category, _ = handleMarketoErrorCode(errorCode)
+		} else {
+			// Handle the case where Errors array is empty
+			errorMessage = "Unknown error"
+			statusCode, category, _ = handleMarketoErrorCode("Unknown")
+		}
+
+	}
 
 	return statusCode, category, errorMessage
 }
 
 // ==== Response Parsing End ====
 
-func createCSVFile(destinationID string, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
+func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, "marketo_bulk_upload")
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
@@ -126,14 +140,11 @@ func createCSVFile(destinationID string, input []common.AsyncJob, dataHashToJobI
 	headers := make(map[string]int)
 	var headerOrder []string
 
-	// First pass: collect all unique headers
-	for _, job := range input {
-		message := job.Message
-		for key := range message {
-			if _, exists := headers[key]; !exists {
-				headers[key] = len(headerOrder)
-				headerOrder = append(headerOrder, key)
-			}
+	// First pass: collect all unique headers we are taking value as its the marketo field name
+	for _, value := range destConfig.FieldsMapping {
+		if _, exists := headers[value]; !exists {
+			headers[value] = len(headerOrder)
+			headerOrder = append(headerOrder, value)
 		}
 	}
 
@@ -156,7 +167,7 @@ func createCSVFile(destinationID string, input []common.AsyncJob, dataHashToJobI
 		lineSize := int64(len(line))
 
 		if currentSize+lineSize > 10*1024*1024 { // 10MB in bytes
-			overflowedJobIDs = append(overflowedJobIDs, job.Metadata["job_id"].(int64))
+			overflowedJobIDs = append(overflowedJobIDs, int64(job.Metadata["job_id"].(float64)))
 			continue
 		}
 
@@ -165,11 +176,11 @@ func createCSVFile(destinationID string, input []common.AsyncJob, dataHashToJobI
 			return "", nil, nil, nil, err
 		}
 		currentSize += lineSize
-		insertedJobIDs = append(insertedJobIDs, job.Metadata["job_id"].(int64))
+		insertedJobIDs = append(insertedJobIDs, int64(job.Metadata["job_id"].(float64)))
 		// Calculate hash code for the row
 		dataHash := calculateHashCode(row)
 		// Store the mapping of data hash to job ID
-		dataHashToJobId[dataHash] = job.Metadata["job_id"].(int64)
+		dataHashToJobId[dataHash] = int64(job.Metadata["job_id"].(float64))
 	}
 
 	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, nil
@@ -224,3 +235,31 @@ func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string) (*http.R
 }
 
 // ==== Upload Utils End ====
+
+func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("BRT: Read File Failed: %v", err)
+	}
+	defer file.Close()
+
+	var input []common.AsyncJob
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var tempJob common.AsyncJob
+		jobBytes := scanner.Bytes()
+		err := json.Unmarshal(jobBytes, &tempJob)
+		if err != nil {
+			return nil, fmt.Errorf("BRT: Error in Unmarshalling Job: %v", err)
+		}
+		input = append(input, tempJob)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("BRT: Error in Scanning File: %v", err)
+	}
+
+	return input, nil
+}
+
+// ==== File Utils End ====
