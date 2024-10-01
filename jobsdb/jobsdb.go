@@ -46,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -53,6 +54,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -768,7 +770,6 @@ func (jd *Handle) init() {
 		}
 	}
 	jd.dbHandle.SetMaxOpenConns(maxConns)
-	jd.dbHandle.SetMaxIdleConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
