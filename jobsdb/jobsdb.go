@@ -45,6 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -803,7 +804,6 @@ func (jd *Handle) init() {
 		}
 	}
 	jd.dbHandle.SetMaxOpenConns(maxConns)
-	jd.dbHandle.SetMaxIdleConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
