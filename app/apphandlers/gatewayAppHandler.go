@@ -48,6 +48,7 @@ func (a *gatewayApp) Setup() error {
 
 func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	config := config.Default
+	statsFactory := stats.Default
 	if !a.setupDone {
 		return fmt.Errorf("gateway cannot start, database is not setup")
 	}
@@ -72,7 +73,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
-		jobsdb.WithStats(stats.Default),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer gatewayDB.Close()
 
@@ -85,7 +86,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
-		jobsdb.WithStats(stats.Default),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer errDB.Close()
 
@@ -110,11 +111,11 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	})
 
 	var gw gateway.Handle
-	rateLimiter, err := gwThrottler.New(stats.Default)
+	rateLimiter, err := gwThrottler.New(statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create rate limiter: %w", err)
 	}
-	rsourcesService, err := NewRsourcesService(deploymentType, false, stats.Default)
+	rsourcesService, err := NewRsourcesService(deploymentType, false, statsFactory)
 	if err != nil {
 		return err
 	}
@@ -123,7 +124,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), stats.Default)
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		a.log.Errorw("drain config manager setup failed while starting gateway", "error", err)
 	}
@@ -134,7 +135,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		drainConfigHttpHandler = drainConfigManager.DrainConfigHttpHandler()
 	}
 	streamMsgValidator := stream.NewMessageValidator()
-	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gatewayDB, errDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
