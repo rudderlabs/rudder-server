@@ -43,7 +43,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
@@ -1007,59 +1006,7 @@ func (jd *Handle) Start() error {
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
 	}
-	g.Go(crash.Wrapper(func() error {
-		for {
-			select {
-			case <-time.After(jd.config.GetDuration("JobsDB.ConnStatsFrequency", 15, time.Second)):
-			case <-ctx.Done():
-				return nil
-			}
-			stats := jd.dbHandle.Stats()
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_open_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxOpenConnections))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_open_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.OpenConnections))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_in_use_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.InUse))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_idle_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.Idle))
-
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_wait_count_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.WaitCount))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_wait_duration_seconds_total", tablePrefix: jd.tablePrefix},
-			).Set(stats.WaitDuration.Seconds())
-
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_idle_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxIdleClosed))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_idle_time_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxIdleTimeClosed))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_lifetime_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxLifetimeClosed))
-
-		}
-	}))
 	return nil
-}
-
-type dbConnStats struct {
-	name, tablePrefix string
-}
-
-func (dbs dbConnStats) GetName() string {
-	return dbs.name
-}
-
-func (dbs dbConnStats) GetTags() map[string]string {
-	return map[string]string{"name": "jobsdb_" + dbs.tablePrefix}
 }
 
 func (jd *Handle) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
