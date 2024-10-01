@@ -45,6 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -52,6 +53,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -447,6 +450,7 @@ type Handle struct {
 	ownerType   OwnerType
 	tablePrefix string
 	logger      logger.Logger
+	stats       stats.Stats
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
@@ -632,6 +636,20 @@ const (
 	ReadWrite OwnerType = ""
 )
 
+func (ot OwnerType) Identifier() string {
+	switch ot {
+	case Read:
+		return "r"
+	case Write:
+		return "w"
+	case ReadWrite:
+		return "rw"
+	default:
+		return ""
+
+	}
+}
+
 func init() {
 	for _, js := range jobStates {
 		if !js.isValid {
@@ -669,6 +687,12 @@ func WithDBHandle(dbHandle *sql.DB) OptsFunc {
 func WithConfig(c *config.Config) OptsFunc {
 	return func(jd *Handle) {
 		jd.config = c
+	}
+}
+
+func WithStats(s stats.Stats) OptsFunc {
+	return func(jd *Handle) {
+		jd.stats = s
 	}
 }
 
@@ -738,35 +762,48 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
+	if jd.stats == nil {
+		jd.stats = stats.Default
+	}
+
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
+		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
+
+		jd.assertError(
+			jd.stats.RegisterCollector(
+				collectors.NewDatabaseSQLStats(
+					"jobsdb_"+jd.tablePrefix+"_"+jd.ownerType.Identifier(),
+					jd.dbHandle,
+				),
+			),
+		)
 	}
 
+	var maxConns int
 	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		maxConns = jd.conf.maxOpenConnections
 	} else {
-		maxOpenConnections := 2 // buffer
-		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
+		maxConns = 2 // buffer
+		maxConns += jd.conf.maxReaders + jd.conf.maxWriters
 		switch jd.ownerType {
 		case Read:
-			maxOpenConnections += 2 // migrate, refreshDsList
+			maxConns += 2 // migrate, refreshDsList
 		case Write:
-			maxOpenConnections += 1 // addNewDS
+			maxConns += 1 // addNewDS
 		case ReadWrite:
-			maxOpenConnections += 3 // migrate, addNewDS, archive
+			maxConns += 3 // migrate, addNewDS, archive
 		}
-		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
-		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+		if maxConns >= jd.conf.maxOpenConnections {
+			maxConns = jd.conf.maxOpenConnections
 		}
 	}
+	jd.dbHandle.SetMaxOpenConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
@@ -836,10 +873,10 @@ func (jd *Handle) workersAndAuxSetup() {
 	)
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
-	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 func (jd *Handle) loadConfig() {
@@ -2434,7 +2471,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() {
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		jd.stats.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}()
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
@@ -2449,7 +2486,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
-	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
+	defer jd.stats.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
@@ -3091,8 +3128,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 
 	statTags := tags.getStatsTags(jd.tablePrefix)
 	statTags["query"] = "get"
-	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
 
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID

@@ -25,6 +25,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
@@ -88,6 +89,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	gatewayDB := jobsdb.NewForReadWrite(
 		"gateway",
 		jobsdb.WithDBHandle(p.DB),
+		jobsdb.WithStats(stats.NOP),
 	)
 
 	require.NoError(t, gatewayDB.Start())
@@ -96,6 +98,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	errDB := jobsdb.NewForReadWrite(
 		"err",
 		jobsdb.WithDBHandle(p.DB),
+		jobsdb.WithStats(stats.NOP),
 	)
 	require.NoError(t, errDB.Start())
 	defer errDB.TearDown()

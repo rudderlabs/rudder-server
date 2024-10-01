@@ -143,7 +143,7 @@ type statTags struct {
 }
 
 func (jd *Handle) getTimerStat(stat string, tags *statTags) stats.Measurement {
-	return stats.Default.NewTaggedStat(
+	return jd.stats.NewTaggedStat(
 		stat,
 		stats.TimerType,
 		tags.getStatsTags(jd.tablePrefix),

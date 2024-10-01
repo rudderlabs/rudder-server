@@ -31,6 +31,7 @@ func Test_BaseForwarder(t *testing.T) {
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)
@@ -83,6 +84,7 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)

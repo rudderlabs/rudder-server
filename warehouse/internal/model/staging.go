@@ -48,3 +48,8 @@ func (s StagingFile) WithSchema(schema json.RawMessage) StagingFileWithSchema {
 		Schema:      schema,
 	}
 }
+
+type EventTimeRange struct {
+	FirstEventAt time.Time
+	LastEventAt  time.Time
+}
