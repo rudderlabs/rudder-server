@@ -88,7 +88,7 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 	dbHandle.SetMaxOpenConns(1)
 	err = u.stats.RegisterCollector(collectors.NewDatabaseSQLStats("tracked_users_reports", dbHandle))
 	if err != nil {
-		return fmt.Errorf("registering collector: %w", err)
+		u.log.Errorn("error registering database sql stats", obskit.Error(err))
 	}
 
 	m := &migrator.Migrator{
