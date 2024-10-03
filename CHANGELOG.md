@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.1](https://github.com/rudderlabs/rudder-server/compare/v1.35.0...v1.35.1) (2024-10-03)
+
+
+### Miscellaneous
+
+* remove panic on NewDatabaseSQLStats Register from various reports ([#5163](https://github.com/rudderlabs/rudder-server/issues/5163)) ([af83259](https://github.com/rudderlabs/rudder-server/commit/af832599da56dc8831ac759adadb5531513d1492))
+
 ## [1.35.0](https://github.com/rudderlabs/rudder-server/compare/v1.34.1...v1.35.0) (2024-10-01)
 
 
