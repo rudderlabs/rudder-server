@@ -293,7 +293,7 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	dbHandle.SetMaxOpenConns(edr.maxOpenConnections)
 	err = edr.stats.RegisterCollector(collectors.NewDatabaseSQLStats("error_detail_reporting", dbHandle))
 	if err != nil {
-		return nil, fmt.Errorf("could not register database stats collector: %w", err)
+		edr.log.Errorn("error registering database sql stats", obskit.Error(err))
 	}
 
 	m := &migrator.Migrator{

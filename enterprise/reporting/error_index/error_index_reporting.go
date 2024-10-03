@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -191,7 +192,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 	}
 	err = eir.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("jobsdb-err_idx", dbHandle))
 	if err != nil {
-		panic(fmt.Errorf("failed to register collector: %w", err))
+		eir.log.Errorn("error registering database sql stats", obskit.Error(err))
 	}
 	errIndexDB := jobsdb.NewForReadWrite(
 		"err_idx",
