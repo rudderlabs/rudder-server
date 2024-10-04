@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.35.2](https://github.com/rudderlabs/rudder-server/compare/v1.35.1...v1.35.2) (2024-10-04)
+
+
+### Bug Fixes
+
+* bigquery validations for partition column and type ([#5168](https://github.com/rudderlabs/rudder-server/issues/5168)) ([a2af47a](https://github.com/rudderlabs/rudder-server/commit/a2af47afe735210dd8355f141a8d38d298bfb2b5))
+* change retl check to source category ([#5167](https://github.com/rudderlabs/rudder-server/issues/5167)) ([3ed1302](https://github.com/rudderlabs/rudder-server/commit/3ed1302abaebc255ed194da51aa16ffed1a7c191))
+
 ## [1.35.1](https://github.com/rudderlabs/rudder-server/compare/v1.35.0...v1.35.1) (2024-10-03)
 
 
