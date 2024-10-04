@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -68,14 +69,21 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer sourceHandle.Stop()
 
+	dbPool, err := misc.GetDatabaseConnectionPool(ctx, config, statsFactory, "jobsdb")
+	if err != nil {
+		return err
+	}
+	//	Not deferring close here
+	// defer dbPool.Close()
+
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
-	defer gatewayDB.Close()
 
 	if err := gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
@@ -87,8 +95,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
-	defer errDB.Close()
 
 	if err := errDB.Start(); err != nil {
 		return fmt.Errorf("could not start errDB: %w", err)

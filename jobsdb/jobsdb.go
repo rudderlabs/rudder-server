@@ -783,29 +783,29 @@ func (jd *Handle) init() {
 				),
 			),
 		)
-	}
 
-	var maxConns int
-	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		maxConns = jd.conf.maxOpenConnections
-	} else {
-		maxConns = 2 // buffer
-		maxConns += jd.conf.maxReaders + jd.conf.maxWriters
-		switch jd.ownerType {
-		case Read:
-			maxConns += 2 // migrate, refreshDsList
-		case Write:
-			maxConns += 1 // addNewDS
-		case ReadWrite:
-			maxConns += 3 // migrate, addNewDS, archive
-		}
-		if maxConns >= jd.conf.maxOpenConnections {
+		var maxConns int
+		if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
 			maxConns = jd.conf.maxOpenConnections
+		} else {
+			maxConns = 2 // buffer
+			maxConns += jd.conf.maxReaders + jd.conf.maxWriters
+			switch jd.ownerType {
+			case Read:
+				maxConns += 2 // migrate, refreshDsList
+			case Write:
+				maxConns += 1 // addNewDS
+			case ReadWrite:
+				maxConns += 3 // migrate, addNewDS, archive
+			}
+			if maxConns >= jd.conf.maxOpenConnections {
+				maxConns = jd.conf.maxOpenConnections
+			}
 		}
-	}
-	jd.dbHandle.SetMaxOpenConns(maxConns)
+		jd.dbHandle.SetMaxOpenConns(maxConns)
 
-	jd.assertError(jd.dbHandle.Ping())
+		jd.assertError(jd.dbHandle.Ping())
+	}
 
 	jd.workersAndAuxSetup()
 
