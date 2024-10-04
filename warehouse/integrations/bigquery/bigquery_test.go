@@ -641,40 +641,86 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
-		ctx := context.Background()
-		namespace := whth.RandSchema(destType)
-
-		db, err := bigquery.NewClient(ctx,
-			credentials.ProjectID,
-			option.WithCredentialsJSON([]byte(credentials.Credentials)),
-		)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = db.Close() })
-		t.Cleanup(func() {
-			dropSchema(t, db, namespace)
-		})
-
-		dest := backendconfig.DestinationT{
-			ID: "test_destination_id",
-			Config: map[string]interface{}{
-				"project":       credentials.ProjectID,
-				"location":      credentials.Location,
-				"bucketName":    credentials.BucketName,
-				"credentials":   credentials.Credentials,
-				"prefix":        "",
-				"namespace":     namespace,
-				"syncFrequency": "30",
+		testCases := []struct {
+			name           string
+			configOverride map[string]any
+		}{
+			{
+				name: "default partitionColumn and partitionType",
 			},
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				ID:          "1UmeD7xhVGHsPDEHoCiSPEGytS3",
-				Name:        "BQ",
-				DisplayName: "BigQuery",
+			{
+				name: "partitionColumn: _PARTITIONTIME, partitionType: day",
+				configOverride: map[string]any{
+					"partitionColumn": "_PARTITIONTIME",
+					"partitionType":   "day",
+				},
 			},
-			Name:       "bigquery-integration",
-			Enabled:    true,
-			RevisionID: "test_destination_id",
+			{
+				name: "partitionColumn: _PARTITIONTIME, partitionType: hour",
+				configOverride: map[string]any{
+					"partitionColumn": "_PARTITIONTIME",
+					"partitionType":   "hour",
+				},
+			},
+			{
+				name: "partitionColumn: received_at, partitionType: hour",
+				configOverride: map[string]any{
+					"partitionColumn": "received_at",
+					"partitionType":   "hour",
+				},
+			},
+			{
+				name: "partitionColumn: received_at, partitionType: day",
+				configOverride: map[string]any{
+					"partitionColumn": "loaded_at",
+					"partitionType":   "day",
+				},
+			},
 		}
-		whth.VerifyConfigurationTest(t, dest)
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := context.Background()
+				namespace := whth.RandSchema(destType)
+
+				db, err := bigquery.NewClient(ctx,
+					credentials.ProjectID,
+					option.WithCredentialsJSON([]byte(credentials.Credentials)),
+				)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = db.Close() })
+				t.Cleanup(func() {
+					dropSchema(t, db, namespace)
+				})
+
+				conf := map[string]interface{}{
+					"project":       credentials.ProjectID,
+					"location":      credentials.Location,
+					"bucketName":    credentials.BucketName,
+					"credentials":   credentials.Credentials,
+					"prefix":        "",
+					"namespace":     namespace,
+					"syncFrequency": "30",
+				}
+				for k, v := range tc.configOverride {
+					conf[k] = v
+				}
+
+				dest := backendconfig.DestinationT{
+					ID:     "test_destination_id",
+					Config: conf,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+						Name:        "BQ",
+						DisplayName: "BigQuery",
+					},
+					Name:       "bigquery-integration",
+					Enabled:    true,
+					RevisionID: "test_destination_id",
+				}
+				whth.VerifyConfigurationTest(t, dest)
+			})
+		}
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
