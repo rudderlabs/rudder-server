@@ -54,21 +54,23 @@ func GetDatabaseConnectionPool(
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("Error pinging database: %w", err)
 	}
-	stat.RegisterCollector(
+	if err := stat.RegisterCollector(
 		collectors.NewDatabaseSQLStats(
 			"jobsdb",
 			db,
 		),
-	)
+	); err != nil {
+		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
+	}
 	/*
 		TODO: find out a reasonably good value for below pool configurations
 	*/
 
-	maxConnsVar := conf.GetReloadableIntVar(50, 1, "JobsDB.maxOpenConnections")
+	maxConnsVar := conf.GetReloadableIntVar(40, 1, "JobsDB.maxOpenConnections")
 	maxConns := maxConnsVar.Load()
 	db.SetMaxOpenConns(maxConns)
 
-	maxIdleConnsVar := conf.GetReloadableIntVar(25, 1, "JobsDB.maxIdleConnections")
+	maxIdleConnsVar := conf.GetReloadableIntVar(5, 1, "JobsDB.maxIdleConnections")
 	maxIdleConns := maxIdleConnsVar.Load()
 	db.SetMaxIdleConns(maxIdleConns)
 
