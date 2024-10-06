@@ -197,7 +197,7 @@ func calculateHashCode(data []string) string {
 	return hashCode
 }
 
-func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string) (*http.Response, error) {
+func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplicationField string) (*http.Response, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return nil, err
@@ -218,6 +218,9 @@ func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string) (*http.R
 
 	_ = writer.WriteField("format", "csv")
 	_ = writer.WriteField("access_token", accessToken)
+	if deduplicationField != "" {
+		_ = writer.WriteField("lookupField", deduplicationField)
+	}
 
 	err = writer.Close()
 	if err != nil {

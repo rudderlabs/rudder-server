@@ -1,10 +1,11 @@
 package marketobulkupload
 
 type MarketoConfig struct {
-	ClientId      string            `json:"clientId"`
-	ClientSecret  string            `json:"clientSecret"`
-	MunchkinId    string            `json:"munchkinId"`
-	FieldsMapping map[string]string `json:"columnFieldsMapping"`
+	ClientId           string            `json:"clientId"`
+	ClientSecret       string            `json:"clientSecret"`
+	MunchkinId         string            `json:"munchkinId"`
+	DeduplicationField string            `json:"deDuplicationField"`
+	FieldsMapping      map[string]string `json:"columnFieldsMapping"`
 }
 
 type intermediateMarketoConfig struct {

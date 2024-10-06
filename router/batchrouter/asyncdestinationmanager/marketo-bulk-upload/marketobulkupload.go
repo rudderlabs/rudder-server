@@ -99,7 +99,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	}
 	payloadSizeStat.Gauge(float64(fileInfo.Size()))
 
-	importID, apiError := b.apiService.ImportLeads(csvFilePath)
+	importID, apiError := b.apiService.ImportLeads(csvFilePath, b.destinationConfig.DeduplicationField)
 
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
 
@@ -327,11 +327,12 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		hash := calculateHashCode(warningJobRow)
 		warningJobId := b.dataHashToJobId[hash]
 		if warningJobId != 0 {
-			metadata.WarningKeys = append(metadata.WarningKeys, warningJobId)
+			// Even if a job has warning, it is considered as a failure
+			metadata.FailedKeys = append(metadata.FailedKeys, warningJobId)
 		}
 		warningJobReason := warningJob[MARKETO_WARNING_HEADER]
 		if warningJobReason != "" {
-			metadata.WarningReasons[warningJobId] = warningJobReason
+			metadata.FailedReasons[warningJobId] = warningJobReason
 		}
 	}
 
