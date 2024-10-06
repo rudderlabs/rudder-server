@@ -55,8 +55,8 @@ func getKeys(m map[string]interface{}) []string {
 	}
 	return keys
 }
-func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, int64, error) {
 
+func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobIdRowMap map[int64]int64) (string, int64, error) {
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)

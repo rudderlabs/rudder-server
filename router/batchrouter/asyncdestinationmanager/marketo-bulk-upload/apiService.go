@@ -33,7 +33,7 @@ func (m *MarketoAPIService) checkForCSVLikeResponse(resp *http.Response) bool {
 	return respHeaders.Get("Content-Type") == "text/csv;charset=UTF-8"
 }
 
-func (m *MarketoAPIService) ImportLeads(csvFilePath string, deduplicationField string) (string, *APIError) {
+func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) (string, *APIError) {
 	uploadTimeStat := m.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": "MARKETO_BULK_UPLOAD",
