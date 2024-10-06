@@ -12,6 +12,7 @@ type intermediateMarketoConfig struct {
 	ClientId            string              `json:"clientId"`
 	ClientSecret        string              `json:"clientSecret"`
 	MunchkinId          string              `json:"munchkinId"`
+	DeduplicationField  string              `json:"deDuplicationField"`
 	ColumnFieldsMapping []map[string]string `json:"columnFieldsMapping"`
 }
 

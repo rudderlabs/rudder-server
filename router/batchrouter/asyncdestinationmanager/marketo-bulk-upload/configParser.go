@@ -11,6 +11,7 @@ func (m *MarketoConfig) UnmarshalJSON(data []byte) error {
 	m.ClientId = intermediate.ClientId
 	m.ClientSecret = intermediate.ClientSecret
 	m.MunchkinId = intermediate.MunchkinId
+	m.DeduplicationField = intermediate.DeduplicationField
 	m.FieldsMapping = make(map[string]string)
 
 	for _, mapping := range intermediate.ColumnFieldsMapping {
