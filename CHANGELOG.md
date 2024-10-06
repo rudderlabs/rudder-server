@@ -1,5 +1,53 @@
 # Changelog
 
+## [1.35.2](https://github.com/rudderlabs/rudder-server/compare/v1.35.1...v1.35.2) (2024-10-04)
+
+
+### Bug Fixes
+
+* bigquery validations for partition column and type ([#5168](https://github.com/rudderlabs/rudder-server/issues/5168)) ([a2af47a](https://github.com/rudderlabs/rudder-server/commit/a2af47afe735210dd8355f141a8d38d298bfb2b5))
+* change retl check to source category ([#5167](https://github.com/rudderlabs/rudder-server/issues/5167)) ([3ed1302](https://github.com/rudderlabs/rudder-server/commit/3ed1302abaebc255ed194da51aa16ffed1a7c191))
+
+## [1.35.1](https://github.com/rudderlabs/rudder-server/compare/v1.35.0...v1.35.1) (2024-10-03)
+
+
+### Miscellaneous
+
+* remove panic on NewDatabaseSQLStats Register from various reports ([#5163](https://github.com/rudderlabs/rudder-server/issues/5163)) ([af83259](https://github.com/rudderlabs/rudder-server/commit/af832599da56dc8831ac759adadb5531513d1492))
+
+## [1.35.0](https://github.com/rudderlabs/rudder-server/compare/v1.34.1...v1.35.0) (2024-10-01)
+
+
+### Features
+
+* add reason for discards [PIPE-1473] ([#5088](https://github.com/rudderlabs/rudder-server/issues/5088)) ([f835aa7](https://github.com/rudderlabs/rudder-server/commit/f835aa7b8d9f207e54ced23665dfee501355741f))
+* bq configurable partitions ([#5133](https://github.com/rudderlabs/rudder-server/issues/5133)) ([9544374](https://github.com/rudderlabs/rudder-server/commit/9544374a35ba877b316ce9e9d1b662fead509466))
+* redshift serverless ([#5144](https://github.com/rudderlabs/rudder-server/issues/5144)) ([e37b0e9](https://github.com/rudderlabs/rudder-server/commit/e37b0e93c277500f81eeef99c2cd37349a2a2159))
+
+
+### Bug Fixes
+
+* add messageId, rudderId and type based on new schema ([#5140](https://github.com/rudderlabs/rudder-server/issues/5140)) ([f6f6dfa](https://github.com/rudderlabs/rudder-server/commit/f6f6dfaaace632eb81221cea54b9ecdb187e6eda))
+* remove legacy hosted code which changes connectionToken ([#5126](https://github.com/rudderlabs/rudder-server/issues/5126)) ([100b3d9](https://github.com/rudderlabs/rudder-server/commit/100b3d96c9923d17b5ff7b208067651ea6238c54))
+* wrong filtering while killing dangling connections ([#5142](https://github.com/rudderlabs/rudder-server/issues/5142)) ([0536285](https://github.com/rudderlabs/rudder-server/commit/053628514bf6cbd3726804aa99cd6ce710d46f49))
+
+
+### Miscellaneous
+
+* add db.sql stat collector ([#5146](https://github.com/rudderlabs/rudder-server/issues/5146)) ([61e947c](https://github.com/rudderlabs/rudder-server/commit/61e947ceffb58d9ea308187e9f6dd42672f78b72))
+* add gitleaks scan ([#5036](https://github.com/rudderlabs/rudder-server/issues/5036)) ([5bda381](https://github.com/rudderlabs/rudder-server/commit/5bda381a60ac928a92ca17bfbd5461623bb4218c))
+* change scylla strategy to single table ([#5115](https://github.com/rudderlabs/rudder-server/issues/5115)) ([7e56e43](https://github.com/rudderlabs/rudder-server/commit/7e56e437d91c80935f984a2fcd16dcc84d12fa3d))
+* emit event_delivery_time metric at staging file level ([#5136](https://github.com/rudderlabs/rudder-server/issues/5136)) ([23f943e](https://github.com/rudderlabs/rudder-server/commit/23f943e406cb6c3f67ece51bf567b6ff49b2a780))
+* jit secrets ([#4995](https://github.com/rudderlabs/rudder-server/issues/4995)) ([615833e](https://github.com/rudderlabs/rudder-server/commit/615833ea84b0a84e93bd8f269bd438f9e99cf963))
+* no full vacuum for various reports tables ([#5120](https://github.com/rudderlabs/rudder-server/issues/5120)) ([6e8b03e](https://github.com/rudderlabs/rudder-server/commit/6e8b03e00bc432adeac35f50238ba1a3560b88c2))
+* optimise config backend revisionId calls ([#5139](https://github.com/rudderlabs/rudder-server/issues/5139)) ([62143dc](https://github.com/rudderlabs/rudder-server/commit/62143dc5bd94d51cc37e680c3fb3bd9b09624b6f))
+* revert "chore: trim eventNames sent to reporting if length exceeds 50 characters" ([#5155](https://github.com/rudderlabs/rudder-server/issues/5155)) ([17c5ad7](https://github.com/rudderlabs/rudder-server/commit/17c5ad77945de9832d57e152a13d259fc65b9b8c))
+* revert setting max idle connections for jobsdb ([#5151](https://github.com/rudderlabs/rudder-server/issues/5151)) ([ef57540](https://github.com/rudderlabs/rudder-server/commit/ef5754089d45c231995993d354651b8cf0b413dc))
+* schema and record assertions in warehouse integration test ([#5091](https://github.com/rudderlabs/rudder-server/issues/5091)) ([336b876](https://github.com/rudderlabs/rudder-server/commit/336b876f2d5dc334359d99593baa2b9295769541))
+* sync release v1.34.0 to main branch ([#5113](https://github.com/rudderlabs/rudder-server/issues/5113)) ([336b876](https://github.com/rudderlabs/rudder-server/commit/336b876f2d5dc334359d99593baa2b9295769541))
+* trim eventNames sent to reporting if length exceeds 50 characters ([#5138](https://github.com/rudderlabs/rudder-server/issues/5138)) ([33b5f63](https://github.com/rudderlabs/rudder-server/commit/33b5f6341089651ce0599f08c6df9e322146d993))
+* users context traits and populate users fields ([#5135](https://github.com/rudderlabs/rudder-server/issues/5135)) ([243a4a7](https://github.com/rudderlabs/rudder-server/commit/243a4a7be6bce84779d2f5824175dc03b0989456))
+
 ## [1.34.1](https://github.com/rudderlabs/rudder-server/compare/v1.34.0...v1.34.1) (2024-09-23)
 
 
