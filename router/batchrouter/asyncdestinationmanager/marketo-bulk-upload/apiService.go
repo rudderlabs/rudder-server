@@ -103,6 +103,8 @@ func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse,
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in sending request"}
 	}
 
+	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in reading response body"}

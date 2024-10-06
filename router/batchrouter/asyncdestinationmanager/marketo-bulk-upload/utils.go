@@ -109,13 +109,13 @@ func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, strin
 	if !marketoResponse.Success {
 		if len(marketoResponse.Errors) > 0 {
 			errorCode := marketoResponse.Errors[0].Code
-			errorMessage = marketoResponse.Errors[0].Message
+			message := marketoResponse.Errors[0].Message
 
-			statusCode, category, _ = handleMarketoErrorCode(errorCode)
+			statusCode, category, errorMessage = handleMarketoErrorCode(errorCode)
+			errorMessage = fmt.Sprintf("%s: %s", message, errorMessage)
 		} else {
 			// Handle the case where Errors array is empty
-			errorMessage = "Unknown error"
-			statusCode, category, _ = handleMarketoErrorCode("Unknown")
+			statusCode, category, errorMessage = handleMarketoErrorCode("Unknown")
 		}
 
 	}
