@@ -79,7 +79,6 @@ type UploadJob struct {
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
-	loadFileGenStartTime time.Time
 
 	upload         model.Upload
 	warehouse      model.Warehouse
@@ -908,19 +907,8 @@ func (job *UploadJob) UseRudderStorage() bool {
 	return job.upload.UseRudderStorage
 }
 
-func (job *UploadJob) GetLoadFileGenStartTIme() time.Time {
-	if !job.loadFileGenStartTime.IsZero() {
-		return job.loadFileGenStartTime
-	}
-	return model.GetLoadFileGenTime(job.upload.Timings)
-}
-
 func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
-}
-
-func (job *UploadJob) GetFirstLastEvent() (time.Time, time.Time) {
-	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
 func (job *UploadJob) DTO() *model.UploadJob {
