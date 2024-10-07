@@ -73,7 +73,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		}
 
 		if errorLength != ip.ErrorCount {
-			t.Errorf("expected error to be addded to list of state errors")
+			t.Errorf("expected response to be addded to list of state errors")
 		}
 
 		if stateErrors["attempt"].(int) != ip.ErrorCount {
@@ -216,16 +216,16 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					createView: true,
 				},
 				{
-					name:           "with alert error",
+					name:           "with alert response",
 					createView:     true,
-					mockAlertError: errors.New("alert error"),
-					wantError:      errors.New("alert error"),
+					mockAlertError: errors.New("alert response"),
+					wantError:      errors.New("alert response"),
 				},
 				{
 					name:           "skipping columns",
 					createView:     true,
-					mockAlertError: errors.New("alert error"),
-					wantError:      errors.New("alert error"),
+					mockAlertError: errors.New("alert response"),
+					wantError:      errors.New("alert response"),
 				},
 			}
 
@@ -477,7 +477,7 @@ func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int
 func TestUploadJobT_TablesToSkip(t *testing.T) {
 	t.Parallel()
 
-	t.Run("repo error", func(t *testing.T) {
+	t.Run("repo response", func(t *testing.T) {
 		t.Parallel()
 
 		job := &UploadJob{
@@ -485,13 +485,13 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				ID: 1,
 			},
 			pendingTableUploadsRepo: &mockPendingTablesRepo{
-				err: errors.New("some error"),
+				err: errors.New("some response"),
 			},
 			ctx: context.Background(),
 		}
 
 		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
-		require.EqualError(t, err, "pending table uploads: some error")
+		require.EqualError(t, err, "pending table uploads: some response")
 		require.Empty(t, previouslyFailedTables)
 		require.Empty(t, currentJobSucceededTables)
 	})
@@ -530,7 +530,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				Namespace:     namespace,
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
-				Error:         "some error",
+				Error:         "some response",
 			},
 			{
 				UploadID:      1,
@@ -554,7 +554,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 				Namespace:     namespace,
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
-				Error:         "some error",
+				Error:         "some response",
 			},
 			{
 				UploadID:      5,

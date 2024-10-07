@@ -679,13 +679,13 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 	byt, err := json.Marshal(request)
 	if err != nil {
 		return &proto.ValidateObjectStorageResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with error: \n%s", err.Error())
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with response: \n%s", err.Error())
 	}
 
 	var validateRequest validateObjectStorageRequest
 	if err := json.Unmarshal(byt, &validateRequest); err != nil {
 		return &proto.ValidateObjectStorageResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with error: \n%s", err)
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with response: \n%s", err)
 	}
 
 	switch request.Type {

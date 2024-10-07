@@ -249,7 +249,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Upload:       upload,
 			StagingFiles: stagingFiles,
 		})
-		require.EqualError(t, err, "no load files generated. Sample error: staging file location is empty")
+		require.EqualError(t, err, "no load files generated. Sample response: staging file location is empty")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
 	})

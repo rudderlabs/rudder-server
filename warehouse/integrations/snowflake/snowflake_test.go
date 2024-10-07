@@ -1371,7 +1371,7 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 		func() bool {
 			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
 			if err != nil {
-				t.Logf("error deleting schema %q: %v", namespace, err)
+				t.Logf("response deleting schema %q: %v", namespace, err)
 				return false
 			}
 			return true

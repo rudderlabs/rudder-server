@@ -38,14 +38,14 @@ const (
 )
 
 var userFriendlyJobErrorCategoryMap = map[JobErrorType]string{
-	UncategorizedError:        "Uncategorized error",
-	PermissionError:           "Permission error",
-	AlterColumnError:          "Alter column error",
-	ResourceNotFoundError:     "Resource not found error",
-	ColumnCountError:          "Column count error",
-	ColumnSizeError:           "Column size error",
-	InsufficientResourceError: "Insufficient resource error",
-	ConcurrentQueriesError:    "Concurrent queries error",
+	UncategorizedError:        "Uncategorized response",
+	PermissionError:           "Permission response",
+	AlterColumnError:          "Alter column response",
+	ResourceNotFoundError:     "Resource not found response",
+	ColumnCountError:          "Column count response",
+	ColumnSizeError:           "Column size response",
+	InsufficientResourceError: "Insufficient resource response",
+	ConcurrentQueriesError:    "Concurrent queries response",
 }
 
 type JobError struct {
@@ -55,12 +55,12 @@ type JobError struct {
 	}
 }
 
-// GetUserFriendlyJobErrorCategory returns the user friendly error category for the given error type
+// GetUserFriendlyJobErrorCategory returns the user friendly response category for the given response type
 func GetUserFriendlyJobErrorCategory(errorType JobErrorType) string {
 	if errorMessage, ok := userFriendlyJobErrorCategoryMap[errorType]; ok {
 		return errorMessage
 	}
-	return "Uncategorized error"
+	return "Uncategorized response"
 }
 
 var (

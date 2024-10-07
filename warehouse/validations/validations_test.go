@@ -55,7 +55,7 @@ func TestValidate(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Empty(t, res.Error)
-		require.JSONEq(t, res.Data, `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":""},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+		require.JSONEq(t, res.Data, `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"response":""},{"id":2,"name":"Verifying Connections","success":false,"response":""},{"id":3,"name":"Verifying Create Schema","success":false,"response":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"response":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"response":""},{"id":6,"name":"Verifying Load Table","success":false,"response":""}]}`)
 	})
 
 	t.Run("validate", func(t *testing.T) {
@@ -71,7 +71,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"Invalid step: invalid","steps":null}`)
+			require.JSONEq(t, res.Data, `{"success":false,"response":"Invalid step: invalid","steps":null}`)
 		})
 
 		t.Run("step not found", func(t *testing.T) {
@@ -86,7 +86,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"Invalid step: 1000","steps":null}`)
+			require.JSONEq(t, res.Data, `{"success":false,"response":"Invalid step: 1000","steps":null}`)
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
@@ -101,10 +101,10 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
+			require.JSONEq(t, res.Data, `{"success":false,"response":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"response":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
 		})
 
-		t.Run("step error", func(t *testing.T) {
+		t.Run("step response", func(t *testing.T) {
 			res, err := validations.Validate(ctx, &model.ValidationRequest{
 				Path: "validate",
 				Destination: &backendconfig.DestinationT{
@@ -115,7 +115,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"upload file: creating file manager: service provider not supported: ","steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":"upload file: creating file manager: service provider not supported: "},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+			require.JSONEq(t, res.Data, `{"success":false,"response":"upload file: creating file manager: service provider not supported: ","steps":[{"id":1,"name":"Verifying Object Storage","success":false,"response":"upload file: creating file manager: service provider not supported: "},{"id":2,"name":"Verifying Connections","success":false,"response":""},{"id":3,"name":"Verifying Create Schema","success":false,"response":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"response":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"response":""},{"id":6,"name":"Verifying Load Table","success":false,"response":""}]}`)
 		})
 
 		t.Run("invalid destination", func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
+			require.JSONEq(t, res.Data, `{"success":false,"response":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"response":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
 		})
 
 		t.Run("empty step", func(t *testing.T) {
@@ -161,7 +161,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
+			require.JSONEq(t, res.Data, `{"success":true,"response":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"response":""},{"id":2,"name":"Verifying Connections","success":true,"response":""},{"id":3,"name":"Verifying Create Schema","success":true,"response":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"response":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"response":""},{"id":6,"name":"Verifying Load Table","success":true,"response":""}]}`)
 		})
 
 		t.Run("steps in order", func(t *testing.T) {
@@ -175,32 +175,32 @@ func TestValidate(t *testing.T) {
 				{
 					name:     "step 1",
 					step:     "1",
-					response: `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"response":""}]}`,
 				},
 				{
 					name:     "step 2",
 					step:     "2",
-					response: `{"success":true,"error":"","steps":[{"id":2,"name":"Verifying Connections","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":2,"name":"Verifying Connections","success":true,"response":""}]}`,
 				},
 				{
 					name:     "step 3",
 					step:     "3",
-					response: `{"success":true,"error":"","steps":[{"id":3,"name":"Verifying Create Schema","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":3,"name":"Verifying Create Schema","success":true,"response":""}]}`,
 				},
 				{
 					name:     "step 4",
 					step:     "4",
-					response: `{"success":true,"error":"","steps":[{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":4,"name":"Verifying Create and Alter Table","success":true,"response":""}]}`,
 				},
 				{
 					name:     "step 5",
 					step:     "5",
-					response: `{"success":true,"error":"","steps":[{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":5,"name":"Verifying Fetch Schema","success":true,"response":""}]}`,
 				},
 				{
 					name:     "step 6",
 					step:     "6",
-					response: `{"success":true,"error":"","steps":[{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`,
+					response: `{"success":true,"response":"","steps":[{"id":6,"name":"Verifying Load Table","success":true,"response":""}]}`,
 				},
 			}
 

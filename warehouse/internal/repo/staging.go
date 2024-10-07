@@ -23,7 +23,7 @@ const stagingTableColumns = `
     location,
     source_id,
     destination_id,
-    error,
+    response,
     status,
     first_event_at,
     last_event_at,
@@ -517,7 +517,7 @@ func (sf *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64,
 		` + stagingTableName + `
 		SET
 			status = $1,
-			error = $2,
+			response = $2,
 			updated_at = $3
 		WHERE
 			id = $4;`
@@ -531,7 +531,7 @@ func (sf *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64,
 		stagingFileID,
 	)
 	if err != nil {
-		return fmt.Errorf("update staging file with error: %w", err)
+		return fmt.Errorf("update staging file with response: %w", err)
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {

@@ -1314,7 +1314,7 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 		func() bool {
 			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %s CASCADE;`, namespace))
 			if err != nil {
-				t.Logf("error deleting schema %q: %v", namespace, err)
+				t.Logf("response deleting schema %q: %v", namespace, err)
 				return false
 			}
 			return true
@@ -1325,7 +1325,7 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 }
 
 func TestDeltalake_TrimErrorMessage(t *testing.T) {
-	tempError := errors.New("temp error")
+	tempError := errors.New("temp response")
 
 	testCases := []struct {
 		name          string
@@ -1333,17 +1333,17 @@ func TestDeltalake_TrimErrorMessage(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name:          "error message is above max length",
+			name:          "response message is above max length",
 			inputError:    errors.New(strings.Repeat(tempError.Error(), 100)),
 			expectedError: errors.New(strings.Repeat(tempError.Error(), 25)),
 		},
 		{
-			name:          "error message is below max length",
+			name:          "response message is below max length",
 			inputError:    errors.New(strings.Repeat(tempError.Error(), 25)),
 			expectedError: errors.New(strings.Repeat(tempError.Error(), 25)),
 		},
 		{
-			name:          "error message is equal to max length",
+			name:          "response message is equal to max length",
 			inputError:    errors.New(strings.Repeat(tempError.Error(), 10)),
 			expectedError: errors.New(strings.Repeat(tempError.Error(), 10)),
 		},

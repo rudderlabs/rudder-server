@@ -460,7 +460,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 
 		_, err = stmt.ExecContext(ctx, finalColumnValues...)
 		if err != nil {
-			return fmt.Errorf("exec statement error: %w", err)
+			return fmt.Errorf("exec statement response: %w", err)
 		}
 	}
 	return nil

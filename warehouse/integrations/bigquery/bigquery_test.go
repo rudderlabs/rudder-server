@@ -1381,7 +1381,7 @@ func dropSchema(t testing.TB, db *bigquery.Client, namespace string) {
 
 	require.Eventually(t, func() bool {
 		if err := db.Dataset(namespace).DeleteWithContents(context.Background()); err != nil {
-			t.Logf("error deleting dataset: %v", err)
+			t.Logf("response deleting dataset: %v", err)
 			return false
 		}
 		return true

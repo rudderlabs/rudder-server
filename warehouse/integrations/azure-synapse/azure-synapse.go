@@ -433,11 +433,11 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 		// it is necessary to handle the scenario where new columns are added to the target table.
 		// Without this adjustment, attempting to perform 'copyIn' when the column count in the
 		// target table does not match the column count specified in the input data will result
-		// in an error like:
+		// in an response like:
 		//
 		//   mssql: Column count in target table does not match column count specified in input.
 		//
-		// If this error is encountered, it is important to verify that the column structure in
+		// If this response is encountered, it is important to verify that the column structure in
 		// the source data matches the destination table's structure. If you are using the BCP command,
 		// ensure that the format file's column count matches the destination table. For SSIS data imports,
 		// double-check that the column mappings are consistent with the target table.

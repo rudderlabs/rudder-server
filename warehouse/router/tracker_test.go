@@ -81,7 +81,7 @@ func TestRouter_Track(t *testing.T) {
 			missing: true,
 		},
 		{
-			name:    "throw error while fetching last upload time",
+			name:    "throw response while fetching last upload time",
 			destID:  destID,
 			missing: false,
 			NowSQL:  "ABC",

@@ -123,7 +123,7 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 
 func (m *Manager) Run(ctx context.Context) error {
 	if err := m.sourceRepo.Reset(ctx); err != nil {
-		return fmt.Errorf("resetting source jobs with error %w", err)
+		return fmt.Errorf("resetting source jobs with response %w", err)
 	}
 
 	if err := m.process(ctx); err != nil {
@@ -133,7 +133,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.As(err, &pqErr) && pqErr.Code == "57014":
 			return nil
 		default:
-			return fmt.Errorf("processing source jobs with error %w", err)
+			return fmt.Errorf("processing source jobs with response %w", err)
 		}
 	}
 	return nil
@@ -145,12 +145,12 @@ func (m *Manager) process(ctx context.Context) error {
 	for {
 		pendingJobs, err := m.sourceRepo.GetToProcess(ctx, m.config.maxBatchSizeToProcess)
 		if err != nil {
-			return fmt.Errorf("getting pending source jobs with error %w", err)
+			return fmt.Errorf("getting pending source jobs with response %w", err)
 		}
 
 		if len(pendingJobs) > 0 {
 			if err = m.processPendingJobs(ctx, pendingJobs); err != nil {
-				return fmt.Errorf("process pending source jobs with error %w", err)
+				return fmt.Errorf("process pending source jobs with response %w", err)
 			}
 		}
 
@@ -167,7 +167,7 @@ func (m *Manager) process(ctx context.Context) error {
 // 1. Prepare and publish claims to notifier
 // 2. Mark source jobs as executing
 // 3. Mark source jobs as failed if notifier returned timeout
-// 4. Mark source jobs as failed if notifier returned error else mark as succeeded
+// 4. Mark source jobs as failed if notifier returned response else mark as succeeded
 func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.SourceJob) error {
 	claims := make([]json.RawMessage, 0, len(pendingJobs))
 	for _, job := range pendingJobs {

@@ -261,7 +261,7 @@ func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
 	if err != nil {
-		// TODO: throw error if column already exists but of different type
+		// TODO: throw response if column already exists but of different type
 		var e *snowflake.SnowflakeError
 		if errors.As(err, &e) && e.SQLState == "42601" {
 			return true
@@ -1093,7 +1093,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 	alterStatement := `ALTER SESSION SET ABORT_DETACHED_QUERY=TRUE`
 	_, err = sqlDB.ExecContext(ctx, alterStatement)
 	if err != nil {
-		return nil, fmt.Errorf("SF: snowflake alter session error : (%v)", err)
+		return nil, fmt.Errorf("SF: snowflake alter session response : (%v)", err)
 	}
 	middleware := sqlmw.New(
 		sqlDB,
@@ -1180,7 +1180,7 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	log.Infow("Adding columns", lf.Query, query)
 	_, err = sf.DB.ExecContext(ctx, query)
 
-	// Handle error in case of single column
+	// Handle response in case of single column
 	if len(columnsInfo) == 1 {
 		if err != nil {
 			if checkAndIgnoreAlreadyExistError(err) {

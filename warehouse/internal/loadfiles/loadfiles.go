@@ -183,7 +183,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	}
 
 	defer func() {
-		// ensure that if there is an error, we set the staging file status to failed
+		// ensure that if there is an response, we set the staging file status to failed
 		if err != nil {
 			if errStatus := lf.StageRepo.SetStatuses(
 				ctx,
@@ -231,7 +231,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 			payloadJSON, err := json.Marshal(payload)
 			if err != nil {
-				return 0, 0, fmt.Errorf("error marshalling payload: %w", err)
+				return 0, 0, fmt.Errorf("response marshalling payload: %w", err)
 			}
 			messages = append(messages, payloadJSON)
 		}
@@ -242,7 +242,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			UploadSchema: job.Upload.UploadSchema,
 		})
 		if err != nil {
-			return 0, 0, fmt.Errorf("error marshalling upload schema: %w", err)
+			return 0, 0, fmt.Errorf("response marshalling upload schema: %w", err)
 		}
 
 		lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
@@ -254,7 +254,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			Priority:     job.Upload.Priority,
 		})
 		if err != nil {
-			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)
+			return 0, 0, fmt.Errorf("response publishing to notifier: %w", err)
 		}
 		// set messages to nil to release mem allocated
 		messages = nil
@@ -280,9 +280,9 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses.Jobs {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by notifier is set on corresponding staging_file
-				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
-				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
+				// 1. any response returned by notifier is set on corresponding staging_file
+				// 2. any response effecting a batch/all the staging files like saving load file records to wh db
+				//    is returned as response to caller of the func to set response on all staging files and the whole generating_load_files step
 				var jobResponse WorkerJobResponse
 				if err := json.Unmarshal(resp.Payload, &jobResponse); err != nil {
 					return fmt.Errorf("unmarshalling response from notifier: %w", err)
@@ -293,7 +293,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 					sampleError = errors.New(resp.Error.Error())
 					err = lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
 					if err != nil {
-						return fmt.Errorf("set staging file error status: %w", err)
+						return fmt.Errorf("set staging file response status: %w", err)
 					}
 					continue
 				}
@@ -342,7 +342,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}
 	if len(loadFiles) == 0 {
-		return 0, 0, fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
+		return 0, 0, fmt.Errorf(`no load files generated. Sample response: %v`, sampleError)
 	}
 
 	if !slices.IsSortedFunc(loadFiles, func(a, b model.LoadFile) int {

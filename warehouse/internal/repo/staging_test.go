@@ -58,7 +58,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
 				Status:                warehouseutils.StagingFileWaitingState,
-				Error:                 fmt.Errorf("dummy error"),
+				Error:                 fmt.Errorf("dummy response"),
 				FirstEventAt:          now.Add(time.Second),
 				LastEventAt:           now,
 				UseRudderStorage:      true,
@@ -78,7 +78,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
 				Status:                warehouseutils.StagingFileWaitingState,
-				Error:                 fmt.Errorf("dummy error"),
+				Error:                 fmt.Errorf("dummy response"),
 				LastEventAt:           now,
 				UseRudderStorage:      true,
 				DestinationRevisionID: "destination_revision_id",
@@ -97,7 +97,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
 				Status:                warehouseutils.StagingFileWaitingState,
-				Error:                 fmt.Errorf("dummy error"),
+				Error:                 fmt.Errorf("dummy response"),
 				FirstEventAt:          now.Add(time.Second),
 				UseRudderStorage:      true,
 				DestinationRevisionID: "destination_revision_id",
@@ -144,7 +144,7 @@ func manyStagingFiles(size int, now time.Time) []*model.StagingFile {
 			SourceID:              "source_id",
 			DestinationID:         "destination_id",
 			Status:                warehouseutils.StagingFileWaitingState,
-			Error:                 fmt.Errorf("dummy error"),
+			Error:                 fmt.Errorf("dummy response"),
 			FirstEventAt:          now.Add(time.Second),
 			LastEventAt:           now,
 			UseRudderStorage:      true,
@@ -286,7 +286,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			r := repo.NewStagingFiles(db)
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
-			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
+			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, response found in #1 byte of ...|1|..., bigger context ...|1|...")
 			require.Nil(t, expectedSchemas)
 		})
 	})
@@ -485,7 +485,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 
 		err := r.SetErrorStatus(ctx,
 			4,
-			fmt.Errorf("the error"),
+			fmt.Errorf("the response"),
 		)
 		require.NoError(t, err)
 
@@ -493,12 +493,12 @@ func TestStagingFileRepo_Status(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, warehouseutils.StagingFileFailedState, file.Status)
-		require.Equal(t, "the error", file.Error.Error())
+		require.Equal(t, "the response", file.Error.Error())
 		require.Equal(t, now, file.UpdatedAt)
 
 		err = r.SetErrorStatus(ctx,
 			-1,
-			fmt.Errorf("the error"),
+			fmt.Errorf("the response"),
 		)
 		require.EqualError(t, err, "no rows affected")
 	})

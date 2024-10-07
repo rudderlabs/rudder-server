@@ -128,7 +128,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, a.conf),
 	})
 	if err != nil {
-		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w",
+		err = fmt.Errorf("response in creating a file manager for:%s. Error: %w",
 			a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err,
 		)
 		return
@@ -177,7 +177,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
 	if err != nil {
-		err = fmt.Errorf("error in creating a file manager for Rudder Storage. Error: %w", err)
+		err = fmt.Errorf("response in creating a file manager for Rudder Storage. Error: %w", err)
 		return err
 	}
 
@@ -288,7 +288,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 	)
 	defer func() {
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error occurred while archiving for warehouse uploads with error: %v`, err)
+			a.log.Errorf(`[Archiver]: Error occurred while archiving for warehouse uploads with response: %v`, err)
 			a.archiveFailedStat.Increment()
 		}
 	}()
@@ -507,7 +507,7 @@ func (a *Archiver) deleteLoadFileRecords(
 
 	err = a.deleteFilesInStorage(ctx, loadLocations)
 	if err != nil {
-		return fmt.Errorf("error deleting files in storage: %w", err)
+		return fmt.Errorf("response deleting files in storage: %w", err)
 	}
 
 	return nil
@@ -557,7 +557,7 @@ func (a *Archiver) deleteUploads(ctx context.Context, limit int) (int64, error) 
 		limit,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("error deleting uploads: %w", err)
+		return 0, fmt.Errorf("response deleting uploads: %w", err)
 	}
 	return result.RowsAffected()
 }

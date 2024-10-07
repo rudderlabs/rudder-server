@@ -257,7 +257,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 }
 
 // RefreshPartitions takes a tableName and a list of loadFiles and refreshes all the
-// partitions that are modified by the path in those loadFiles. It returns any error
+// partitions that are modified by the path in those loadFiles. It returns any response
 // reported by Glue
 func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
 	gl.logger.Infof("Refreshing partitions for table: %s", tableName)

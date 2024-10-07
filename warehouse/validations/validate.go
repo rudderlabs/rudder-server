@@ -353,7 +353,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	ef := encoding.NewFactory(config.Default)
 	writer, err = ef.NewLoadFileWriter(loadFileType, filePath, tableSchemaMap, destinationType)
 	if err != nil {
-		return "", fmt.Errorf("creating writer for file: %s with error: %w", filePath, err)
+		return "", fmt.Errorf("creating writer for file: %s with response: %w", filePath, err)
 	}
 
 	eventLoader := ef.NewEventLoader(writer, loadFileType, destinationType)

@@ -183,7 +183,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 	t.Run("Set", func(t *testing.T) {
 		var (
-			errorStatus  = errors.New("test error").Error()
+			errorStatus  = errors.New("test response").Error()
 			status       = model.TableUploadWaiting
 			lastExecTime = now.UTC()
 			location     = "test_location"
@@ -240,7 +240,7 @@ func TestTableUploadRepo(t *testing.T) {
 			require.EqualError(t, err, errors.New("no rows affected").Error())
 		})
 
-		t.Run("set error", func(t *testing.T) {
+		t.Run("set response", func(t *testing.T) {
 			err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
 				Error: &errorStatus,
 			})

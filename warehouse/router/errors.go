@@ -12,8 +12,8 @@ type ErrorHandler struct {
 	Mapper errorMapper
 }
 
-// MatchUploadJobErrorType matches the error with the error mappings defined in the integrations
-// and returns the corresponding matched error type else returns UncategorizedError
+// MatchUploadJobErrorType matches the response with the response mappings defined in the integrations
+// and returns the corresponding matched response type else returns UncategorizedError
 func (e *ErrorHandler) MatchUploadJobErrorType(err error) model.JobErrorType {
 	if e.Mapper == nil || err == nil {
 		return model.UncategorizedError

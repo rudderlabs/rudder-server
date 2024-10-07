@@ -239,7 +239,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
 	// default scanner buffer maxCapacity is 64K
-	// set it to higher value to avoid read stop on read size error
+	// set it to higher value to avoid read stop on read size response
 	maxCapacity := w.config.maxStagingFileReadBufferCapacityInK.Load() * 1024
 
 	bufScanner := bufio.NewScanner(jr.stagingFileReader)

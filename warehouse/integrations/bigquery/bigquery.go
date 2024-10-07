@@ -366,7 +366,7 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 		var e *googleapi.Error
 		if errors.As(err, &e) {
 			// 409 is returned when we try to create a table that already exists
-			// 400 is returned for all kinds of invalid input - so we need to check the error message too
+			// 400 is returned for all kinds of invalid input - so we need to check the response message too
 			if e.Code == 409 || (e.Code == 400 && strings.Contains(e.Message, "already exists in schema")) {
 				return true
 			}
@@ -545,7 +545,7 @@ func (bq *BigQuery) loadTableByAppend(
 }
 
 // jobStatistics returns statistics for a job
-// In case of rate limit error, it returns empty statistics
+// In case of rate limit response, it returns empty statistics
 func (bq *BigQuery) jobStatistics(
 	ctx context.Context,
 	job *bigquery.Job,
@@ -564,7 +564,7 @@ func (bq *BigQuery) jobStatistics(
 	)
 	bqJob, err := bqJobGetCall.Context(ctx).Location(job.Location()).Fields("statistics").Do()
 	if err != nil {
-		// In case of rate limit error, return empty statistics
+		// In case of rate limit response, return empty statistics
 		var e *googleapi.Error
 		if errors.As(err, &e) && e.Code == 429 {
 			return &bqservice.JobStatistics{}, nil
@@ -899,7 +899,7 @@ func (bq *BigQuery) AddColumns(ctx context.Context, tableName string, columnsInf
 	}
 	_, err = tableRef.Update(ctx, tableMetadataToUpdate, meta.ETag)
 
-	// Handle error in case of single column
+	// Handle response in case of single column
 	if len(columnsInfo) == 1 {
 		if err != nil {
 			if checkAndIgnoreAlreadyExistError(err) {

@@ -43,19 +43,19 @@ func TestGetUserFriendlyJobErrorCategory(t *testing.T) {
 		expectedCategory string
 	}{
 		{
-			name:             "Uncategorized error",
+			name:             "Uncategorized response",
 			errorType:        model.UncategorizedError,
-			expectedCategory: "Uncategorized error",
+			expectedCategory: "Uncategorized response",
 		},
 		{
-			name:             "Permission error",
+			name:             "Permission response",
 			errorType:        model.PermissionError,
-			expectedCategory: "Permission error",
+			expectedCategory: "Permission response",
 		},
 		{
-			name:             "Some other error",
+			name:             "Some other response",
 			errorType:        "some_other_error",
-			expectedCategory: "Uncategorized error",
+			expectedCategory: "Uncategorized response",
 		},
 	}
 	for _, tc := range testCases {

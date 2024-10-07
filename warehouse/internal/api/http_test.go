@@ -107,9 +107,9 @@ func TestAPI_Process(t *testing.T) {
 			respCode: http.StatusOK,
 		},
 		{
-			name:     "process request storage error",
+			name:     "process request storage response",
 			reqBody:  body,
-			storeErr: fmt.Errorf("internal warehouse error"),
+			storeErr: fmt.Errorf("internal warehouse response"),
 
 			respCode: http.StatusInternalServerError,
 			respBody: "can't insert staging file\n",
