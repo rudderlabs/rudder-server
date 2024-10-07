@@ -1195,7 +1195,18 @@ func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	outputTable := partitionedTable(tableName, bq.now().Format("2006-01-02"))
+	partitionDate, err := bq.partitionDate()
+	if err != nil {
+		return fmt.Errorf("partition date: %w", err)
+	}
+
+	var outputTable string
+	if bq.avoidPartitionDecorator() {
+		outputTable = tableName
+	} else {
+		outputTable = partitionedTable(tableName, partitionDate)
+	}
+
 	loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
 
 	job, err := loader.Run(ctx)
