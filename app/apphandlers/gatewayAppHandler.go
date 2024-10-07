@@ -73,8 +73,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return err
 	}
-	//	Not deferring close here
-	// defer dbPool.Close()
+	defer dbPool.Close()
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
