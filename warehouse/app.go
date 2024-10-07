@@ -459,8 +459,8 @@ func (a *App) onConfigDataEvent(
 	enabledDestinations := make(map[string]bool)
 	diffRouters := make(map[string]*router.Router)
 	for _, wConfig := range configMap {
-		for _, source := range wConfig.Sources {
-			for _, destination := range source.Destinations {
+		for _, sConfig := range wConfig.Sources {
+			for _, destination := range sConfig.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 
 				if !slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {

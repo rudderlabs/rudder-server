@@ -143,19 +143,6 @@ func GetLastFailedStatus(timingsMap Timings) (status string) {
 	return // zero values
 }
 
-func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
-	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s, t := range timingsMap[index] {
-				if strings.Contains(s, GeneratingLoadFiles) {
-					return t
-				}
-			}
-		}
-	}
-	return // zero values
-}
-
 type AlterTableResponse struct {
 	IsDependent bool // true if the column is dependent on another view or rules, false otherwise
 	Query       string
