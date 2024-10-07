@@ -26,9 +26,6 @@ func categorizeMarketoError(errorCode string) (status string, message string) {
 	}
 
 	switch {
-	// 5XX errors are generally retryable
-	case code >= 500 && code < 600:
-		return "Retryable", "Internal Server Error"
 
 	// Specific retryable errors mentioned in the document
 	case code == 502:
@@ -45,6 +42,10 @@ func categorizeMarketoError(errorCode string) (status string, message string) {
 		return "Retryable", "Transient Error"
 	case code == 719:
 		return "Retryable", "Lock wait timeout exception"
+
+	// 5XX errors are generally retryable
+	case code >= 500 && code < 600:
+		return "Retryable", "Internal Server Error"
 
 	// Rate limiting and quota errors
 	case code == 606:
@@ -133,9 +134,9 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 	}
 	defer csvFile.Close()
 
-	var overflowedJobIDs []int64
-	var insertedJobIDs []int64
-	var currentSize int64
+	overflowedJobIDs := make([]int64, 0)
+	insertedJobIDs := make([]int64, 0)
+	currentSize := int64(0)
 
 	headers := make(map[string]int)
 	var headerOrder []string
@@ -161,7 +162,9 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		message := job.Message
 		row := make([]string, len(headerOrder))
 		for key, value := range message {
-			row[headers[key]] = fmt.Sprintf("%v", value)
+			if _, exists := headers[key]; exists {
+				row[headers[key]] = fmt.Sprintf("%v", value)
+			}
 		}
 		line := strings.Join(row, ",") + "\n"
 		lineSize := int64(len(line))
@@ -246,7 +249,8 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	}
 	defer file.Close()
 
-	var input []common.AsyncJob
+	input := make([]common.AsyncJob, 0)
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var tempJob common.AsyncJob
