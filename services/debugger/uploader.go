@@ -5,6 +5,7 @@ package debugger
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"path"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
@@ -48,7 +50,6 @@ type uploaderImpl[E any] struct {
 	maxBatchSize, maxRetry, maxESQueueSize config.ValueLoader[int]
 	batchTimeout, retrySleep               config.ValueLoader[time.Duration]
 	region                                 string
-	hostedServiceSecret                    string
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -65,7 +66,6 @@ func (uploader *uploaderImpl[E]) Setup() {
 	uploader.batchTimeout = config.GetReloadableDurationVar(2, time.Second, "Debugger.batchTimeoutInS")
 	uploader.retrySleep = config.GetReloadableDurationVar(100, time.Millisecond, "Debugger.retrySleepInMS")
 	uploader.region = config.GetString("region", "")
-	uploader.hostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
 }
 
 func New[E any](url string, transformer Transformer[E]) Uploader[E] {
@@ -114,8 +114,13 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	url := uploader.url
 
 	retryCount := 1
-	if uploader.hostedServiceSecret == "" {
-		pkgLogger.Error("[Uploader] Hosted service secret not set")
+	username, err := getAuthUsername()
+	if err != nil {
+		pkgLogger.Error("Error getting auth username: ", err)
+		return
+	}
+	if username == "" {
+		pkgLogger.Error("[Uploader] Auth username is empty")
 		return
 	}
 	// Sending live events to Config Backend
@@ -134,7 +139,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(uploader.hostedServiceSecret, "")
+		req.SetBasicAuth(username, "")
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {
@@ -215,4 +220,21 @@ func (uploader *uploaderImpl[E]) flushEvents(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func getAuthUsername() (string, error) {
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		return "", err
+	}
+	var connectionToken string
+	switch deploymentType {
+	case deployment.DedicatedType:
+		connectionToken = config.GetWorkspaceToken()
+	case deployment.MultiTenantType:
+		connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
+	default:
+		return "", fmt.Errorf("invalid deployment type: %q", deploymentType)
+	}
+	return connectionToken, nil
 }
