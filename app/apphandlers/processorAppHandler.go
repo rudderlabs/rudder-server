@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -145,13 +146,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		FeaturesRetryMaxAttempts: 10,
 	})
 
-	dbPool, err := misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "processor")
-	if err != nil {
-		return err
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.processor.pool.shared", "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "processor-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
 	}
-	//	This is idompotent, so it's safe to call it multiple times(jobsdb.Close())
-	//	can be cleaned up later
-	defer dbPool.Close()
 
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
@@ -161,6 +163,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -169,6 +172,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -177,6 +181,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer batchRouterDB.Close()
 	errDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -185,6 +190,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -192,6 +198,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	errDBForWrite.Close()
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
 	}
@@ -203,6 +210,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer schemaDB.Close()
 
 	archivalDB := jobsdb.NewForReadWrite(
 		"arc",
@@ -217,6 +225,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer archivalDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {

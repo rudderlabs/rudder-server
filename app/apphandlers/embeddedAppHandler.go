@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -139,12 +140,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		FeaturesRetryMaxAttempts: 10,
 	})
 
-	dbPool, err := misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "embedded")
-	if err != nil {
-		return err
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "embedded-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
 	}
-	//	Not deferring close here
-	// defer dbPool.Close()
 
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
@@ -155,6 +158,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gatewayDB.Close()
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
 	}
@@ -170,6 +174,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -186,6 +191,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer batchRouterDB.Close()
 
 	// We need two errorDBs, one in read & one in write mode to support separate gateway to store failures
 	errDBForRead := jobsdb.NewForRead(
@@ -196,6 +202,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -203,6 +210,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDBForWrite.Close()
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
 	}
@@ -216,6 +224,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer schemaDB.Close()
 
 	archivalDB := jobsdb.NewForReadWrite(
 		"arc",
@@ -230,6 +239,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer archivalDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {

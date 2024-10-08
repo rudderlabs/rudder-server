@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -69,11 +70,14 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer sourceHandle.Stop()
 
-	dbPool, err := misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "gateway")
-	if err != nil {
-		return err
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.gateway.pool.shared", "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "gateway-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
 	}
-	defer dbPool.Close()
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
@@ -83,6 +87,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gatewayDB.Close()
 
 	if err := gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
@@ -96,6 +101,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDB.Close()
 
 	if err := errDB.Start(); err != nil {
 		return fmt.Errorf("could not start errDB: %w", err)
