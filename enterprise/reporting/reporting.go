@@ -649,7 +649,6 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	}
 	defer func() { _ = stmt.Close() }()
 
-	eventNameMaxLength := config.GetInt("Reporting.eventNameMaxLength", 0)
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
@@ -663,8 +662,9 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		if eventNameMaxLength > 0 && len(metric.StatusDetail.EventName) > eventNameMaxLength {
-			metric.StatusDetail.EventName = types.MaxLengthExceeded
+		runeEventName := []rune(metric.StatusDetail.EventName)
+		if len(runeEventName) > 50 {
+			metric.StatusDetail.EventName = fmt.Sprintf("%s...%s", string(runeEventName[:40]), string(runeEventName[len(runeEventName)-10:]))
 		}
 
 		_, err = stmt.Exec(

@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
@@ -558,8 +559,6 @@ func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
 }
 func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*dummyUploader) GetFirstLastEvent() (time.Time, time.Time)             { return time.Time{}, time.Time{} }
-func (*dummyUploader) GetLoadFileGenStartTIme() time.Time                    { return time.Time{} }
 func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema    { return nil }
 func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema       { return nil }
 func (*dummyUploader) CanAppend() bool                                       { return false }
