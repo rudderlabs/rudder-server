@@ -5,7 +5,6 @@ package debugger
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net/http"
 	"path"
 	"strconv"
@@ -17,9 +16,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
@@ -50,6 +49,7 @@ type uploaderImpl[E any] struct {
 	maxBatchSize, maxRetry, maxESQueueSize config.ValueLoader[int]
 	batchTimeout, retrySleep               config.ValueLoader[time.Duration]
 	region                                 string
+	authorizer                             identity.Authorizer
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -68,12 +68,12 @@ func (uploader *uploaderImpl[E]) Setup() {
 	uploader.region = config.GetString("region", "")
 }
 
-func New[E any](url string, transformer Transformer[E]) Uploader[E] {
+func New[E any](url string, authorizer identity.Authorizer, transformer Transformer[E]) Uploader[E] {
 	eventBatchChannel := make(chan E)
 	eventBuffer := make([]E, 0)
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.debugger.timeout", 30, time.Second)}
 
-	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
+	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}, authorizer: authorizer}
 	uploader.Setup()
 	return uploader
 }
@@ -114,15 +114,6 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	url := uploader.url
 
 	retryCount := 1
-	username, err := getAuthUsername()
-	if err != nil {
-		pkgLogger.Error("Error getting auth username: ", err)
-		return
-	}
-	if username == "" {
-		pkgLogger.Error("[Uploader] Auth username is empty")
-		return
-	}
 	// Sending live events to Config Backend
 	for {
 		var resp *http.Response
@@ -139,7 +130,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(username, "")
+		req.SetBasicAuth(uploader.authorizer.BasicAuth())
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {
@@ -220,21 +211,4 @@ func (uploader *uploaderImpl[E]) flushEvents(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func getAuthUsername() (string, error) {
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		return "", err
-	}
-	var connectionToken string
-	switch deploymentType {
-	case deployment.DedicatedType:
-		connectionToken = config.GetWorkspaceToken()
-	case deployment.MultiTenantType:
-		connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
-	default:
-		return "", fmt.Errorf("invalid deployment type: %q", deploymentType)
-	}
-	return connectionToken, nil
 }

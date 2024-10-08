@@ -19,7 +19,7 @@ import (
 
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 type uploaderContext struct {
@@ -70,27 +70,12 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockHTTP = mocksSysUtils.NewMockHttpI(c.mockCtrl)
 			mockTransformer = mocksDebugger.NewMockTransformerAny(c.mockCtrl)
-			config.Set("WORKSPACE_TOKEN", "testToken")
-			config.Set("HOSTED_SERVICE_SECRET", "testSecret")
-			config.Set("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-			uploader = New[any]("http://test", mockTransformer)
+			uploader = New[any]("http://test", &testutils.BasicAuthMock{}, mockTransformer)
 			uploader.Start()
 		})
 
 		AfterEach(func() {
 			uploader.Stop()
-		})
-
-		It("should get basic auth username based on deployment type", func() {
-			// MultiTenantType
-			username, err := getAuthUsername()
-			Expect(err).To(BeNil())
-			assertUsername(username)
-			// DedicatedType
-			config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
-			username, err = getAuthUsername()
-			Expect(err).To(BeNil())
-			assertUsername(username)
 		})
 
 		It("should successfully send the live events request", func() {
@@ -309,19 +294,11 @@ var _ = Describe("Uploader", func() {
 	})
 })
 
-func assertUsername(username string) {
-	if config.MustGetString("DEPLOYMENT_TYPE") != string(deployment.DedicatedType) {
-		Expect(username).To(Equal("testSecret"))
-	} else {
-		Expect(username).To(Equal("testToken"))
-	}
-}
-
 func assertRequest(req *http.Request) {
 	username, password, ok := req.BasicAuth()
 	Expect(ok).To(BeTrue())
-	assertUsername(username)
-	Expect(password).To(Equal(""))
+	Expect(username).To(Equal("test"))
+	Expect(password).To(Equal("test"))
 	Expect(req.Method).To(Equal("POST"))
 	Expect(req.URL.Host).To(Equal("test"))
 }
