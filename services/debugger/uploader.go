@@ -48,6 +48,7 @@ type uploaderImpl[E any] struct {
 	maxBatchSize, maxRetry, maxESQueueSize config.ValueLoader[int]
 	batchTimeout, retrySleep               config.ValueLoader[time.Duration]
 	region                                 string
+	hostedServiceSecret                    string
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -64,6 +65,7 @@ func (uploader *uploaderImpl[E]) Setup() {
 	uploader.batchTimeout = config.GetReloadableDurationVar(2, time.Second, "Debugger.batchTimeoutInS")
 	uploader.retrySleep = config.GetReloadableDurationVar(100, time.Millisecond, "Debugger.retrySleepInMS")
 	uploader.region = config.GetString("region", "")
+	uploader.hostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
 }
 
 func New[E any](url string, transformer Transformer[E]) Uploader[E] {
@@ -112,6 +114,10 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	url := uploader.url
 
 	retryCount := 1
+	if uploader.hostedServiceSecret == "" {
+		pkgLogger.Error("[Uploader] Hosted service secret not set")
+		return
+	}
 	// Sending live events to Config Backend
 	for {
 		var resp *http.Response
@@ -128,7 +134,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(config.GetWorkspaceToken(), "")
+		req.SetBasicAuth(uploader.hostedServiceSecret, "")
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {

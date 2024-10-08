@@ -69,6 +69,7 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockHTTP = mocksSysUtils.NewMockHttpI(c.mockCtrl)
 			mockTransformer = mocksDebugger.NewMockTransformerAny(c.mockCtrl)
+			config.Set("HOSTED_SERVICE_SECRET", "testAuth")
 			uploader = New[any]("http://test", mockTransformer)
 			uploader.Start()
 		})
@@ -99,8 +100,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
@@ -129,8 +129,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 400,
 				Body:       r,
@@ -199,8 +198,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 
 				wg.Done()
 			}).Return(&http.Response{
@@ -236,8 +234,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
@@ -283,8 +280,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 				wg.Done()
 			}).Return(&http.Response{
 				StatusCode: 200,
@@ -298,3 +294,12 @@ var _ = Describe("Uploader", func() {
 		})
 	})
 })
+
+func assertRequest(req *http.Request) {
+	username, password, ok := req.BasicAuth()
+	Expect(ok).To(BeTrue())
+	Expect(username).To(Equal("testAuth"))
+	Expect(password).To(Equal(""))
+	Expect(req.Method).To(Equal("POST"))
+	Expect(req.URL.Host).To(Equal("test"))
+}
