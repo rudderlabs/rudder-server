@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.3](https://github.com/rudderlabs/rudder-server/compare/v1.35.2...v1.35.3) (2024-10-08)
+
+
+### Bug Fixes
+
+* sourceID and originalSourceID not flipped before transformation ([#5177](https://github.com/rudderlabs/rudder-server/issues/5177)) ([7b60b67](https://github.com/rudderlabs/rudder-server/commit/7b60b6718e5eab4712ca2ee312abe7c5ab691dac))
+
 ## [1.35.2](https://github.com/rudderlabs/rudder-server/compare/v1.35.1...v1.35.2) (2024-10-04)
 
 
