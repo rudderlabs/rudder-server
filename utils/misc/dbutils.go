@@ -49,24 +49,21 @@ func GetDatabaseConnectionPool(
 	connStr := GetConnectionString(conf, componentName)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return nil, fmt.Errorf("Error opening connection to database: %w", err)
+		return nil, fmt.Errorf("opening connection to database: %w", err)
 	}
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("Error pinging database: %w", err)
 	}
 	if err := stat.RegisterCollector(
 		collectors.NewDatabaseSQLStats(
-			"jobsdb",
+			componentName,
 			db,
 		),
 	); err != nil {
 		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
 	}
-	/*
-		TODO: find out a reasonably good value for below pool configurations
-	*/
 
-	maxConnsVar := conf.GetReloadableIntVar(40, 1, "JobsDB.maxOpenConnections")
+	maxConnsVar := conf.GetReloadableIntVar(40, 1, "db.pool.maxOpenConnections", "db."+componentName+".pool.maxOpenConnections")
 	maxConns := maxConnsVar.Load()
 	db.SetMaxOpenConns(maxConns)
 
