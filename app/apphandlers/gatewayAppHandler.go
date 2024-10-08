@@ -69,7 +69,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer sourceHandle.Stop()
 
-	dbPool, err := misc.GetDatabaseConnectionPool(ctx, config, statsFactory, "jobsdb")
+	dbPool, err := misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "gateway")
 	if err != nil {
 		return err
 	}

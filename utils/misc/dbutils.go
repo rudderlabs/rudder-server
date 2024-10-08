@@ -40,7 +40,7 @@ func GetConnectionString(c *config.Config, componentName string) string {
 	)
 }
 
-func GetDatabaseConnectionPool(
+func NewDatabaseConnectionPool(
 	ctx context.Context,
 	conf *config.Config,
 	stat stats.Stats,
@@ -63,19 +63,19 @@ func GetDatabaseConnectionPool(
 		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
 	}
 
-	maxConnsVar := conf.GetReloadableIntVar(40, 1, "db.pool.maxOpenConnections", "db."+componentName+".pool.maxOpenConnections")
+	maxConnsVar := conf.GetReloadableIntVar(40, 1, "db."+componentName+".pool.maxOpenConnections", "db.pool.maxOpenConnections")
 	maxConns := maxConnsVar.Load()
 	db.SetMaxOpenConns(maxConns)
 
-	maxIdleConnsVar := conf.GetReloadableIntVar(5, 1, "JobsDB.maxIdleConnections")
+	maxIdleConnsVar := conf.GetReloadableIntVar(5, 1, "db."+componentName+".pool.maxIdleConnections", "db.pool.maxIdleConnections")
 	maxIdleConns := maxIdleConnsVar.Load()
 	db.SetMaxIdleConns(maxIdleConns)
 
-	maxIdleTimeVar := conf.GetReloadableDurationVar(15, time.Minute, "JobsDB.maxIdleTime")
+	maxIdleTimeVar := conf.GetReloadableDurationVar(15, time.Minute, "db."+componentName+".pool.maxIdleTime", "db.pool.maxIdleTime")
 	maxIdleTime := maxIdleTimeVar.Load()
 	db.SetConnMaxIdleTime(maxIdleTime)
 
-	maxConnLifetimeVar := conf.GetReloadableDurationVar(0, 0, "JobsDB.maxConnLifetime")
+	maxConnLifetimeVar := conf.GetReloadableDurationVar(0, 0, "db."+componentName+".pool.maxConnLifetime", "db.pool.maxConnLifetime")
 	maxConnLifetime := maxConnLifetimeVar.Load()
 	db.SetConnMaxLifetime(maxConnLifetime)
 

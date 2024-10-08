@@ -145,7 +145,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		FeaturesRetryMaxAttempts: 10,
 	})
 
-	dbPool, err := misc.GetDatabaseConnectionPool(ctx, config, statsFactory, "jobsdb")
+	dbPool, err := misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "processor")
 	if err != nil {
 		return err
 	}
