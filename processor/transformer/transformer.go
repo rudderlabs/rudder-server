@@ -255,11 +255,9 @@ func (trans *handle) transform(
 	}
 	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
 	// flip back afterwards
-	for _, clientEvent := range clientEvents {
-		if clientEvent.Metadata.OriginalSourceID != "" {
-			originalSourceID := clientEvent.Metadata.OriginalSourceID
-			clientEvent.Metadata.OriginalSourceID = clientEvent.Metadata.SourceID
-			clientEvent.Metadata.SourceID = originalSourceID
+	for i := range clientEvents {
+		if clientEvents[i].Metadata.OriginalSourceID != "" {
+			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
 		}
 	}
 	sTags := stats.Tags{
@@ -321,9 +319,7 @@ func (trans *handle) transform(
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
 			if transformerResponse.Metadata.OriginalSourceID != "" {
-				originalSourceID := transformerResponse.Metadata.SourceID
-				transformerResponse.Metadata.SourceID = transformerResponse.Metadata.OriginalSourceID
-				transformerResponse.Metadata.OriginalSourceID = originalSourceID
+				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
 			switch transformerResponse.StatusCode {
 			case http.StatusOK:
