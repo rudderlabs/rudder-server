@@ -78,10 +78,6 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	hold = os.Getenv("HOLD") == "true"
 
 	// common connection pool(jobsdb) to database
