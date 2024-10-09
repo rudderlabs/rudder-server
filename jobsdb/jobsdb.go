@@ -446,11 +446,12 @@ Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
-	dbHandle    *sql.DB
-	ownerType   OwnerType
-	tablePrefix string
-	logger      logger.Logger
-	stats       stats.Stats
+	dbHandle             *sql.DB
+	sharedConnectionPool bool
+	ownerType            OwnerType
+	tablePrefix          string
+	logger               logger.Logger
+	stats                stats.Stats
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
@@ -769,7 +770,9 @@ func (jd *Handle) init() {
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
-	if jd.dbHandle == nil {
+	if jd.dbHandle != nil {
+		jd.sharedConnectionPool = true
+	} else {
 		var err error
 		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
@@ -783,29 +786,29 @@ func (jd *Handle) init() {
 				),
 			),
 		)
-	}
 
-	var maxConns int
-	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		maxConns = jd.conf.maxOpenConnections
-	} else {
-		maxConns = 2 // buffer
-		maxConns += jd.conf.maxReaders + jd.conf.maxWriters
-		switch jd.ownerType {
-		case Read:
-			maxConns += 2 // migrate, refreshDsList
-		case Write:
-			maxConns += 1 // addNewDS
-		case ReadWrite:
-			maxConns += 3 // migrate, addNewDS, archive
-		}
-		if maxConns >= jd.conf.maxOpenConnections {
+		var maxConns int
+		if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
 			maxConns = jd.conf.maxOpenConnections
+		} else {
+			maxConns = 2 // buffer
+			maxConns += jd.conf.maxReaders + jd.conf.maxWriters
+			switch jd.ownerType {
+			case Read:
+				maxConns += 2 // migrate, refreshDsList
+			case Write:
+				maxConns += 1 // addNewDS
+			case ReadWrite:
+				maxConns += 3 // migrate, addNewDS, archive
+			}
+			if maxConns >= jd.conf.maxOpenConnections {
+				maxConns = jd.conf.maxOpenConnections
+			}
 		}
-	}
-	jd.dbHandle.SetMaxOpenConns(maxConns)
+		jd.dbHandle.SetMaxOpenConns(maxConns)
 
-	jd.assertError(jd.dbHandle.Ping())
+		jd.assertError(jd.dbHandle.Ping())
+	}
 
 	jd.workersAndAuxSetup()
 
@@ -1091,8 +1094,14 @@ func (jd *Handle) TearDown() {
 // Close closes the database connection.
 //
 //	Stop should be called before Close.
+//
+//	Noop if the connection pool is shared with the handle.
 func (jd *Handle) Close() {
-	_ = jd.dbHandle.Close()
+	if !jd.sharedConnectionPool {
+		if err := jd.dbHandle.Close(); err != nil {
+			jd.logger.Errorw("error closing db connection", "error", err)
+		}
+	}
 }
 
 /*
