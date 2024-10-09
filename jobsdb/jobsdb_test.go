@@ -1203,7 +1203,7 @@ func TestFailExecuting(t *testing.T) {
 }
 
 func TestMaxAgeCleanup(t *testing.T) {
-	_ = startPostgres(t)
+	pgContainer := startPostgres(t)
 	customVal := "CUSTOMVAL"
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
@@ -1226,21 +1226,14 @@ func TestMaxAgeCleanup(t *testing.T) {
 	}
 
 	destinationID := strings.ToLower(rsRand.String(5))
-	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "0")
-	triggerJobCleanup := make(chan time.Time)
-	jobsDB := &Handle{
-		TriggerJobCleanUp: func() <-chan time.Time {
-			return triggerJobCleanup
-		},
-	}
+	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "1ms")
+	jobsDB := &Handle{dbHandle: pgContainer.DB}
 	tablePrefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(
+	require.NoError(t, jobsDB.Setup(
 		ReadWrite,
 		true,
 		tablePrefix,
-	)
-	require.NoError(t, err)
-	defer jobsDB.TearDown()
+	))
 
 	// run cleanup once with an empty db
 	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
@@ -1280,9 +1273,14 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
-	triggerJobCleanup <- time.Now()
-	triggerJobCleanup <- time.Now()
+	// start again to trigger cleanup
+	jobsDB.TearDown()
+	jobsDB = &Handle{dbHandle: pgContainer.DB}
+	require.NoError(t, jobsDB.Setup(
+		ReadWrite,
+		false,
+		tablePrefix,
+	))
 
 	abortedJobs, err := jobsDB.GetAborted(
 		context.Background(),

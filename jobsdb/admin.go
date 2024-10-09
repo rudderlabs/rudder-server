@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/utils/crash"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 /*
@@ -141,33 +139,18 @@ func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT)
 	return err
 }
 
-func (jd *Handle) startCleanupLoop(ctx context.Context) {
-	jd.backgroundGroup.Go(crash.Wrapper(func() error {
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-jd.TriggerJobCleanUp():
-				func() {
-					for {
-						if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil && ctx.Err() == nil {
-							jd.logger.Errorf("error while cleaning up old jobs: %w", err)
-							if err := misc.SleepCtx(ctx, jd.config.GetDuration("jobsdb.cleanupRetryInterval", 10, time.Second)); err != nil {
-								return
-							}
-							continue
-						}
-						return
-					}
-				}()
-			}
-		}
-	}))
-}
-
 func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
+	maxAge := jd.conf.jobMaxAge()
+	maxAgeStatusResponse := []byte(`{"reason": "job max age exceeded"}`)
 	// 1. cleanup old jobs
-	gather := func(f func(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error), states []string, params GetQueryParams) ([]*JobStatusT, error) {
+	gather := func(
+		f func(
+			ctx context.Context,
+			states []string,
+			params GetQueryParams,
+		) (JobsResult, error),
+		states []string, params GetQueryParams,
+	) ([]*JobStatusT, error) {
 		res := make([]*JobStatusT, 0)
 		var done bool
 		var afterJobID *int64
@@ -182,7 +165,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 			jobs := lo.Filter(
 				jobsResult.Jobs,
 				func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-jd.conf.jobMaxAge()))
+					return job.CreatedAt.Before(time.Now().Add(-maxAge))
 				},
 			)
 			if len(jobs) > 0 {
@@ -193,7 +176,7 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 						JobState:      Aborted.State,
 						ErrorCode:     "0",
 						AttemptNum:    job.LastJobStatus.AttemptNum,
-						ErrorResponse: []byte(`{"reason": "job max age exceeded"}`),
+						ErrorResponse: maxAgeStatusResponse,
 					}
 				})...)
 			}
@@ -204,7 +187,16 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 		return res, nil
 	}
 
-	statusList, err := gather(jd.GetJobs, []string{Failed.State, Executing.State, Waiting.State, Unprocessed.State}, GetQueryParams{})
+	statusList, err := gather(
+		jd.GetJobs,
+		[]string{
+			Failed.State,
+			Executing.State,
+			Waiting.State,
+			Unprocessed.State,
+		},
+		GetQueryParams{},
+	)
 	if err != nil {
 		return fmt.Errorf("gathering job statuses: %w", err)
 	}
@@ -213,8 +205,11 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
 			return err
 		}
-		jd.logger.Infof("cleaned up %d old jobs", len(statusList))
 	}
+	jd.logger.Infon("job maxAge cleanup",
+		logger.NewIntField("jobsCleaned", int64(len(statusList))),
+		logger.NewDurationField("maxAge", maxAge),
+	)
 
 	// 2. cleanup journal
 	{
@@ -235,7 +230,9 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 		if err != nil {
 			return fmt.Errorf("finding journal rows affected during cleanup: %w", err)
 		}
-		jd.logger.Infof("cleaned up %d journal entries", journalEntryCount)
+		jd.logger.Infon("journal cleanup",
+			logger.NewIntField("journalEntriesCleaned", journalEntryCount),
+		)
 	}
 
 	return nil

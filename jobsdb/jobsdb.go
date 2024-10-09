@@ -484,8 +484,6 @@ type Handle struct {
 	TriggerMigrateDS func() <-chan time.Time
 	TriggerRefreshDS func() <-chan time.Time
 
-	TriggerJobCleanUp func() <-chan time.Time
-
 	lifecycle struct {
 		mu      sync.Mutex
 		started bool
@@ -974,12 +972,6 @@ func (jd *Handle) loadConfig() {
 		}
 	}
 
-	if jd.TriggerJobCleanUp == nil {
-		jd.TriggerJobCleanUp = func() <-chan time.Time {
-			return time.After(jd.conf.jobCleanupFrequency.Load())
-		}
-	}
-
 	if jd.conf.jobMaxAge == nil {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
@@ -1008,6 +1000,12 @@ func (jd *Handle) Start() error {
 
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
+	}
+	// cleanup old jobs if read/readWrite jobsdb, writer doesn't care about old jobs
+	if jd.ownerType != Write {
+		if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
+			return fmt.Errorf("cleaning up old jobs: %w", err)
+		}
 	}
 	return nil
 }
@@ -1040,7 +1038,6 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	}))
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
@@ -1067,7 +1064,6 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.writerSetup(ctx, l)
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 // Stop stops the background goroutines and waits until they finish.
