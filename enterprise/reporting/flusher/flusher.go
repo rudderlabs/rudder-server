@@ -12,11 +12,10 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
 	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -44,7 +43,12 @@ type Flusher struct {
 	batchSizeFromDB                     config.ValueLoader[int]
 	aggressiveFlushEnabled              config.ValueLoader[bool]
 	lagThresholdForAggresiveFlushInMins config.ValueLoader[time.Duration]
+	vacuumThresholdDeletedRows          config.ValueLoader[int]
 	vacuumThresholdBytes                config.ValueLoader[int64]
+	deletedRows                         int
+	lastVacuum                          time.Time
+	vacuumFull                          config.ValueLoader[bool]
+	vacuumInterval                      config.ValueLoader[time.Duration]
 
 	reportingURL          string
 	minConcurrentRequests config.ValueLoader[int]
@@ -77,24 +81,30 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	batchSizeToReporting := conf.GetReloadableIntVar(10, 1, "Reporting.flusher.batchSizeToReporting")
 	aggressiveFlushEnabled := conf.GetReloadableBoolVar(false, "Reporting.flusher.aggressiveFlushEnabled")
 	lagThresholdForAggresiveFlushInMins := conf.GetReloadableDurationVar(5, time.Minute, "Reporting.flusher.lagThresholdForAggresiveFlushInMins")
-	vacuumThresholdBytes := conf.GetReloadableInt64Var(5*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes")
+	vacuumThresholdDeletedRows := conf.GetReloadableIntVar(100000, 1, "Reporting.flusher.vacuumThresholdDeletedRows")
+	vacuumInterval := conf.GetReloadableDurationVar(15, time.Minute, "Reporting.flusher.vacuumInterval", "Reporting.vacuumInterval")
+	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
 
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 
 	f := Flusher{
-		db:                                  db,
-		log:                                 log,
-		reportingURL:                        reportingURL,
-		instanceId:                          conf.GetString("INSTANCE_ID", "1"),
-		sleepInterval:                       sleepInterval,
-		flushWindow:                         flushWindow,
-		recentExclusionWindow:               recentExclusionWindow,
-		minConcurrentRequests:               minConcReqs,
-		maxConcurrentRequests:               maxConcReqs,
-		stats:                               stats,
-		batchSizeFromDB:                     batchSizeFromDB,
-		vacuumThresholdBytes:                vacuumThresholdBytes,
+		db:                         db,
+		log:                        log,
+		reportingURL:               reportingURL,
+		instanceId:                 conf.GetString("INSTANCE_ID", "1"),
+		sleepInterval:              sleepInterval,
+		flushWindow:                flushWindow,
+		recentExclusionWindow:      recentExclusionWindow,
+		minConcurrentRequests:      minConcReqs,
+		maxConcurrentRequests:      maxConcReqs,
+		stats:                      stats,
+		batchSizeFromDB:            batchSizeFromDB,
+		vacuumThresholdDeletedRows: vacuumThresholdDeletedRows,
+		vacuumFull:                 conf.GetReloadableBoolVar(false, "Reporting.flusher.vacuumFull", "Reporting.vacuumFull"),
+		vacuumInterval:             vacuumInterval,
+		vacuumThresholdBytes:       vacuumThresholdBytes,
+
 		table:                               table,
 		aggregator:                          aggregator,
 		batchSizeToReporting:                batchSizeToReporting,
@@ -107,6 +117,12 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 
 	f.initCommonTags()
 	f.initStats(f.commonTags)
+	if _, err := db.Exec(
+		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(table)),
+	); err != nil {
+		log.Errorn("error full vacuuming", logger.NewStringField("table", table), obskit.Error(err))
+		return nil, fmt.Errorf("error full vacuuming %s table %w", table, err)
+	}
 	return &f, nil
 }
 
@@ -313,24 +329,53 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 
 func (f *Flusher) delete(ctx context.Context, minReportedAt, maxReportedAt time.Time) error {
 	query := fmt.Sprintf("DELETE FROM %s WHERE reported_at >= $1 AND reported_at < $2", f.table)
-	_, err := f.db.ExecContext(ctx, query, minReportedAt, maxReportedAt)
+	res, err := f.db.ExecContext(ctx, query, minReportedAt, maxReportedAt)
+	if err == nil {
+		rows, _ := res.RowsAffected()
+		f.deletedRows += int(rows)
+	}
 	return err
 }
 
 func (f *Flusher) vacuum(ctx context.Context) error {
-	var sizeEstimate int64
-	if err := f.db.QueryRowContext(
-		ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
-	).Scan(&sizeEstimate); err != nil {
-		return fmt.Errorf("error getting table size %w", err)
-	}
-	if sizeEstimate > f.vacuumThresholdBytes.Load() {
-		vacuumStart := time.Now()
-		if _, err := f.db.ExecContext(ctx, fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))); err != nil {
-			return fmt.Errorf("error vacuuming table %w", err)
+	var query string
+	var full bool
+	var performVacuum bool
+	if f.deletedRows >= f.vacuumThresholdDeletedRows.Load() {
+		performVacuum = true
+	} else if time.Since(f.lastVacuum) >= f.vacuumInterval.Load() {
+		var sizeEstimate int64
+		if err := f.db.QueryRowContext(
+			ctx, `SELECT pg_table_size(oid) from pg_class where relname = $1`, f.table,
+		).Scan(&sizeEstimate); err != nil {
+			return fmt.Errorf("error getting table size %w", err)
 		}
-		f.vacuumReportsTimer.Since(vacuumStart)
+		if sizeEstimate >= f.vacuumThresholdBytes.Load() {
+			performVacuum = true
+		}
 	}
+	if !performVacuum {
+		return nil
+	}
+	vacuumStart := time.Now()
+	defer f.vacuumReportsTimer.Since(vacuumStart)
+	if f.vacuumFull.Load() {
+		full = true
+		query = fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(f.table))
+	} else {
+		query = fmt.Sprintf("vacuum analyze %s", pq.QuoteIdentifier(f.table))
+	}
+	if _, err := f.db.ExecContext(ctx, query); err != nil {
+		f.log.Errorn(
+			"error vacuuming",
+			logger.NewStringField("table", f.table),
+			obskit.Error(err),
+			logger.NewBoolField("full", full),
+		)
+		return fmt.Errorf("error vacuuming table %w", err)
+	}
+	f.lastVacuum = time.Now()
+	f.deletedRows = 0
 	return nil
 }
 

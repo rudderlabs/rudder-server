@@ -193,7 +193,7 @@ func (w *worker) workLoop() {
 				DestinationID: parameters.DestinationID,
 			}]
 			w.rt.destinationsMapMu.RUnlock()
-			if !destOK || (parameters.SourceJobRunID != "" && !connOK) {
+			if !destOK || (parameters.SourceCategory == "warehouse" && !connOK) {
 				continue
 			}
 			destination := batchDestination.Destination

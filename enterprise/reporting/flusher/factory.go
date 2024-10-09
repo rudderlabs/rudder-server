@@ -12,6 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -28,9 +30,13 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
-		return nil, fmt.Errorf("error opening postgres %w", err)
+		return nil, fmt.Errorf("opening postgres: %w", err)
 	}
 	db.SetMaxOpenConns(maxOpenConns)
+	err = stats.RegisterCollector(collectors.NewDatabaseSQLStats(fmt.Sprintf("reporting_flusher_%s", table), db))
+	if err != nil {
+		log.Errorn("error registering database sql stats", obskit.Error(err))
+	}
 
 	if table == "tracked_users_reports" {
 

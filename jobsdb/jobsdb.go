@@ -43,9 +43,9 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -53,6 +53,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -448,6 +450,7 @@ type Handle struct {
 	ownerType   OwnerType
 	tablePrefix string
 	logger      logger.Logger
+	stats       stats.Stats
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
@@ -633,6 +636,20 @@ const (
 	ReadWrite OwnerType = ""
 )
 
+func (ot OwnerType) Identifier() string {
+	switch ot {
+	case Read:
+		return "r"
+	case Write:
+		return "w"
+	case ReadWrite:
+		return "rw"
+	default:
+		return ""
+
+	}
+}
+
 func init() {
 	for _, js := range jobStates {
 		if !js.isValid {
@@ -670,6 +687,12 @@ func WithDBHandle(dbHandle *sql.DB) OptsFunc {
 func WithConfig(c *config.Config) OptsFunc {
 	return func(jd *Handle) {
 		jd.config = c
+	}
+}
+
+func WithStats(s stats.Stats) OptsFunc {
+	return func(jd *Handle) {
+		jd.stats = s
 	}
 }
 
@@ -739,6 +762,10 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
+	if jd.stats == nil {
+		jd.stats = stats.Default
+	}
+
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
@@ -747,6 +774,15 @@ func (jd *Handle) init() {
 		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
+
+		jd.assertError(
+			jd.stats.RegisterCollector(
+				collectors.NewDatabaseSQLStats(
+					"jobsdb_"+jd.tablePrefix+"_"+jd.ownerType.Identifier(),
+					jd.dbHandle,
+				),
+			),
+		)
 	}
 
 	var maxConns int
@@ -768,7 +804,6 @@ func (jd *Handle) init() {
 		}
 	}
 	jd.dbHandle.SetMaxOpenConns(maxConns)
-	jd.dbHandle.SetMaxIdleConns(maxConns)
 
 	jd.assertError(jd.dbHandle.Ping())
 
@@ -838,10 +873,10 @@ func (jd *Handle) workersAndAuxSetup() {
 	)
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
-	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 func (jd *Handle) loadConfig() {
@@ -971,59 +1006,7 @@ func (jd *Handle) Start() error {
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
 	}
-	g.Go(crash.Wrapper(func() error {
-		for {
-			select {
-			case <-time.After(jd.config.GetDuration("JobsDB.ConnStatsFrequency", 15, time.Second)):
-			case <-ctx.Done():
-				return nil
-			}
-			stats := jd.dbHandle.Stats()
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_open_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxOpenConnections))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_open_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.OpenConnections))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_in_use_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.InUse))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_idle_connections", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.Idle))
-
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_wait_count_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.WaitCount))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_wait_duration_seconds_total", tablePrefix: jd.tablePrefix},
-			).Set(stats.WaitDuration.Seconds())
-
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_idle_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxIdleClosed))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_idle_time_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxIdleTimeClosed))
-			metric.Instance.GetRegistry(metric.PublishedMetrics).MustGetGauge(
-				dbConnStats{name: "sql_db_max_lifetime_closed_total", tablePrefix: jd.tablePrefix},
-			).Set(float64(stats.MaxLifetimeClosed))
-
-		}
-	}))
 	return nil
-}
-
-type dbConnStats struct {
-	name, tablePrefix string
-}
-
-func (dbs dbConnStats) GetName() string {
-	return dbs.name
-}
-
-func (dbs dbConnStats) GetTags() map[string]string {
-	return map[string]string{"name": "jobsdb_" + dbs.tablePrefix}
 }
 
 func (jd *Handle) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
@@ -2488,7 +2471,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() {
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		jd.stats.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}()
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
@@ -2503,7 +2486,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
-	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
+	defer jd.stats.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
@@ -3145,8 +3128,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 
 	statTags := tags.getStatsTags(jd.tablePrefix)
 	statTags["query"] = "get"
-	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
 
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID

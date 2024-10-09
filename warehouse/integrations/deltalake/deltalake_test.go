@@ -281,7 +281,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("enableSSE", false).
 					WithConfigOption("accountName", credentials.AccountName).
 					WithConfigOption("accountKey", credentials.AccountKey).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -557,7 +559,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -573,7 +575,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -595,10 +597,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(
-					t, loadFiles, tableName, schemaInUpload, schemaInWarehouse,
-					whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z",
-				)
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -646,7 +645,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, true, "2022-12-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, true)
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -696,7 +695,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false)
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = false
@@ -747,7 +746,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-11-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false)
 
 				appendWarehouse := th.Clone(t, warehouse)
 				appendWarehouse.Destination.Config["preferAppend"] = true
@@ -800,7 +799,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, true, false)
 
 			appendWarehouse := th.Clone(t, warehouse)
 			appendWarehouse.Destination.Config[model.PreferAppendSetting.String()] = true
@@ -855,7 +854,7 @@ func TestIntegration(t *testing.T) {
 					credentials.ContainerName,
 				),
 			}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -880,7 +879,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-columns.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -924,7 +923,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -968,7 +967,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema, whutils.LoadFileTypeCsv, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -993,6 +992,7 @@ func TestIntegration(t *testing.T) {
 					`SELECT
 						column_name,
 						column_value,
+						reason,
 						received_at,
 						row_id,
 						table_name,
@@ -1011,7 +1011,7 @@ func TestIntegration(t *testing.T) {
 			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.parquet", tableName)
 
 			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeParquet, false, false, "2022-12-15T06:53:49.640Z")
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeParquet, false, false)
 
 			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 			err := d.Setup(ctx, warehouse, mockUploader)
@@ -1056,7 +1056,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -1117,7 +1117,7 @@ func TestIntegration(t *testing.T) {
 				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
 
 				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
-				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false, "2022-12-15T06:53:49.640Z")
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
 
 				d := deltalake.New(config.New(), logger.NOP, stats.NOP)
 				err := d.Setup(ctx, warehouse, mockUploader)
@@ -1428,13 +1428,9 @@ func newMockUploader(
 	loadFileType string,
 	canAppend bool,
 	onDedupUseNewRecords bool,
-	eventTS string,
 ) whutils.Uploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
-
-	firstLastEventTS, err := time.Parse(time.RFC3339, eventTS)
-	require.NoError(t, err)
 
 	mockUploader := mockuploader.NewMockUploader(ctrl)
 	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
@@ -1449,7 +1445,6 @@ func newMockUploader(
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 	mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
-	mockUploader.EXPECT().GetFirstLastEvent().Return(firstLastEventTS, firstLastEventTS).AnyTimes()
 
 	return mockUploader
 }

@@ -11,20 +11,24 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	dockerpg "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -309,7 +313,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useSSL", false).
 					WithConfigOption("endPoint", minioEndpoint).
 					WithConfigOption("useRudderStorage", false).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -422,26 +428,71 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Events flow with SSH Tunnel", func(t *testing.T) {
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		// Start shared Docker network
+		network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{Name: "event_flows_with_tunnel_network"})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			if err := pool.Client.RemoveNetwork(network.ID); err != nil {
+				t.Logf("Error while removing Docker network: %v", err)
+			}
+		})
+
+		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
+		require.NoError(t, err)
+
+		var (
+			group               errgroup.Group
+			postgresResource    *dockerpg.Resource
+			sshServerResource   *sshserver.Resource
+			minioResource       *minio.Resource
+			transformerResource *transformer.Resource
+		)
+		group.Go(func() (err error) {
+			postgresResource, err = dockerpg.Setup(pool, t, dockerpg.WithNetwork(network))
+			return err
+		})
+		group.Go(func() (err error) {
+			sshServerResource, err = sshserver.Setup(pool, t,
+				sshserver.WithPublicKeyPath(publicKeyPath),
+				sshserver.WithCredentials("linuxserver.io", ""),
+				sshserver.WithDockerNetwork(network),
+			)
+			return err
+		})
+		group.Go(func() (err error) {
+			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
+			return err
+		})
+		group.Go(func() (err error) {
+			transformerResource, err = transformer.Setup(pool, t, transformer.WithDockerNetwork(network))
+			return err
+		})
+		require.NoError(t, group.Wait())
+
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.ssh-server.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
-		c.Start(context.Background())
-
 		workspaceID := whutils.RandHex()
-		jobsDBPort := c.Port("jobsDb", 5432)
-		sshPort := c.Port("ssh-server", 2222)
-		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
-		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
+		jobsDBPort, err := strconv.Atoi(postgresResource.Port)
+		require.NoError(t, err)
+		sshPort := sshServerResource.Port
+		minioEndpoint := minioResource.Endpoint
+		postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
+		require.NoError(t, err)
 
-		tunnelledHost := "db-private-postgres"
-		tunnelledDatabase := "postgres"
-		tunnelledPassword := "postgres"
-		tunnelledUser := "postgres"
+		transformerURL := transformerResource.TransformerURL
+		tunnelledHost := postgresContainer.NetworkSettings.Networks[network.Name].IPAddress
+		tunnelledDatabase := "jobsdb"
+		tunnelledUser := "rudder"
+		tunnelledPassword := "password"
 		tunnelledPort := "5432"
-		tunnelledSSHUser := "rudderstack"
+		tunnelledSSHUser := "linuxserver.io"
 		tunnelledSSHHost := "localhost"
-		tunnelledPrivateKey := "-----BEGIN OPENSSH PRIVATE KEY-----\\n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\\nbG9jYWwBAgMEBQYH\\n-----END OPENSSH PRIVATE KEY-----"
+		tunnelledPrivateKey, err := os.ReadFile(privateKeyPath)
+		require.NoError(t, err)
 
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
@@ -529,7 +580,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("sshUser", tunnelledSSHUser).
 					WithConfigOption("sshHost", tunnelledSSHHost).
 					WithConfigOption("sshPort", strconv.Itoa(sshPort)).
-					WithConfigOption("sshPrivateKey", strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n")).
+					WithConfigOption("sshPrivateKey", strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n")).
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true).
 					Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
@@ -558,7 +611,7 @@ func TestIntegration(t *testing.T) {
 						"sshUser":       tunnelledSSHUser,
 						"sshPort":       strconv.Itoa(sshPort),
 						"sshHost":       tunnelledSSHHost,
-						"sshPrivateKey": strings.ReplaceAll(tunnelledPrivateKey, "\\n", "\n"),
+						"sshPrivateKey": strings.ReplaceAll(string(tunnelledPrivateKey), "\\n", "\n"),
 					},
 				}
 
@@ -1052,6 +1105,7 @@ func TestIntegration(t *testing.T) {
 					SELECT
 					  column_name,
 					  column_value,
+					  reason,
 					  received_at,
 					  row_id,
 					  table_name,

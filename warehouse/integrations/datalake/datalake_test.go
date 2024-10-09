@@ -333,7 +333,9 @@ func TestIntegration(t *testing.T) {
 					WithID(destinationID).
 					WithRevisionID(destinationID).
 					WithConfigOption("namespace", namespace).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -570,6 +572,8 @@ func TestIntegration(t *testing.T) {
 			WithConfigOption("s3ForcePathStyle", true).
 			WithConfigOption("disableSSL", true).
 			WithConfigOption("prefix", "some-prefix").
+			WithConfigOption("allowUsersContextTraits", true).
+			WithConfigOption("underscoreDivideNumbers", true).
 			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
@@ -853,6 +857,8 @@ func TestIntegration(t *testing.T) {
 			WithConfigOption("s3ForcePathStyle", true).
 			WithConfigOption("disableSSL", true).
 			WithConfigOption("prefix", "some-prefix").
+			WithConfigOption("allowUsersContextTraits", true).
+			WithConfigOption("underscoreDivideNumbers", true).
 			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(

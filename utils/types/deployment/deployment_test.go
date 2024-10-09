@@ -129,7 +129,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			dType:              "MULTITENANT",
 			secret:             "secret",
 			namespace:          "free-us-1",
-			expectedIdentifier: "secret",
+			expectedIdentifier: "free-us-1",
 			expectedBool:       true,
 			tokenType:          "NAMESPACE",
 		},

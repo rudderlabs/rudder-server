@@ -79,7 +79,6 @@ type UploadJob struct {
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
-	loadFileGenStartTime time.Time
 
 	upload         model.Upload
 	warehouse      model.Warehouse
@@ -123,6 +122,7 @@ type UploadJob struct {
 		numStagedEvents                    stats.Measurement
 		uploadSuccess                      stats.Measurement
 		stagingLoadFileEventsCountMismatch stats.Measurement
+		eventDeliveryTime                  stats.Timer
 	}
 }
 
@@ -218,6 +218,15 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.stats.uploadSuccess = uj.counterStat("upload_success")
 	uj.stats.stagingLoadFileEventsCountMismatch = uj.gaugeStat(
 		"warehouse_staging_load_file_events_count_mismatched",
+		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
+	)
+
+	syncFrequency := "1440" // 24h
+	if frequency := uj.warehouse.GetStringDestinationConfig(uj.conf, model.SyncFrequencySetting); frequency != "" {
+		syncFrequency = frequency
+	}
+	uj.stats.eventDeliveryTime = uj.timerStat("event_delivery_time",
+		whutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
 	)
 
@@ -898,19 +907,8 @@ func (job *UploadJob) UseRudderStorage() bool {
 	return job.upload.UseRudderStorage
 }
 
-func (job *UploadJob) GetLoadFileGenStartTIme() time.Time {
-	if !job.loadFileGenStartTime.IsZero() {
-		return job.loadFileGenStartTime
-	}
-	return model.GetLoadFileGenTime(job.upload.Timings)
-}
-
 func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
-}
-
-func (job *UploadJob) GetFirstLastEvent() (time.Time, time.Time) {
-	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
 func (job *UploadJob) DTO() *model.UploadJob {

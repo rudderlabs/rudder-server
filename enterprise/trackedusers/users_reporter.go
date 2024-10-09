@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -85,6 +86,10 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 		return err
 	}
 	dbHandle.SetMaxOpenConns(1)
+	err = u.stats.RegisterCollector(collectors.NewDatabaseSQLStats("tracked_users_reports", dbHandle))
+	if err != nil {
+		u.log.Errorn("error registering database sql stats", obskit.Error(err))
+	}
 
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,

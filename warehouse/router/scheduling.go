@@ -13,27 +13,33 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+var (
+	errUploadFrequencyExceeded          = fmt.Errorf("upload frequency exceeded")
+	errCurrentTimeExistsInExcludeWindow = fmt.Errorf("current time exists in exclude window")
+	errBeforeScheduledTime              = fmt.Errorf("before scheduled time")
+)
+
 type createUploadAlwaysLoader interface {
 	Load() bool
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) (bool, error) {
+func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse) error {
 	// can be set from rudder-cli to force uploads always
 	if r.createUploadAlways.Load() {
-		return true, nil
+		return nil
 	}
 
 	// return true if the upload was triggered
 	if _, isTriggered := r.triggerStore.Load(warehouse.Identifier); isTriggered {
-		return true, nil
+		return nil
 	}
 
 	if r.config.warehouseSyncFreqIgnore.Load() {
 		if r.uploadFrequencyExceeded(warehouse, "") {
-			return true, nil
+			return nil
 		}
-		return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
+		return errUploadFrequencyExceeded
 	}
 
 	// gets exclude window start time and end time
@@ -41,30 +47,30 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
 
 	if checkCurrentTimeExistsInExcludeWindow(r.now().UTC(), excludeWindowStartTime, excludeWindowEndTime) {
-		return false, fmt.Errorf("exclude window: current time exists in exclude window")
+		return errCurrentTimeExistsInExcludeWindow
 	}
 
 	syncFrequency := warehouse.GetStringDestinationConfig(r.conf, model.SyncFrequencySetting)
 	syncStartAt := warehouse.GetStringDestinationConfig(r.conf, model.SyncStartAtSetting)
 	if syncFrequency == "" || syncStartAt == "" {
 		if r.uploadFrequencyExceeded(warehouse, syncFrequency) {
-			return true, nil
+			return nil
 		}
-		return false, fmt.Errorf("upload frequency exceeded")
+		return errUploadFrequencyExceeded
 	}
 
 	prevScheduledTime := r.prevScheduledTime(syncFrequency, syncStartAt, r.now())
 	lastUploadCreatedAt, err := r.uploadRepo.LastCreatedAt(ctx, warehouse.Source.ID, warehouse.Destination.ID)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	// start upload only if no upload has started in current window
 	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	if lastUploadCreatedAt.Before(prevScheduledTime) {
-		return true, nil
+		return nil
 	}
-	return false, fmt.Errorf("before scheduled time")
+	return errBeforeScheduledTime
 }
 
 func excludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {

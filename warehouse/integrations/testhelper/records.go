@@ -64,12 +64,12 @@ func AppendTestRecords() [][]string {
 // It uses testdata/discards.* as the source of data.
 func DiscardTestRecords() [][]string {
 	return [][]string{
-		{"context_screen_density", "125.75", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "125", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "true", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "hello-world", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
-		{"context_screen_density", "2022-12-15T06:53:49Z", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "125.75", "dummy reason", "2022-12-15T06:53:49Z", "1", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "125", "dummy reason", "2022-12-15T06:53:49Z", "2", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "true", "dummy reason", "2022-12-15T06:53:49Z", "3", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "7274e5db-f918-4efe-1212-872f66e235c5", "dummy reason", "2022-12-15T06:53:49Z", "4", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "hello-world", "dummy reason", "2022-12-15T06:53:49Z", "5", "test_table", "2022-12-15T06:53:49Z"},
+		{"context_screen_density", "2022-12-15T06:53:49Z", "dummy reason", "2022-12-15T06:53:49Z", "6", "test_table", "2022-12-15T06:53:49Z"},
 	}
 }
 
@@ -207,7 +207,6 @@ func UploadJobUsersRecords(userIDFormat, sourceID, destID, destType string) [][]
 // UploadJobUsersRecordsForDatalake returns a set of records for testing upload job users scenarios.
 // It uses upload-job.events-1.json, upload-job.events-2.json as the source of data.
 // sent_at, timestamp, original_timestamp will not be present in the records.
-// TODO: Once we start populating it in the records, we need to update the expected records.
 func UploadJobUsersRecordsForDatalake(userIDFormat, sourceID, destID, destType string) [][]string {
 	uuidTS := timeutil.Now().Format("2006-01-02")
 	return [][]string{
@@ -234,13 +233,11 @@ func UploadJobUsersAppendRecords(userIDFormat, sourceID, destID, destType string
 
 // UploadJobUsersAppendRecordsUsingUsersLoadFiles returns a set of records for testing upload job users scenarios.
 // It uses twice upload-job.events-1.json as the source of data.
-// sent_at, timestamp, original_timestamp will not be present in the records.
-// TODO: Once we start populating it in the records, we need to update the expected records.
 func UploadJobUsersAppendRecordsUsingUsersLoadFiles(userIDFormat, sourceID, destID, destType string) [][]string {
 	uuidTS := timeutil.Now().Format("2006-01-02")
 	return [][]string{
-		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:26:48Z", "Richard Hendricks", ""},
-		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:26:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "2023-05-12T04:26:48Z", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "2023-05-12T04:26:48Z", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:26:48Z", "Richard Hendricks", "2023-05-12T04:26:48Z"},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "2023-05-12T04:26:48Z", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "2023-05-12T04:26:48Z", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:26:48Z", "Richard Hendricks", "2023-05-12T04:26:48Z"},
 	}
 }
 
@@ -255,15 +252,13 @@ func UploadJobUsersMergeRecord(userIDFormat, sourceID, destID, destType string) 
 
 // UploadJobUsersRecordsUsingUsersLoadFilesForClickhouse returns a set of records for testing upload job users scenarios.
 // It uses upload-job.events-1.json, upload-job.events-2.json as the source of data.
-// sent_at, timestamp, original_timestamp will not be present in the records.
 // For AggregatingMergeTree ClickHouse replaces all rows with the same primary key (or more accurately, with the same sorting key) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 // So received_at will be record for the first record only.
-// TODO: Once we start populating it in the records, we need to update the expected records.
 func UploadJobUsersRecordsUsingUsersLoadFilesForClickhouse(userIDFormat, sourceID, destID, destType string) [][]string {
 	uuidTS := timeutil.Now().Format("2006-01-02")
 	return [][]string{
-		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:08:48Z", "Richard Hendricks", ""},
-		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "", "2", "[::1]", "non escaped column", "rhedricks+8@example.com", "", destID, "rhedricks+8@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:32:48Z", "Richard Hendricks", ""},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "2023-05-12T04:26:48Z", "2", "[::1]", "non escaped column", "rhedricks+4@example.com", "2023-05-12T04:26:48Z", destID, "rhedricks+4@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:08:48Z", "Richard Hendricks", "2023-05-12T04:26:48Z"},
+		{sourceID, destType, "[::1]", "Richard Hendricks", "non escaped column", "non escaped column", "2", "2023-05-12T04:50:48Z", "2", "[::1]", "non escaped column", "rhedricks+8@example.com", "2023-05-12T04:50:48Z", destID, "rhedricks+8@example.com", "non escaped column", "HTTP", userIDFormat, uuidTS, "2023-05-12T04:32:48Z", "Richard Hendricks", "2023-05-12T04:50:48Z"},
 	}
 }
 

@@ -11,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -42,8 +44,8 @@ type drainConfigManager struct {
 // NewDrainConfigManager returns a drainConfigManager
 // If migration fails while setting up drain config, drainConfigManager object will be returned along with error
 // Consumers must handle errors and non-nil drainConfigManager object according to their use case.
-func NewDrainConfigManager(conf *config.Config, log logger.Logger) (*drainConfigManager, error) {
-	db, err := setupDBConn(conf)
+func NewDrainConfigManager(conf *config.Config, log logger.Logger, stats stats.Stats) (*drainConfigManager, error) {
+	db, err := setupDBConn(conf, stats)
 	if err != nil {
 		log.Errorw("db setup", "error", err)
 		return nil, fmt.Errorf("db setup: %v", err)
@@ -182,7 +184,7 @@ func migrate(db *sql.DB) error {
 }
 
 // setupDBConn sets up the database connection
-func setupDBConn(conf *config.Config) (*sql.DB, error) {
+func setupDBConn(conf *config.Config, stats stats.Stats) (*sql.DB, error) {
 	psqlInfo := misc.GetConnectionString(conf, "drain-config")
 	if conf.IsSet("SharedDB.dsn") {
 		psqlInfo = conf.GetString("SharedDB.dsn", "")
@@ -193,5 +195,9 @@ func setupDBConn(conf *config.Config) (*sql.DB, error) {
 	}
 	db.SetMaxIdleConns(conf.GetInt("drainConfig.maxIdleConns", 1))
 	db.SetMaxOpenConns(conf.GetInt("drainConfig.maxOpenConns", 2))
+	err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("drain_config", db))
+	if err != nil {
+		return nil, fmt.Errorf("registering collector: %v", err)
+	}
 	return db, nil
 }

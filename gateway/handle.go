@@ -401,11 +401,9 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		}
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-		var rudderId uuid.UUID
-		rudderId, err = kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
 		if err != nil {
-			err = errors.New(response.NonIdentifiableRequest)
-			return
+			return jobData, err
 		}
 		toSet["rudderId"] = rudderId
 		if _, ok := toSet["receivedAt"]; !ok {
@@ -786,11 +784,48 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.Report(gw.stats)
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
+		// TODO: get rid of this check
+		if msg.Properties.RequestType != "" {
+			switch msg.Properties.RequestType {
+			case "batch", "replay", "retl", "import":
+			default:
+				msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
+				if err != nil {
+					stat.RequestEventsFailed(1, response.NotRudderEvent)
+					stat.Report(gw.stats)
+					return nil, errors.New(response.NotRudderEvent)
+				}
+			}
+		}
+
+		anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
+		userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
+		messageID, changed := getMessageID(msg.Payload)
+		if changed {
+			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
+			if err != nil {
+				stat.RequestFailed(response.NotRudderEvent)
+				stat.Report(gw.stats)
+				return nil, errors.New(response.NotRudderEvent)
+			}
+		}
+		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
+		if err != nil {
+			stat.RequestFailed(response.NotRudderEvent)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
+		}
+		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
+		if err != nil {
+			stat.RequestFailed(response.NotRudderEvent)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
+		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
 			gw.logger.Errorn("unable to get writeKey for job",
-				logger.NewStringField("messageId", msg.Properties.MessageID),
+				logger.NewStringField("messageId", messageID),
 				obskit.SourceID(msg.Properties.SourceID))
 		}
 		stat.SourceID = msg.Properties.SourceID
@@ -817,7 +852,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}).Since(msg.Properties.ReceivedAt)
 
 		jobsDBParams := params{
-			MessageID:       msg.Properties.MessageID,
+			MessageID:       messageID,
 			SourceID:        msg.Properties.SourceID,
 			SourceJobRunID:  msg.Properties.SourceJobRunID,
 			SourceTaskRunID: msg.Properties.SourceTaskRunID,
@@ -886,6 +921,31 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	}
 
 	return res, nil
+}
+
+// getMessageID returns the messageID from the event payload.
+// If the messageID is not present, it generates a new one.
+// It also returns a boolean indicating if the messageID was changed.
+func getMessageID(event []byte) (string, bool) {
+	messageID := gjson.GetBytes(event, "messageId").String()
+	sanitizedMessageID := sanitizeAndTrim(messageID)
+	if sanitizedMessageID == "" {
+		return uuid.New().String(), true
+	}
+	return sanitizedMessageID, messageID != sanitizedMessageID
+}
+
+func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
+	rudderId, err := kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+	if err != nil {
+		err = errors.New(response.NonIdentifiableRequest)
+		return rudderId, err
+	}
+	return rudderId, nil
+}
+
+func sanitizeAndTrim(str string) string {
+	return strings.TrimSpace(sanitize.Unicode(str))
 }
 
 func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {

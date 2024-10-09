@@ -26,7 +26,7 @@ func init() {
 }
 
 func createDBConnection() (*sql.DB, error) {
-	psqlInfo := misc.GetConnectionString(config.Default, "env-validator")
+	psqlInfo := misc.GetConnectionString(config.Default, "")
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {

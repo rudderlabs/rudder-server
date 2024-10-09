@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -84,10 +85,15 @@ func TestProcessorManager(t *testing.T) {
 	config.Reset()
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 10)
+
+	statStore, err := memstats.New()
+	require.NoError(t, err)
+
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
 	tempDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(statStore),
 	)
 	require.NoError(t, tempDB.Start())
 	defer tempDB.TearDown()
@@ -117,31 +123,38 @@ func TestProcessorManager(t *testing.T) {
 
 	gwDB := jobsdb.NewForReadWrite("gw",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer gwDB.Close()
 	rtDB := jobsdb.NewForReadWrite("rt",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer rtDB.Close()
 	brtDB := jobsdb.NewForReadWrite("batch_rt",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer brtDB.Close()
 	readErrDB := jobsdb.NewForRead("proc_error",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer readErrDB.Close()
 	writeErrDB := jobsdb.NewForWrite("proc_error",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	require.NoError(t, writeErrDB.Start())
 	defer writeErrDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer eschDB.Close()
 	archDB := jobsdb.NewForReadWrite("archival",
 		jobsdb.WithConfig(c),
+		jobsdb.WithStats(stats.NOP),
 	)
 	defer archDB.Close()
 

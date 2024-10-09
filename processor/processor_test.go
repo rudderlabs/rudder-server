@@ -4076,7 +4076,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(_ transformer.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 

@@ -9,10 +9,6 @@ import (
 	"strings"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
 	"github.com/samber/lo"
 
 	"golang.org/x/sync/errgroup"
@@ -21,8 +17,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -366,10 +364,9 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	return loadFiles[0].ID, loadFiles[len(loadFiles)-1].ID, nil
 }
 
-func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (revisionIDMap map[string]backendconfig.DestinationT, err error) {
-	revisionIDMap = make(map[string]backendconfig.DestinationT)
+func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *model.UploadJob) (map[string]backendconfig.DestinationT, error) {
+	revisionIDMap := make(map[string]backendconfig.DestinationT)
 
-	// TODO: ensure DestinationRevisionID is populated
 	for _, file := range job.StagingFiles {
 		revisionID := file.DestinationRevisionID
 		// No need to make config backend api call for the current config
@@ -377,14 +374,17 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job *
 			revisionIDMap[revisionID] = job.Warehouse.Destination
 			continue
 		}
-
+		// No need to make config backend api call for the same revision ID
+		if _, ok := revisionIDMap[revisionID]; ok {
+			continue
+		}
 		destination, err := lf.ControlPlaneClient.DestinationHistory(ctx, revisionID)
 		if err != nil {
 			return nil, err
 		}
 		revisionIDMap[revisionID] = destination
 	}
-	return
+	return revisionIDMap, nil
 }
 
 func (lf *LoadFileGenerator) GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {

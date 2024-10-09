@@ -9,6 +9,8 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -242,7 +244,7 @@ type Gauger interface {
 	Gauge(interface{})
 }
 
-func NewJobService(config JobServiceConfig) (JobService, error) {
+func NewJobService(config JobServiceConfig, stats stats.Stats) (JobService, error) {
 	if config.Log == nil {
 		config.Log = logger.NewLogger().Child("rsources")
 	}
@@ -262,7 +264,10 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
 	localDB.SetMaxOpenConns(config.MaxPoolSize)
-
+	err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("rsources-local", localDB))
+	if err != nil {
+		return nil, fmt.Errorf("register local database stats collector: %w", err)
+	}
 	if config.SharedConn != "" {
 		sharedDB, err = sql.Open("postgres", config.SharedConn)
 		if err != nil {
@@ -270,6 +275,10 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		}
 		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
 		sharedDB.SetMaxIdleConns(config.MinPoolSize)
+		err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("rsources-shared", sharedDB))
+		if err != nil {
+			return nil, fmt.Errorf("register shared database stats collector: %w", err)
+		}
 	}
 	handler := &sourcesHandler{
 		log:      config.Log,

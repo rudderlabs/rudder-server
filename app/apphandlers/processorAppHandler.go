@@ -85,6 +85,7 @@ func (a *processorApp) Setup() error {
 
 func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	config := config.Default
+	statsFactory := stats.Default
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
@@ -133,7 +134,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(deploymentType, true, statsFactory)
 	if err != nil {
 		return err
 	}
@@ -149,6 +150,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -156,6 +158,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -163,6 +166,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer batchRouterDB.Close()
 	errDBForRead := jobsdb.NewForRead(
@@ -170,12 +174,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
 	)
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
@@ -185,6 +191,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
+		jobsdb.WithStats(statsFactory),
 	)
 	defer schemaDB.Close()
 
@@ -193,6 +200,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
@@ -208,9 +216,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -220,7 +228,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, statsFactory)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
@@ -231,7 +239,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}
 	}()
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
@@ -264,7 +272,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		trackedUsersReporter,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.NewFactory(config, stats.Default)
+	throttlerFactory, err := throttler.NewFactory(config, statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
@@ -309,7 +317,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			archivalDB,
 			fileUploaderProvider,
 			config,
-			stats.Default,
+			statsFactory,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),
 	}
@@ -330,8 +338,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	})
 
 	g.Go(func() error {
-		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
-		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		replicationLagStat := statsFactory.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := statsFactory.NewStat("rsources_log_replication_slot", stats.GaugeType)
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
 		return nil
 	})

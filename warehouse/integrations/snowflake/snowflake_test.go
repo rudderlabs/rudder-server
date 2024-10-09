@@ -486,7 +486,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("namespace", namespace).
 					WithConfigOption("enableSSE", false).
 					WithConfigOption("useRudderStorage", false).
-					WithConfigOption("syncFrequency", "30")
+					WithConfigOption("syncFrequency", "30").
+					WithConfigOption("allowUsersContextTraits", true).
+					WithConfigOption("underscoreDivideNumbers", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -1065,6 +1067,7 @@ func TestIntegration(t *testing.T) {
 					SELECT
 					  COLUMN_NAME,
 					  COLUMN_VALUE,
+					  REASON,
 					  RECEIVED_AT,
 					  ROW_ID,
 					  TABLE_NAME,

@@ -38,9 +38,9 @@ func (r *Router) CronTracker(ctx context.Context) error {
 
 		for _, warehouse := range warehouses {
 			b := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(r.config.cronTrackerRetries.Load())), ctx)
-			err := backoff.RetryNotify(func() error {
+			err := backoff.Retry(func() error {
 				return r.Track(ctx, &warehouse, r.conf)
-			}, b, func(err error, t time.Duration) {})
+			}, b)
 			if err != nil {
 				r.logger.Errorn(
 					"cron tracker failed for",

@@ -32,10 +32,11 @@ import (
 )
 
 const (
-	WaitFor2Minute          = 2 * time.Minute
-	WaitFor10Minute         = 10 * time.Minute
-	DefaultQueryFrequency   = 100 * time.Millisecond
-	SourceJobQueryFrequency = 1000 * time.Millisecond
+	WaitFor2Minute                 = 2 * time.Minute
+	WaitFor10Minute                = 10 * time.Minute
+	DefaultQueryFrequency          = 100 * time.Millisecond
+	DefaultWarehouseQueryFrequency = 500 * time.Millisecond
+	SourceJobQueryFrequency        = 1000 * time.Millisecond
 )
 
 const (
@@ -112,14 +113,14 @@ func (w *TestConfig) reset() {
 		if w.SourceJob {
 			w.TableUploadsEventsMap = defaultSourcesTableUploadsEventsMap()
 		} else {
-			w.TableUploadsEventsMap = defaultTableUploadsEventsMap()
+			w.TableUploadsEventsMap = defaultTableUploadsEventsMap(w.DestinationType)
 		}
 	}
 	if len(w.WarehouseEventsMap) == 0 {
 		if w.SourceJob {
 			w.WarehouseEventsMap = defaultSourcesWarehouseEventsMap()
 		} else {
-			w.WarehouseEventsMap = defaultWarehouseEventsMap()
+			w.WarehouseEventsMap = defaultWarehouseEventsMap(w.DestinationType)
 		}
 	}
 }

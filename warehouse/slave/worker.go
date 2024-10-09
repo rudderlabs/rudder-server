@@ -31,11 +31,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	errIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
-	errSchemaConversionNotSupported = errors.New("schema conversion not supported")
-	json                            = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type uploadProcessingResult struct {
 	result uploadResult
@@ -356,6 +352,15 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 				)
 
 				if convError != nil || violatedConstraints.IsViolated {
+					var reason string
+					if violatedConstraints.IsViolated {
+						reason = violatedConstraints.Reason
+					} else if convError != nil {
+						reason = convError.Error()
+					} else {
+						reason = "unknown reason"
+					}
+
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
@@ -367,7 +372,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 						return nil, err
 					}
 
-					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable])
+					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable], reason)
 					if err != nil {
 						jr.logger.Errorf("Failed to write to discards: %v", err)
 					}
@@ -534,14 +539,14 @@ func handleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
 		intVal, ok := value.(int)
 		if !ok {
-			err = errIncompatibleSchemaConversion
+			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
 		} else {
 			newColumnVal = float64(intVal)
 		}
 	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
-			err = errIncompatibleSchemaConversion
+			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
 		} else {
 			newColumnVal = int(floatVal)
 		}
@@ -555,7 +560,7 @@ func handleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
-		err = errSchemaConversionNotSupported
+		err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
 	}
 
 	return newColumnVal, err
