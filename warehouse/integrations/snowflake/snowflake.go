@@ -450,6 +450,20 @@ func (sf *Snowflake) mergeIntoLoadTable(
 		updateSet = fmt.Sprintf(`original.%[1]q = original.%[1]q`, strKeys[0])
 	}
 
+	configKeyPrefix := "Warehouse.snowflake.mergeWindow." + sf.Warehouse.Destination.ID
+	mergeWindowTables := sf.conf.GetStringSlice(configKeyPrefix+".tables", nil)
+
+	if slices.Contains(mergeWindowTables, tableName) {
+		mergeWindowDuration := sf.conf.GetDuration(configKeyPrefix+".duration", 30*24, time.Hour)
+		mergeWindowColumn := sf.conf.GetString(configKeyPrefix+".column", "RECEIVED_AT")
+
+		additionalJoinClause += fmt.Sprintf(
+			` AND original.%s >= DATEADD(hour, -%d, CURRENT_TIMESTAMP())`,
+			mergeWindowColumn,
+			int(mergeWindowDuration.Hours()),
+		)
+	}
+
 	mergeStmt := fmt.Sprintf(`MERGE INTO %[1]s.%[2]q AS original USING (
 	  SELECT *
 	  FROM
@@ -477,7 +491,6 @@ func (sf *Snowflake) mergeIntoLoadTable(
 		sortedColumnNames, stagingColumnNames,
 		updateSet,
 	)
-
 	var rowsInserted, rowsUpdated int64
 	err := db.QueryRowContext(ctx, mergeStmt).Scan(
 		&rowsInserted,

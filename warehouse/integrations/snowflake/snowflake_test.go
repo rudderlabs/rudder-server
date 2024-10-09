@@ -886,6 +886,74 @@ func TestIntegration(t *testing.T) {
 				)
 				require.Equal(t, records, whth.DedupTestRecords())
 			})
+			t.Run("dedup window", func(t *testing.T) {
+				tableName := whutils.ToProviderCase(destType, "merge_test_window_table")
+
+				schema := model.TableSchema{
+					"ID":          "string",
+					"RECEIVED_AT": "datetime",
+				}
+
+				now := time.Now()
+
+				uploadOutput := whth.UploadLoad(t, fm, tableName, [][]string{
+					// {"id", "received_at"},
+					{"1", now.Format(time.RFC3339)},
+					{"2", now.Add(-1 * time.Hour).Format(time.RFC3339)},
+					{"3", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+					{"4", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+				})
+
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schema, schema, true, false)
+
+				c := config.New()
+				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".tables", tableName)
+				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".column", "RECEIVED_AT")
+				c.Set("Warehouse.snowflake.mergeWindow."+warehouse.Destination.ID+".duration", "24h")
+
+				sf := snowflake.New(c, logger.NOP, stats.NOP)
+				err := sf.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = sf.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = sf.CreateTable(ctx, tableName, schema)
+				require.NoError(t, err)
+
+				loadTableStat, err := sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, int64(4), loadTableStat.RowsInserted)
+				require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+
+				loadTableStat, err = sf.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, int64(2), loadTableStat.RowsInserted,
+					"2nd copy on the same table with the same data should not have any 'rows_loaded'")
+				require.Equal(t, int64(2), loadTableStat.RowsUpdated,
+					"2nd copy on the same table with the same data should not have any 'rows_updated'")
+
+				records := whth.RetrieveRecordsFromWarehouse(t, sf.DB.DB,
+					fmt.Sprintf(
+						`SELECT
+						  id,
+						  received_at,
+						FROM %q.%q
+						ORDER BY id;`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, [][]string{
+					{"1", now.Format(time.RFC3339)},
+					{"2", now.Add(-1 * time.Hour).Format(time.RFC3339)},
+					{"3", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+					{"3", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+					{"4", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+					{"4", now.Add(-25 * time.Hour).Format(time.RFC3339)},
+				}, records)
+			})
 		})
 		t.Run("append", func(t *testing.T) {
 			tableName := whutils.ToProviderCase(destType, "append_test_table")
