@@ -67,7 +67,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (SourceDebugger, error
 	h.disableEventUploads = config.GetReloadableBoolVar(false, "SourceDebugger.disableEventUploads")
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventUploader(h.log)
-	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
+	h.uploader = debugger.New[*GatewayEventBatchT](url, backendConfig.Identity(), eventUploader)
 	h.uploader.Start()
 
 	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.MemoryCacheType)))

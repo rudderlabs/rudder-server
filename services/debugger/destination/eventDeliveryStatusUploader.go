@@ -61,7 +61,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (DestinationDebugger, 
 	var err error
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", h.configBackendURL)
 	eventUploader := NewEventDeliveryStatusUploader(h.log)
-	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
+	h.uploader = debugger.New[*DeliveryStatusT](url, backendConfig.Identity(), eventUploader)
 	h.uploader.Start()
 
 	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.MemoryCacheType)))
