@@ -81,7 +81,7 @@ func TestMainFlow(t *testing.T) {
 	hold = os.Getenv("HOLD") == "true"
 
 	// common connection pool(jobsdb) to database
-	t.Run("1", func(t *testing.T) {
+	t.Run("common connection", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
 			if tearDownStart == (time.Time{}) {
@@ -106,7 +106,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	// separate connections pools to database
-	t.Run("2", func(t *testing.T) {
+	t.Run("separate connection", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
 			if tearDownStart == (time.Time{}) {
