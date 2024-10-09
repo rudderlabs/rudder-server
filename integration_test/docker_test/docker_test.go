@@ -80,8 +80,7 @@ type event struct {
 func TestMainFlow(t *testing.T) {
 	hold = os.Getenv("HOLD") == "true"
 
-	// common connection pool(jobsdb) to database
-	t.Run("1", func(t *testing.T) {
+	t.Run("common connection pool to database", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
 			if tearDownStart == (time.Time{}) {
@@ -105,8 +104,7 @@ func TestMainFlow(t *testing.T) {
 		tearDownStart = time.Now()
 	})
 
-	// separate connections pools to database
-	t.Run("2", func(t *testing.T) {
+	t.Run("separate connection pools to database", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
 			if tearDownStart == (time.Time{}) {

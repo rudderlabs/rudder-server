@@ -87,20 +87,20 @@ func NewDatabaseConnectionPool(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				updatePoolConfig(db.SetMaxOpenConns, &maxConns, maxConnsVar)
+				updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, maxIdleTimeVar)
+				updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, maxIdleConnsVar)
+				updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, maxConnLifetimeVar)
 			}
-			updatePoolConfig(db.SetMaxOpenConns, &maxConns, maxConnsVar)
-			updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, maxIdleTimeVar)
-			updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, maxIdleConnsVar)
-			updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, maxConnLifetimeVar)
 		}
 	})
 	return db, nil
 }
 
-func updatePoolConfig[T comparable](f func(T), current *T, conf config.ValueLoader[T]) {
+func updatePoolConfig[T comparable](setter func(T), current *T, conf config.ValueLoader[T]) {
 	newValue := conf.Load()
 	if newValue != *current {
-		f(newValue)
+		setter(newValue)
 		*current = newValue
 	}
 }
