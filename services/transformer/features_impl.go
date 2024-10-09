@@ -24,11 +24,9 @@ type featuresService struct {
 }
 
 func (t *featuresService) SourceTransformerVersion() string {
-	if gjson.GetBytes(t.features, "supportSourceTransformV1").Bool() {
-		return V1
-	}
-
-	return V0
+	// V0 Deprecation: This function will ignore `supportSourceTransformV1` param from
+	// transformer features and return V1 by default, there by deprecating V0
+	return V1
 }
 
 func (t *featuresService) TransformerProxyVersion() string {

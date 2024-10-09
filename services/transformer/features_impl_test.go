@@ -37,7 +37,7 @@ var _ = Describe("Transformer features", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 
-		It("before features are fetched, SourceTransformerVersion should return v0", func() {
+		It("before features are fetched, SourceTransformerVersion should return v1 because v0 is deprecated", func() {
 			handler := &featuresService{
 				features: json.RawMessage(defaultTransformerFeatures),
 				logger:   logger.NewLogger(),
@@ -48,7 +48,7 @@ var _ = Describe("Transformer features", func() {
 				},
 			}
 
-			Expect(handler.SourceTransformerVersion()).To(Equal(V0))
+			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
 		})
 
 		It("before features are fetched, TransformerProxyVersion should return v0", func() {
@@ -130,7 +130,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeFalse())
 			Expect(handler.RouterTransform("a")).To(BeTrue())
 			Expect(handler.RouterTransform("b")).To(BeTrue())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
+			Expect(handler.SourceTransformerVersion()).To(Equal(V1)) // V1 is default (V0 is deprecated)
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
