@@ -560,6 +560,7 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err, "GetUnprocessed failed")
 		require.EqualValues(t, 19, len(jobsResult.Jobs))
 	})
+
 	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
