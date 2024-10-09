@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -679,9 +678,6 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			rruntime.GoForWarehouse(func() {
-				misc.RemoveFilePaths(objectFileName)
-			})
 			_ = gzipFile.Close()
 			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
 			onError(err)
