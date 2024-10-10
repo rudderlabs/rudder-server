@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -24,9 +25,12 @@ type featuresService struct {
 }
 
 func (t *featuresService) SourceTransformerVersion() string {
-	// V0 Deprecation: This function will ignore `supportSourceTransformV1` param from
-	// transformer features and return V1 by default, there by deprecating V0
-	return V1
+	// V0 Deprecation: This function will verify if `supportSourceTransformV1` is available and enabled
+	// if `supportSourceTransformV1` is not enabled, transformer is not compatible and server will panic with appropriate message.
+	if gjson.GetBytes(t.features, "supportSourceTransformV1").Bool() {
+		return V1
+	}
+	panic(fmt.Errorf("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
 }
 
 func (t *featuresService) TransformerProxyVersion() string {
