@@ -1236,7 +1236,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 	))
 
 	// run cleanup once with an empty db
-	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
+	require.NoError(t, jobsDB.doCleanup(context.Background()))
 
 	// store some jobs
 	require.NoError(
@@ -1475,6 +1475,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs := generateJobs("param-1", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("stored jobs")
 
 	parameterValues, err := jobsDB.GetDistinctParameterValues(context.Background(), "param")
 	require.NoError(t, err)
@@ -1495,6 +1496,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs = generateJobs("param-2", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("stored jobs again")
 
 	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
 	require.NoError(t, err)
@@ -1513,6 +1515,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs = generateJobs("param-3", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("and stored jobs again")
 
 	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
 	require.NoError(t, err)

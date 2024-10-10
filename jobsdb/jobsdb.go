@@ -495,7 +495,6 @@ type Handle struct {
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
-		jobCleanupFrequency            config.ValueLoader[time.Duration]
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
 		refreshDSTimeout               config.ValueLoader[time.Duration]
@@ -888,7 +887,6 @@ func (jd *Handle) loadConfig() {
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
-	jd.conf.jobCleanupFrequency = jd.config.GetReloadableDurationVar(24, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	jd.conf.enableWriterQueue = jd.config.GetBoolVar(true, enableWriterQueueKeys...)
@@ -993,12 +991,6 @@ func (jd *Handle) Start() error {
 	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	if jd.ownerType != Write {
-		if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
-			cancel()
-			return err
-		}
-	}
 	g, ctx := errgroup.WithContext(ctx)
 
 	jd.backgroundCancel = cancel
@@ -1030,6 +1022,13 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
 	jd.assertError(jd.doRefreshDSRangeList(l))
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	g := jd.backgroundGroup
 	g.Go(crash.Wrapper(func() error {
@@ -1062,6 +1061,13 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Read)
 
 	jd.writerSetup(ctx, l)
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	jd.startMigrateDSLoop(ctx)
 }
@@ -1319,7 +1325,7 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infof("Creating new DS %+v", ds)
+	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
 	err := jd.createDSInTx(tx, ds)
 	if err != nil {
 		return err

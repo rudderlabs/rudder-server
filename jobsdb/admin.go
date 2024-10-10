@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
@@ -140,77 +138,10 @@ func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT)
 	return err
 }
 
-func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
-	maxAge := jd.conf.jobMaxAge()
-	maxAgeStatusResponse := []byte(`{"reason": "job max age exceeded"}`)
-	// 1. cleanup old jobs
-	gather := func(
-		f func(
-			ctx context.Context,
-			states []string,
-			params GetQueryParams,
-		) (JobsResult, error),
-		states []string, params GetQueryParams,
-	) ([]*JobStatusT, error) {
-		res := make([]*JobStatusT, 0)
-		var done bool
-		var afterJobID *int64
-		for !done {
-			params.IgnoreCustomValFiltersInQuery = true
-			params.JobsLimit = batchSize
-			params.afterJobID = afterJobID
-			jobsResult, err := f(ctx, states, params)
-			if err != nil {
-				return nil, err
-			}
-			jobs := lo.Filter(
-				jobsResult.Jobs,
-				func(job *JobT, _ int) bool {
-					return job.CreatedAt.Before(time.Now().Add(-maxAge))
-				},
-			)
-			if len(jobs) > 0 {
-				afterJobID = &(jobs[len(jobs)-1].JobID)
-				res = append(res, lo.Map(jobs, func(job *JobT, _ int) *JobStatusT {
-					return &JobStatusT{
-						JobID:         job.JobID,
-						JobState:      Aborted.State,
-						ErrorCode:     "0",
-						AttemptNum:    job.LastJobStatus.AttemptNum,
-						ErrorResponse: maxAgeStatusResponse,
-					}
-				})...)
-			}
-			if len(jobs) < batchSize {
-				done = true
-			}
-		}
-		return res, nil
+func (jd *Handle) doCleanup(ctx context.Context) error {
+	if err := jd.abortOldJobs(ctx, jd.getDSList()); err != nil {
+		return fmt.Errorf("aborting old jobs: %w", err)
 	}
-
-	statusList, err := gather(
-		jd.GetJobs,
-		[]string{
-			Failed.State,
-			Executing.State,
-			Waiting.State,
-			Unprocessed.State,
-		},
-		GetQueryParams{},
-	)
-	if err != nil {
-		return fmt.Errorf("gathering job statuses: %w", err)
-	}
-
-	if len(statusList) > 0 {
-		if err := jd.UpdateJobStatus(ctx, statusList, nil, nil); err != nil {
-			return err
-		}
-	}
-	jd.logger.Infon("job maxAge cleanup",
-		logger.NewIntField("jobsCleaned", int64(len(statusList))),
-		logger.NewDurationField("maxAge", maxAge),
-	)
 
 	// 2. cleanup journal
 	{
@@ -236,5 +167,41 @@ func (jd *Handle) doCleanup(ctx context.Context, batchSize int) error {
 		)
 	}
 
+	return nil
+}
+
+func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
+	jobState := "aborted"
+	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
+	maxAge := jd.conf.jobMaxAge()
+	for _, ds := range dsList {
+		res, err := jd.dbHandle.ExecContext(
+			ctx,
+			fmt.Sprintf(
+				`INSERT INTO %[1]q (job_id, job_state, error_response)
+				SELECT job_id, $1, $2 FROM %[2]q WHERE created_at <= $3`,
+				ds.JobStatusTable,
+				ds.JobTable,
+			),
+			jobState,
+			maxAgeStatusResponse,
+			time.Now().Add(-maxAge),
+		)
+		if err != nil {
+			return fmt.Errorf("aborting old jobs on ds %v: %w", ds, err)
+		}
+		rowsAffected, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("finding rows affected during aborting old jobs on ds %v: %w", ds, err)
+		}
+		jd.logger.Infon("aborting old jobs",
+			logger.NewIntField("rowsAffected", rowsAffected),
+			logger.NewDurationField("maxAge", maxAge),
+			logger.NewField("dataSet", ds),
+		)
+		if rowsAffected == 0 {
+			break
+		}
+	}
 	return nil
 }
