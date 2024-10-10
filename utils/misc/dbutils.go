@@ -1,6 +1,8 @@
 package misc
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,6 +11,9 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 // GetConnectionString Returns Jobs DB connection configuration
@@ -33,6 +38,71 @@ func GetConnectionString(c *config.Config, componentName string) string {
 		host, port, user, password, dbname, sslmode, appName,
 		idleTxTimeout.Milliseconds(),
 	)
+}
+
+func NewDatabaseConnectionPool(
+	ctx context.Context,
+	conf *config.Config,
+	stat stats.Stats,
+	componentName string,
+) (*sql.DB, error) {
+	connStr := GetConnectionString(conf, componentName)
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return nil, fmt.Errorf("opening connection to database: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("Error pinging database: %w", err)
+	}
+	if err := stat.RegisterCollector(
+		collectors.NewDatabaseSQLStats(
+			componentName,
+			db,
+		),
+	); err != nil {
+		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
+	}
+
+	maxConnsVar := conf.GetReloadableIntVar(40, 1, "db."+componentName+".pool.maxOpenConnections", "db.pool.maxOpenConnections")
+	maxConns := maxConnsVar.Load()
+	db.SetMaxOpenConns(maxConns)
+
+	maxIdleConnsVar := conf.GetReloadableIntVar(5, 1, "db."+componentName+".pool.maxIdleConnections", "db.pool.maxIdleConnections")
+	maxIdleConns := maxIdleConnsVar.Load()
+	db.SetMaxIdleConns(maxIdleConns)
+
+	maxIdleTimeVar := conf.GetReloadableDurationVar(15, time.Minute, "db."+componentName+".pool.maxIdleTime", "db.pool.maxIdleTime")
+	maxIdleTime := maxIdleTimeVar.Load()
+	db.SetConnMaxIdleTime(maxIdleTime)
+
+	maxConnLifetimeVar := conf.GetReloadableDurationVar(0, 0, "db."+componentName+".pool.maxConnLifetime", "db.pool.maxConnLifetime")
+	maxConnLifetime := maxConnLifetimeVar.Load()
+	db.SetConnMaxLifetime(maxConnLifetime)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	rruntime.Go(func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				updatePoolConfig(db.SetMaxOpenConns, &maxConns, maxConnsVar)
+				updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, maxIdleTimeVar)
+				updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, maxIdleConnsVar)
+				updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, maxConnLifetimeVar)
+			}
+		}
+	})
+	return db, nil
+}
+
+func updatePoolConfig[T comparable](setter func(T), current *T, conf config.ValueLoader[T]) {
+	newValue := conf.Load()
+	if newValue != *current {
+		setter(newValue)
+		*current = newValue
+	}
 }
 
 // SetAppNameInDBConnURL sets application name in db connection url

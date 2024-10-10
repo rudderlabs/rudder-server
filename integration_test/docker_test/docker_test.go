@@ -78,24 +78,58 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	hold = os.Getenv("HOLD") == "true"
 
-	var tearDownStart time.Time
-	defer func() {
-		if tearDownStart == (time.Time{}) {
-			t.Log("--- Teardown done (unexpected)")
-		} else {
-			t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
-		}
-	}()
+	t.Run("common connection pool to database", func(t *testing.T) {
+		var tearDownStart time.Time
+		defer func() {
+			if tearDownStart == (time.Time{}) {
+				t.Log("--- Teardown done (unexpected)")
+			} else {
+				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
+			}
+		}()
 
-	svcCtx, svcCancel := context.WithCancel(context.Background())
-	svcDone := setupMainFlow(svcCtx, t)
-	sendEventsToGateway(t)
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		svcDone := setupMainFlow(svcCtx, t, true)
+		sendEventsToGateway(t)
+
+		testCases(t)
+
+		blockOnHold(t)
+		svcCancel()
+		t.Log("Waiting for service to stop")
+		<-svcDone
+
+		tearDownStart = time.Now()
+	})
+
+	t.Run("separate connection pools to database", func(t *testing.T) {
+		var tearDownStart time.Time
+		defer func() {
+			if tearDownStart == (time.Time{}) {
+				t.Log("--- Teardown done (unexpected)")
+			} else {
+				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
+			}
+		}()
+
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		svcDone := setupMainFlow(svcCtx, t, false)
+		sendEventsToGateway(t)
+
+		testCases(t)
+
+		blockOnHold(t)
+		svcCancel()
+		t.Log("Waiting for service to stop")
+		<-svcDone
+
+		tearDownStart = time.Now()
+	})
+}
+
+func testCases(t *testing.T) {
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return webhook.RequestsCount() == 11
@@ -262,16 +296,9 @@ func TestMainFlow(t *testing.T) {
 		}`)
 		sendEvent(t, payload, "beacon/v1/batch", writeKey)
 	})
-
-	blockOnHold(t)
-	svcCancel()
-	t.Log("Waiting for service to stop")
-	<-svcDone
-
-	tearDownStart = time.Now()
 }
 
-func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
+func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan struct{} {
 	setupStart := time.Now()
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
@@ -326,6 +353,9 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	if !commonPool {
+		t.Setenv("RSERVER_DB_POOL_SHARED", strconv.FormatBool(commonPool))
+	}
 
 	httpPortInt, err := kithelper.GetFreePort()
 	require.NoError(t, err)
