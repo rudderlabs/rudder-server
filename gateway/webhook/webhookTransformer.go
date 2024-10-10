@@ -70,7 +70,6 @@ func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
 }
 
 func newSourceTransformAdapter(version string) sourceTransformAdapter {
-
 	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
 	return &v1Adapter{}
 }

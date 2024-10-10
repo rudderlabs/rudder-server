@@ -140,7 +140,6 @@ var _ = Describe("Transformer features", func() {
 			<-handler.Wait()
 
 			handler.SourceTransformerVersion()
-
 		})
 
 		It("Get should return features fetched from transformer", func() {
