@@ -766,6 +766,8 @@ func (jd *Handle) init() {
 	}
 
 	jd.loadConfig()
+	jd.conf.writeCapacity = make(chan struct{}, jd.conf.maxWriters)
+	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
 
 	// Initialize dbHandle if not already set
 	if jd.dbHandle != nil {
@@ -994,9 +996,6 @@ func (jd *Handle) Start() error {
 		return nil
 	}
 	defer func() { jd.lifecycle.started = true }()
-
-	jd.conf.writeCapacity = make(chan struct{}, jd.conf.maxWriters)
-	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
