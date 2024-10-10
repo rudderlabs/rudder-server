@@ -484,8 +484,6 @@ type Handle struct {
 	TriggerMigrateDS func() <-chan time.Time
 	TriggerRefreshDS func() <-chan time.Time
 
-	TriggerJobCleanUp func() <-chan time.Time
-
 	lifecycle struct {
 		mu      sync.Mutex
 		started bool
@@ -497,7 +495,6 @@ type Handle struct {
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
-		jobCleanupFrequency            config.ValueLoader[time.Duration]
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
 		refreshDSTimeout               config.ValueLoader[time.Duration]
@@ -875,7 +872,7 @@ func (jd *Handle) workersAndAuxSetup() {
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
 	)
 
-	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
+	jd.logger.Infon("Connected to DB")
 	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -890,7 +887,6 @@ func (jd *Handle) loadConfig() {
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
-	jd.conf.jobCleanupFrequency = jd.config.GetReloadableDurationVar(24, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	jd.conf.enableWriterQueue = jd.config.GetBoolVar(true, enableWriterQueueKeys...)
@@ -974,12 +970,6 @@ func (jd *Handle) loadConfig() {
 		}
 	}
 
-	if jd.TriggerJobCleanUp == nil {
-		jd.TriggerJobCleanUp = func() <-chan time.Time {
-			return time.After(jd.conf.jobCleanupFrequency.Load())
-		}
-	}
-
 	if jd.conf.jobMaxAge == nil {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
@@ -1032,6 +1022,13 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
 	jd.assertError(jd.doRefreshDSRangeList(l))
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	g := jd.backgroundGroup
 	g.Go(crash.Wrapper(func() error {
@@ -1040,7 +1037,6 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	}))
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
@@ -1065,9 +1061,15 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Read)
 
 	jd.writerSetup(ctx, l)
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 // Stop stops the background goroutines and waits until they finish.
@@ -1323,7 +1325,7 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infof("Creating new DS %+v", ds)
+	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
 	err := jd.createDSInTx(tx, ds)
 	if err != nil {
 		return err
