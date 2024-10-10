@@ -863,6 +863,12 @@ func (jd *Handle) init() {
 	if err != nil {
 		panic(fmt.Errorf("failed to run schema migration for %s: %w", jd.tablePrefix, err))
 	}
+	// cleanup old jobs if read/readWrite jobsdb, writer doesn't care about old jobs
+	if jd.ownerType != Write {
+		if err := jd.doCleanup(context.Background(), jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
+			panic(fmt.Errorf("cleaning up old jobs: %w", err))
+		}
+	}
 }
 
 func (jd *Handle) workersAndAuxSetup() {
@@ -1000,12 +1006,6 @@ func (jd *Handle) Start() error {
 
 	if !jd.skipSetupDBSetup {
 		jd.setUpForOwnerType(ctx, jd.ownerType)
-	}
-	// cleanup old jobs if read/readWrite jobsdb, writer doesn't care about old jobs
-	if jd.ownerType != Write {
-		if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
-			return fmt.Errorf("cleaning up old jobs: %w", err)
-		}
 	}
 	return nil
 }
