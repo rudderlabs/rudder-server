@@ -74,7 +74,8 @@ func (*noopService) Regulations() []string {
 }
 
 func (*noopService) SourceTransformerVersion() string {
-	return V0
+	// v0 is deprecated
+	return V1
 }
 
 func (*noopService) TransformerProxyVersion() string {

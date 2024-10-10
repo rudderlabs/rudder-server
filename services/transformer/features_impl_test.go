@@ -131,11 +131,28 @@ var _ = Describe("Transformer features", func() {
 					_, _ = w.Write([]byte(mockTransformerResp))
 				}))
 
-			handler := NewFeaturesService(context.TODO(), config.Default, FeaturesServiceOptions{
+			featConfig := FeaturesServiceOptions{
 				PollInterval:             time.Duration(1),
 				TransformerURL:           transformerServer.URL,
 				FeaturesRetryMaxAttempts: 1,
-			})
+			}
+
+			handler := &featuresService{
+				features: json.RawMessage(defaultTransformerFeatures),
+				logger:   logger.NewLogger().Child("transformer-features"),
+				waitChan: make(chan struct{}),
+				options:  featConfig,
+				client: &http.Client{
+					Transport: &http.Transport{
+						DisableKeepAlives:   config.Default.GetBool("Transformer.Client.disableKeepAlives", true),
+						MaxConnsPerHost:     config.Default.GetInt("Transformer.Client.maxHTTPConnections", 100),
+						MaxIdleConnsPerHost: config.Default.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+						IdleConnTimeout:     config.Default.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second),
+					},
+					Timeout: config.Default.GetDuration("HttpClient.processor.timeout", 30, time.Second),
+				},
+			}
+			handler.syncTransformerFeatureJson(context.TODO())
 
 			<-handler.Wait()
 
