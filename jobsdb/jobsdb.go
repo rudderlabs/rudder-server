@@ -766,8 +766,6 @@ func (jd *Handle) init() {
 	}
 
 	jd.loadConfig()
-	jd.conf.writeCapacity = make(chan struct{}, jd.conf.maxWriters)
-	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
 
 	// Initialize dbHandle if not already set
 	if jd.dbHandle != nil {
@@ -865,12 +863,6 @@ func (jd *Handle) init() {
 	if err != nil {
 		panic(fmt.Errorf("failed to run schema migration for %s: %w", jd.tablePrefix, err))
 	}
-	// cleanup old jobs if read/readWrite jobsdb, writer doesn't care about old jobs
-	if jd.ownerType != Write {
-		if err := jd.doCleanup(context.Background(), jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
-			panic(fmt.Errorf("cleaning up old jobs: %w", err))
-		}
-	}
 }
 
 func (jd *Handle) workersAndAuxSetup() {
@@ -881,7 +873,7 @@ func (jd *Handle) workersAndAuxSetup() {
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
 	)
 
-	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
+	jd.logger.Infon("Connected to DB")
 	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
@@ -997,7 +989,16 @@ func (jd *Handle) Start() error {
 	}
 	defer func() { jd.lifecycle.started = true }()
 
+	jd.conf.writeCapacity = make(chan struct{}, jd.conf.maxWriters)
+	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
+
 	ctx, cancel := context.WithCancel(context.Background())
+	if jd.ownerType != Write {
+		if err := jd.doCleanup(ctx, jd.config.GetInt("jobsdb.cleanupBatchSize", 100)); err != nil {
+			cancel()
+			return err
+		}
+	}
 	g, ctx := errgroup.WithContext(ctx)
 
 	jd.backgroundCancel = cancel
