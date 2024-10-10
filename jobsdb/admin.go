@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 /*
