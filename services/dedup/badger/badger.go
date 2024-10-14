@@ -2,6 +2,7 @@ package badger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -77,6 +78,8 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 }
 
 func (d *BadgerDB) Get(key string) (int64, bool, error) {
+	defer d.stats.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+
 	var payloadSize int64
 	var found bool
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
@@ -90,13 +93,15 @@ func (d *BadgerDB) Get(key string) (int64, bool, error) {
 		}
 		return nil
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return 0, false, err
 	}
 	return payloadSize, found, nil
 }
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
+	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+
 	txn := d.badgerDB.NewTransaction(true)
 	for _, message := range kvs {
 		value := strconv.FormatInt(message.Value, 10)

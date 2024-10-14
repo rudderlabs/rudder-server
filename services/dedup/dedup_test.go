@@ -210,3 +210,60 @@ func Benchmark_Dedup(b *testing.B) {
 
 	b.Log("db size:", string(out))
 }
+
+// Benchmark_DedupModes/MirrorBadger-12   	    1072	   1101878 ns/op
+// Benchmark_DedupModes/MirrorScylla-12   	     566	   1986533 ns/op
+// Benchmark_DedupModes/Scylla-12         	     990	   1525086 ns/op
+// Benchmark_DedupModes/Badger-12         	  108246	      9981 ns/op
+
+func Benchmark_DedupModes(b *testing.B) {
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "Badger",
+		},
+		{
+			name: "Scylla",
+		},
+		{
+			name: "MirrorScylla",
+		},
+		{
+			name: "MirrorBadger",
+		},
+		{
+			name: "Random",
+		},
+	}
+	pool, err := dockertest.NewPool("")
+	require.NoError(b, err)
+	keySpace := strings.ToUpper(rand.String(5))
+	table := rand.String(5)
+	resource, err := scylla.Setup(pool, b, scylla.WithKeyspace(keySpace))
+	require.NoError(b, err)
+	for _, tc := range testCases {
+		config.Reset()
+		logger.Reset()
+		misc.Init()
+		dbPath := b.TempDir()
+		conf := config.New()
+		conf.Set("Scylla.Hosts", resource.URL)
+		conf.Set("Scylla.Keyspace", keySpace)
+		conf.Set("Scylla.TableName", table)
+		b.Setenv("RUDDER_TMPDIR", dbPath)
+		conf.Set("Dedup.Mode", tc.name)
+		d, err := dedup.New(conf, stats.Default)
+		require.Nil(b, err)
+		b.Run(tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				key := uuid.New().String()
+				_, _, err = d.Get(types.KeyValue{Key: key, Value: int64(i + 1), WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"})
+				require.NoError(b, err)
+				err = d.Commit([]string{key})
+				require.NoError(b, err)
+			}
+		})
+		d.Close()
+	}
+}
