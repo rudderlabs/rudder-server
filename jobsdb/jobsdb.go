@@ -1076,15 +1076,12 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 // Stop should be called once only after Start.
 // Only Start and Close can be called after Stop.
 func (jd *Handle) Stop() {
-	jd.logger.Infon("stopping jobsdb")
 	jd.lifecycle.mu.Lock()
 	defer jd.lifecycle.mu.Unlock()
 	if jd.lifecycle.started {
 		defer func() { jd.lifecycle.started = false }()
 		jd.backgroundCancel()
-		jd.logger.Infon("cancelled background context")
 		_ = jd.backgroundGroup.Wait()
-		jd.logger.Infon("stopped background goroutines")
 	}
 }
 
@@ -1092,9 +1089,7 @@ func (jd *Handle) Stop() {
 //
 //	waits until they finish and closes the database.
 func (jd *Handle) TearDown() {
-	jd.logger.Infon("teardown started")
 	jd.Stop()
-	jd.logger.Infon("closing db connection")
 	jd.Close()
 }
 
@@ -1105,13 +1100,10 @@ func (jd *Handle) TearDown() {
 //	Noop if the connection pool is shared with the handle.
 func (jd *Handle) Close() {
 	if !jd.sharedConnectionPool {
-		jd.logger.Info("not shared pool, so closing dbHandle")
 		if err := jd.dbHandle.Close(); err != nil {
 			jd.logger.Errorw("error closing db connection", "error", err)
 		}
-		return
 	}
-	jd.logger.Info("shared pool, not closing dbHandle")
 }
 
 /*
@@ -2364,11 +2356,9 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			jd.logger.Infon("addNewDSLoop exiting")
 			return
 		case <-jd.TriggerAddNewDS():
 		}
-		jd.logger.Infon("addNewDSLoop step triggered")
 		var dsListLock lock.LockToken
 		var releaseDsListLock chan<- lock.LockToken
 		addNewDS := func() error {
