@@ -34,7 +34,8 @@ func (d *ScyllaDB) Close() {
 }
 
 func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
-	// Create the table if it doesn't exist
+	defer d.stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
+
 	var err error
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
@@ -59,6 +60,8 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {
+	defer d.stat.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
+
 	d.cacheMu.Lock()
 	kvs := make([]types.KeyValue, len(keys))
 	for i, key := range keys {
