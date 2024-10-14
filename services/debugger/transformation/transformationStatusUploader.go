@@ -115,7 +115,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (TransformationDebugge
 		return nil, err
 	}
 
-	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
+	h.uploader = debugger.New[*TransformStatusT](url, backendConfig.Identity(), transformationStatusUploader)
 	h.uploader.Start()
 
 	h.start(backendConfig)
