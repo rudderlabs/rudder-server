@@ -1281,6 +1281,7 @@ func TestMaxAgeCleanup(t *testing.T) {
 		false,
 		tablePrefix,
 	))
+	defer jobsDB.TearDown()
 
 	abortedJobs, err := jobsDB.GetAborted(
 		context.Background(),
