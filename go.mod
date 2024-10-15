@@ -61,7 +61,6 @@ require (
 	github.com/k3a/html2text v1.2.1
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.0
-	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.8.2
 	github.com/minio/minio-go/v7 v7.0.78
 	github.com/mitchellh/mapstructure v1.5.0
