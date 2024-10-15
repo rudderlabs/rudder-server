@@ -50,7 +50,6 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableReplay       bool
 		processorDSLimit   config.ValueLoader[int]
 		routerDSLimit      config.ValueLoader[int]
 		batchRouterDSLimit config.ValueLoader[int]
@@ -59,7 +58,6 @@ type embeddedApp struct {
 }
 
 func (a *embeddedApp) Setup() error {
-	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -378,23 +376,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
-	if a.config.enableReplay {
-		var replayDB jobsdb.Handle
-		err := replayDB.Setup(
-			jobsdb.ReadWrite, options.ClearDB, "replay",
-		)
-		if err != nil {
-			return fmt.Errorf("could not setup replayDB: %w", err)
-		}
-		replay, err := a.app.Features().Replay.Setup(ctx, config, &replayDB, gatewayDB, routerDB, batchRouterDB)
-		if err != nil {
-			return err
-		}
-		if err := replay.Start(); err != nil {
-			return fmt.Errorf("could not start replay: %w", err)
-		}
-		defer func() { _ = replay.Stop() }()
-	}
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
