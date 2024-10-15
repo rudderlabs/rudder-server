@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.36.0](https://github.com/rudderlabs/rudder-server/compare/v1.35.1...v1.36.0) (2024-10-14)
+
+
+### Features
+
+* introduce merge window for snowflake ingestion ([#5160](https://github.com/rudderlabs/rudder-server/issues/5160)) ([0e44f18](https://github.com/rudderlabs/rudder-server/commit/0e44f186675fd57c954a23b81c8c00c0b28410f2))
+
+
+### Bug Fixes
+
+* bigquery validations for partition column and type ([#5168](https://github.com/rudderlabs/rudder-server/issues/5168)) ([72443b2](https://github.com/rudderlabs/rudder-server/commit/72443b2e3d8a69f194a571ff3c0f83d9fdb55b48))
+* change retl check to source category ([#5167](https://github.com/rudderlabs/rudder-server/issues/5167)) ([72443b2](https://github.com/rudderlabs/rudder-server/commit/72443b2e3d8a69f194a571ff3c0f83d9fdb55b48))
+* clickhouse temporary files deletion happening twice ([#5182](https://github.com/rudderlabs/rudder-server/issues/5182)) ([9f52106](https://github.com/rudderlabs/rudder-server/commit/9f52106dc180649e2169d0529d1eefeded602ace))
+* set hosted secret as auth instead of workspace token ([#5181](https://github.com/rudderlabs/rudder-server/issues/5181)) ([519f3c6](https://github.com/rudderlabs/rudder-server/commit/519f3c641597404f236acc37cdbe9d1f715c5e3c))
+* sourceID and originalSourceID not flipped before transformation ([#5177](https://github.com/rudderlabs/rudder-server/issues/5177)) ([72443b2](https://github.com/rudderlabs/rudder-server/commit/72443b2e3d8a69f194a571ff3c0f83d9fdb55b48))
+
+
+### Miscellaneous
+
+* add metrics and logs for source webhooks ([#5078](https://github.com/rudderlabs/rudder-server/issues/5078)) ([e7cccae](https://github.com/rudderlabs/rudder-server/commit/e7cccae19377281d41eb50f8635857032081dbf8))
+* add stats to dedup module ([#5190](https://github.com/rudderlabs/rudder-server/issues/5190)) ([f305282](https://github.com/rudderlabs/rudder-server/commit/f305282f98ded5b2edb1c000af8ff2c69e94405d))
+* cleanup old jobs(beyond maxAge) at startup ([#5188](https://github.com/rudderlabs/rudder-server/issues/5188)) ([3dff5e6](https://github.com/rudderlabs/rudder-server/commit/3dff5e649ac8ab5c5a3f991e54b0cbf5401cb8ad))
+* cleanup warehouse ([#5150](https://github.com/rudderlabs/rudder-server/issues/5150)) ([7818610](https://github.com/rudderlabs/rudder-server/commit/78186105fe2422de9e14b8a8562b690c55351868))
+* **deps:** bump cloud.google.com/go/bigquery from 1.63.0 to 1.63.1 in the frequent group ([#5161](https://github.com/rudderlabs/rudder-server/issues/5161)) ([3d4ebf8](https://github.com/rudderlabs/rudder-server/commit/3d4ebf82588a87ea9cc933bf37b8bce0b0331b2c))
+* **deps:** bump cloud.google.com/go/storage from 1.43.0 to 1.44.0 in the frequent group ([#5173](https://github.com/rudderlabs/rudder-server/issues/5173)) ([a136618](https://github.com/rudderlabs/rudder-server/commit/a136618545a2f89449ea2f95a63b6cbd24650a1d))
+* **deps:** bump github.com/snowflakedb/gosnowflake from 1.11.1 to 1.11.2 in the go-deps group ([#5174](https://github.com/rudderlabs/rudder-server/issues/5174)) ([bf45d23](https://github.com/rudderlabs/rudder-server/commit/bf45d23f18e1c0d2dae8f944006d5644210dbf4b))
+* **deps:** bump rudderlabs/pr-description-enforcer from 1.0.0 to 1.1.0 ([#5162](https://github.com/rudderlabs/rudder-server/issues/5162)) ([a52a071](https://github.com/rudderlabs/rudder-server/commit/a52a071f5ce5da00a2ed8ce574d9633664671a02))
+* **deps:** bump the go-deps group across 1 directory with 8 updates ([#5189](https://github.com/rudderlabs/rudder-server/issues/5189)) ([0561ee2](https://github.com/rudderlabs/rudder-server/commit/0561ee26cb6c2eee8268b5e950fcf77ceb14be36))
+* **deps:** bump the go-deps group across 1 directory with 9 updates ([#5158](https://github.com/rudderlabs/rudder-server/issues/5158)) ([6171604](https://github.com/rudderlabs/rudder-server/commit/6171604437e08869078876769e5bd8d2c8b8a98d))
+* fix jobsdb flaky test ([#5197](https://github.com/rudderlabs/rudder-server/issues/5197)) ([192025a](https://github.com/rudderlabs/rudder-server/commit/192025a2174eb360c4524df93857ca9e988b0848))
+* fix stuck runUploadJobAllocator ([#5191](https://github.com/rudderlabs/rudder-server/issues/5191)) ([ae9d984](https://github.com/rudderlabs/rudder-server/commit/ae9d984046988069adf2b6743bdd0c376742d1e5))
+* one (*sql.DB) pool for all jobsdb ([#5170](https://github.com/rudderlabs/rudder-server/issues/5170)) ([261aa60](https://github.com/rudderlabs/rudder-server/commit/261aa60e1119ea26c6b7ced7dbf87c64fda9f5e8))
+* sync release v1.35.2 to main branch ([#5172](https://github.com/rudderlabs/rudder-server/issues/5172)) ([2fa0fa0](https://github.com/rudderlabs/rudder-server/commit/2fa0fa07b13fd22a46fa63088bcc2cd34e2a040c))
+* trim eventNames sent to reporting if length exceeds 50 characters ([#5171](https://github.com/rudderlabs/rudder-server/issues/5171)) ([87283c4](https://github.com/rudderlabs/rudder-server/commit/87283c4a8de9f96eb6cc9e1232a6711845e6cf1e))
+* update event_delivery_time histogram buckets ([#5186](https://github.com/rudderlabs/rudder-server/issues/5186)) ([68b1ad5](https://github.com/rudderlabs/rudder-server/commit/68b1ad55491d7fe05aaea1a1360c2d3e354e9a05))
+
 ## [1.35.3](https://github.com/rudderlabs/rudder-server/compare/v1.35.2...v1.35.3) (2024-10-08)
 
 
