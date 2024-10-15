@@ -25,30 +25,18 @@ type sourceTransformAdapter interface {
 	getTransformerURL(sourceType string) (string, error)
 }
 
-type v1Adapter struct{}
+type Adapter struct{}
 
-type V1TransformerEvent struct {
-	Event  json.RawMessage       `json:"event"`
-	Source backendconfig.SourceT `json:"source"`
+type V2TransformerRequest struct {
+	Request json.RawMessage       `json:"request"`
+	Source  backendconfig.SourceT `json:"source"`
 }
 
-// --------- v0 deprecation -------
-
-// type v0Adapter struct{}
-
-// func (v0 *v0Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
-// 	return body, nil
-// }
-
-// func (v0 *v0Adapter) getTransformerURL(sourceType string) (string, error) {
-// 	return getTransformerURL(transformer.V0, sourceType)
-// }
-
-func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
+func (adapter *Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
 	source := authCtx.Source
 
-	v1TransformerEvent := V1TransformerEvent{
-		Event: body,
+	v2TransformerRequest := V2TransformerRequest{
+		Request: body,
 		Source: backendconfig.SourceT{
 			ID:               source.ID,
 			OriginalID:       source.OriginalID,
@@ -62,21 +50,17 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, bo
 		},
 	}
 
-	return json.Marshal(v1TransformerEvent)
+	return json.Marshal(v2TransformerRequest)
 }
 
-func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V1, sourceType)
-}
-
-func newSourceTransformAdapter(version string) sourceTransformAdapter {
-	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
-	return &v1Adapter{}
-}
-
-func getTransformerURL(version, sourceType string) (string, error) {
+func (adapter *Adapter) getTransformerURL(sourceType string) (string, error) {
+	// We are defaulting to V2 end point here (deprecating v0, v1)
 	baseURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	return url.JoinPath(baseURL, version, "sources", strings.ToLower(sourceType))
+	return url.JoinPath(baseURL, transformer.V2, "sources", strings.ToLower(sourceType))
+}
+
+func newSourceTransformAdapter() sourceTransformAdapter {
+	return &Adapter{}
 }
 
 type outputToSource struct {

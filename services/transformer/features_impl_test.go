@@ -37,20 +37,6 @@ var _ = Describe("Transformer features", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 
-		It("before features are fetched, SourceTransformerVersion should return v1(default) because v0 is deprecated", func() {
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
-
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
-		})
-
 		It("before features are fetched, TransformerProxyVersion should return v0", func() {
 			handler := &featuresService{
 				features: json.RawMessage(defaultTransformerFeatures),
@@ -81,7 +67,10 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
+
+			isCompatible, err := handler.CheckTransformerVersionCompatibility(false)
+			Expect(isCompatible).To(Equal(true))
+			Expect(err).To(BeNil())
 		})
 
 		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
@@ -104,15 +93,19 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
 		})
 
-		It("If source transform is not v1, it should panic as v0 is deprecated", func() {
+		It("If source transform is not v2, it should panic as v0,v1 are deprecated", func() {
 			defer func() {
 				if r := recover(); r == nil {
-					Fail("The function `SourceTransformerVersion()` is supposed to panic. It did not.")
+					Fail("The function `CheckTransformerVersionCompatibility(true)` is supposed to panic. It did not.")
 				} else {
 					if err, ok := r.(error); ok {
-						Expect(err.Error()).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
+						Expect(err.Error()).To(Equal(`Current rudder-server version requires a minimum rudder-transformer version of 1.xx.xx to support v2 spec communication.
+				Kindly upgrade rudder-transformer to the latest version or a minimum of 1.xx.xx version.
+				Public Doc link: ……..`))
 					} else {
-						Expect(r).To(Equal("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1"))
+						Expect(r).To(Equal(`Current rudder-server version requires a minimum rudder-transformer version of 1.xx.xx to support v2 spec communication.
+				Kindly upgrade rudder-transformer to the latest version or a minimum of 1.xx.xx version.
+				Public Doc link: ……..`))
 					}
 				}
 			}()
@@ -123,7 +116,7 @@ var _ = Describe("Transformer features", func() {
 				  "b": true
 				},
 				"regulations": ["AM"],
-				"supportSourceTransformV1": false,
+				"supportSourceTransformV1": true,
 				"supportTransformerProxyV1": true
 			  }`
 			transformerServer := httptest.NewServer(
@@ -156,7 +149,7 @@ var _ = Describe("Transformer features", func() {
 
 			<-handler.Wait()
 
-			handler.SourceTransformerVersion()
+			handler.CheckTransformerVersionCompatibility(true)
 		})
 
 		It("Get should return features fetched from transformer", func() {
@@ -167,7 +160,8 @@ var _ = Describe("Transformer features", func() {
 				},
 				"regulations": ["AM"],
 				"supportSourceTransformV1": true,
-				"supportTransformerProxyV1": true
+				"supportTransformerProxyV1": true,
+				"upgradedToSourceTransformV2" : true,
 			  }`
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -186,9 +180,12 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeFalse())
 			Expect(handler.RouterTransform("a")).To(BeTrue())
 			Expect(handler.RouterTransform("b")).To(BeTrue())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1)) // V1 is default (V0 is deprecated)
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
+
+			isCompatible, err := handler.CheckTransformerVersionCompatibility(false)
+			Expect(isCompatible).To(Equal(true))
+			Expect(err).To(BeNil())
 		})
 
 		It("Get should return empty array when features doesn't have regulations", func() {

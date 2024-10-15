@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -23,13 +24,27 @@ type featuresService struct {
 	client   *http.Client
 }
 
-func (t *featuresService) SourceTransformerVersion() string {
-	// V0 Deprecation: This function will verify if `supportSourceTransformV1` is available and enabled
-	// if `supportSourceTransformV1` is not enabled, transformer is not compatible and server will panic with appropriate message.
-	if gjson.GetBytes(t.features, "supportSourceTransformV1").Bool() {
-		return V1
+// func (t *featuresService) SourceTransformerVersion() string {
+// 	// V0 Deprecation: This function will verify if `supportSourceTransformV1` is available and enabled
+// 	// if `supportSourceTransformV1` is not enabled, transformer is not compatible and server will panic with appropriate message.
+// 	if gjson.GetBytes(t.features, "supportSourceTransformV1").Bool() {
+// 		return V1
+// 	}
+// 	panic("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1")
+// }
+
+func (t *featuresService) CheckTransformerVersionCompatibility(panicOnFail bool) (isCompatible bool, err error) {
+	if gjson.GetBytes(t.features, "upgradedToSourceTransformV2").Bool() {
+		return true, nil
 	}
-	panic("Webhook source v0 version has been deprecated. This is a breaking change. Upgrade transformer version to greater than 1.50.0 for v1")
+
+	if panicOnFail {
+		panic(`Current rudder-server version requires a minimum rudder-transformer version of 1.xx.xx to support v2 spec communication.
+				Kindly upgrade rudder-transformer to the latest version or a minimum of 1.xx.xx version.
+				Public Doc link: ……..`)
+	}
+
+	return false, errors.New("rudder-transformer version is insufficient and should be upgraded")
 }
 
 func (t *featuresService) TransformerProxyVersion() string {
@@ -119,7 +134,8 @@ func (t *featuresService) makeFeaturesFetchCall() bool {
 		t.features = body
 
 		//  we are calling this to see if the transformer version is deprecated. if so, we panic.
-		t.SourceTransformerVersion()
+		t.CheckTransformerVersionCompatibility(true)
+
 	} else if res.StatusCode == 404 {
 		t.features = json.RawMessage(defaultTransformerFeatures)
 	}
