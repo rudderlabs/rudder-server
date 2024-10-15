@@ -1,8 +1,10 @@
 package testhelper
 
 import (
+	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"os"
 	"slices"
@@ -194,6 +196,38 @@ func UploadLoadFile(
 	require.NoError(t, err)
 
 	return uploadOutput
+}
+
+func UploadLoad(
+	t testing.TB,
+	fm filemanager.FileManager,
+	tableName string,
+	content [][]string,
+) filemanager.UploadedFile {
+	t.Helper()
+
+	tmpFile, err := os.CreateTemp("", "upload_load_*.csv.gz")
+	require.NoError(t, err)
+	defer func() { _ = tmpFile.Close() }()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+
+	gzipWriter := gzip.NewWriter(tmpFile)
+	defer gzipWriter.Close()
+
+	writer := csv.NewWriter(gzipWriter)
+	defer writer.Flush()
+
+	for _, record := range content {
+		err := writer.Write(record)
+		require.NoError(t, err)
+	}
+
+	// Ensure all data is written and compressed
+	writer.Flush()
+	err = gzipWriter.Close()
+	require.NoError(t, err)
+
+	return UploadLoadFile(t, fm, tmpFile.Name(), tableName)
 }
 
 // RetrieveRecordsFromWarehouse retrieves records from the warehouse based on the given query.
