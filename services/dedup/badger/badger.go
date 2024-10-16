@@ -103,18 +103,18 @@ func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
 
 	txn := d.badgerDB.NewTransaction(true)
-	for _, message := range kvs {
+	defer txn.Discard()
+	for i := range kvs {
+		message := kvs[i]
 		value := strconv.FormatInt(message.Value, 10)
 		e := badger.NewEntry([]byte(message.Key), []byte(value)).WithTTL(d.window.Load())
 		err := txn.SetEntry(e)
-		if err == badger.ErrTxnTooBig {
+		if errors.Is(err, badger.ErrTxnTooBig) {
 			if err = txn.Commit(); err != nil {
 				return err
 			}
-			txn = d.badgerDB.NewTransaction(true)
-			if err = txn.SetEntry(e); err != nil {
-				return err
-			}
+			txn.Discard()
+			return d.Set(kvs[i:])
 		} else if err != nil {
 			return err
 		}
