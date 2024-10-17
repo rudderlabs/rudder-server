@@ -37,20 +37,6 @@ var _ = Describe("Transformer features", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 
-		It("before features are fetched, SourceTransformerVersion should return v0", func() {
-			handler := &featuresService{
-				features: json.RawMessage(defaultTransformerFeatures),
-				logger:   logger.NewLogger(),
-				waitChan: make(chan struct{}),
-				options: FeaturesServiceOptions{
-					PollInterval:             time.Duration(1),
-					FeaturesRetryMaxAttempts: 1,
-				},
-			}
-
-			Expect(handler.SourceTransformerVersion()).To(Equal(V0))
-		})
-
 		It("before features are fetched, TransformerProxyVersion should return v0", func() {
 			handler := &featuresService{
 				features: json.RawMessage(defaultTransformerFeatures),
@@ -81,6 +67,10 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
+
+			isCompatible, err := handler.CheckTransformerVersionCompatibility(false)
+			Expect(isCompatible).To(Equal(true))
+			Expect(err).To(BeNil())
 		})
 
 		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
@@ -103,7 +93,23 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
 		})
 
-		It("Get should return features fetched from transformer", func() {
+		It("If source transform is not v2, it should panic as v0,v1 are deprecated", func() {
+			defer func() {
+				if r := recover(); r == nil {
+					Fail("The function `CheckTransformerVersionCompatibility(true)` is supposed to panic. It did not.")
+				} else {
+					if err, ok := r.(error); ok {
+						Expect(err.Error()).To(Equal(`Current rudder-server version requires a minimum rudder-transformer version of 1.xx.xx to support v2 spec communication.
+				Kindly upgrade rudder-transformer to the latest version or a minimum of 1.xx.xx version.
+				Public Doc link: ……..`))
+					} else {
+						Expect(r).To(Equal(`Current rudder-server version requires a minimum rudder-transformer version of 1.xx.xx to support v2 spec communication.
+				Kindly upgrade rudder-transformer to the latest version or a minimum of 1.xx.xx version.
+				Public Doc link: ……..`))
+					}
+				}
+			}()
+
 			mockTransformerResp := `{
 				"routerTransform": {
 				  "a": true,
@@ -112,6 +118,50 @@ var _ = Describe("Transformer features", func() {
 				"regulations": ["AM"],
 				"supportSourceTransformV1": true,
 				"supportTransformerProxyV1": true
+			  }`
+			transformerServer := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(mockTransformerResp))
+				}))
+
+			featConfig := FeaturesServiceOptions{
+				PollInterval:             time.Duration(1),
+				TransformerURL:           transformerServer.URL,
+				FeaturesRetryMaxAttempts: 1,
+			}
+
+			handler := &featuresService{
+				features: json.RawMessage(defaultTransformerFeatures),
+				logger:   logger.NewLogger().Child("transformer-features"),
+				waitChan: make(chan struct{}),
+				options:  featConfig,
+				client: &http.Client{
+					Transport: &http.Transport{
+						DisableKeepAlives:   config.Default.GetBool("Transformer.Client.disableKeepAlives", true),
+						MaxConnsPerHost:     config.Default.GetInt("Transformer.Client.maxHTTPConnections", 100),
+						MaxIdleConnsPerHost: config.Default.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+						IdleConnTimeout:     config.Default.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second),
+					},
+					Timeout: config.Default.GetDuration("HttpClient.processor.timeout", 30, time.Second),
+				},
+			}
+			handler.syncTransformerFeatureJson(context.TODO())
+
+			<-handler.Wait()
+
+			handler.CheckTransformerVersionCompatibility(true)
+		})
+
+		It("Get should return features fetched from transformer", func() {
+			mockTransformerResp := `{
+				"routerTransform": {
+				  "a": true,
+				  "b": true
+				},
+				"regulations": ["AM"],
+				"supportSourceTransformV1": true,
+				"supportTransformerProxyV1": true,
+				"upgradedToSourceTransformV2" : true,
 			  }`
 			transformerServer := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,9 +180,12 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeFalse())
 			Expect(handler.RouterTransform("a")).To(BeTrue())
 			Expect(handler.RouterTransform("b")).To(BeTrue())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
+
+			isCompatible, err := handler.CheckTransformerVersionCompatibility(false)
+			Expect(isCompatible).To(Equal(true))
+			Expect(err).To(BeNil())
 		})
 
 		It("Get should return empty array when features doesn't have regulations", func() {

@@ -95,7 +95,8 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 					case <-ctx.Done():
 						return nil, ctx.Err()
 					case <-transformerFeaturesService.Wait():
-						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion()), nil
+						transformerFeaturesService.CheckTransformerVersionCompatibility(true)
+						return newSourceTransformAdapter(), nil
 					}
 				},
 			}
