@@ -101,7 +101,10 @@ func (d *BadgerDB) Get(key string) (int64, bool, error) {
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+	return d.set(kvs)
+}
 
+func (d *BadgerDB) set(kvs []types.KeyValue) error {
 	txn := d.badgerDB.NewTransaction(true)
 	defer txn.Discard()
 	for i := range kvs {
@@ -114,7 +117,7 @@ func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 				return err
 			}
 			txn.Discard()
-			return d.Set(kvs[i:])
+			return d.set(kvs[i:])
 		} else if err != nil {
 			return err
 		}
