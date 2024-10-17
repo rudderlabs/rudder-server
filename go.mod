@@ -10,7 +10,7 @@ replace (
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
-	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.2
+	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.4
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
@@ -45,7 +45,7 @@ require (
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gocql/gocql v1.14.2
+	github.com/gocql/gocql v1.14.4
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
@@ -59,10 +59,8 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/json-iterator/go v1.1.12
 	github.com/k3a/html2text v1.2.1
-	github.com/lensesio/tableprinter v0.0.0-20201125135848-89e81fc956e7
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.0
-	github.com/manifoldco/promptui v0.9.0
 	github.com/marcboeker/go-duckdb v1.8.2
 	github.com/minio/minio-go/v7 v7.0.78
 	github.com/mitchellh/mapstructure v1.5.0
@@ -92,7 +90,6 @@ require (
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.7.0
-	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
@@ -115,6 +112,8 @@ require (
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.35.1
 )
+
+require github.com/spf13/viper v1.19.0 // indirect
 
 require (
 	cel.dev/expr v0.16.1 // indirect
@@ -175,7 +174,6 @@ require (
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/cncf/xds/go v0.0.0-20240905190251-b4127c9b8d78 // indirect
 	github.com/containerd/containerd v1.7.22 // indirect
@@ -250,7 +248,6 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/kataras/tablewriter v0.0.0-20180708051242-e063d29b7c23 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect

@@ -42,19 +42,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spf13/viper"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
-// PackageStatusHandler to be implemented by the package objects that are registered as status handlers
-// output of Status() is expected to be json encodable by default
-type PackageStatusHandler interface {
-	Status() interface{}
-}
 
 // RegisterAdminHandler is used by other packages to
 // expose admin functions over the unix socket based rpc interface
@@ -77,24 +68,6 @@ func Init() {
 	}
 	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
 	pkgLogger = logger.NewLogger().Child("admin")
-}
-
-// ServerConfig fetches current configuration as set in viper
-func (*Admin) ServerConfig(_ struct{}, reply *string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Error(r)
-			err = fmt.Errorf("internal Rudder server error: %v", r)
-		}
-	}()
-
-	conf := make(map[string]interface{})
-	for _, key := range viper.AllKeys() {
-		conf[key] = viper.Get(key)
-	}
-	formattedOutput, err := json.MarshalIndent(conf, "", "  ")
-	*reply = string(formattedOutput)
-	return err
 }
 
 type LogLevel struct {
@@ -128,12 +101,6 @@ func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
 	*reply = string(formattedOutput)
 	return err
-}
-
-// GetFormattedEnv return the formatted env
-func (*Admin) GetFormattedEnv(env string, reply *string) (err error) {
-	*reply = config.ConfigKeyToEnv(config.DefaultEnvPrefix, env)
-	return nil
 }
 
 // StartServer starts an HTTP server listening on unix socket and serving rpc communication
