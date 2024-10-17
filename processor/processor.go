@@ -2627,6 +2627,15 @@ func (proc *Handle) transformSrcDest(
 
 			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
 
+			// update eventsByMessageID payload with output payload
+			for _, event := range eventsToTransform {
+				receviedAt := eventsByMessageID[event.Metadata.MessageID].ReceivedAt
+				eventsByMessageID[event.Metadata.MessageID] = types.SingularEventWithReceivedAt{
+					SingularEvent: event.Message,
+					ReceivedAt:    receviedAt,
+				}
+			}
+
 			// REPORTING - START
 			if proc.isReportingEnabled() {
 				diffMetrics := getDiffMetrics(
