@@ -33,6 +33,60 @@ func (d *ScyllaDB) Close() {
 	d.scylla.Close()
 }
 
+func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	defer d.stat.NewTaggedStat("dedup_get_batch_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
+	// Prepare a map to store results for each job (true = accept, false = reject)
+	results := make(map[types.KeyValue]bool)
+	sizes := make(map[types.KeyValue]int64)
+
+	// Group jobs by workspaceID for batch querying
+	workspaceJobsMap := make(map[string][]types.KeyValue)
+	d.cacheMu.Lock()
+
+	for _, kv := range kvs {
+		if previous, found := d.cache[kv.Key]; found {
+			results[kv] = false
+			sizes[kv] = previous.Value
+			continue
+		}
+		d.cache[kv.Key] = kv
+		results[kv] = true
+		sizes[kv] = kv.Value
+		workspaceJobsMap[kv.WorkspaceID] = append(workspaceJobsMap[kv.WorkspaceID], kv)
+	}
+	d.cacheMu.Unlock()
+
+	// Loop over each workspace and query all messageIDs for that workspace
+	for workspaceID, workspaceJobs := range workspaceJobsMap {
+		var messageIDs []string
+		for _, job := range workspaceJobs {
+			messageIDs = append(messageIDs, job.Key)
+		}
+
+		// Query to get all jobIDs for the given workspaceID and messageIDs
+		query := fmt.Sprintf("SELECT id, size FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
+		iter := d.scylla.Query(query, workspaceID, messageIDs).Iter()
+
+		var dbMessageID string
+		var size int64
+		for iter.Scan(&dbMessageID, &size) {
+			val, ok := d.cache[dbMessageID]
+			if ok {
+				results[val] = false
+				sizes[val] = size
+			}
+			d.cacheMu.Lock()
+			delete(d.cache, dbMessageID)
+			d.cacheMu.Unlock()
+		}
+		if err := iter.Close(); err != nil {
+			return nil, nil, fmt.Errorf("error closing iterator: %v", err)
+		}
+	}
+
+	return results, sizes, nil
+}
+
 func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	defer d.stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
 
@@ -52,11 +106,11 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	if err != nil && !errors.Is(err, gocql.ErrNotFound) {
 		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
-	exists := !(errors.Is(err, gocql.ErrNotFound))
-	if !exists {
+	exists := errors.Is(err, gocql.ErrNotFound)
+	if exists {
 		d.cache[kv.Key] = kv
 	}
-	return !exists, kv.Value, nil
+	return exists, kv.Value, nil
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {

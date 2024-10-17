@@ -219,8 +219,12 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
+		dest, err := m.processJobsForDest(partition, subJob)
+		if err != nil {
+			return false
+		}
 		m.Store(partition, m.transformations(partition,
-			m.processJobsForDest(partition, subJob),
+			dest,
 		))
 	}
 	return len(jobs.Jobs) > 0
@@ -305,7 +309,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}
@@ -323,7 +327,7 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 		trackedUsersReports: []*trackedusers.UsersReport{
 			{WorkspaceID: sampleWorkspaceID},
 		},
-	}
+	}, nil
 }
 
 func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {

@@ -964,7 +964,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_ = processor.processJobsForDest(
+			_, _ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1039,7 +1039,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_ = processor.processJobsForDest(
+			_, _ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1292,7 +1292,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_ = processor.processJobsForDest(
+			_, _ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1477,7 +1477,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_ = processor.processJobsForDest(
+			_, _ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1628,7 +1628,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_ = processor.processJobsForDest(
+			_, _ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,

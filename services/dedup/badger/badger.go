@@ -101,25 +101,17 @@ func (d *BadgerDB) Get(key string) (int64, bool, error) {
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
-
-	txn := d.badgerDB.NewTransaction(true)
-	for _, message := range kvs {
+	wb := d.badgerDB.NewWriteBatch()
+	defer wb.Cancel()
+	for i := range kvs {
+		message := kvs[i]
 		value := strconv.FormatInt(message.Value, 10)
 		e := badger.NewEntry([]byte(message.Key), []byte(value)).WithTTL(d.window.Load())
-		err := txn.SetEntry(e)
-		if err == badger.ErrTxnTooBig {
-			if err = txn.Commit(); err != nil {
-				return err
-			}
-			txn = d.badgerDB.NewTransaction(true)
-			if err = txn.SetEntry(e); err != nil {
-				return err
-			}
-		} else if err != nil {
+		if err := wb.SetEntry(e); err != nil {
 			return err
 		}
 	}
-	return txn.Commit()
+	return wb.Flush()
 }
 
 func (d *BadgerDB) Close() {
@@ -182,6 +174,25 @@ type Dedup struct {
 	badgerDB *BadgerDB
 	cacheMu  sync.Mutex
 	cache    map[string]int64
+}
+
+func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	err := d.badgerDB.init()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	found := make(map[types.KeyValue]bool)
+	previous := make(map[types.KeyValue]int64)
+	for _, kv := range kvs {
+		foundKey, size, err := d.Get(kv)
+		if err != nil {
+			return nil, nil, err
+		}
+		found[kv] = foundKey
+		previous[kv] = size
+	}
+	return found, previous, nil
 }
 
 func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
