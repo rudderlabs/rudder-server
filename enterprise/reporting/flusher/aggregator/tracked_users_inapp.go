@@ -37,7 +37,7 @@ func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Conf
 }
 
 func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, err error) {
-	query := `SELECT reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll FROM ` + tableName + `  WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
+	query := `SELECT reported_at, workspace_id, source_id, instance_id, tracked_identifiers_hll, merged_identifiers_hll FROM ` + tableName + `  WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
 
 	rows, err := a.db.Query(query, start, end)
 	if err != nil {
@@ -50,15 +50,11 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 	for rows.Next() {
 		total += 1
 		r := TrackedUsersReport{}
-		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.InstanceID, &r.UserIDHLLHex, &r.AnonymousIDHLLHex, &r.IdentifiedAnonymousIDHLLHex)
+		err := rows.Scan(&r.ReportedAt, &r.WorkspaceID, &r.SourceID, &r.InstanceID, &r.UserIDHLLHex, &r.IdentifiedAnonymousIDHLLHex)
 		if err != nil {
 			return nil, fmt.Errorf("cannot scan row %w", err)
 		}
 		r.UserIDHLL, err = a.decodeHLL(r.UserIDHLLHex)
-		if err != nil {
-			return nil, fmt.Errorf("cannot decode hll %w", err)
-		}
-		r.AnonymousIDHLL, err = a.decodeHLL(r.AnonymousIDHLLHex)
 		if err != nil {
 			return nil, fmt.Errorf("cannot decode hll %w", err)
 		}
@@ -71,7 +67,6 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 
 		if agg, exists := aggReportsMap[k]; exists {
 			agg.UserIDHLL.Union(*r.UserIDHLL)
-			agg.AnonymousIDHLL.Union(*r.AnonymousIDHLL)
 			agg.IdentifiedAnonymousIDHLL.Union(*r.IdentifiedAnonymousIDHLL)
 			aggReportsMap[k] = agg
 		} else {
