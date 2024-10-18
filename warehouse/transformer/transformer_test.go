@@ -13,6 +13,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
+	fuzz "github.com/AdaLogics/go-fuzz-headers"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -27,6 +28,38 @@ type eventsInfo struct {
 	payload     []byte
 	metadata    ptrans.Metadata
 	destination backendconfig.DestinationT
+}
+
+func cmpEvents(t *testing.T, infos []eventsInfo, pTransformer, dTransformer ptrans.DestinationTransformer) {
+	t.Helper()
+
+	var events []ptrans.TransformerEvent
+	for _, info := range infos {
+		var singularEvent types.SingularEventT
+		err := json.Unmarshal(info.payload, &singularEvent)
+		require.NoError(t, err)
+
+		events = append(events, ptrans.TransformerEvent{
+			Message:     singularEvent,
+			Metadata:    info.metadata,
+			Destination: info.destination,
+		})
+	}
+
+	ctx := context.Background()
+	batchSize := 100
+
+	pResponse := pTransformer.Transform(ctx, events, batchSize)
+	wResponse := dTransformer.Transform(ctx, events, batchSize)
+	require.Equal(t, len(pResponse.Events), len(wResponse.Events))
+	require.Equal(t, len(pResponse.FailedEvents), len(wResponse.FailedEvents))
+
+	for i := range pResponse.Events {
+		require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+	}
+	for i := range pResponse.FailedEvents {
+		require.EqualValues(t, wResponse.FailedEvents[i], pResponse.FailedEvents[i])
+	}
 }
 
 func testEvents(t *testing.T, infos []eventsInfo, pTransformer, dTransformer ptrans.DestinationTransformer, expectedResponse ptrans.Response) {
@@ -751,4 +784,73 @@ func TestTransformer(t *testing.T) {
 			testEvents(t, eventsInfos, destinationTransformer, warehouseTransformer, tc.expectedResponse)
 		})
 	}
+}
+
+func FuzzTransformer(f *testing.F) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(f, err)
+
+	transformerResource, err := transformertest.Setup(pool, f)
+	require.NoError(f, err)
+
+	c := config.New()
+	c.Set("DEST_TRANSFORM_URL", transformerResource.TransformerURL)
+	c.Set("USER_TRANSFORM_URL", transformerResource.TransformerURL)
+
+	types := []string{"track", "page", "identify", "group", "alias", "", "unknown"}
+
+	f.Fuzz(func(t *testing.T, data []byte, eventIndex uint8) {
+		fz := fuzz.NewConsumer(data)
+
+		type payload struct {
+			Type              string            `json:"type"`
+			EventName         string            `json:"event"`
+			MessageID         string            `json:"messageId"`
+			AnonymousID       string            `json:"anonymousId"`
+			UserID            string            `json:"userId"`
+			SentAt            string            `json:"sentAt"`
+			Timestamp         string            `json:"timestamp"`
+			ReceivedAt        string            `json:"receivedAt"`
+			OriginalTimestamp string            `json:"originalTimestamp"`
+			Properties        map[string]string `json:"properties"`
+			Context           map[string]string `json:"context"`
+		}
+		var p payload
+		p.Type = types[int(eventIndex)%len(types)]
+
+		err = fz.GenerateStruct(&p)
+		if err != nil {
+			return
+		}
+		p.Type = types[int(eventIndex)%len(types)]
+
+		eventPayload, err := json.Marshal(p)
+		require.NoError(t, err)
+
+		eventsInfos := []eventsInfo{
+			{
+				payload: eventPayload,
+				metadata: ptrans.Metadata{
+					EventType:       p.Type,
+					DestinationType: "POSTGRES",
+					ReceivedAt:      "2021-09-01T00:00:00.000Z",
+					SourceID:        "sourceID",
+					DestinationID:   "destinationID",
+					SourceType:      "sourceType",
+					MessageID:       p.MessageID,
+				},
+				destination: backendconfig.DestinationT{
+					Name:   "POSTGRES",
+					Config: map[string]any{},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "POSTGRES",
+					},
+				},
+			},
+		}
+		destinationTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+		warehouseTransformer := New(c, logger.NOP, stats.NOP)
+
+		cmpEvents(t, eventsInfos, destinationTransformer, warehouseTransformer)
+	})
 }
