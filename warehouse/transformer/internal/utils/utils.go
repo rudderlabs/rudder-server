@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	rudderCreatedTables           = sliceToMap([]string{"tracks", "pages", "screens", "aliases", "groups", "accounts"})
-	rudderIsolatedTables          = sliceToMap([]string{"users", "identifies"})
-	sourceCategoriesToUseRecordID = sliceToMap([]string{"cloud", "singer-protocol"})
-	identityEnabledWarehouses     = sliceToMap([]string{whutils.SNOWFLAKE, whutils.BQ})
+	rudderCreatedTables                      = sliceToMap([]string{"tracks", "pages", "screens", "aliases", "groups", "accounts"})
+	rudderIsolatedTables                     = sliceToMap([]string{"users", "identifies"})
+	sourceCategoriesToUseRecordID            = sliceToMap([]string{"cloud", "singer-protocol"})
+	identityEnabledWarehouses                = sliceToMap([]string{whutils.SNOWFLAKE, whutils.BQ})
+	destinationSupportJSONPathAsPartOfConfig = sliceToMap([]string{whutils.POSTGRES, whutils.RS, whutils.SNOWFLAKE, whutils.BQ})
 
 	supportedJSONPathPrefixes     = []string{"track.", "identify.", "page.", "screen.", "alias.", "group.", "extract."}
 	fullEventColumnTypeByDestType = map[string]string{
@@ -87,8 +88,9 @@ func CanUseRecordID(sourceCategory string) bool {
 }
 
 func HasJSONPathPrefix(jsonPath string) bool {
+	lowerJSONPath := strings.ToLower(jsonPath)
 	for _, prefix := range supportedJSONPathPrefixes {
-		if strings.HasPrefix(strings.ToLower(jsonPath), prefix) {
+		if strings.HasPrefix(lowerJSONPath, prefix) {
 			return true
 		}
 	}
@@ -133,4 +135,9 @@ func ToString(value interface{}) string {
 // - The function first converts the value to its string representation using ToString and checks if its length is zero.
 func IsBlank(value interface{}) bool {
 	return len(ToString(value)) == 0
+}
+
+func IsJSONPathSupportedAsPartOfConfig(destType string) bool {
+	_, ok := destinationSupportJSONPathAsPartOfConfig[destType]
+	return ok
 }

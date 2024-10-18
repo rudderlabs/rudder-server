@@ -49,6 +49,7 @@ func prepareIntegrationOptions(event ptrans.TransformerEvent) (opts integrations
 	if src == nil || !utils.IsObject(src) {
 		return
 	}
+	var jsonPaths []any
 
 	srcMap := src.(map[string]any)
 
@@ -56,11 +57,17 @@ func prepareIntegrationOptions(event ptrans.TransformerEvent) (opts integrations
 	setOption(srcMap, "useBlendoCasing", &opts.useBlendoCasing)
 	setOption(srcMap, "skipTracksTable", &opts.skipTracksTable)
 	setOption(srcMap, "skipUsersTable", &opts.skipUsersTable)
-	setOption(srcMap, "jsonPaths", &opts.jsonPaths)
+	setOption(srcMap, "jsonPaths", &jsonPaths)
+
+	for _, jp := range jsonPaths {
+		if jpStr, ok := jp.(string); ok {
+			opts.jsonPaths = append(opts.jsonPaths, jpStr)
+		}
+	}
 	return
 }
 
-func prepareDestinationOptions(destConfig map[string]any) (opts destConfigOptions) {
+func prepareDestinationOptions(destType string, destConfig map[string]any) (opts destConfigOptions) {
 	var jsonPaths string
 
 	setOption(destConfig, "skipTracksTable", &opts.skipTracksTable)
@@ -70,7 +77,7 @@ func prepareDestinationOptions(destConfig map[string]any) (opts destConfigOption
 	setOption(destConfig, "storeFullEvent", &opts.storeFullEvent)
 	setOption(destConfig, "jsonPaths", &jsonPaths)
 
-	if len(jsonPaths) > 0 {
+	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
 		opts.jsonPaths = strings.Split(jsonPaths, ",")
 	}
 	return

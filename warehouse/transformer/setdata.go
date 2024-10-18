@@ -22,7 +22,7 @@ func (t *transformer) setDataAndColumnTypeFromInput(
 	data map[string]any, columnType map[string]string,
 	prefixDetails *prefixInfo,
 ) error {
-	if !utils.IsObject(input) {
+	if input == nil || !utils.IsObject(input) {
 		return nil
 	}
 
@@ -82,7 +82,7 @@ func (t *transformer) handleValidJSONPath(processInfo *processingInfo, prefixDet
 	if err != nil {
 		return fmt.Errorf("marshalling value: %w", err)
 	}
-	return t.addColumnTypeAndValue(processInfo, prefixDetails.prefix+key, valJSON, true, data, columnType)
+	return t.addColumnTypeAndValue(processInfo, prefixDetails.prefix+key, string(valJSON), true, data, columnType)
 }
 
 func (t *transformer) shouldProcessNestedObject(processInfo *processingInfo, prefixDetails *prefixInfo, val any) bool {
@@ -104,15 +104,15 @@ func (t *transformer) processNestedObject(
 }
 
 func (t *transformer) processNonNestedObject(processInfo *processingInfo, prefixDetails *prefixInfo, key string, val any, data map[string]any, columnType map[string]string) error {
-	tempData := val
+	finalValue := val
 	if processInfo.event.Metadata.SourceCategory == "cloud" && prefixDetails.level >= 3 && utils.IsObject(val) {
-		var err error
-		tempData, err = json.Marshal(val)
+		jsonData, err := json.Marshal(val)
 		if err != nil {
 			return fmt.Errorf("marshalling value: %w", err)
 		}
+		finalValue = string(jsonData)
 	}
-	return t.addColumnTypeAndValue(processInfo, prefixDetails.prefix+key, tempData, false, data, columnType)
+	return t.addColumnTypeAndValue(processInfo, prefixDetails.prefix+key, finalValue, false, data, columnType)
 }
 
 func (t *transformer) addColumnTypeAndValue(pi *processingInfo, key string, val any, isJSONKey bool, data map[string]any, columnType map[string]string) error {

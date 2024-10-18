@@ -57,7 +57,7 @@ func (t *transformer) trackCommonProps(pi *processingInfo) (map[string]any, map[
 	if d, dok := commonProps[eventTextColName]; dok {
 		eventName, _ = d.(string)
 	}
-	transformerEventName = TransformTableName(pi.event.Metadata.DestinationType, pi.itrOpts, pi.dstOpts, eventName)
+	transformerEventName = TransformTableName(pi.itrOpts, pi.dstOpts, eventName)
 
 	commonProps[eventColName] = transformerEventName
 	commonColumnTypes[eventColName] = "string"

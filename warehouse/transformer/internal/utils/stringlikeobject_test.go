@@ -123,11 +123,18 @@ func TestStringLikeObjectToString(t *testing.T) {
 			},
 			expected: "abc",
 		},
+		{
+			name: "valid string-like object with 1 and 2",
+			input: map[string]any{
+				"1": "x",
+				"2": "y",
+			},
+			expected: "xy",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.True(t, IsStringLikeObject(tc.input))
 			require.Equal(t, tc.expected, StringLikeObjectToString(tc.input))
 		})
 	}

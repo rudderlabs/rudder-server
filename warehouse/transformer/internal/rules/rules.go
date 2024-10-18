@@ -39,10 +39,12 @@ func createReservedColumns(rules, functionRules []string) map[string]struct{} {
 }
 
 func IsRudderReservedColumn(eventType, columnName string) bool {
-	if _, ok := rudderReservedColumns[strings.ToLower(eventType)]; !ok {
+	lowerEventType := strings.ToLower(eventType)
+	if _, ok := rudderReservedColumns[lowerEventType]; !ok {
 		return false
 	}
-	if _, ok := rudderReservedColumns[strings.ToLower(eventType)][strings.ToLower(columnName)]; ok {
+	lowerColumnName := strings.ToLower(columnName)
+	if _, ok := rudderReservedColumns[lowerEventType][lowerColumnName]; ok {
 		return true
 	}
 	return false

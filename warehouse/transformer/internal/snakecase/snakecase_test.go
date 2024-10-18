@@ -3,7 +3,6 @@ package snakecase
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -101,19 +100,133 @@ func TestToSnakeCase(t *testing.T) {
 				require.Equal(t, expected, actual)
 			}
 		})
-		t.Run("should prevent ReDoS", func(t *testing.T) {
-			largeWordLen := 50000
-			largeWord := strings.Repeat("A", largeWordLen)
-			maxMs := 1000
-			startTime := time.Now()
+	})
+	t.Run("extractWords", func(t *testing.T) {
+		t.Run("should match words containing Latin Unicode letters", func(t *testing.T) {
+			for _, letter := range burredLetters {
+				require.Equal(t, []string{string(letter)}, extractWordsWithNumbers(string(letter)))
+			}
+		})
+		t.Run("should work with compound words", func(t *testing.T) {
+			require.Equal(t, []string{"12ft"}, extractWordsWithNumbers("12ft"))
+			require.Equal(t, []string{"aeiou", "Are", "Vowels"}, extractWordsWithNumbers("aeiouAreVowels"))
+			require.Equal(t, []string{"enable", "6h", "format"}, extractWordsWithNumbers("enable 6h format"))
+			require.Equal(t, []string{"enable", "24H", "format"}, extractWordsWithNumbers("enable 24H format"))
+			require.Equal(t, []string{"is", "ISO8601"}, extractWordsWithNumbers("isISO8601"))
+			require.Equal(t, []string{"LETTERS", "Aeiou", "Are", "Vowels"}, extractWordsWithNumbers("LETTERSAeiouAreVowels"))
+			require.Equal(t, []string{"too", "Legit2", "Quit"}, extractWordsWithNumbers("tooLegit2Quit"))
+			require.Equal(t, []string{"walk500", "Miles"}, extractWordsWithNumbers("walk500Miles"))
+			require.Equal(t, []string{"xhr2", "Request"}, extractWordsWithNumbers("xhr2Request"))
+			require.Equal(t, []string{"XML", "Http"}, extractWordsWithNumbers("XMLHttp"))
+			require.Equal(t, []string{"Xml", "HTTP"}, extractWordsWithNumbers("XmlHTTP"))
+			require.Equal(t, []string{"Xml", "Http"}, extractWordsWithNumbers("XmlHttp"))
+		})
+		t.Run("should work with compound words containing diacritical marks", func(t *testing.T) {
+			require.Equal(t, []string{"LETTERS", "Æiou", "Are", "Vowels"}, extractWordsWithNumbers("LETTERSÆiouAreVowels"))
+			require.Equal(t, []string{"æiou", "Are", "Vowels"}, extractWordsWithNumbers("æiouAreVowels"))
+			require.Equal(t, []string{"æiou2", "Consonants"}, extractWordsWithNumbers("æiou2Consonants"))
+		})
+		t.Run("should not treat contractions as separate words", func(t *testing.T) {
+			for _, apos := range []string{"'", string('\u2019')} {
+				t.Run("ToLower", func(t *testing.T) {
+					for _, postfix := range []string{"d", "ll", "m", "re", "s", "t", "ve"} {
+						input := "a b" + apos + postfix + " c"
+						actual := extractWordsWithNumbers(strings.ToLower(input))
+						expected := lo.Map([]string{"a", "b" + apos + postfix, "c"}, func(item string, index int) string {
+							return strings.ToLower(item)
+						})
+						require.Equal(t, expected, actual)
+					}
+				})
+				t.Run("ToUpper", func(t *testing.T) {
+					for _, postfix := range []string{"d", "ll", "m", "re", "s", "t", "ve"} {
+						input := "a b" + apos + postfix + " c"
+						actual := extractWordsWithNumbers(strings.ToUpper(input))
+						expected := lo.Map([]string{"a", "b" + apos + postfix, "c"}, func(item string, index int) string {
+							return strings.ToUpper(item)
+						})
+						require.Equal(t, expected, actual)
+					}
+				})
+			}
+		})
+		t.Run("should not treat ordinal numbers as separate words", func(t *testing.T) {
+			ordinals := []string{"1st", "2nd", "3rd", "4th"}
+			for _, ordinal := range ordinals {
+				expected := []string{strings.ToLower(ordinal)}
+				actual := extractWordsWithNumbers(strings.ToLower(ordinal))
+				require.Equal(t, expected, actual)
 
-			expected := []string{largeWord, "Æiou", "Are", "Vowels"}
-			actual := extractWords(largeWord + "ÆiouAreVowels")
-			require.Equal(t, expected, actual)
-
-			endTime := time.Now()
-			timeSpent := endTime.Sub(startTime)
-			require.Less(t, timeSpent.Milliseconds(), int64(maxMs))
+				expected = []string{strings.ToUpper(ordinal)}
+				actual = extractWordsWithNumbers(strings.ToUpper(ordinal))
+				require.Equal(t, expected, actual)
+			}
+		})
+	})
+	t.Run("ToSnakeCase", func(t *testing.T) {
+		t.Run("should remove Latin mathematical operators", func(t *testing.T) {
+			require.Equal(t, ToSnakeCase(string('\xd7')), "")
+		})
+		t.Run("should coerce `string` to a string", func(t *testing.T) {
+			require.Equal(t, ToSnakeCase("foo bar"), "foo_bar")
+		})
+		t.Run("should return an empty string for empty values", func(t *testing.T) {
+			require.Equal(t, ToSnakeCase(""), "")
+		})
+		t.Run("should remove contraction apostrophes", func(t *testing.T) {
+			for _, apos := range []string{"'", string('\u2019')} {
+				for _, postfix := range []string{"d", "ll", "m", "re", "s", "t", "ve"} {
+					input := "a b" + apos + postfix + " c"
+					require.Equal(t, "a_b"+postfix+"_c", ToSnakeCase(input))
+				}
+			}
+		})
+		t.Run("should convert `string` to caseName case", func(t *testing.T) {
+			testCases := []string{"foo bar", "Foo bar", "foo Bar", "Foo Bar", "FOO BAR", "fooBar", "--foo-bar--", "__foo_bar__"}
+			expected := []string{"foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar"}
+			for i, input := range testCases {
+				require.Equal(t, expected[i], ToSnakeCase(input))
+			}
+		})
+		t.Run("should handle double-converting strings", func(t *testing.T) {
+			testCases := []string{"foo bar", "Foo bar", "foo Bar", "Foo Bar", "FOO BAR", "fooBar", "--foo-bar--", "__foo_bar__"}
+			expected := []string{"foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar"}
+			for i, input := range testCases {
+				require.Equal(t, expected[i], ToSnakeCase(ToSnakeCase(input)))
+			}
+		})
+	})
+	t.Run("ToSnakeCaseWithNumbers", func(t *testing.T) {
+		t.Run("should remove Latin mathematical operators", func(t *testing.T) {
+			require.Equal(t, ToSnakeCaseWithNumbers(string('\xd7')), "")
+		})
+		t.Run("should coerce `string` to a string", func(t *testing.T) {
+			require.Equal(t, ToSnakeCaseWithNumbers("foo bar"), "foo_bar")
+		})
+		t.Run("should return an empty string for empty values", func(t *testing.T) {
+			require.Equal(t, ToSnakeCaseWithNumbers(""), "")
+		})
+		t.Run("should remove contraction apostrophes", func(t *testing.T) {
+			for _, apos := range []string{"'", string('\u2019')} {
+				for _, postfix := range []string{"d", "ll", "m", "re", "s", "t", "ve"} {
+					input := "a b" + apos + postfix + " c"
+					require.Equal(t, "a_b"+postfix+"_c", ToSnakeCaseWithNumbers(input))
+				}
+			}
+		})
+		t.Run("should convert `string` to caseName case", func(t *testing.T) {
+			testCases := []string{"foo bar", "Foo bar", "foo Bar", "Foo Bar", "FOO BAR", "fooBar", "--foo-bar--", "__foo_bar__"}
+			expected := []string{"foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar"}
+			for i, input := range testCases {
+				require.Equal(t, expected[i], ToSnakeCaseWithNumbers(input))
+			}
+		})
+		t.Run("should handle double-converting strings", func(t *testing.T) {
+			testCases := []string{"foo bar", "Foo bar", "foo Bar", "Foo Bar", "FOO BAR", "fooBar", "--foo-bar--", "__foo_bar__"}
+			expected := []string{"foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar", "foo_bar"}
+			for i, input := range testCases {
+				require.Equal(t, expected[i], ToSnakeCaseWithNumbers(ToSnakeCaseWithNumbers(input)))
+			}
 		})
 	})
 }

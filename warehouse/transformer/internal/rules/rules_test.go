@@ -85,41 +85,45 @@ func TestExtractCloudRecordID(t *testing.T) {
 }
 
 func TestFunctionalRules(t *testing.T) {
-	t.Run("default", func(t *testing.T) {
-		testCases := []struct {
-			name           string
-			functionalRule FunctionalRules
-			event          ptrans.TransformerEvent
-			expected       any
-			expectedError  error
-		}{
-			{name: "default (context.ip)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"context": map[string]any{"ip": "1.2.3.4"}}}, expected: "1.2.3.4", expectedError: nil},
-			{name: "default (request_ip)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"request_ip": "1.2.3.4"}}, expected: "1.2.3.4", expectedError: nil},
-			{name: "default (not available)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
-			{name: "extract (id)", functionalRule: ExtractFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{RecordID: "123"}}, expected: "123", expectedError: nil},
-			{name: "extract (empty)", functionalRule: ExtractFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{RecordID: ""}}, expected: nil, expectedError: response.ErrRecordIDEmpty},
-			{name: "identify (context.ip)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"context": map[string]any{"ip": "1.2.3.4"}}}, expected: "1.2.3.4", expectedError: nil},
-			{name: "identify (request_ip)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"request_ip": "1.2.3.4"}}, expected: "1.2.3.4", expectedError: nil},
-			{name: "identify (not available)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
-			{name: "page (name)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"name": "page name"}}, expected: "page name", expectedError: nil},
-			{name: "page (properties.name)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"properties": map[string]any{"name": "page name"}}}, expected: "page name", expectedError: nil},
-			{name: "page (not available)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
-			{name: "screen (name)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"name": "screen name"}}, expected: "screen name", expectedError: nil},
-			{name: "screen (properties.name)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"properties": map[string]any{"name": "screen name"}}}, expected: "screen name", expectedError: nil},
-			{name: "screen (not available)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
-			{name: "track (record_id)", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: "123"}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
-			{name: "track (record_id) convert to string", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: 123}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
-			{name: "track (not cloud)", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "not cloud"}}, expected: nil, expectedError: nil},
-			{name: "track (id)", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: "123"}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
-			{name: "track (id) don't convert to string", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: 123}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: 123, expectedError: nil},
-			{name: "track (not cloud)", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "not cloud", MessageID: "message-id"}}, expected: "message-id", expectedError: nil},
-		}
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				result, err := tc.functionalRule(tc.event)
-				require.Equal(t, tc.expectedError, err)
-				require.Equal(t, tc.expected, result)
-			})
-		}
-	})
+	testCases := []struct {
+		name           string
+		functionalRule FunctionalRules
+		event          ptrans.TransformerEvent
+		expected       any
+		expectedError  error
+	}{
+		{name: "default (context.ip)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"context": map[string]any{"ip": "1.2.3.4"}}}, expected: "1.2.3.4", expectedError: nil},
+		{name: "default (request_ip)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"request_ip": "1.2.3.4"}}, expected: "1.2.3.4", expectedError: nil},
+		{name: "default (not available)", functionalRule: DefaultFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
+		{name: "extract (id)", functionalRule: ExtractFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{RecordID: "123"}}, expected: "123", expectedError: nil},
+		{name: "extract (empty)", functionalRule: ExtractFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{RecordID: ""}}, expected: nil, expectedError: response.ErrRecordIDEmpty},
+		{name: "identify (context.ip)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"context": map[string]any{"ip": "1.2.3.4"}}}, expected: "1.2.3.4", expectedError: nil},
+		{name: "identify (request_ip)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{"request_ip": "1.2.3.4"}}, expected: "1.2.3.4", expectedError: nil},
+		{name: "identify (not available)", functionalRule: IdentifyFunctionalRules["context_ip"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
+		{name: "page (name)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"name": "page name"}}, expected: "page name", expectedError: nil},
+		{name: "page (properties.name)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"properties": map[string]any{"name": "page name"}}}, expected: "page name", expectedError: nil},
+		{name: "page (not available)", functionalRule: PageFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
+		{name: "screen (name)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"name": "screen name"}}, expected: "screen name", expectedError: nil},
+		{name: "screen (properties.name)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{"properties": map[string]any{"name": "screen name"}}}, expected: "screen name", expectedError: nil},
+		{name: "screen (not available)", functionalRule: ScreenFunctionalRules["name"], event: ptrans.TransformerEvent{Message: map[string]any{}}, expected: nil, expectedError: nil},
+		{name: "track (record_id)", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: "123"}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
+		{name: "track (record_id) convert to string", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: 123}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
+		{name: "track (not cloud)", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "not cloud"}}, expected: nil, expectedError: nil},
+		{name: "track (record_id) IsObject", functionalRule: TrackTableFunctionalRules["record_id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: map[string]any{"a": "b"}}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: nil, expectedError: response.ErrRecordIDObject},
+		{name: "track (id)", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: "123"}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: "123", expectedError: nil},
+		{name: "track (id) don't convert to string", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "cloud", RecordID: 123}, Message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}}, expected: 123, expectedError: nil},
+		{name: "track (not cloud)", functionalRule: TrackEventTableFunctionalRules["id"], event: ptrans.TransformerEvent{Metadata: ptrans.Metadata{EventType: "track", SourceCategory: "not cloud", MessageID: "message-id"}}, expected: "message-id", expectedError: nil},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.functionalRule(tc.event)
+			if tc.expectedError != nil {
+				require.ErrorIs(t, err, tc.expectedError)
+				require.Nil(t, result)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, result)
+		})
+	}
 }

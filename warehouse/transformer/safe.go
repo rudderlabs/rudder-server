@@ -37,7 +37,7 @@ func SafeNamespace(conf *config.Config, destType, input string) string {
 	if namespace == "" {
 		namespace = "stringempty"
 	}
-	if utils.IsReservedKeyword(destType, namespace) {
+	if utils.IsReservedKeywordForNamespaces(destType, namespace) {
 		namespace = "_" + namespace
 	}
 	return misc.TruncateStr(namespace, 127)
@@ -79,7 +79,7 @@ func SafeTableName(destType string, options integrationsOptions, tableName strin
 	if len(tableName) == 0 {
 		return "", response.ErrEmptyTableName
 	}
-	return safeName(destType, options, tableName)
+	return safeName(destType, options, tableName), nil
 }
 
 // SafeColumnName processes the input column name based on the destination type and integration options.
@@ -89,10 +89,10 @@ func SafeColumnName(destType string, options integrationsOptions, columnName str
 	if len(columnName) == 0 {
 		return "", response.ErrEmptyColumnName
 	}
-	return safeName(destType, options, columnName)
+	return safeName(destType, options, columnName), nil
 }
 
-func safeName(destType string, options integrationsOptions, name string) (string, error) {
+func safeName(destType string, options integrationsOptions, name string) string {
 	switch destType {
 	case whutils.SNOWFLAKE:
 		name = strings.ToUpper(name)
@@ -103,23 +103,39 @@ func safeName(destType string, options integrationsOptions, name string) (string
 		name = strings.ToLower(name)
 	}
 
-	if !options.skipReservedKeywordsEscaping && utils.IsReservedKeyword(destType, name) {
+	if !options.skipReservedKeywordsEscaping && utils.IsReservedKeywordForColumnsTables(destType, name) {
 		name = "_" + name
 	}
 	if utils.IsDataLake(destType) {
-		return name, nil
+		return name
 	}
-	return misc.TruncateStr(name, 127), nil
+	return misc.TruncateStr(name, 127)
 }
 
 // TransformTableName applies transformation to the input table name based on the destination type and configuration options.
 // If `useBlendoCasing` is enabled, it converts the table name to lowercase and trims spaces.
 // Otherwise, it applies a more general transformation using the `transformName` function.
-func TransformTableName(destType string, integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, tableName string) string {
+func TransformTableName(integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, tableName string) string {
 	if integrationsOptions.useBlendoCasing {
 		return strings.TrimSpace(strings.ToLower(tableName))
 	}
-	return transformName(destType, destConfigOptions, tableName)
+	name := strings.Join(extractAlphanumericValues(tableName), "_")
+
+	var snakeCaseFn func(s string) string
+	if destConfigOptions.underscoreDivideNumbers {
+		snakeCaseFn = snakecase.ToSnakeCase
+	} else {
+		snakeCaseFn = snakecase.ToSnakeCaseWithNumbers
+	}
+	if strings.HasPrefix(tableName, "_") {
+		name = reLeadingUnderscores.FindString(tableName) + snakeCaseFn(reLeadingUnderscores.ReplaceAllString(name, ""))
+	} else {
+		name = snakeCaseFn(name)
+	}
+	if startsWithDigit(name) {
+		name = "_" + name
+	}
+	return name
 }
 
 // TransformColumnName applies transformation to the input column name based on the destination type and configuration options.
@@ -129,22 +145,17 @@ func TransformColumnName(destType string, integrationsOptions integrationsOption
 	if integrationsOptions.useBlendoCasing {
 		return transformNameToBlendoCase(destType, columnName)
 	}
-	return transformName(destType, destConfigOptions, columnName)
-}
 
-// transformName normalizes the input string by extracting alphanumeric values and converting it into snake case based on the configuration options.
-// It handles leading underscores, adds a leading underscore if the first character is a digit, and truncates the name if necessary (e.g., for Postgres).
-func transformName(destType string, options destConfigOptions, input string) string {
-	name := strings.Join(extractAlphanumericValues(input), "_")
+	name := strings.Join(extractAlphanumericValues(columnName), "_")
 
 	var snakeCaseFn func(s string) string
-	if options.underscoreDivideNumbers {
+	if destConfigOptions.underscoreDivideNumbers {
 		snakeCaseFn = snakecase.ToSnakeCase
 	} else {
 		snakeCaseFn = snakecase.ToSnakeCaseWithNumbers
 	}
-	if strings.HasPrefix(input, "_") {
-		name = reLeadingUnderscores.FindString(input) + snakeCaseFn(reLeadingUnderscores.ReplaceAllString(name, ""))
+	if strings.HasPrefix(columnName, "_") {
+		name = reLeadingUnderscores.FindString(columnName) + snakeCaseFn(reLeadingUnderscores.ReplaceAllString(name, ""))
 	} else {
 		name = snakeCaseFn(name)
 	}

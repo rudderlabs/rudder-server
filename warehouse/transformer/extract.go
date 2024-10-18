@@ -1,11 +1,12 @@
 package transformer
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/datatype"
+	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
+	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 )
 
 func (t *transformer) handleExtractEvent(pi *processingInfo) ([]map[string]any, error) {
@@ -31,22 +32,19 @@ func (t *transformer) handleExtractEvent(pi *processingInfo) ([]map[string]any, 
 		return nil, fmt.Errorf("extract: safe column name: %w", err)
 	}
 
-	d, ok := pi.event.Message[eventColName]
-	if !ok {
-		return nil, errors.New("extract: cannot create event table with empty event name, event name is missing in the payload")
-	}
-	eventName, ok := d.(string)
-	if !ok || len(eventName) == 0 {
-		return nil, errors.New("extract: cannot create event table with empty event name, event name is not a string")
-	}
+	eventName, _ := pi.event.Message[eventColName].(string)
 
-	event[eventColName] = TransformTableName(pi.event.Metadata.DestinationType, pi.itrOpts, pi.dstOpts, eventName)
+	event[eventColName] = TransformTableName(pi.itrOpts, pi.dstOpts, eventName)
 	columnTypes[eventColName] = datatype.TypeString
 
 	if err = t.setDataAndColumnTypeFromRules(pi, event, columnTypes,
 		rules.ExtractRules, rules.ExtractFunctionalRules,
 	); err != nil {
 		return nil, fmt.Errorf("extract: setting data and column types from rules: %w", err)
+	}
+
+	if val := event[eventColName]; val == nil || utils.IsBlank(val) {
+		return nil, response.ErrExtractEventNameEmpty
 	}
 
 	columnName := TransformColumnName(pi.event.Metadata.DestinationType, pi.itrOpts, pi.dstOpts, event[eventColName].(string))

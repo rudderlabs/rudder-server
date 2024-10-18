@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegrationOptions(t *testing.T) {
@@ -19,7 +20,7 @@ func TestIntegrationOptions(t *testing.T) {
 							"useBlendoCasing":              false,
 							"skipTracksTable":              true,
 							"skipUsersTable":               false,
-							"jsonPaths":                    []string{"path1", "path2", "path3"},
+							"jsonPaths":                    []any{"path1", "path2", "path3"},
 						},
 					},
 				},
@@ -86,7 +87,7 @@ func TestIntegrationOptions(t *testing.T) {
 					"destinationType": map[string]any{
 						"options": map[string]any{
 							"skipUsersTable": true,
-							"jsonPaths":      []string{"path1"},
+							"jsonPaths":      []any{"path1"},
 						},
 					},
 				},
@@ -117,7 +118,7 @@ func TestDestinationOptions(t *testing.T) {
 			"jsonPaths":               "path1,path2",
 		}
 
-		opts := prepareDestinationOptions(destConfig)
+		opts := prepareDestinationOptions(whutils.POSTGRES, destConfig)
 
 		require.True(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -129,7 +130,7 @@ func TestDestinationOptions(t *testing.T) {
 	t.Run("MissingOptions", func(t *testing.T) {
 		destConfig := map[string]any{}
 
-		opts := prepareDestinationOptions(destConfig)
+		opts := prepareDestinationOptions(whutils.POSTGRES, destConfig)
 
 		require.False(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -139,7 +140,7 @@ func TestDestinationOptions(t *testing.T) {
 		require.Empty(t, opts.jsonPaths)
 	})
 	t.Run("NilDestinationConfig", func(t *testing.T) {
-		opts := prepareDestinationOptions(nil)
+		opts := prepareDestinationOptions(whutils.POSTGRES, nil)
 
 		require.False(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -155,7 +156,7 @@ func TestDestinationOptions(t *testing.T) {
 			"allowUsersContextTraits": true,
 		}
 
-		opts := prepareDestinationOptions(destConfig)
+		opts := prepareDestinationOptions(whutils.POSTGRES, destConfig)
 
 		require.True(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
@@ -163,5 +164,13 @@ func TestDestinationOptions(t *testing.T) {
 		require.True(t, opts.allowUsersContextTraits)
 		require.False(t, opts.storeFullEvent)
 		require.Equal(t, []string{"path1", "path2"}, opts.jsonPaths)
+	})
+	t.Run("JSONPathSupported", func(t *testing.T) {
+		destConfig := map[string]any{
+			"jsonPaths": "path1,path2",
+		}
+
+		require.Equal(t, []string{"path1", "path2"}, prepareDestinationOptions(whutils.POSTGRES, destConfig).jsonPaths)
+		require.Empty(t, prepareDestinationOptions(whutils.CLICKHOUSE, destConfig).jsonPaths)
 	})
 }

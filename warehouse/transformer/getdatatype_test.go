@@ -34,11 +34,13 @@ func TestGetDataType(t *testing.T) {
 		// Redshift with text and string types
 		{"Redshift Text Type", whutils.RS, "someKey", string(make([]byte, 513)), false, false, "text"},
 		{"Redshift String Type", whutils.RS, "someKey", "shortValue", false, false, "string"},
+		{"Redshift String Type", whutils.RS, "someKey", nil, false, false, "string"},
 
 		// ClickHouse - Array support enabled
 		{"ClickHouse Array Type Int", whutils.CLICKHOUSE, "someKey", []any{1, 2, 3}, false, true, "array(int)"},
 		{"ClickHouse Array Type Mixed Int and Float", whutils.CLICKHOUSE, "someKey", []any{1, 2.5}, false, true, "array(float)"},
 		{"ClickHouse Array Type Mixed Int, Float, and String", whutils.CLICKHOUSE, "someKey", []any{1, 2.5, "text"}, false, true, "array(string)"},
+		{"ClickHouse Array Type Mixed String, Int and Float", whutils.CLICKHOUSE, "someKey", []any{"text", 1, 2.5}, false, true, "array(string)"},
 		{"ClickHouse Array Type All Strings", whutils.CLICKHOUSE, "someKey", []any{"one", "two"}, false, true, "array(string)"},
 		{"ClickHouse Empty Array", whutils.CLICKHOUSE, "someKey", []any{}, false, true, "string"}, // Empty array should return "string"
 		{"ClickHouse Array Type All Floats", whutils.CLICKHOUSE, "someKey", []any{1.1, 2.2, 3.3}, false, true, "array(float)"},

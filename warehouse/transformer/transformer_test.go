@@ -1,16 +1,11 @@
 package transformer
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -20,92 +15,12 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
+	"github.com/rudderlabs/rudder-server/warehouse/transformer/testhelper"
 )
 
-type eventsInfo struct {
-	payload     []byte
-	metadata    ptrans.Metadata
-	destination backendconfig.DestinationT
-}
-
-func testEvents(t *testing.T, infos []eventsInfo, pTransformer, dTransformer ptrans.DestinationTransformer, expectedResponse ptrans.Response) {
-	t.Helper()
-
-	events := prepareEvents(t, infos)
-
-	ctx := context.Background()
-	batchSize := 100
-
-	pResponse := pTransformer.Transform(ctx, events, batchSize)
-	wResponse := dTransformer.Transform(ctx, events, batchSize)
-
-	validateResponseLengths(t, expectedResponse, pResponse, wResponse)
-	validateEventData(t, expectedResponse, pResponse, wResponse)
-	validateEventEquality(t, expectedResponse, pResponse, wResponse)
-	validateFailedEventEquality(t, expectedResponse, pResponse, wResponse)
-}
-
-func prepareEvents(t *testing.T, infos []eventsInfo) []ptrans.TransformerEvent {
-	var events []ptrans.TransformerEvent
-	for _, info := range infos {
-		var singularEvent types.SingularEventT
-		err := json.Unmarshal(info.payload, &singularEvent)
-		require.NoError(t, err)
-
-		events = append(events, ptrans.TransformerEvent{
-			Message:     singularEvent,
-			Metadata:    info.metadata,
-			Destination: info.destination,
-		})
-	}
-	return events
-}
-
-func validateResponseLengths(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
-	require.Equal(t, len(expectedResponse.Events), len(pResponse.Events))
-	require.Equal(t, len(expectedResponse.Events), len(wResponse.Events))
-	require.Equal(t, len(expectedResponse.FailedEvents), len(pResponse.FailedEvents))
-	require.Equal(t, len(expectedResponse.FailedEvents), len(wResponse.FailedEvents))
-}
-
-func validateEventData(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
-	for i := range pResponse.Events {
-		data := expectedResponse.Events[i].Output["data"]
-		if data != nil && data.(map[string]any)["rudder_event"] != nil {
-			expectedRudderEvent := expectedResponse.Events[i].Output["data"].(map[string]any)["rudder_event"].(string)
-			require.JSONEq(t, expectedRudderEvent, pResponse.Events[i].Output["data"].(map[string]any)["rudder_event"].(string))
-			require.JSONEq(t, expectedRudderEvent, wResponse.Events[i].Output["data"].(map[string]any)["rudder_event"].(string))
-			require.JSONEq(t, wResponse.Events[i].Output["data"].(map[string]any)["rudder_event"].(string), pResponse.Events[i].Output["data"].(map[string]any)["rudder_event"].(string))
-
-			// Clean up rudder_event key after comparison
-			delete(pResponse.Events[i].Output["data"].(map[string]any), "rudder_event")
-			delete(wResponse.Events[i].Output["data"].(map[string]any), "rudder_event")
-			delete(expectedResponse.Events[i].Output["data"].(map[string]any), "rudder_event")
-		}
-	}
-}
-
-func validateEventEquality(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
-	for i := range pResponse.Events {
-		require.EqualValues(t, expectedResponse.Events[i], pResponse.Events[i])
-		require.EqualValues(t, expectedResponse.Events[i], wResponse.Events[i])
-		require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
-	}
-}
-
-func validateFailedEventEquality(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
-	for i := range pResponse.FailedEvents {
-		require.EqualValues(t, expectedResponse.FailedEvents[i], pResponse.FailedEvents[i])
-		require.EqualValues(t, expectedResponse.FailedEvents[i], wResponse.FailedEvents[i])
-		require.EqualValues(t, wResponse.FailedEvents[i], pResponse.FailedEvents[i])
-	}
-}
-
 func TestTransformer(t *testing.T) {
-	t.Skip()
-
-	testsCases := []struct {
+	testCases := []struct {
 		name             string
 		configOverride   map[string]any
 		envOverride      []string
@@ -115,664 +30,411 @@ func TestTransformer(t *testing.T) {
 		expectedResponse ptrans.Response
 	}{
 		{
-			name:         "unknown event (POSTGRES)",
+			name:         "Unknown event",
 			eventPayload: `{"type":"unknown"}`,
-			metadata: ptrans.Metadata{
-				EventType:       "unknown",
-				DestinationType: "POSTGRES",
-				ReceivedAt:      "2021-09-01T00:00:00.000Z",
-				SourceID:        "sourceID",
-				DestinationID:   "destinationID",
-				SourceType:      "sourceType",
-				MessageID:       "messageId",
-			},
-			destination: backendconfig.DestinationT{
-				Name:   "POSTGRES",
-				Config: map[string]any{},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "POSTGRES",
-				},
-			},
+			metadata:     getMetadata("unknown", "POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: ptrans.Response{
 				FailedEvents: []ptrans.TransformerResponse{
 					{
 						Error:      "Unknown event type: \"unknown\"",
+						Metadata:   getMetadata("unknown", "POSTGRES"),
 						StatusCode: http.StatusBadRequest,
-						Metadata: ptrans.Metadata{
-							EventType:       "unknown",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
 					},
 				},
 			},
 		},
+		// TODO: Enable this once we have the https://github.com/rudderlabs/rudder-transformer/pull/3806 changes in latest
+		//{
+		//	name: "Not populateSrcDestInfoInContext",
+		//	configOverride: map[string]any{
+		//		"Warehouse.populateSrcDestInfoInContext": false,
+		//	},
+		//	envOverride:  []string{"WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT=false"},
+		//	eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+		//	metadata:     getMetadata("track", "POSTGRES"),
+		//	destination:  getDestination("POSTGRES", map[string]any{}),
+		//	expectedResponse: ptrans.Response{
+		//		Events: []ptrans.TransformerResponse{
+		//			{
+		//				Output: getTrackDefaultOutput().
+		//					RemoveDataFields("context_destination_id", "context_destination_type", "context_source_id", "context_source_type").
+		//					RemoveColumnFields("context_destination_id", "context_destination_type", "context_source_id", "context_source_type"),
+		//				Metadata:   getMetadata("track", "POSTGRES"),
+		//				StatusCode: http.StatusOK,
+		//			},
+		//			{
+		//				Output: getEventDefaultOutput().
+		//					RemoveDataFields("context_destination_id", "context_destination_type", "context_source_id", "context_source_type").
+		//					RemoveColumnFields("context_destination_id", "context_destination_type", "context_source_id", "context_source_type"),
+		//				Metadata:   getMetadata("track", "POSTGRES"),
+		//				StatusCode: http.StatusOK,
+		//			},
+		//		},
+		//	},
+		//},
 		{
-			name: "track (POSTGRES) not populateSrcDestInfoInContext",
-			configOverride: map[string]any{
-				"Warehouse.populateSrcDestInfoInContext": false,
-			},
-			envOverride:  []string{"WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT=false"},
-			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
-			metadata: ptrans.Metadata{
-				EventType:       "track",
-				DestinationType: "POSTGRES",
-				ReceivedAt:      "2021-09-01T00:00:00.000Z",
-				SourceID:        "sourceID",
-				DestinationID:   "destinationID",
-				SourceType:      "sourceType",
-				MessageID:       "messageId",
-			},
-			destination: backendconfig.DestinationT{
-				Name:   "POSTGRES",
-				Config: map[string]any{},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "POSTGRES",
-				},
-			},
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
-					{
-						Output: map[string]any{
-							"data": map[string]any{
-								"anonymous_id":          "anonymousId",
-								"channel":               "web",
-								"context_ip":            "1.2.3.4",
-								"context_passed_ip":     "1.2.3.4",
-								"context_request_ip":    "5.6.7.8",
-								"context_traits_email":  "rhedricks@example.com",
-								"context_traits_logins": float64(2),
-								"context_traits_name":   "Richard Hendricks",
-								"event":                 "event",
-								"event_text":            "event",
-								"id":                    "messageId",
-								"original_timestamp":    "2021-09-01T00:00:00.000Z",
-								"received_at":           "2021-09-01T00:00:00.000Z",
-								"sent_at":               "2021-09-01T00:00:00.000Z",
-								"timestamp":             "2021-09-01T00:00:00.000Z",
-								"user_id":               "userId",
-							},
-							"metadata": map[string]any{
-								"columns": map[string]any{
-									"anonymous_id":          "string",
-									"channel":               "string",
-									"context_ip":            "string",
-									"context_passed_ip":     "string",
-									"context_request_ip":    "string",
-									"context_traits_email":  "string",
-									"context_traits_logins": "int",
-									"context_traits_name":   "string",
-									"event":                 "string",
-									"event_text":            "string",
-									"id":                    "string",
-									"original_timestamp":    "datetime",
-									"received_at":           "datetime",
-									"sent_at":               "datetime",
-									"timestamp":             "datetime",
-									"user_id":               "string",
-									"uuid_ts":               "datetime",
-								},
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "tracks",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
-						StatusCode: http.StatusOK,
-					},
-					{
-						Output: map[string]any{
-							"data": map[string]any{
-								"anonymous_id":          "anonymousId",
-								"channel":               "web",
-								"context_ip":            "1.2.3.4",
-								"context_passed_ip":     "1.2.3.4",
-								"context_request_ip":    "5.6.7.8",
-								"context_traits_email":  "rhedricks@example.com",
-								"context_traits_logins": float64(2),
-								"context_traits_name":   "Richard Hendricks",
-								"event":                 "event",
-								"event_text":            "event",
-								"id":                    "messageId",
-								"original_timestamp":    "2021-09-01T00:00:00.000Z",
-								"product_id":            "9578257311",
-								"rating":                3.0,
-								"received_at":           "2021-09-01T00:00:00.000Z",
-								"review_body":           "OK for the price. It works but the material feels flimsy.",
-								"review_id":             "86ac1cd43",
-								"sent_at":               "2021-09-01T00:00:00.000Z",
-								"timestamp":             "2021-09-01T00:00:00.000Z",
-								"user_id":               "userId",
-							},
-							"metadata": map[string]any{
-								"columns": map[string]any{
-									"anonymous_id":          "string",
-									"channel":               "string",
-									"context_ip":            "string",
-									"context_passed_ip":     "string",
-									"context_request_ip":    "string",
-									"context_traits_email":  "string",
-									"context_traits_logins": "int",
-									"context_traits_name":   "string",
-									"event":                 "string",
-									"event_text":            "string",
-									"id":                    "string",
-									"original_timestamp":    "datetime",
-									"product_id":            "string",
-									"rating":                "int",
-									"received_at":           "datetime",
-									"review_body":           "string",
-									"review_id":             "string",
-									"sent_at":               "datetime",
-									"timestamp":             "datetime",
-									"user_id":               "string",
-									"uuid_ts":               "datetime",
-								},
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "event",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
-						StatusCode: http.StatusOK,
-					},
-				},
-			},
-		},
-		{
-			name: "track (POSTGRES) too many columns",
-			eventPayload: fmt.Sprintf(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","context":{%s},"ip":"1.2.3.4"}`, strings.Join(
-				lo.RepeatBy(500, func(index int) string {
-					return fmt.Sprintf(`"column_%d": "value_%d"`, index, index)
-				}), ",",
-			)),
-			metadata: ptrans.Metadata{
-				EventType:       "track",
-				DestinationType: "POSTGRES",
-				ReceivedAt:      "2021-09-01T00:00:00.000Z",
-				SourceID:        "sourceID",
-				DestinationID:   "destinationID",
-				SourceType:      "sourceType",
-				MessageID:       "messageId",
-			},
-			destination: backendconfig.DestinationT{
-				Name:   "POSTGRES",
-				Config: map[string]any{},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "POSTGRES",
-				},
-			},
+			name:         "Too many columns",
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","context":{%s},"ip":"1.2.3.4"}`, 500),
+			metadata:     getMetadata("track", "POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: ptrans.Response{
 				FailedEvents: []ptrans.TransformerResponse{
 					{
 						Error:      "postgres transformer: Too many columns outputted from the event",
+						Metadata:   getMetadata("track", "POSTGRES"),
 						StatusCode: http.StatusBadRequest,
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
 					},
 				},
 			},
 		},
 		{
-			name: "track (GCS_DATALAKE) too many columns",
-			eventPayload: fmt.Sprintf(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, strings.Join(
-				lo.RepeatBy(500, func(index int) string {
-					return fmt.Sprintf(`"column_%d": "value_%d"`, index, index)
-				}), ",",
-			)),
-			metadata: ptrans.Metadata{
-				EventType:       "track",
-				DestinationType: "GCS_DATALAKE",
-				ReceivedAt:      "2021-09-01T00:00:00.000Z",
-				SourceID:        "sourceID",
-				DestinationID:   "destinationID",
-				SourceType:      "sourceType",
-				MessageID:       "messageId",
-			},
-			destination: backendconfig.DestinationT{
-				Name:   "GCS_DATALAKE",
-				Config: map[string]any{},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "GCS_DATALAKE",
-				},
-			},
+			name:         "Too many columns (DataLake)",
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, 500),
+			metadata:     getMetadata("track", "GCS_DATALAKE"),
+			destination:  getDestination("GCS_DATALAKE", map[string]any{}),
 			expectedResponse: ptrans.Response{
 				Events: []ptrans.TransformerResponse{
 					{
-						Output: map[string]any{
-							"data": lo.Assign(
-								map[string]any{
-									"anonymous_id":             "anonymousId",
-									"channel":                  "web",
-									"context_destination_id":   "destinationID",
-									"context_destination_type": "GCS_DATALAKE",
-									"context_ip":               "1.2.3.4",
-									"context_passed_ip":        "1.2.3.4",
-									"context_request_ip":       "5.6.7.8",
-									"context_source_id":        "sourceID",
-									"context_source_type":      "sourceType",
-									"context_traits_email":     "rhedricks@example.com",
-									"context_traits_logins":    float64(2),
-									"context_traits_name":      "Richard Hendricks",
-									"event":                    "event",
-									"event_text":               "event",
-									"id":                       "messageId",
-									"original_timestamp":       "2021-09-01T00:00:00.000Z",
-									"received_at":              "2021-09-01T00:00:00.000Z",
-									"sent_at":                  "2021-09-01T00:00:00.000Z",
-									"timestamp":                "2021-09-01T00:00:00.000Z",
-									"user_id":                  "userId",
-								},
-								lo.SliceToMap(
-									lo.RepeatBy(500, func(index int) string {
-										return strconv.Itoa(index)
-									}), func(item string) (string, any) {
-										return fmt.Sprintf(`context_column_%s`, item), fmt.Sprintf(`value_%s`, item)
-									},
-								),
-							),
-							"metadata": map[string]any{
-								"columns": lo.Assign(
-									map[string]any{
-										"anonymous_id":             "string",
-										"channel":                  "string",
-										"context_destination_id":   "string",
-										"context_destination_type": "string",
-										"context_ip":               "string",
-										"context_passed_ip":        "string",
-										"context_request_ip":       "string",
-										"context_source_id":        "string",
-										"context_source_type":      "string",
-										"context_traits_email":     "string",
-										"context_traits_logins":    "int",
-										"context_traits_name":      "string",
-										"event":                    "string",
-										"event_text":               "string",
-										"id":                       "string",
-										"original_timestamp":       "datetime",
-										"received_at":              "datetime",
-										"sent_at":                  "datetime",
-										"timestamp":                "datetime",
-										"user_id":                  "string",
-										"uuid_ts":                  "datetime",
-									},
-									lo.SliceToMap(
-										lo.RepeatBy(500, func(index int) string {
-											return strconv.Itoa(index)
-										}), func(item string) (string, any) {
-											return fmt.Sprintf(`context_column_%s`, item), "string"
-										},
-									),
-								),
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "tracks",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "GCS_DATALAKE",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
+						Output: getTrackDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(500, func(index int) (string, string, string, string) {
+							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
+						}),
+						Metadata:   getMetadata("track", "GCS_DATALAKE"),
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]any{
-							"data": lo.Assign(
-								map[string]any{
-									"anonymous_id":             "anonymousId",
-									"channel":                  "web",
-									"context_destination_id":   "destinationID",
-									"context_destination_type": "GCS_DATALAKE",
-									"context_ip":               "1.2.3.4",
-									"context_passed_ip":        "1.2.3.4",
-									"context_request_ip":       "5.6.7.8",
-									"context_source_id":        "sourceID",
-									"context_source_type":      "sourceType",
-									"context_traits_email":     "rhedricks@example.com",
-									"context_traits_logins":    float64(2),
-									"context_traits_name":      "Richard Hendricks",
-									"event":                    "event",
-									"event_text":               "event",
-									"id":                       "messageId",
-									"original_timestamp":       "2021-09-01T00:00:00.000Z",
-									"product_id":               "9578257311",
-									"rating":                   3.0,
-									"received_at":              "2021-09-01T00:00:00.000Z",
-									"review_body":              "OK for the price. It works but the material feels flimsy.",
-									"review_id":                "86ac1cd43",
-									"sent_at":                  "2021-09-01T00:00:00.000Z",
-									"timestamp":                "2021-09-01T00:00:00.000Z",
-									"user_id":                  "userId",
-								},
-								lo.SliceToMap(
-									lo.RepeatBy(500, func(index int) string {
-										return strconv.Itoa(index)
-									}), func(item string) (string, any) {
-										return fmt.Sprintf(`context_column_%s`, item), fmt.Sprintf(`value_%s`, item)
-									},
-								),
-							),
-							"metadata": map[string]any{
-								"columns": lo.Assign(
-									map[string]any{
-										"anonymous_id":             "string",
-										"channel":                  "string",
-										"context_destination_id":   "string",
-										"context_destination_type": "string",
-										"context_ip":               "string",
-										"context_passed_ip":        "string",
-										"context_request_ip":       "string",
-										"context_source_id":        "string",
-										"context_source_type":      "string",
-										"context_traits_email":     "string",
-										"context_traits_logins":    "int",
-										"context_traits_name":      "string",
-										"event":                    "string",
-										"event_text":               "string",
-										"id":                       "string",
-										"original_timestamp":       "datetime",
-										"product_id":               "string",
-										"rating":                   "int",
-										"received_at":              "datetime",
-										"review_body":              "string",
-										"review_id":                "string",
-										"sent_at":                  "datetime",
-										"timestamp":                "datetime",
-										"user_id":                  "string",
-										"uuid_ts":                  "datetime",
-									},
-									lo.SliceToMap(
-										lo.RepeatBy(500, func(index int) string {
-											return strconv.Itoa(index)
-										}), func(item string) (string, any) {
-											return fmt.Sprintf(`context_column_%s`, item), "string"
-										},
-									),
-								),
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "event",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "GCS_DATALAKE",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
+						Output: getEventDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(500, func(index int) (string, string, string, string) {
+							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
+						}),
+						Metadata:   getMetadata("track", "GCS_DATALAKE"),
 						StatusCode: http.StatusOK,
 					},
 				},
 			},
 		},
 		{
-			name: "track (POSTGRES) with sources channel too many columns",
-			eventPayload: fmt.Sprintf(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"sources","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, strings.Join(
-				lo.RepeatBy(500, func(index int) string {
-					return fmt.Sprintf(`"column_%d": "value_%d"`, index, index)
-				}), ",",
-			)),
-			metadata: ptrans.Metadata{
-				EventType:       "track",
-				DestinationType: "POSTGRES",
-				ReceivedAt:      "2021-09-01T00:00:00.000Z",
-				SourceID:        "sourceID",
-				DestinationID:   "destinationID",
-				SourceType:      "sourceType",
-				MessageID:       "messageId",
-			},
-			destination: backendconfig.DestinationT{
-				Name:   "POSTGRES",
-				Config: map[string]any{},
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: "POSTGRES",
-				},
-			},
+			name:         "Too many columns channel as sources",
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"sources","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, 500),
+			metadata:     getMetadata("track", "POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: ptrans.Response{
 				Events: []ptrans.TransformerResponse{
 					{
-						Output: map[string]any{
-							"data": lo.Assign(
-								map[string]any{
-									"anonymous_id":             "anonymousId",
-									"channel":                  "sources",
-									"context_destination_id":   "destinationID",
-									"context_destination_type": "POSTGRES",
-									"context_ip":               "1.2.3.4",
-									"context_passed_ip":        "1.2.3.4",
-									"context_request_ip":       "5.6.7.8",
-									"context_source_id":        "sourceID",
-									"context_source_type":      "sourceType",
-									"context_traits_email":     "rhedricks@example.com",
-									"context_traits_logins":    float64(2),
-									"context_traits_name":      "Richard Hendricks",
-									"event":                    "event",
-									"event_text":               "event",
-									"id":                       "messageId",
-									"original_timestamp":       "2021-09-01T00:00:00.000Z",
-									"received_at":              "2021-09-01T00:00:00.000Z",
-									"sent_at":                  "2021-09-01T00:00:00.000Z",
-									"timestamp":                "2021-09-01T00:00:00.000Z",
-									"user_id":                  "userId",
-								},
-								lo.SliceToMap(
-									lo.RepeatBy(500, func(index int) string {
-										return strconv.Itoa(index)
-									}), func(item string) (string, any) {
-										return fmt.Sprintf(`context_column_%s`, item), fmt.Sprintf(`value_%s`, item)
-									},
-								),
-							),
-							"metadata": map[string]any{
-								"columns": lo.Assign(
-									map[string]any{
-										"anonymous_id":             "string",
-										"channel":                  "string",
-										"context_destination_id":   "string",
-										"context_destination_type": "string",
-										"context_ip":               "string",
-										"context_passed_ip":        "string",
-										"context_request_ip":       "string",
-										"context_source_id":        "string",
-										"context_source_type":      "string",
-										"context_traits_email":     "string",
-										"context_traits_logins":    "int",
-										"context_traits_name":      "string",
-										"event":                    "string",
-										"event_text":               "string",
-										"id":                       "string",
-										"original_timestamp":       "datetime",
-										"received_at":              "datetime",
-										"sent_at":                  "datetime",
-										"timestamp":                "datetime",
-										"user_id":                  "string",
-										"uuid_ts":                  "datetime",
-									},
-									lo.SliceToMap(
-										lo.RepeatBy(500, func(index int) string {
-											return strconv.Itoa(index)
-										}), func(item string) (string, any) {
-											return fmt.Sprintf(`context_column_%s`, item), "string"
-										},
-									),
-								),
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "tracks",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
+						Output: getTrackDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(500, func(index int) (string, string, string, string) {
+							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
+						}),
+						Metadata:   getMetadata("track", "POSTGRES"),
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]any{
-							"data": lo.Assign(
-								map[string]any{
-									"anonymous_id":             "anonymousId",
-									"channel":                  "sources",
-									"context_destination_id":   "destinationID",
-									"context_destination_type": "POSTGRES",
-									"context_ip":               "1.2.3.4",
-									"context_passed_ip":        "1.2.3.4",
-									"context_request_ip":       "5.6.7.8",
-									"context_source_id":        "sourceID",
-									"context_source_type":      "sourceType",
-									"context_traits_email":     "rhedricks@example.com",
-									"context_traits_logins":    float64(2),
-									"context_traits_name":      "Richard Hendricks",
-									"event":                    "event",
-									"event_text":               "event",
-									"id":                       "messageId",
-									"original_timestamp":       "2021-09-01T00:00:00.000Z",
-									"product_id":               "9578257311",
-									"rating":                   3.0,
-									"received_at":              "2021-09-01T00:00:00.000Z",
-									"review_body":              "OK for the price. It works but the material feels flimsy.",
-									"review_id":                "86ac1cd43",
-									"sent_at":                  "2021-09-01T00:00:00.000Z",
-									"timestamp":                "2021-09-01T00:00:00.000Z",
-									"user_id":                  "userId",
-								},
-								lo.SliceToMap(
-									lo.RepeatBy(500, func(index int) string {
-										return strconv.Itoa(index)
-									}), func(item string) (string, any) {
-										return fmt.Sprintf(`context_column_%s`, item), fmt.Sprintf(`value_%s`, item)
-									},
-								),
-							),
-							"metadata": map[string]any{
-								"columns": lo.Assign(
-									map[string]any{
-										"anonymous_id":             "string",
-										"channel":                  "string",
-										"context_destination_id":   "string",
-										"context_destination_type": "string",
-										"context_ip":               "string",
-										"context_passed_ip":        "string",
-										"context_request_ip":       "string",
-										"context_source_id":        "string",
-										"context_source_type":      "string",
-										"context_traits_email":     "string",
-										"context_traits_logins":    "int",
-										"context_traits_name":      "string",
-										"event":                    "string",
-										"event_text":               "string",
-										"id":                       "string",
-										"original_timestamp":       "datetime",
-										"product_id":               "string",
-										"rating":                   "int",
-										"received_at":              "datetime",
-										"review_body":              "string",
-										"review_id":                "string",
-										"sent_at":                  "datetime",
-										"timestamp":                "datetime",
-										"user_id":                  "string",
-										"uuid_ts":                  "datetime",
-									},
-									lo.SliceToMap(
-										lo.RepeatBy(500, func(index int) string {
-											return strconv.Itoa(index)
-										}), func(item string) (string, any) {
-											return fmt.Sprintf(`context_column_%s`, item), "string"
-										},
-									),
-								),
-								"receivedAt": "2021-09-01T00:00:00.000Z",
-								"table":      "event",
-							},
-							"userId": "",
-						},
-						Metadata: ptrans.Metadata{
-							EventType:       "track",
-							DestinationType: "POSTGRES",
-							ReceivedAt:      "2021-09-01T00:00:00.000Z",
-							SourceID:        "sourceID",
-							DestinationID:   "destinationID",
-							SourceType:      "sourceType",
-							MessageID:       "messageId",
-						},
+						Output: getEventDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(500, func(index int) (string, string, string, string) {
+							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
+						}),
+						Metadata:   getMetadata("track", "POSTGRES"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "StringLikeObject for context traits",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"0":"a","1":"b","2":"c"},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							SetDataField("context_traits", "abc").
+							SetColumnField("context_traits", "string"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							SetDataField("context_traits", "abc").
+							SetColumnField("context_traits", "string"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "StringLikeObject for group traits",
+			eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"0":"a","1":"b","2":"c"},"ip":"1.2.3.4"}}`,
+			metadata:     getGroupMetadata("POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getGroupDefaultOutput().
+							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_traits_email", "context_traits_logins", "context_traits_name").
+							SetDataField("context_traits", "abc").
+							SetColumnField("context_traits", "string"),
+						Metadata:   getGroupMetadata("POSTGRES"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "Not StringLikeObject for context properties",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"0":"a","1":"b","2":"c"},"userProperties":{"rating":3,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							RemoveDataFields("product_id", "review_id").
+							RemoveColumnFields("product_id", "review_id"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							RemoveDataFields("product_id", "review_id").
+							RemoveColumnFields("product_id", "review_id").
+							SetDataField("_0", "a").SetColumnField("_0", "string").
+							SetDataField("_1", "b").SetColumnField("_1", "string").
+							SetDataField("_2", "c").SetColumnField("_2", "string"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "context, properties and userProperties as null",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":null,"userProperties":null,"context":null}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							SetDataField("context_ip", "5.6.7.8").
+							RemoveDataFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							SetDataField("context_ip", "5.6.7.8").
+							RemoveDataFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name", "product_id", "rating", "review_body", "review_id").
+							RemoveColumnFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name", "product_id", "rating", "review_body", "review_id"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "context, properties and userProperties as not a object",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":"properties","userProperties":"userProperties","context":"context"}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				FailedEvents: []ptrans.TransformerResponse{
+					{
+						Error:      response.ErrContextNotMap.Error(),
+						StatusCode: response.ErrContextNotMap.StatusCode(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+					},
+				},
+			},
+		},
+		{
+			name:         "context, properties and userProperties as empty map",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{},"userProperties":{},"context":{}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							SetDataField("context_ip", "5.6.7.8").
+							RemoveDataFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name").
+							RemoveColumnFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							SetDataField("context_ip", "5.6.7.8").
+							RemoveDataFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name", "product_id", "rating", "review_body", "review_id").
+							RemoveColumnFields("context_passed_ip", "context_traits_email", "context_traits_logins", "context_traits_name", "product_id", "rating", "review_body", "review_id"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "Nested object level with no limit when source category is not cloud",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2,"location":{"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							SetDataField("context_traits_location_city", "Palo Alto").
+							SetDataField("context_traits_location_state", "California").
+							SetDataField("context_traits_location_country", "USA").
+							SetDataField("context_traits_location_coordinates_latitude", 37.4419).
+							SetDataField("context_traits_location_coordinates_longitude", -122.143).
+							SetDataField("context_traits_location_coordinates_geo_altitude", 30.5).
+							SetDataField("context_traits_location_coordinates_geo_accuracy", 5.0).
+							SetDataField("context_traits_location_coordinates_geo_details_altitude_units", "meters").
+							SetDataField("context_traits_location_coordinates_geo_details_accuracy_units", "meters").
+							SetColumnField("context_traits_location_city", "string").
+							SetColumnField("context_traits_location_state", "string").
+							SetColumnField("context_traits_location_country", "string").
+							SetColumnField("context_traits_location_coordinates_latitude", "float").
+							SetColumnField("context_traits_location_coordinates_longitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo_altitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo_accuracy", "int").
+							SetColumnField("context_traits_location_coordinates_geo_details_altitude_units", "string").
+							SetColumnField("context_traits_location_coordinates_geo_details_accuracy_units", "string"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							SetDataField("context_traits_location_city", "Palo Alto").
+							SetDataField("context_traits_location_state", "California").
+							SetDataField("context_traits_location_country", "USA").
+							SetDataField("context_traits_location_coordinates_latitude", 37.4419).
+							SetDataField("context_traits_location_coordinates_longitude", -122.143).
+							SetDataField("context_traits_location_coordinates_geo_altitude", 30.5).
+							SetDataField("context_traits_location_coordinates_geo_accuracy", 5.0).
+							SetDataField("context_traits_location_coordinates_geo_details_altitude_units", "meters").
+							SetDataField("context_traits_location_coordinates_geo_details_accuracy_units", "meters").
+							SetColumnField("context_traits_location_city", "string").
+							SetColumnField("context_traits_location_state", "string").
+							SetColumnField("context_traits_location_country", "string").
+							SetColumnField("context_traits_location_coordinates_latitude", "float").
+							SetColumnField("context_traits_location_coordinates_longitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo_altitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo_accuracy", "int").
+							SetColumnField("context_traits_location_coordinates_geo_details_altitude_units", "string").
+							SetColumnField("context_traits_location_coordinates_geo_details_accuracy_units", "string"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "Nested object level limits to 3 when source category is cloud",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2,"location":{"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "cloud"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: ptrans.Response{
+				Events: []ptrans.TransformerResponse{
+					{
+						Output: getTrackDefaultOutput().
+							SetDataField("context_traits_location_city", "Palo Alto").
+							SetDataField("context_traits_location_state", "California").
+							SetDataField("context_traits_location_country", "USA").
+							SetDataField("context_traits_location_coordinates_latitude", 37.4419).
+							SetDataField("context_traits_location_coordinates_longitude", -122.143).
+							SetDataField("context_traits_location_coordinates_geo", `{"accuracy":5,"altitude":30.5,"details":{"accuracyUnits":"meters","altitudeUnits":"meters"}}`).
+							SetColumnField("context_traits_location_city", "string").
+							SetColumnField("context_traits_location_state", "string").
+							SetColumnField("context_traits_location_country", "string").
+							SetColumnField("context_traits_location_coordinates_latitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo", "string").
+							SetColumnField("context_traits_location_coordinates_longitude", "float"),
+						Metadata:   getTrackMetadata("POSTGRES", "cloud"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: getEventDefaultOutput().
+							SetDataField("context_traits_location_city", "Palo Alto").
+							SetDataField("context_traits_location_state", "California").
+							SetDataField("context_traits_location_country", "USA").
+							SetDataField("context_traits_location_coordinates_latitude", 37.4419).
+							SetDataField("context_traits_location_coordinates_longitude", -122.143).
+							SetDataField("context_traits_location_coordinates_geo", `{"accuracy":5,"altitude":30.5,"details":{"accuracyUnits":"meters","altitudeUnits":"meters"}}`).
+							SetColumnField("context_traits_location_city", "string").
+							SetColumnField("context_traits_location_state", "string").
+							SetColumnField("context_traits_location_country", "string").
+							SetColumnField("context_traits_location_coordinates_latitude", "float").
+							SetColumnField("context_traits_location_coordinates_geo", "string").
+							SetColumnField("context_traits_location_coordinates_longitude", "float"),
+						Metadata:   getTrackMetadata("POSTGRES", "cloud"),
 						StatusCode: http.StatusOK,
 					},
 				},
 			},
 		},
 	}
-
-	for _, tc := range testsCases {
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
-			//opts := lo.Map(tc.envOverride, func(item string, index int) transformertest.Option {
-			//	return transformertest.WithEnv(item)
-			//})
-			//opts = append(opts, transformertest.WithRepository("rudderstack/develop-rudder-transformer"))
-			transformerResource, err := transformertest.Setup(pool, t)
+			var opts []transformertest.Option
+			for _, envOverride := range tc.envOverride {
+				opts = append(opts, transformertest.WithEnv(envOverride))
+			}
+			transformerResource, err := transformertest.Setup(pool, t, opts...)
 			require.NoError(t, err)
 
-			c := config.New()
-			c.Set("DEST_TRANSFORM_URL", transformerResource.TransformerURL)
-			c.Set("USER_TRANSFORM_URL", transformerResource.TransformerURL)
-
-			for k, v := range tc.configOverride {
-				c.Set(k, v)
-			}
-
-			eventsInfos := []eventsInfo{
+			c := setupConfig(transformerResource, tc.configOverride)
+			eventsInfos := []testhelper.EventInfo{
 				{
-					payload:     []byte(tc.eventPayload),
-					metadata:    tc.metadata,
-					destination: tc.destination,
+					Payload:     []byte(tc.eventPayload),
+					Metadata:    tc.metadata,
+					Destination: tc.destination,
 				},
 			}
 			destinationTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
 			warehouseTransformer := New(c, logger.NOP, stats.NOP)
 
-			testEvents(t, eventsInfos, destinationTransformer, warehouseTransformer, tc.expectedResponse)
+			testhelper.ValidateEvents(t, eventsInfos, destinationTransformer, warehouseTransformer, tc.expectedResponse)
 		})
+	}
+}
+
+func setupConfig(resource *transformertest.Resource, configOverride map[string]any) *config.Config {
+	c := config.New()
+	c.Set("DEST_TRANSFORM_URL", resource.TransformerURL)
+	c.Set("USER_TRANSFORM_URL", resource.TransformerURL)
+
+	for k, v := range configOverride {
+		c.Set(k, v)
+	}
+	return c
+}
+
+func getDestination(destinationType string, config map[string]any) backendconfig.DestinationT {
+	return backendconfig.DestinationT{
+		Name:   destinationType,
+		Config: config,
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: destinationType,
+		},
+	}
+}
+
+func getMetadata(eventType, destinationType string) ptrans.Metadata {
+	return ptrans.Metadata{
+		EventType:       eventType,
+		DestinationType: destinationType,
+		ReceivedAt:      "2021-09-01T00:00:00.000Z",
+		SourceID:        "sourceID",
+		DestinationID:   "destinationID",
+		SourceType:      "sourceType",
+		MessageID:       "messageId",
 	}
 }

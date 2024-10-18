@@ -3,6 +3,9 @@ package utils
 import (
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/samber/lo"
 )
 
 func IsStringLikeObject(obj map[string]any) bool {
@@ -40,29 +43,20 @@ func IsStringLikeObject(obj map[string]any) bool {
 }
 
 func isNonNegativeInteger(str string) bool {
-	if len(str) == 0 {
-		return false
-	}
-	for _, c := range str {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
+	return lo.EveryBy([]rune(str), func(c rune) bool {
+		return c >= '0' && c <= '9'
+	})
 }
 
-func StringLikeObjectToString(obj map[string]any) any {
-	keys := make([]int, 0, len(obj))
-	for key := range obj {
+func StringLikeObjectToString(obj map[string]any) string {
+	keys := lo.Map(lo.Keys(obj), func(key string, _ int) int {
 		numKey, _ := strconv.Atoi(key)
-		keys = append(keys, numKey)
-	}
-
+		return numKey
+	})
 	sort.Ints(keys)
 
-	result := ""
-	for _, key := range keys {
-		result += ToString(obj[strconv.Itoa(key)])
-	}
-	return result
+	values := lo.Map(keys, func(key, _ int) string {
+		return ToString(obj[strconv.Itoa(key)])
+	})
+	return strings.Join(values, "")
 }

@@ -187,7 +187,6 @@ func TestSafeColumnName(t *testing.T) {
 func TestTransformTableName(t *testing.T) {
 	testCases := []struct {
 		name                string
-		destType            string
 		integrationsOptions integrationsOptions
 		destConfigOptions   destConfigOptions
 		tableName           string
@@ -195,7 +194,6 @@ func TestTransformTableName(t *testing.T) {
 	}{
 		{
 			name:                "Blendo casing - table name trimmed and lowercased",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: true},
 			destConfigOptions:   destConfigOptions{},
 			tableName:           " TableName ",
@@ -203,7 +201,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Blendo casing - mixedcased to lowercased",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: true},
 			destConfigOptions:   destConfigOptions{},
 			tableName:           "CaMeLcAsE",
@@ -211,7 +208,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Blendo casing - mixedcased to lowercased",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: true},
 			destConfigOptions:   destConfigOptions{},
 			tableName:           "Table@Name!",
@@ -219,7 +215,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Blendo casing - alphanumeric",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: true},
 			destConfigOptions:   destConfigOptions{},
 			tableName:           "TableName123",
@@ -228,7 +223,6 @@ func TestTransformTableName(t *testing.T) {
 
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - remove symbols and join continuous letters and numbers with a single underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "&4yasdfa(84224_fs9##_____*3q",
@@ -236,7 +230,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - omega to omega",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "omega",
@@ -244,7 +237,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - omega v2 to omega_v_2",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "omega v2",
@@ -252,7 +244,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - prepend underscore if name starts with a number",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "9mega",
@@ -260,7 +251,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - remove trailing special characters",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "mega&",
@@ -268,7 +258,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - replace special character in the middle with underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "ome$ga",
@@ -276,7 +265,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - remove trailing $ character",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "omega$",
@@ -284,7 +272,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - spaces and special characters by converting to underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "ome_ ga",
@@ -292,7 +279,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - multiple underscores and hyphens by reducing to single underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "9mega________-________90",
@@ -300,7 +286,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - non-ASCII characters by converting them to underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "Cízǔ",
@@ -308,7 +293,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - CamelCase123Key to camel_case_123_key",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "CamelCase123Key",
@@ -316,7 +300,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - numbers and commas",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "path to $1,00,000",
@@ -324,7 +307,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - no valid characters",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "@#$%",
@@ -332,7 +314,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - underscores between letters and numbers",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "test123",
@@ -340,7 +321,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - multiple underscore-number sequences",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "abc123def456",
@@ -348,7 +328,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - multiple underscore-number sequences",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "abc_123_def_456",
@@ -356,7 +335,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - single underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "__abc_123_def_456",
@@ -364,7 +342,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - multiple underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: true},
 			tableName:           "_abc_123_def_456",
@@ -373,7 +350,6 @@ func TestTransformTableName(t *testing.T) {
 
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - remove symbols and join continuous letters and numbers with a single underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "&4yasdfa(84224_fs9##_____*3q",
@@ -381,7 +357,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - omega to omega",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "omega",
@@ -389,7 +364,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - omega v2 to omega_v_2",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "omega v2",
@@ -397,7 +371,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - prepend underscore if name starts with a number",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "9mega",
@@ -405,7 +378,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - remove trailing special characters",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "mega&",
@@ -413,7 +385,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - replace special character in the middle with underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "ome$ga",
@@ -421,7 +392,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - remove trailing $ character",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "omega$",
@@ -429,7 +399,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - spaces and special characters by converting to underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "ome_ ga",
@@ -437,7 +406,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - multiple underscores and hyphens by reducing to single underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "9mega________-________90",
@@ -445,7 +413,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - non-ASCII characters by converting them to underscores",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "Cízǔ",
@@ -453,7 +420,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - CamelCase123Key to camel_case_123_key",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "CamelCase123Key",
@@ -461,7 +427,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - numbers and commas",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "path to $1,00,000",
@@ -469,7 +434,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - no valid characters",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "@#$%",
@@ -477,7 +441,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - underscores between letters and numbers",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "test123",
@@ -485,7 +448,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(true) - multiple underscore-number sequences",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "abc123def456",
@@ -493,7 +455,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - multiple underscore-number sequences",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "abc_123_def_456",
@@ -501,7 +462,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - single underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "__abc_123_def_456",
@@ -509,7 +469,6 @@ func TestTransformTableName(t *testing.T) {
 		},
 		{
 			name:                "Standard casing - underscoreDivideNumbers(false) - multiple underscore",
-			destType:            whutils.SNOWFLAKE,
 			integrationsOptions: integrationsOptions{useBlendoCasing: false},
 			destConfigOptions:   destConfigOptions{underscoreDivideNumbers: false},
 			tableName:           "_abc_123_def_456",
@@ -519,7 +478,7 @@ func TestTransformTableName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			tableName := TransformTableName(tc.destType, tc.integrationsOptions, tc.destConfigOptions, tc.tableName)
+			tableName := TransformTableName(tc.integrationsOptions, tc.destConfigOptions, tc.tableName)
 			require.Equal(t, tc.expected, tableName)
 		})
 	}

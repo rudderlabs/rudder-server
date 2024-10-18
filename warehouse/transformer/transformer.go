@@ -47,7 +47,7 @@ type (
 func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) ptrans.DestinationTransformer {
 	t := &transformer{
 		conf:         conf,
-		logger:       logger,
+		logger:       logger.Child("warehouse-transformer"),
 		statsFactory: statsFactory,
 		now:          time.Now,
 	}
@@ -102,30 +102,38 @@ func (t *transformer) Transform(_ context.Context, clientEvents []ptrans.Transfo
 }
 
 func (t *transformer) processWarehouseMessage(event ptrans.TransformerEvent) ([]map[string]any, error) {
-	t.enhanceContextWithSourceDestInfo(event)
+	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
+		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
+	}
 	return t.handleEvent(event)
 }
 
-func (t *transformer) enhanceContextWithSourceDestInfo(event ptrans.TransformerEvent) {
+func (t *transformer) enhanceContextWithSourceDestInfo(event ptrans.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
-		return
+		return nil
 	}
 
-	messageContext, ok := event.Message["context"].(map[string]any)
+	messageContext, ok := event.Message["context"]
 	if !ok || messageContext == nil {
 		messageContext = map[string]any{}
+		event.Message["context"] = messageContext
 	}
-	messageContext["sourceId"] = event.Metadata.SourceID
-	messageContext["sourceType"] = event.Metadata.SourceType
-	messageContext["destinationId"] = event.Metadata.DestinationID
-	messageContext["destinationType"] = event.Metadata.DestinationType
+	messageContextMap, ok := messageContext.(map[string]any)
+	if !ok {
+		return response.ErrContextNotMap
+	}
+	messageContextMap["sourceId"] = event.Metadata.SourceID
+	messageContextMap["sourceType"] = event.Metadata.SourceType
+	messageContextMap["destinationId"] = event.Metadata.DestinationID
+	messageContextMap["destinationType"] = event.Metadata.DestinationType
 
-	event.Message["context"] = messageContext
+	event.Message["context"] = messageContextMap
+	return nil
 }
 
 func (t *transformer) handleEvent(event ptrans.TransformerEvent) ([]map[string]any, error) {
 	itrOpts := prepareIntegrationOptions(event)
-	dstOpts := prepareDestinationOptions(event.Destination.Config)
+	dstOpts := prepareDestinationOptions(event.Metadata.DestinationType, event.Destination.Config)
 	jsonPathsInfo := extractJSONPathInfo(append(itrOpts.jsonPaths, dstOpts.jsonPaths...))
 	eventType := strings.ToLower(event.Metadata.EventType)
 
