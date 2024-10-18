@@ -32,7 +32,7 @@ func newRegularManager(
 	case "BINGADS_OFFLINE_CONVERSIONS":
 		return bingads_offline_conversions.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	case "MARKETO_BULK_UPLOAD":
-		return marketobulkupload.NewManager(conf, logger, statsFactory, destination)
+		return marketobulkupload.NewManager(logger, statsFactory, destination)
 	case "ELOQUA":
 		return eloqua.NewManager(logger, statsFactory, destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
