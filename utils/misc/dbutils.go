@@ -80,7 +80,14 @@ func NewDatabaseConnectionPool(
 	db.SetConnMaxLifetime(maxConnLifetime)
 
 	rruntime.Go(func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(
+			conf.GetDurationVar(
+				5,
+				time.Second,
+				"db."+componentName+".pool.configUpdateInterval",
+				"db.pool.configUpdateInterval",
+			),
+		)
 		defer ticker.Stop()
 		for {
 			select {
