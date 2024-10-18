@@ -338,6 +338,18 @@ func TestBackoff(t *testing.T) {
 			r.throttlerFactory.(*mockThrottlerFactory).count.Store(0)
 		})
 
+		t.Run("drain 'Null' destType jobs", func(t *testing.T) {
+			r.drainer = routerutils.NewDrainer(
+				conf, func(string) (*routerutils.DestinationWithSources, bool) {
+					return nil, false
+				},
+			)
+			slot, err := r.findWorkerSlot(context.Background(), workers, &jobsdb.JobT{CustomVal: "Null", Parameters: []byte(`{}`)}, map[eventorder.BarrierKey]struct{}{})
+			require.NoError(t, err)
+			require.NotNil(t, slot)
+			require.Equal(t, routerutils.DrainReasonDestDisabled, slot.drainReason)
+		})
+
 		t.Run("eventorder enabled with drain job", func(t *testing.T) {
 			r.drainer = &drainer{drain: true, reason: "drain job due to some reason"}
 			r.guaranteeUserEventOrder = true
