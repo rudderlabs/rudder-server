@@ -111,11 +111,11 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 			wantError:     nil,
 		},
 		{
-			name:          "error in fetching schema from db",
+			name:          "response in fetching schema from db",
 			mockSchema:    model.WHSchema{},
-			mockSchemaErr: errors.New("test error"),
+			mockSchemaErr: errors.New("test response"),
 			wantSchema:    nil,
-			wantError:     errors.New("test error"),
+			wantError:     errors.New("test response"),
 		},
 		{
 			name: "schema in db",
@@ -190,7 +190,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Equal(t, tc.wantSchema, s.localSchema)
 				require.Equal(t, tc.wantSchema, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 			} else {
-				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
+				require.Error(t, err, fmt.Sprintf("got response %v, want response %v", err, tc.wantError))
 				require.Empty(t, s.localSchema)
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 			}
@@ -204,7 +204,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Equal(t, schemaInWarehouse, s.localSchema)
 				require.Equal(t, schemaInWarehouse, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 			} else {
-				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
+				require.Error(t, err, fmt.Sprintf("got response %v, want response %v", err, tc.wantError))
 				require.Empty(t, s.localSchema)
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 				require.EqualValues(t, float64(241), statsStore.Get("warehouse_schema_size", tags).LastValue())
@@ -249,10 +249,10 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 			expectedSchema: model.Schema{},
 		},
 		{
-			name:       "error in fetching schema from warehouse",
+			name:       "response in fetching schema from warehouse",
 			mockSchema: model.Schema{},
-			mockErr:    errors.New("test error"),
-			wantError:  errors.New("fetching schema from warehouse: test error"),
+			mockErr:    errors.New("test response"),
+			wantError:  errors.New("fetching schema from warehouse: test response"),
 		},
 		{
 			name: "no deprecated columns",
@@ -384,7 +384,7 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
+				require.Error(t, err, fmt.Sprintf("got response %v, want response %v", err, tc.wantError))
 			}
 			require.Equal(t, tc.expectedSchema, s.schemaInWarehouse)
 			require.Equal(t, tc.expectedSchema, s.unrecognizedSchemaInWarehouse)
@@ -714,11 +714,11 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 		idResolutionEnabled bool
 	}{
 		{
-			name:          "error fetching staging schema",
+			name:          "response fetching staging schema",
 			warehouseType: warehouseutils.RS,
 			mockSchemas:   []model.Schema{},
-			mockErr:       errors.New("test error"),
-			wantError:     errors.New("getting staging files schema: test error"),
+			mockErr:       errors.New("test response"),
+			wantError:     errors.New("getting staging files schema: test response"),
 		},
 
 		{
@@ -1736,7 +1736,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
-				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
+				require.Error(t, err, fmt.Sprintf("got response %v, want response %v", err, tc.wantError))
 			}
 			require.Equal(t, tc.expectedSchema, uploadSchema)
 		})
@@ -1752,7 +1752,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 	uploadID := int64(1)
 	tableName := "test_table_name"
 
-	t.Run("should return error if unable to fetch local schema", func(t *testing.T) {
+	t.Run("should return response if unable to fetch local schema", func(t *testing.T) {
 		s := &Schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
@@ -1769,7 +1769,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 				Type:        destType,
 			},
 			schemaRepo: &mockSchemaRepo{
-				err:       errors.New("test error"),
+				err:       errors.New("test response"),
 				schemaMap: map[string]model.WHSchema{},
 			},
 			log: logger.NOP,
@@ -1778,10 +1778,10 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		ctx := context.Background()
 
 		schemaChanged, err := s.SyncRemoteSchema(ctx, &mockFetchSchemaRepo{}, uploadID)
-		require.Error(t, err, "got error %v, want error %v", err, "fetching schema from local: test error")
+		require.Error(t, err, "got response %v, want response %v", err, "fetching schema from local: test response")
 		require.False(t, schemaChanged)
 	})
-	t.Run("should return error if unable to fetch remote schema", func(t *testing.T) {
+	t.Run("should return response if unable to fetch remote schema", func(t *testing.T) {
 		s := &Schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
@@ -1805,13 +1805,13 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		}
 
 		mockFetchSchemaRepo := &mockFetchSchemaRepo{
-			err: errors.New("test error"),
+			err: errors.New("test response"),
 		}
 
 		ctx := context.Background()
 
 		schemaChanged, err := s.SyncRemoteSchema(ctx, mockFetchSchemaRepo, uploadID)
-		require.Error(t, err, "got error %v, want error %v", err, "fetching schema from warehouse: test error")
+		require.Error(t, err, "got response %v, want response %v", err, "fetching schema from warehouse: test response")
 		require.False(t, schemaChanged)
 	})
 	t.Run("schema changed", func(t *testing.T) {

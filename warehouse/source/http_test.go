@@ -140,7 +140,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 		SourceID:              sourceID,
 		DestinationID:         destinationID,
 		Status:                whutils.StagingFileWaitingState,
-		Error:                 fmt.Errorf("dummy error"),
+		Error:                 fmt.Errorf("dummy response"),
 		FirstEventAt:          now.Add(time.Second),
 		UseRudderStorage:      true,
 		DestinationRevisionID: "destination_revision_id",
@@ -318,7 +318,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		ids := createSourceJob(sourceJobID+"-2", sourceTaskRunID+"-2", "test_table-2")
 
 		for _, id := range ids {
-			err := sourceRepo.OnUpdateFailure(ctx, id, errors.New("test error"), -1)
+			err := sourceRepo.OnUpdateFailure(ctx, id, errors.New("test response"), -1)
 			require.NoError(t, err)
 		}
 
@@ -340,7 +340,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
 		require.NoError(t, err)
 		require.Equal(t, statusResponse.Status, model.SourceJobStatusAborted.String())
-		require.Equal(t, statusResponse.Err, errors.New("test error").Error())
+		require.Equal(t, statusResponse.Err, errors.New("test response").Error())
 	})
 	t.Run("job not found", func(t *testing.T) {
 		qp := url.Values{}

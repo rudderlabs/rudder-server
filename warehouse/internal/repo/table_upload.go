@@ -27,7 +27,7 @@ const (
 		wh_upload_id,
 		table_name,
 		status,
-		error,
+		response,
 		last_exec_time,
 		total_events,
 		created_at,
@@ -67,7 +67,7 @@ func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames [
 		stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO `+tableUploadTableName+` (
 		  wh_upload_id, table_name, status,
-		  error, created_at, updated_at
+		  response, created_at, updated_at
 		)
 		VALUES
 		  ($1, $2, $3, $4, $5, $6)
@@ -296,7 +296,7 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 		queryArgs = append(queryArgs, *options.Status)
 	}
 	if options.Error != nil {
-		setQuery.WriteString(fmt.Sprintf(`error = $%d,`, len(queryArgs)+1))
+		setQuery.WriteString(fmt.Sprintf(`response = $%d,`, len(queryArgs)+1))
 		sanitizedError := warehouseutils.SanitizeString(*options.Error)
 		queryArgs = append(queryArgs, sanitizedError)
 	}

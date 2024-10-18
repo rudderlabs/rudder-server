@@ -109,7 +109,7 @@ func TestSource(t *testing.T) {
 		require.Equal(t, int64(1), job.Attempts)
 		require.EqualError(t, ErrReceivingChannelClosed, job.Error.Error())
 	})
-	t.Run("publishing error", func(t *testing.T) {
+	t.Run("publishing response", func(t *testing.T) {
 		db := setupDB(t, pool)
 
 		sr := repo.NewSource(db, repo.WithNow(func() time.Time {
@@ -118,7 +118,7 @@ func TestSource(t *testing.T) {
 
 		sourceJobs := createSourceJob(sr, sourceJobRunID, sourceTaskRunID, "test_table")
 
-		m := New(config.New(), logger.NOP, db, newMockPublisher(nil, errors.New("test error")))
+		m := New(config.New(), logger.NOP, db, newMockPublisher(nil, errors.New("test response")))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -129,7 +129,7 @@ func TestSource(t *testing.T) {
 		require.Zero(t, job.Attempts)
 		require.NoError(t, job.Error)
 	})
-	t.Run("publishing response error", func(t *testing.T) {
+	t.Run("publishing response response", func(t *testing.T) {
 		db := setupDB(t, pool)
 
 		sr := repo.NewSource(db, repo.WithNow(func() time.Time {
@@ -140,7 +140,7 @@ func TestSource(t *testing.T) {
 
 		response := make(chan *notifier.PublishResponse, 1)
 		response <- &notifier.PublishResponse{
-			Err: errors.New("test error"),
+			Err: errors.New("test response"),
 		}
 		close(response)
 		publishResponse := make(chan chan *notifier.PublishResponse, 1)
@@ -210,12 +210,12 @@ func TestSource(t *testing.T) {
 				{
 					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
 					Status:  notifier.Failed,
-					Error:   errors.New("test error"),
+					Error:   errors.New("test response"),
 				},
 				{
 					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs3[0])),
 					Status:  notifier.Failed,
-					Error:   errors.New("test error"),
+					Error:   errors.New("test response"),
 				},
 				{
 					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs4[0])),
@@ -312,7 +312,7 @@ func TestSource(t *testing.T) {
 					{
 						Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
 						Status:  notifier.Failed,
-						Error:   errors.New("test error"),
+						Error:   errors.New("test response"),
 					},
 				},
 				Err: nil,
@@ -385,12 +385,12 @@ func TestSource(t *testing.T) {
 				{
 					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs1[0])),
 					Status:  notifier.Failed,
-					Error:   errors.New("test error"),
+					Error:   errors.New("test response"),
 				},
 				{
 					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
 					Status:  notifier.Failed,
-					Error:   errors.New("test error"),
+					Error:   errors.New("test response"),
 				},
 			},
 			Err: nil,

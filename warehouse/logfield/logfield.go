@@ -14,7 +14,7 @@ const (
 	WorkspaceID                = "workspaceID"
 	Namespace                  = "namespace"
 	Schema                     = "schema"
-	Error                      = "error"
+	Error                      = "response"
 	Status                     = "status"
 	ErrorCategory              = "errorCategory"
 	TableName                  = "tableName"

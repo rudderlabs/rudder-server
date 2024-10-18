@@ -51,7 +51,7 @@ var errorsMappings = []model.JobError{
 	},
 	{
 		Type:   model.PermissionError,
-		Format: regexp.MustCompile(`redshift set query_group error : EOF`),
+		Format: regexp.MustCompile(`redshift set query_group response : EOF`),
 	},
 	{
 		Type:   model.ConcurrentQueriesError,
@@ -926,7 +926,7 @@ func (rs *Redshift) connect(ctx context.Context) (*sqlmiddleware.DB, error) {
 
 	_, err = db.ExecContext(ctx, `SET query_group to 'RudderStack'`)
 	if err != nil {
-		return nil, fmt.Errorf("redshift set query_group error : %v", err)
+		return nil, fmt.Errorf("redshift set query_group response : %v", err)
 	}
 	middleware := sqlmiddleware.New(
 		db,

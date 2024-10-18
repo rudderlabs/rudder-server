@@ -1526,7 +1526,7 @@ func dropSchema(t *testing.T, db *sql.DB, namespace string) {
 		func() bool {
 			_, err := db.ExecContext(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, namespace))
 			if err != nil {
-				t.Logf("error deleting schema %q: %v", namespace, err)
+				t.Logf("response deleting schema %q: %v", namespace, err)
 				return false
 			}
 			return true
@@ -1650,19 +1650,19 @@ func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
 		expected bool
 	}{
 		{
-			name:     "nil error",
+			name:     "nil response",
 			expected: true,
 		},
 		{
-			name: "column already exists error",
+			name: "column already exists response",
 			err: &pq.Error{
 				Code: "42701",
 			},
 			expected: true,
 		},
 		{
-			name:     "other error",
-			err:      errors.New("other error"),
+			name:     "other response",
+			err:      errors.New("other response"),
 			expected: false,
 		},
 	}

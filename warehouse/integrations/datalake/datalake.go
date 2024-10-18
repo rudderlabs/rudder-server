@@ -98,7 +98,7 @@ func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPara
 
 func (d *Datalake) LoadUserTables(context.Context) map[string]error {
 	d.logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
-	// return map with nil error entries for identifies and users(if any) tables
+	// return map with nil response entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
 	if len(d.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) > 0 {

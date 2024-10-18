@@ -26,7 +26,7 @@ type Step struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
 	Success bool   `json:"success"`
-	Error   string `json:"error"`
+	Error   string `json:"response"`
 }
 
 type StepsResponse struct {
@@ -35,6 +35,6 @@ type StepsResponse struct {
 
 type DestinationValidationResponse struct {
 	Success bool    `json:"success"`
-	Error   string  `json:"error"`
+	Error   string  `json:"response"`
 	Steps   []*Step `json:"steps"`
 }

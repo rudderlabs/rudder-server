@@ -514,7 +514,7 @@ func (idr *Identity) Resolve(ctx context.Context) (err error) {
 	defer misc.RemoveFilePaths(loadFileNames...)
 	loadFileNames, err = idr.downloader.Download(ctx, idr.whMergeRulesTable())
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Failed to download load files for %s with error: %v`, idr.mergeRulesTable(), err)
+		pkgLogger.Errorf(`IDR: Failed to download load files for %s with response: %v`, idr.mergeRulesTable(), err)
 		return
 	}
 
@@ -528,7 +528,7 @@ func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) 
 	err = idr.warehouseManager.DownloadIdentityRules(ctx, &gzWriter)
 	_ = gzWriter.CloseGZ()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
+		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with response: %v`, err)
 		return
 	}
 	loadFileNames = append(loadFileNames, path)

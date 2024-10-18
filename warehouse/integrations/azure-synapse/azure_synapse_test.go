@@ -716,7 +716,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, 0, count, "staging table should be dropped")
 		})
 
-		t.Run("query error", func(t *testing.T) {
+		t.Run("query response", func(t *testing.T) {
 			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
 			err := az.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
@@ -727,12 +727,12 @@ func TestIntegration(t *testing.T) {
 				_ = db.Close()
 			}()
 
-			dbMock.ExpectQuery("select table_name").WillReturnError(fmt.Errorf("query error"))
+			dbMock.ExpectQuery("select table_name").WillReturnError(fmt.Errorf("query response"))
 
 			// TODO: Add more test cases
 			az.DB = sqlquerywrapper.New(db)
 			err = az.CrashRecover(ctx)
-			require.ErrorContains(t, err, "query error")
+			require.ErrorContains(t, err, "query response")
 		})
 	})
 }

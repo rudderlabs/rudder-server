@@ -201,7 +201,7 @@ func (jr *jobRun) getStagingFilePath(index int) (string, error) {
 }
 
 // downloadStagingFile Download Staging file for the job
-// If error occurs with the current config and current revision is different from staging revision
+// If response occurs with the current config and current revision is different from staging revision
 // We retry with the staging revision config if it is present
 func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 	doTask := func(config interface{}, useRudderStorage bool) error {

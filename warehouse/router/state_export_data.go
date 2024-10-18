@@ -216,7 +216,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 
 	for _, tName := range userTables {
 		if prevJobStatus, ok := previouslyFailedTables[tName]; ok {
-			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tName, prevJobStatus.UploadID, prevJobStatus.Error)
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with response: %s", tName, prevJobStatus.UploadID, prevJobStatus.Error)
 			return []error{skipError}, nil
 		}
 	}
@@ -306,7 +306,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 	if tableSchemaDiff.TableToBeCreated {
 		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
-			job.logger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+			job.logger.Errorf("Error creating table %s on namespace: %s, response: %v", tName, job.warehouse.Namespace, err)
 			return err
 		}
 		job.stats.tablesAdded.Increment()
@@ -410,7 +410,7 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 	for _, chunk := range chunks {
 		err = job.whManager.AddColumns(ctx, tName, chunk)
 		if err != nil {
-			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
+			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with response: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
 			break
 		}
 
@@ -489,7 +489,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	for _, tableName := range identityTables {
 		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
-			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tableName, prevJobStatus.UploadID, prevJobStatus.Error)
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with response: %s", tableName, prevJobStatus.UploadID, prevJobStatus.Error)
 			return []error{skipError}, nil
 		}
 	}
@@ -560,7 +560,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	if alteredSchema {
 		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check response
 	}
 
 	return job.processLoadTableResponse(errorMap)
@@ -666,7 +666,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 			continue
 		}
 		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
-			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with error: %s", tableName, prevJobStatus.UploadID, prevJobStatus.Error)
+			skipError := fmt.Errorf("skipping table %s because it previously failed to load in an earlier job: %d with response: %s", tableName, prevJobStatus.UploadID, prevJobStatus.Error)
 			loadErrors = append(loadErrors, skipError)
 			wg.Done()
 			continue
@@ -703,7 +703,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable.Load() {
 		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check response
 	}
 
 	return loadErrors

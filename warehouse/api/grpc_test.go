@@ -945,7 +945,7 @@ func TestGRPC(t *testing.T) {
 						require.NoError(t, err)
 						require.NotEmpty(t, res)
 						require.Empty(t, res.GetError())
-						require.Equal(t, res.GetData(), `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"error":""},{"id":2,"name":"Verifying Connections","success":false,"error":""},{"id":3,"name":"Verifying Create Schema","success":false,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"error":""},{"id":6,"name":"Verifying Load Table","success":false,"error":""}]}`)
+						require.Equal(t, res.GetData(), `{"steps":[{"id":1,"name":"Verifying Object Storage","success":false,"response":""},{"id":2,"name":"Verifying Connections","success":false,"response":""},{"id":3,"name":"Verifying Create Schema","success":false,"response":""},{"id":4,"name":"Verifying Create and Alter Table","success":false,"response":""},{"id":5,"name":"Verifying Fetch Schema","success":false,"response":""},{"id":6,"name":"Verifying Load Table","success":false,"response":""}]}`)
 					})
 					t.Run("validate", func(t *testing.T) {
 						res, err := grpcClient.Validate(ctx, &proto.WHValidationRequest{
@@ -955,7 +955,7 @@ func TestGRPC(t *testing.T) {
 						require.NoError(t, err)
 						require.NotEmpty(t, res)
 						require.Empty(t, res.GetError())
-						require.Equal(t, res.GetData(), `{"success":true,"error":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"error":""},{"id":2,"name":"Verifying Connections","success":true,"error":""},{"id":3,"name":"Verifying Create Schema","success":true,"error":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"error":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"error":""},{"id":6,"name":"Verifying Load Table","success":true,"error":""}]}`)
+						require.Equal(t, res.GetData(), `{"success":true,"response":"","steps":[{"id":1,"name":"Verifying Object Storage","success":true,"response":""},{"id":2,"name":"Verifying Connections","success":true,"response":""},{"id":3,"name":"Verifying Create Schema","success":true,"response":""},{"id":4,"name":"Verifying Create and Alter Table","success":true,"response":""},{"id":5,"name":"Verifying Fetch Schema","success":true,"response":""},{"id":6,"name":"Verifying Load Table","success":true,"response":""}]}`)
 					})
 				})
 				t.Run("tunneling", func(t *testing.T) {
@@ -1273,7 +1273,7 @@ func TestGRPC(t *testing.T) {
 					errorJson, err := json.Marshal(error)
 					require.NoError(t, err)
 
-					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
+					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET response = $1, error_category = $2 WHERE id = $3`,
 						errorJson,
 						errorCategory,
 						uploadID,
@@ -1324,7 +1324,7 @@ func TestGRPC(t *testing.T) {
 			}{
 				{
 					status:              "internal_processing_failed",
-					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
+					error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some response 1","some response 2"],"attempt":2}}`),
 					errorCategory:       model.UncategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
@@ -1335,7 +1335,7 @@ func TestGRPC(t *testing.T) {
 				},
 				{
 					status:              "generating_load_files_failed",
-					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+					error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some response 3","some response 4"],"attempt":2}}`),
 					errorCategory:       model.UncategorizedError,
 					prepareTableUploads: false,
 					timings: model.Timings{
@@ -1346,7 +1346,7 @@ func TestGRPC(t *testing.T) {
 				},
 				{
 					status:              "exporting_data_failed",
-					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response 5","some response 6"],"attempt":2}}`),
 					errorCategory:       model.PermissionError,
 					prepareTableUploads: true,
 					timings: model.Timings{
@@ -1357,7 +1357,7 @@ func TestGRPC(t *testing.T) {
 				},
 				{
 					status:              "aborted",
-					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
+					error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response 7","some response 8"],"attempt":2}}`),
 					prepareTableUploads: true,
 					errorCategory:       model.ResourceNotFoundError,
 					timings: model.Timings{
@@ -1448,7 +1448,7 @@ func TestGRPC(t *testing.T) {
 					})
 					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
-							Error:           "some error 6",
+							Error:           "some response 6",
 							ErrorCategory:   model.PermissionError,
 							SourceID:        sourceID,
 							TotalEvents:     500,
@@ -1458,7 +1458,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Failed,
 						},
 						{
-							Error:           "some error 8",
+							Error:           "some response 8",
 							ErrorCategory:   model.ResourceNotFoundError,
 							SourceID:        sourceID,
 							TotalEvents:     500,
@@ -1468,7 +1468,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Aborted,
 						},
 						{
-							Error:           "some error 2",
+							Error:           "some response 2",
 							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,
@@ -1518,7 +1518,7 @@ func TestGRPC(t *testing.T) {
 					})
 					require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 						{
-							Error:           "some error 6",
+							Error:           "some response 6",
 							ErrorCategory:   model.PermissionError,
 							SourceID:        sourceID,
 							TotalEvents:     500,
@@ -1528,7 +1528,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Failed,
 						},
 						{
-							Error:           "some error 8",
+							Error:           "some response 8",
 							ErrorCategory:   model.ResourceNotFoundError,
 							SourceID:        sourceID,
 							TotalEvents:     500,
@@ -1538,7 +1538,7 @@ func TestGRPC(t *testing.T) {
 							Status:          model.Aborted,
 						},
 						{
-							Error:           "some error 2",
+							Error:           "some response 2",
 							ErrorCategory:   model.UncategorizedError,
 							SourceID:        sourceID,
 							TotalEvents:     1200,

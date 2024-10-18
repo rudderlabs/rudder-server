@@ -132,23 +132,23 @@ func TestLoadUsersTable(t *testing.T) {
 			},
 		},
 		{
-			name:                "download error for identifies",
+			name:                "download response for identifies",
 			mockUsersFiles:      []string{"users.csv.gz"},
 			mockIdentifiesFiles: []string{"identifies.csv.gz"},
 			wantErrorsMap: map[string]error{
-				warehouseutils.IdentifiesTable: errors.New("loading identifies table: downloading load files: test error"),
+				warehouseutils.IdentifiesTable: errors.New("loading identifies table: downloading load files: test response"),
 			},
-			mockIdentifiesError: errors.New("test error"),
+			mockIdentifiesError: errors.New("test response"),
 		},
 		{
-			name:                "download error for users",
+			name:                "download response for users",
 			mockUsersFiles:      []string{"users.csv.gz"},
 			mockIdentifiesFiles: []string{"identifies.csv.gz"},
 			wantErrorsMap: map[string]error{
 				warehouseutils.IdentifiesTable: nil,
-				warehouseutils.UsersTable:      errors.New("loading users table: downloading load files: test error"),
+				warehouseutils.UsersTable:      errors.New("loading users table: downloading load files: test response"),
 			},
-			mockUsersError:             errors.New("test error"),
+			mockUsersError:             errors.New("test response"),
 			skipUserTraitsWorkspaceIDs: []string{workspaceID},
 		},
 	}

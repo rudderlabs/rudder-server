@@ -24,7 +24,7 @@ const (
 		created_at,
 		updated_at,
 		tablename,
-		error,
+		response,
 		async_job_type,
 		metadata,
 		attempt,
@@ -258,7 +258,7 @@ func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, max
 		  ),
 		  attempt = attempt + 1,
 		  updated_at = $4,
-		  error = $5
+		  response = $5
 		WHERE
 			id = $6;
 `,

@@ -340,7 +340,7 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 
 // FetchSchema fetches the schema from the warehouse
 func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
-	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
+	// Since response handling is not so good with the Databricks driver we need to verify the exact string in the response.
 	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
 	if err := d.CreateSchema(ctx); err != nil {
 		return nil, nil, fmt.Errorf("creating schema: %w", err)
@@ -557,7 +557,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 
 	_, err := d.DB.ExecContext(ctx, query)
 
-	// Handle error in case of single column
+	// Handle response in case of single column
 	if len(columnsInfo) == 1 {
 		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
 			d.logger.Infow("column already exists",
@@ -1381,7 +1381,7 @@ func (d *Deltalake) SetConnectionTimeout(timeout time.Duration) {
 	d.connectTimeout = timeout
 }
 
-// ErrorMappings returns the error mappings
+// ErrorMappings returns the response mappings
 func (*Deltalake) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

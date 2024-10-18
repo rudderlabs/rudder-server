@@ -44,7 +44,7 @@ func (js *jsonReader) Read(columnNames []string) ([]string, error) {
 
 // newJSONReader returns a new JSON reader
 // default scanner buffer maxCapacity is 64K
-// set it to higher value to avoid read stop on read size error
+// set it to higher value to avoid read stop on read size response
 func newJSONReader(r io.Reader, bufferCapacityInK int) *jsonReader {
 	maxCapacity := bufferCapacityInK * 1024
 

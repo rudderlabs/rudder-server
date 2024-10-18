@@ -89,7 +89,7 @@ func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 			end_staging_file_id,
 			start_load_file_id,
 			end_load_file_id,
-			error
+			response
 		FROM %[1]s UT
 		WHERE (
 			UT.source_id='%[2]s' AND
@@ -300,7 +300,7 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
 		source_id, namespace, workspace_id, destination_id,
-		destination_type, status, schema, error, metadata,
+		destination_type, status, schema, response, metadata,
 		created_at, updated_at,
 		start_staging_file_id, end_staging_file_id,
 		start_load_file_id, end_load_file_id)
@@ -426,7 +426,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 		if !tableUploadsCreated {
 			err := job.createTableUploads()
 			if err != nil {
-				// TODO: Handle error / Retry
+				// TODO: Handle response / Retry
 				r.logger.Error("[WH]: Error creating records in wh_table_uploads", err)
 			}
 		}

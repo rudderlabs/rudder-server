@@ -224,7 +224,7 @@ func TestHTTPApi(t *testing.T) {
 		SourceID:              sourceID,
 		DestinationID:         destinationID,
 		Status:                warehouseutils.StagingFileWaitingState,
-		Error:                 fmt.Errorf("dummy error"),
+		Error:                 fmt.Errorf("dummy response"),
 		FirstEventAt:          now.Add(time.Second),
 		UseRudderStorage:      true,
 		DestinationRevisionID: "destination_revision_id",

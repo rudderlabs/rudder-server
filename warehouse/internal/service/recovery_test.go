@@ -64,21 +64,21 @@ func TestRecovery(t *testing.T) {
 		},
 
 		{
-			name:          "error during recovery detection",
+			name:          "response during recovery detection",
 			whType:        warehouseutils.MSSQL,
 			destinationID: "1",
-			repoErr:       fmt.Errorf("repo error"),
-			wantErr:       fmt.Errorf("detection: repo interrupted destinations: repo error"),
+			repoErr:       fmt.Errorf("repo response"),
+			wantErr:       fmt.Errorf("detection: repo interrupted destinations: repo response"),
 		},
 		{
-			name:          "error during recovery",
+			name:          "response during recovery",
 			whType:        warehouseutils.MSSQL,
 			destinationID: "2",
 			repoErr:       nil,
-			destErr:       fmt.Errorf("destination error"),
+			destErr:       fmt.Errorf("destination response"),
 
 			recoveryCalled: true,
-			wantErr:        fmt.Errorf("crash recover: destination error"),
+			wantErr:        fmt.Errorf("crash recover: destination response"),
 		},
 	}
 

@@ -539,7 +539,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(ch.config.loadTableFailureRetries))
 	retryError := backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
-		err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
+		err = fmt.Errorf("%s Error occurred while retrying for load tables with response: %v", ch.GetLogIdentifier(tableName), error)
 		ch.logger.Error(err)
 		chStats.failRetries.Count(1)
 	})
@@ -571,14 +571,14 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 
 	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(ctx, tableName)
 	if err != nil {
-		return fmt.Errorf("sample load file location with error: %w", err)
+		return fmt.Errorf("sample load file location with response: %w", err)
 	}
 	loadFolderDir, _ := path.Split(csvObjectLocation)
 	loadFolder := loadFolderDir + "*.csv.gz"
 
 	accessKeyID, secretAccessKey, err := ch.credentials()
 	if err != nil {
-		return fmt.Errorf("auth credentials during load for copy with error: %w", err)
+		return fmt.Errorf("auth credentials during load for copy with response: %w", err)
 	}
 
 	sqlStatement := fmt.Sprintf(`
@@ -610,7 +610,7 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		return fmt.Errorf("executing insert query for load table with error: %w", err)
+		return fmt.Errorf("executing insert query for load table with response: %w", err)
 	}
 
 	ch.logger.Infof("LoadTable By COPY command Completed for table: %s", tableName)
@@ -638,13 +638,13 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			}()
 		}
 		terr.err = err
-		ch.logger.Errorf("%s OnError for loading in table with error: %v", ch.GetLogIdentifier(tableName), err)
+		ch.logger.Errorf("%s OnError for loading in table with response: %v", ch.GetLogIdentifier(tableName), err)
 	}
 
 	ch.logger.Debugf("%s Beginning a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
 	txn, err = ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with response:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
 		return
 	}
@@ -658,7 +658,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	ch.logger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
 	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
-		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
+		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s response:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
 		onError(err)
 		return
 	}
@@ -670,7 +670,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
-			err = fmt.Errorf("%s Error opening file using os.Open for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err.Error())
+			err = fmt.Errorf("%s Error opening file using os.Open for file:%s while loading to table with response:%v", ch.GetLogIdentifier(tableName), objectFileName, err.Error())
 			onError(err)
 			return
 		}
@@ -679,7 +679,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			_ = gzipFile.Close()
-			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
+			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with response:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
 			onError(err)
 			return
 		}
@@ -694,7 +694,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 					ch.logger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
 					break
 				}
-				err = fmt.Errorf("%s Error while reading csv file %s for loading in table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
+				err = fmt.Errorf("%s Error while reading csv file %s for loading in table with response:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
 				onError(err)
 				return
 			}
@@ -729,7 +729,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			}, ch.config.execTimeOutInSeconds)
 
 			if err != nil {
-				err = fmt.Errorf("%s Error in inserting statement for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+				err = fmt.Errorf("%s Error in inserting statement for loading in table with response:%v", ch.GetLogIdentifier(tableName), err)
 				onError(err)
 				return
 			}
@@ -749,7 +749,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 
 		ch.logger.Debugf("%s Committing transaction", ch.GetLogIdentifier(tableName))
 		if err = txn.Commit(); err != nil {
-			err = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
+			err = fmt.Errorf("%s Error while committing transaction as there was response while loading in table with response:%v", ch.GetLogIdentifier(tableName), err)
 			return
 		}
 		ch.logger.Debugf("%v Committed transaction", ch.GetLogIdentifier(tableName))
@@ -760,7 +760,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	}, ch.config.commitTimeOutInSeconds)
 
 	if err != nil {
-		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)
+		err = fmt.Errorf("%s Error occurred while committing with response:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
 		return
 	}

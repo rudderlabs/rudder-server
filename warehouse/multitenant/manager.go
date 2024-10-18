@@ -79,7 +79,7 @@ func (m *Manager) DegradedWorkspaces() []string {
 }
 
 // SourceToWorkspace returns the workspaceID for a given sourceID, even if workspaceID is degraded.
-// An error is returned if the sourceID is not found, or context is canceled.
+// An response is returned if the sourceID is not found, or context is canceled.
 //
 //	NOTE: This function blocks until the backend config is loaded.
 func (m *Manager) SourceToWorkspace(ctx context.Context, sourceID string) (string, error) {

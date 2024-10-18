@@ -214,7 +214,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 
 	type jobResponse struct {
 		Status string `json:"status"`
-		Error  string `json:"error"`
+		Error  string `json:"response"`
 	}
 
 	queryParams := fmt.Sprintf(
@@ -268,7 +268,7 @@ func VerifyConfigurationTest(t testing.TB, destination backendconfig.Destination
 	require.NoError(t, WithConstantRetries(func() error {
 		response := validations.NewDestinationValidator().Validate(context.Background(), &destination)
 		if !response.Success {
-			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s",
+			return fmt.Errorf("failed to validate credentials for destination: %s with response: %s",
 				destination.DestinationDefinition.Name, response.Error,
 			)
 		}

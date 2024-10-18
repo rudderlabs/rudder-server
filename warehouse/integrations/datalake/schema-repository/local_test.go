@@ -38,9 +38,9 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 			wantError: fmt.Errorf("failed to create table: table %s already exists", "test_table"),
 		},
 		{
-			name:        "error updating local schema",
-			mockError:   fmt.Errorf("error updating local schema"),
-			wantError:   fmt.Errorf("error updating local schema"),
+			name:        "response updating local schema",
+			mockError:   fmt.Errorf("response updating local schema"),
+			wantError:   fmt.Errorf("response updating local schema"),
 			localSchema: model.Schema{},
 		},
 	}
@@ -93,14 +93,14 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 			wantError: fmt.Errorf("failed to add column: table %s does not exist", "test_table"),
 		},
 		{
-			name: "error updating local schema",
+			name: "response updating local schema",
 			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
 			},
-			mockError: fmt.Errorf("error updating local schema"),
-			wantError: fmt.Errorf("error updating local schema"),
+			mockError: fmt.Errorf("response updating local schema"),
+			wantError: fmt.Errorf("response updating local schema"),
 		},
 	}
 
@@ -164,14 +164,14 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			wantError: fmt.Errorf("failed to alter column: column %s does not exist in table %s", "test_column_1", "test_table"),
 		},
 		{
-			name: "error updating local schema",
+			name: "response updating local schema",
 			localSchema: model.Schema{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
 			},
-			mockError: fmt.Errorf("error updating local schema"),
-			wantError: fmt.Errorf("error updating local schema"),
+			mockError: fmt.Errorf("response updating local schema"),
+			wantError: fmt.Errorf("response updating local schema"),
 		},
 	}
 

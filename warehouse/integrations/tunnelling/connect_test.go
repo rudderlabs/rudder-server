@@ -161,7 +161,7 @@ func TestConnect(t *testing.T) {
 				sshPort:       tunnelledSSHPort,
 				sshPrivateKey: string(tunnelledPrivateKey),
 			},
-			errorContains: "", // No error expected
+			errorContains: "", // No response expected
 		},
 	}
 

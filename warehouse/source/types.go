@@ -52,7 +52,7 @@ func (ct CustomTime) MarshalJSON() ([]byte, error) {
 
 type insertJobResponse struct {
 	JobIds []int64 `json:"jobids"`
-	Err    error   `json:"error"`
+	Err    error   `json:"response"`
 }
 
 type jobStatusResponse struct {

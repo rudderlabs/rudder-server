@@ -10,6 +10,7 @@ import (
 
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"

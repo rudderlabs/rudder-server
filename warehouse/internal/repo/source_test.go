@@ -342,7 +342,7 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 		workspaceId   = "test_workspace_id"
 		jobRun        = "test-job-run"
 		taskRun       = "test-task-run"
-		testError     = "test-error"
+		testError     = "test-response"
 	)
 
 	db, ctx := setupDB(t), context.Background()

@@ -47,7 +47,7 @@ const (
 		end_staging_file_id,
 		start_load_file_id,
 		end_load_file_id,
-		error,
+		response,
 		metadata,
 		timings->0 as firstTiming,
 		timings->-1 as lastTiming,
@@ -68,7 +68,7 @@ var (
 	UploadFieldLastExecAt      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"last_exec_at", v} }
 	UploadFieldInProgress      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"in_progress", v} }
 	UploadFieldMetadata        UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"metadata", v} }
-	UploadFieldError           UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error", v} }
+	UploadFieldError           UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"response", v} }
 	UploadFieldErrorCategory   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error_category", v} }
 )
 
@@ -170,7 +170,7 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 			destination_type, start_staging_file_id,
 			end_staging_file_id, start_load_file_id,
 			end_load_file_id, status, schema,
-			error, metadata, first_event_at,
+			response, metadata, first_event_at,
 			last_event_at, created_at, updated_at
 		)
 		VALUES
@@ -598,7 +598,7 @@ func (u *Uploads) PendingTableUploads(ctx context.Context, namespace string, upl
 		  UT.namespace,
 		  TU.table_name,
 		  TU.status,
-		  TU.error
+		  TU.response
 		FROM
 			`+uploadsTableName+` UT
 		INNER JOIN
@@ -755,7 +755,7 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 			destination_type,
 			namespace,
 			status,
-			error,
+			response,
 			created_at,
 			first_event_at,
 			last_event_at,
@@ -856,7 +856,7 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 			}
 		}
 
-		// set error only for failed uploads. skip for retried and then successful uploads
+		// set response only for failed uploads. skip for retried and then successful uploads
 		if uploadInfo.Status != model.ExportedData && len(timingsRaw) > 0 {
 			_ = json.Unmarshal(timingsRaw, &timings)
 
@@ -1085,7 +1085,7 @@ func (u *Uploads) RetrieveFailedBatches(
 			u.id,
 			tu.total_events,
 			u.updated_at,
-			u.error,
+			u.response,
 			u.timings
 		  FROM
 			wh_uploads u
@@ -1096,8 +1096,8 @@ func (u *Uploads) RetrieveFailedBatches(
 			AND u.created_at >= $3
 			AND u.created_at <= $4
 			AND u.status ~~ ANY($5)
-			AND u.error IS NOT NULL
-			AND u.error != '{}'
+			AND u.response IS NOT NULL
+			AND u.response != '{}'
 			AND tu.table_name NOT ILIKE $6
 			AND tu.total_events IS NOT NULL
 		),
@@ -1110,7 +1110,7 @@ func (u *Uploads) RetrieveFailedBatches(
 			u.id,
 			s.total_events,
 			u.updated_at,
-			u.error,
+			u.response,
 			u.timings
 		  FROM
 			wh_uploads u
@@ -1121,8 +1121,8 @@ func (u *Uploads) RetrieveFailedBatches(
 			AND u.created_at >= $3
 			AND u.created_at <= $4
 			AND u.status ~~ ANY($5)
-			AND u.error IS NOT NULL
-			AND u.error != '{}'
+			AND u.response IS NOT NULL
+			AND u.response != '{}'
 		),
 		combined_result AS (
 		  -- Select everything from table_uploads_result
@@ -1133,7 +1133,7 @@ func (u *Uploads) RetrieveFailedBatches(
 			tu.id,
 			tu.total_events,
 			tu.updated_at,
-			tu.error,
+			tu.response,
 			tu.timings
 		  FROM
 			table_uploads_result tu
@@ -1146,7 +1146,7 @@ func (u *Uploads) RetrieveFailedBatches(
 			s.id,
 			s.total_events,
 			s.updated_at,
-			s.error,
+			s.response,
 			s.timings
 		  FROM
 			staging_files_result s
@@ -1180,7 +1180,7 @@ func (u *Uploads) RetrieveFailedBatches(
 		  ) AS total_syncs,
 		  last_happened_at,
 		  first_happened_at,
-		  error,
+		  response,
 		  timings
 		FROM
 		  (
@@ -1197,7 +1197,7 @@ func (u *Uploads) RetrieveFailedBatches(
 			  MIN(updated_at) OVER (
 				PARTITION BY error_category, source_id, status
 			  ) AS first_happened_at,
-			  error,
+			  response,
 			  timings,
 			  ROW_NUMBER() OVER (
 				PARTITION BY error_category, source_id, status
@@ -1284,7 +1284,7 @@ func (u *Uploads) RetryFailedBatches(
 			AND workspace_id = $2
 			AND created_at >= $3
 			AND created_at <= $4
-			AND error != '{}'
+			AND response != '{}'
 	`
 	start, end := req.Start, req.End
 	if req.End.IsZero() {

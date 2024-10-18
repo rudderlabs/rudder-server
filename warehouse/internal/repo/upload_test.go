@@ -943,7 +943,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		},
 		{
 			status: "exporting_data_failed",
-			err:    "error loading data",
+			err:    "response loading data",
 		},
 	} {
 		tableName := fmt.Sprintf("test_table_%d", i+1)
@@ -981,7 +981,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 				Namespace:     namespace,
 				TableName:     "test_table_2",
 				Status:        "exporting_data_failed",
-				Error:         "error loading data",
+				Error:         "response loading data",
 			},
 		}
 		require.Equal(t, expectedPendingTableUploads, pendingTableUploads)
@@ -1395,7 +1395,7 @@ func TestUploads_SyncsInfo(t *testing.T) {
 	reverseUploadIDs := lo.Reverse(uploadIDs)
 
 	for _, uploadID := range uploadIDs[26:51] {
-		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, error = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
+		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, response = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
 			{
 			  "exporting_data_failed": {
 				"errors": [
@@ -1424,7 +1424,7 @@ func TestUploads_SyncsInfo(t *testing.T) {
 		require.NoError(t, err)
 	}
 	for _, uploadID := range uploadIDs[51:76] {
-		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, error = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
+		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, response = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
 			{
 			  "exporting_data_failed": {
 				"errors": [
@@ -1792,7 +1792,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			errorJson, err := json.Marshal(error)
 			require.NoError(t, err)
 
-			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
+			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET response = $1, error_category = $2 WHERE id = $3`,
 				errorJson,
 				errorCategory,
 				uploadID,
@@ -1897,7 +1897,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:        "created_remote_schema_failed",
-				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some response 5","some response 6"],"attempt":2}}`),
 				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
@@ -1907,7 +1907,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:        "aborted",
-				error:         json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
+				error:         json.RawMessage(`{"exporting_data_failed":{"errors":["some response 7","some response 8"],"attempt":2}}`),
 				errorCategory: model.PermissionError,
 				timings: model.Timings{
 					{
@@ -1941,7 +1941,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 8`,
+				Error:           `some response 8`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -1951,7 +1951,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          model.Aborted,
 			},
 			{
-				Error:           `some error 6`,
+				Error:           `some response 6`,
 				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -1980,7 +1980,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 8`,
+				Error:           `some response 8`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -1990,7 +1990,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          "syncing",
 			},
 			{
-				Error:           `some error 6`,
+				Error:           `some response 6`,
 				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -2010,7 +2010,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:        "created_remote_schema_failed",
-				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+				error:         json.RawMessage(`{"created_remote_schema_failed":{"errors":["some response 5","some response 6"],"attempt":2}}`),
 				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
@@ -2020,7 +2020,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:        "aborted",
-				error:         json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
+				error:         json.RawMessage(`{"exporting_data_failed":{"errors":["some response 7","some response 8"],"attempt":2}}`),
 				errorCategory: model.PermissionError,
 				timings: model.Timings{
 					{
@@ -2053,7 +2053,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 8`,
+				Error:           `some response 8`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -2063,7 +2063,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          model.Aborted,
 			},
 			{
-				Error:           `some error 6`,
+				Error:           `some response 6`,
 				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -2092,7 +2092,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:              "internal_processing_failed",
-				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
+				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some response 1","some response 2"],"attempt":2}}`),
 				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
@@ -2103,7 +2103,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "generating_load_files_failed",
-				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some response 3","some response 4"],"attempt":2}}`),
 				errorCategory:       model.PermissionError,
 				prepareTableUploads: false,
 				timings: model.Timings{
@@ -2139,7 +2139,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 4`,
+				Error:           `some response 4`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     600,
@@ -2149,7 +2149,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          model.Failed,
 			},
 			{
-				Error:           `some error 2`,
+				Error:           `some response 2`,
 				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     600,
@@ -2179,7 +2179,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:              "internal_processing_failed",
-				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some error 1","some error 2"],"attempt":2}}`),
+				error:               json.RawMessage(`{"internal_processing_failed":{"errors":["some response 1","some response 2"],"attempt":2}}`),
 				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
@@ -2190,7 +2190,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "generating_load_files_failed",
-				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some response 3","some response 4"],"attempt":2}}`),
 				errorCategory:       model.UncategorizedError,
 				prepareTableUploads: false,
 				timings: model.Timings{
@@ -2201,7 +2201,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "exporting_data_failed",
-				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response 5","some response 6"],"attempt":2}}`),
 				errorCategory:       model.PermissionError,
 				prepareTableUploads: true,
 				timings: model.Timings{
@@ -2212,7 +2212,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "aborted",
-				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 7","some error 8"],"attempt":2}}`),
+				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response 7","some response 8"],"attempt":2}}`),
 				prepareTableUploads: true,
 				errorCategory:       model.ResourceNotFoundError,
 				timings: model.Timings{
@@ -2248,7 +2248,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 6`,
+				Error:           `some response 6`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -2258,7 +2258,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          model.Failed,
 			},
 			{
-				Error:           `some error 8`,
+				Error:           `some response 8`,
 				ErrorCategory:   model.ResourceNotFoundError,
 				SourceID:        sourceID,
 				TotalEvents:     500,
@@ -2268,7 +2268,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 				Status:          model.Aborted,
 			},
 			{
-				Error:           `some error 2`,
+				Error:           `some response 2`,
 				ErrorCategory:   model.UncategorizedError,
 				SourceID:        sourceID,
 				TotalEvents:     1200,
@@ -2298,7 +2298,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:              "generating_load_files_failed",
-				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some error 3","some error 4"],"attempt":2}}`),
+				error:               json.RawMessage(`{"generating_load_files_failed":{"errors":["some response 3","some response 4"],"attempt":2}}`),
 				errorCategory:       model.PermissionError,
 				prepareTableUploads: false,
 				timings: model.Timings{
@@ -2309,7 +2309,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "exporting_data_failed",
-				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error 5","some error 6"],"attempt":2}}`),
+				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response 5","some response 6"],"attempt":2}}`),
 				errorCategory:       model.PermissionError,
 				prepareTableUploads: true,
 				timings: model.Timings{
@@ -2341,7 +2341,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, failedBatches, []model.RetrieveFailedBatchesResponse{
 			{
-				Error:           `some error 4`,
+				Error:           `some response 4`,
 				ErrorCategory:   model.PermissionError,
 				SourceID:        sourceID,
 				TotalEvents:     1100,
@@ -2393,7 +2393,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}{
 			{
 				status:        "internal_processing_failed",
-				error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some error","some error"],"attempt":2}}`),
+				error:         json.RawMessage(`{"internal_processing_failed":{"errors":["some response","some response"],"attempt":2}}`),
 				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
@@ -2403,7 +2403,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:        "generating_load_files_failed",
-				error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some error","some error"],"attempt":2}}`),
+				error:         json.RawMessage(`{"generating_load_files_failed":{"errors":["some response","some response"],"attempt":2}}`),
 				errorCategory: model.UncategorizedError,
 				timings: model.Timings{
 					{
@@ -2413,7 +2413,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "exporting_data_failed",
-				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response","some response"],"attempt":2}}`),
 				errorCategory:       model.PermissionError,
 				prepareTableUploads: true,
 				timings: model.Timings{
@@ -2424,7 +2424,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			},
 			{
 				status:              "aborted",
-				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`),
+				error:               json.RawMessage(`{"exporting_data_failed":{"errors":["some response","some response"],"attempt":2}}`),
 				prepareTableUploads: true,
 				errorCategory:       model.ResourceNotFoundError,
 				timings: model.Timings{
@@ -2531,7 +2531,7 @@ func TestUploads_Update(t *testing.T) {
 		updatedSchema          = json.RawMessage(`{"tracks":{"id":"string","received_at":"datetime"}}`)
 		updatedlastExecAt      = now.Add(time.Hour)
 		updatedMetadata        = json.RawMessage(`{"retried":true,"priority":50,"nextRetryTime":"2023-10-29T20:06:25.492432247Z","load_file_type":"csv"}`)
-		updatedError           = json.RawMessage(`{"exporting_data_failed":{"errors":["some error","some error"],"attempt":2}}`)
+		updatedError           = json.RawMessage(`{"exporting_data_failed":{"errors":["some response","some response"],"attempt":2}}`)
 		updatedErrorCategory   = model.PermissionError
 	)
 
@@ -2635,7 +2635,7 @@ func TestUploads_Update(t *testing.T) {
 
 		err := repoUpload.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 			require.NoError(t, repoUpload.UpdateWithTx(ctx, tx, id, fieldsToUpdate))
-			return errors.New("test error")
+			return errors.New("test response")
 		})
 		require.Error(t, err)
 

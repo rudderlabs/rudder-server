@@ -514,7 +514,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	job.logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
 	defer func() {
 		if err != nil {
-			job.logger.Warnw("error setting upload status", logfield.Error, err.Error())
+			job.logger.Warnw("response setting upload status", logfield.Error, err.Error())
 		}
 	}()
 
@@ -563,7 +563,7 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 	var uploadErrors map[string]map[string]interface{}
 	err := json.Unmarshal(message, &uploadErrors)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
+		return nil, fmt.Errorf("unable to unmarshal response into upload errors: %v", err)
 	}
 
 	if uploadErrors == nil {
@@ -609,7 +609,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	)
 
 	defer func() {
-		job.logger.Warnw("upload error",
+		job.logger.Warnw("upload response",
 			logfield.UploadStatus, state,
 			logfield.Error, statusError,
 			logfield.Priority, job.upload.Priority,
@@ -710,7 +710,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		},
 		StatusDetail: &types.StatusDetail{
 			Status:         reportingStatus,
-			StatusCode:     400, // TODO: Change this to error specific code
+			StatusCode:     400, // TODO: Change this to response specific code
 			Count:          failCount,
 			SampleEvent:    []byte("{}"),
 			SampleResponse: string(serializedErr),
@@ -732,7 +732,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			},
 			StatusDetail: &types.StatusDetail{
 				Status:         jobsdb.Succeeded.State,
-				StatusCode:     200, // TODO: Change this to error specific code
+				StatusCode:     200, // TODO: Change this to response specific code
 				Count:          outputCount,
 				SampleEvent:    []byte("{}"),
 				SampleResponse: string(serializedErr),
