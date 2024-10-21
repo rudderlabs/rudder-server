@@ -41,6 +41,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.3.1
+	github.com/dlclark/regexp2 v1.11.4
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
@@ -187,7 +188,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v1.0.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/dnephin/pflag v1.0.7 // indirect
 	github.com/docker/cli v27.2.1+incompatible // indirect
 	github.com/docker/cli-docs-tool v0.8.0 // indirect
