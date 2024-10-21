@@ -57,8 +57,16 @@ func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
 }
 
 func (m *MarketoAuthService) GetAccessToken() (string, error) {
-	// If the access token is nil or about to expire in 1 min, get a new one
-	if m.accessToken.AccessToken == "" || m.accessToken.FetchedAt+m.accessToken.ExpiresIn-60 < time.Now().Unix() {
+
+	if m.accessToken.AccessToken == "" {
+		err := m.fetchOrUpdateAccessToken()
+		if err != nil {
+			return "", err
+		}
+
+		// If the access token is nil or about to expire in 10 seconds, wait 10 seconds and fetch a new access token
+	} else if m.accessToken.FetchedAt+m.accessToken.ExpiresIn < 10 {
+		time.Sleep(11 * time.Second)
 		err := m.fetchOrUpdateAccessToken()
 		if err != nil {
 			return "", err

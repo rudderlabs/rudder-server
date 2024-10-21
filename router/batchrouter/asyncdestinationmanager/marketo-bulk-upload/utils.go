@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -141,6 +142,10 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 	headers := make(map[string]int)
 	var headerOrder []string
 
+	// Create a CSV writer
+	writer := csv.NewWriter(csvFile)
+	defer writer.Flush()
+
 	// First pass: collect all unique headers we are taking value as its the marketo field name
 	for _, value := range destConfig.FieldsMapping {
 		if _, exists := headers[value]; !exists {
@@ -151,7 +156,8 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 
 	// Write header row
 	headerRow := strings.Join(headerOrder, ",") + "\n"
-	_, err = csvFile.WriteString(headerRow)
+
+	err = writer.Write(headerOrder)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -174,7 +180,7 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 			continue
 		}
 
-		_, err := csvFile.WriteString(line)
+		err := writer.Write(row)
 		if err != nil {
 			return "", nil, nil, nil, err
 		}

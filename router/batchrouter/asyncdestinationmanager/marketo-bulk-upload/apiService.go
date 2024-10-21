@@ -33,19 +33,12 @@ func (m *MarketoAPIService) checkForCSVLikeResponse(resp *http.Response) bool {
 	return respHeaders.Get("Content-Type") == "text/csv;charset=UTF-8"
 }
 
-func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) (string, *APIError) {
-	uploadTimeStat := m.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": "MARKETO_BULK_UPLOAD",
-	})
-
-	uploadURL := fmt.Sprintf("https://%s.mktorest.com/bulk/v1/leads.json", m.munchkinId)
+func (m *MarketoAPIService) attemptImport(uploadURL, csvFilePath, deduplicationField string, uploadTimeStat stats.Measurement) (string, *APIError) {
 	token, err := m.authService.GetAccessToken()
 	if err != nil {
 		return "", &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in fetching access token"}
 	}
 
-	// send request
 	startTime := time.Now()
 	resp, err := sendHTTPRequest(uploadURL, csvFilePath, token, deduplicationField)
 	uploadTimeStat.Since(startTime)
@@ -53,11 +46,10 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 	if err != nil {
 		return "", &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in sending request"}
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in sending request"}
+		return "", &APIError{StatusCode: int64(resp.StatusCode), Category: "Retryable", Message: "Error in sending request"}
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -66,9 +58,7 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 	}
 
 	var marketoResponse MarketoResponse
-
 	err = json.Unmarshal(responseBody, &marketoResponse)
-
 	if err != nil {
 		return "", &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing response body"}
 	}
@@ -79,6 +69,30 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 	}
 
 	return "", &APIError{StatusCode: statusCode, Category: category, Message: errorMessage}
+}
+
+func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) (string, *APIError) {
+	uploadTimeStat := m.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+		"module":   "batch_router",
+		"destType": "MARKETO_BULK_UPLOAD",
+	})
+
+	uploadURL := fmt.Sprintf("https://%s.mktorest.com/bulk/v1/leads.json", m.munchkinId)
+
+	// Initial attempt
+	importID, apiError := m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
+	if apiError == nil {
+		return importID, nil
+	}
+
+	// If we get a token refresh error, retry once
+	if apiError.Category == "RefreshToken" {
+		m.logger.Info("Token refresh required. Retrying import after fetching new token.")
+		time.Sleep(5 * time.Second) // Wait for 5 seconds before retrying
+		return m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
+	}
+
+	return "", apiError
 }
 
 func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse, *APIError) {

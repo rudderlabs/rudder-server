@@ -167,7 +167,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		case 500:
 			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: false}
 		case 400:
-			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: false}
+			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: true, HasFailed: true}
 		case 429:
 			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: false}
 		}
@@ -212,7 +212,7 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		pollStatus.StatusCode = 500
 	case "Failed":
 		pollStatus.HasFailed = true
-		pollStatus.StatusCode = 500
+		pollStatus.StatusCode = 400
 		pollStatus.FailedJobURLs = failedJobURLs
 		pollStatus.WarningJobURLs = warningJobURLs
 		pollStatus.HasWarning = hasWarning
@@ -222,6 +222,11 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		pollStatus.StatusCode = 500
 		pollStatus.Complete = false
 		pollStatus.Error = fmt.Sprintf("Unknown status: %s", batchStatus)
+	}
+
+	// in case of success, clear the hashToJobId map
+	if !hasFailed && !hasWarning {
+		b.clearHashToJobId()
 	}
 
 	return pollStatus
