@@ -34,7 +34,8 @@ func (d *ScyllaDB) Close() {
 }
 
 func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
-	// Create the table if it doesn't exist
+	defer d.stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
+
 	var err error
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
@@ -59,6 +60,8 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {
+	defer d.stat.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
+
 	d.cacheMu.Lock()
 	kvs := make([]types.KeyValue, len(keys))
 	for i, key := range keys {
@@ -94,6 +97,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 	cluster := gocql.NewCluster(conf.GetReloadableStringSliceVar([]string{"localhost:9042"}, "Scylla.Hosts").Load()...)
 	cluster.Consistency = gocql.Quorum
+	cluster.NumConns = conf.GetInt("Scylla.NumConns", 2)
 	cluster.RetryPolicy = &gocql.ExponentialBackoffRetryPolicy{
 		NumRetries: conf.GetInt("Scylla.NumRetries", 3),
 		Min:        conf.GetDuration("Scylla.MinRetry", 100, time.Millisecond),

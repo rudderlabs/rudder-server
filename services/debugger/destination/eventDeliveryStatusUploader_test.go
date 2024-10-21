@@ -16,6 +16,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 const (
@@ -169,6 +170,7 @@ type eventDeliveryStatusUploaderContext struct {
 func (c *eventDeliveryStatusUploaderContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	c.mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&testutils.BasicAuthMock{})
 }
 
 func initEventDeliveryStatusUploader() {

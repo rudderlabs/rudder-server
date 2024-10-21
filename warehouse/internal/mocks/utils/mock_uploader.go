@@ -12,7 +12,6 @@ package mock_uploader
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	model "github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -54,35 +53,6 @@ func (m *MockUploader) CanAppend() bool {
 func (mr *MockUploaderMockRecorder) CanAppend() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanAppend", reflect.TypeOf((*MockUploader)(nil).CanAppend))
-}
-
-// GetFirstLastEvent mocks base method.
-func (m *MockUploader) GetFirstLastEvent() (time.Time, time.Time) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFirstLastEvent")
-	ret0, _ := ret[0].(time.Time)
-	ret1, _ := ret[1].(time.Time)
-	return ret0, ret1
-}
-
-// GetFirstLastEvent indicates an expected call of GetFirstLastEvent.
-func (mr *MockUploaderMockRecorder) GetFirstLastEvent() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFirstLastEvent", reflect.TypeOf((*MockUploader)(nil).GetFirstLastEvent))
-}
-
-// GetLoadFileGenStartTIme mocks base method.
-func (m *MockUploader) GetLoadFileGenStartTIme() time.Time {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLoadFileGenStartTIme")
-	ret0, _ := ret[0].(time.Time)
-	return ret0
-}
-
-// GetLoadFileGenStartTIme indicates an expected call of GetLoadFileGenStartTIme.
-func (mr *MockUploaderMockRecorder) GetLoadFileGenStartTIme() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadFileGenStartTIme", reflect.TypeOf((*MockUploader)(nil).GetLoadFileGenStartTIme))
 }
 
 // GetLoadFileType mocks base method.

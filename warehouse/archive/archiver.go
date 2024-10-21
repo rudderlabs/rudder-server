@@ -45,7 +45,7 @@ type uploadRecord struct {
 	endStagingFileId   int64
 	startLoadFileID    int64
 	endLoadFileID      int64
-	uploadMetdata      json.RawMessage
+	uploadMetadata     json.RawMessage
 	workspaceID        string
 }
 
@@ -101,7 +101,7 @@ func New(
 }
 
 func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
-	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
+	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,",
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -164,7 +164,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
+	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,`,
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -311,7 +311,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			&u.endStagingFileId,
 			&u.startLoadFileID,
 			&u.endLoadFileID,
-			&u.uploadMetdata,
+			&u.uploadMetadata,
 			&u.workspaceID,
 		)
 		if err != nil {
@@ -372,7 +372,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 				continue
 			}
 
-			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
+			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetadata)
 
 			// delete load file records
 			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, hasUsedRudderStorage); err != nil {
@@ -383,14 +383,14 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 		}
 
 		// update upload metadata
-		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
+		u.uploadMetadata, _ = sjson.SetBytes(u.uploadMetadata, "archivedStagingAndLoadFiles", true)
 		stmt := fmt.Sprintf(`
 			UPDATE %s
 			SET metadata = $1
 			WHERE id = $2;`,
 			pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 		)
-		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata, u.uploadID)
+		_, err = txn.ExecContext(ctx, stmt, u.uploadMetadata, u.uploadID)
 		if err != nil {
 			a.log.Errorf(`[Archiver]: Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
 			_ = txn.Rollback()

@@ -207,18 +207,6 @@ type ColumnInfo struct {
 	Type  string
 }
 
-type Destination struct {
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-}
-
-type Schema model.Schema
-
-type KeyValue struct {
-	Key   string
-	Value interface{}
-}
-
 //go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
 	IsWarehouseSchemaEmpty() bool
@@ -231,9 +219,7 @@ type Uploader interface {
 	GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error)
 	ShouldOnDedupUseNewRecord() bool
 	UseRudderStorage() bool
-	GetLoadFileGenStartTIme() time.Time
 	GetLoadFileType() string
-	GetFirstLastEvent() (time.Time, time.Time)
 	CanAppend() bool
 }
 
@@ -851,11 +837,6 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 		dateRange = append(dateRange, d.Format(dateFormat))
 	}
 	return
-}
-
-type FilterBy struct {
-	Key   string
-	Value interface{}
 }
 
 func StagingTablePrefix(provider string) string {

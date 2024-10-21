@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -49,7 +50,6 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableReplay       bool
 		processorDSLimit   config.ValueLoader[int]
 		routerDSLimit      config.ValueLoader[int]
 		batchRouterDSLimit config.ValueLoader[int]
@@ -58,7 +58,6 @@ type embeddedApp struct {
 }
 
 func (a *embeddedApp) Setup() error {
-	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -139,6 +138,15 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		FeaturesRetryMaxAttempts: 10,
 	})
 
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "embedded-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
+	}
+
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
@@ -146,7 +154,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gatewayDB.Close()
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
 	}
@@ -160,6 +170,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -168,6 +179,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -176,6 +188,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer batchRouterDB.Close()
 
@@ -186,6 +199,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
@@ -193,7 +207,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDBForWrite.Close()
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
 	}
@@ -205,6 +221,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer schemaDB.Close()
 
@@ -219,6 +236,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
 			},
 		),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer archivalDB.Close()
 
@@ -358,23 +376,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
-	if a.config.enableReplay {
-		var replayDB jobsdb.Handle
-		err := replayDB.Setup(
-			jobsdb.ReadWrite, options.ClearDB, "replay",
-		)
-		if err != nil {
-			return fmt.Errorf("could not setup replayDB: %w", err)
-		}
-		replay, err := a.app.Features().Replay.Setup(ctx, config, &replayDB, gatewayDB, routerDB, batchRouterDB)
-		if err != nil {
-			return err
-		}
-		if err := replay.Start(); err != nil {
-			return fmt.Errorf("could not start replay: %w", err)
-		}
-		defer func() { _ = replay.Stop() }()
-	}
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
