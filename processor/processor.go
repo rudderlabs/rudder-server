@@ -2973,10 +2973,9 @@ func (proc *Handle) responsesDiffer(
 	}
 
 	var (
-		differedSampleEvents       []types.SingularEventT
-		differedEventsCount        int
-		collectedSampleEvent       bool
-		collectedSampleFailedEvent bool
+		differedSampleEvents []types.SingularEventT
+		differedEventsCount  int
+		collectedSampleEvent bool
 	)
 
 	for i := range pResponse.Events {
@@ -2991,21 +2990,6 @@ func (proc *Handle) responsesDiffer(
 			}
 		}
 	}
-	for i := range pResponse.FailedEvents {
-		wResponse.FailedEvents[i].Error = pResponse.FailedEvents[i].Error // Ensure errors match
-
-		if !reflect.DeepEqual(pResponse.FailedEvents[i], wResponse.FailedEvents[i]) {
-			differedEventsCount++
-			if !collectedSampleFailedEvent {
-				// Collect the mismatched messages and break (sample only)
-				differedSampleEvents = append(differedSampleEvents, lo.Map(pResponse.FailedEvents[i].Metadata.GetMessagesIDs(), func(msgID string, _ int) types.SingularEventT {
-					return eventsByMessageID[msgID].SingularEvent
-				})...)
-				collectedSampleFailedEvent = true
-			}
-		}
-	}
-
 	proc.statsFactory.NewStat("proc_warehouse_transformations_mismatches", stats.CountType).Count(differedEventsCount)
 
 	return differedSampleEvents

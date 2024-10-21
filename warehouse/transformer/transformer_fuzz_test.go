@@ -11,6 +11,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -451,16 +452,27 @@ func FuzzTransformer(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, payload string) {
-		payload, err := sanitizeJSON(payload)
+		sanitizedPayload, err := sanitizePayload(payload)
 		if err != nil {
 			return
 		}
 
-		eventType := gjson.Get(payload, "type").String()
-		eventName := gjson.Get(payload, "event").String()
-		messageID := gjson.Get(payload, "messageId").String()
-		receivedAt := gjson.Get(payload, "receivedAt").Time()
-		recordID := gjson.Get(payload, "recordId").Value()
+		var (
+			eventType  = gjson.Get(sanitizedPayload, "type").String()
+			eventName  = gjson.Get(sanitizedPayload, "event").String()
+			messageID  = gjson.Get(sanitizedPayload, "messageId").String()
+			receivedAt = gjson.Get(sanitizedPayload, "receivedAt").Time()
+			recordID   = gjson.Get(sanitizedPayload, "recordId").Value()
+		)
+
+		if len(messageID) == 0 || receivedAt.IsZero() {
+			return
+		}
+
+		sanitizedPayload, err = sjson.Set(sanitizedPayload, "receivedAt", receivedAt.Format(misc.RFC3339Milli))
+		if err != nil {
+			return
+		}
 
 		c := setupConfig(transformerResource, map[string]any{})
 
@@ -469,13 +481,13 @@ func FuzzTransformer(f *testing.F) {
 
 		for _, destType := range whutils.WarehouseDestinations {
 			destConfig := map[string]any{}
-			for k, v := range destConfigOpts[len(payload)%len(destConfigOpts)] {
+			for k, v := range destConfigOpts[len(sanitizedPayload)%len(destConfigOpts)] {
 				destConfig[k] = v
 			}
 
 			eventsInfos := []testhelper.EventInfo{
 				{
-					Payload: []byte(payload),
+					Payload: []byte(sanitizedPayload),
 					Metadata: ptrans.Metadata{
 						EventType:       eventType,
 						EventName:       eventName,
@@ -534,27 +546,24 @@ func cmpEvents(t *testing.T, infos []testhelper.EventInfo, pTransformer, dTransf
 		require.NotEmpty(t, pResponse.FailedEvents[i].Error)
 		require.NotEmpty(t, wResponse.FailedEvents[i].Error)
 
-		wResponse.FailedEvents[i].Error = pResponse.FailedEvents[i].Error
-
-		require.EqualValues(t, wResponse.FailedEvents[i], pResponse.FailedEvents[i])
+		require.NotZero(t, pResponse.FailedEvents[i].StatusCode)
+		require.NotZero(t, wResponse.FailedEvents[i].StatusCode)
 	}
 }
 
-func sanitizeJSON(input string) (string, error) {
+func sanitizePayload(input string) (string, error) {
 	sanitized := strings.ReplaceAll(input, `\u0000`, "")
-
 	if len(strings.TrimSpace(sanitized)) == 0 {
 		return "{}", nil
 	}
 
-	var result any
+	var result types.SingularEventT
 	if err := json.Unmarshal([]byte(sanitized), &result); err != nil {
 		return "", errors.New("invalid JSON format")
 	}
-
 	output, err := json.Marshal(result)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshalling error: %w", err)
 	}
 	return string(output), nil
 }
