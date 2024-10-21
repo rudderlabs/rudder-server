@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/cslb"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -493,6 +494,11 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
 		IdleConnTimeout:     30 * time.Second,
 	}
+	if config.GetBool("Transformer.Client.cslbEnabled", false) {
+		cslb.Setup()
+		cslb.Enable(trans.tr)
+	}
+
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout
