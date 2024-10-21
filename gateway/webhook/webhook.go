@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -40,15 +41,6 @@ type webhookT struct {
 type batchWebhookT struct {
 	batchRequest []*webhookT
 	sourceType   string
-}
-
-type v2SpecRequest struct {
-	Method  string              `json:"method"`
-	URL     string              `json:"url"`
-	Proto   string              `json:"proto"`
-	Headers map[string][]string `json:"headers"`
-	Body    []byte              `json:"body"`
-	Query   map[string][]string `json:"query_parameters"`
 }
 
 //go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook Webhook
@@ -284,67 +276,6 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-// func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
-// 	defer func() {
-// 		_ = req.Body.Close()
-// 	}()
-
-// 	body, err := io.ReadAll(req.Body)
-// 	if err != nil {
-// 		return nil, errors.New(response.RequestBodyReadFailed)
-// 	}
-
-// 	if len(body) == 0 {
-// 		body = []byte("{}") // If body is empty, set it to an empty JSON object
-// 	}
-
-// 	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
-// 		queryParams := req.URL.Query()
-
-// 		return sjson.SetBytes(body, "query_parameters", queryParams)
-// 	}
-
-// 	return body, nil
-// }
-
-func prepareRequestBody(req *http.Request) ([]byte, error) {
-	defer func() {
-		_ = req.Body.Close()
-	}()
-
-	var bodyBytes []byte
-	var err error
-
-	// Read the body (if present)
-	if req.Body != nil {
-		bodyBytes, err = io.ReadAll(req.Body)
-		if err != nil {
-			return nil, errors.New(response.RequestBodyReadFailed)
-		}
-	}
-
-	if len(bodyBytes) == 0 {
-		bodyBytes = []byte("{}") // If body is empty, set it to an empty JSON object
-	}
-
-	// Create a RequestJSON struct to hold the necessary fields
-	v2SpecRequestInstance := v2SpecRequest{
-		Method:  req.Method,
-		URL:     req.URL.RequestURI(),
-		Proto:   req.Proto,
-		Headers: req.Header,
-		Query:   req.URL.Query(),
-		Body:    bodyBytes,
-	}
-
-	requestBytes, err := json.Marshal(v2SpecRequestInstance)
-	if err != nil {
-		return nil, errors.New(response.TransformerRequestMarshalError)
-	}
-
-	return requestBytes, nil
-}
-
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
@@ -378,7 +309,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			var payload []byte
-			body, err := prepareRequestBody(req.request)
+			body, _, err := requesttojson.RequestToJSON(req.request, "{}")
 			if err == nil && !json.Valid(body) {
 				err = errors.New(response.InvalidJSON)
 			}

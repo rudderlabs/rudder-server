@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"testing/iotest"
 
 	"go.uber.org/mock/gomock"
 
@@ -479,92 +477,6 @@ func TestRecordWebhookErrors(t *testing.T) {
 		"reason":      "err1",
 	})
 	require.EqualValues(t, m.LastValue(), 1)
-}
-
-func TestPrepareRequestBody(t *testing.T) {
-	type requestOpts struct {
-		method  string
-		target  string
-		body    io.Reader
-		params  map[string]string
-		headers map[string]string
-	}
-
-	createRequest := func(reqOpts requestOpts) *http.Request {
-		r := httptest.NewRequest(reqOpts.method, reqOpts.target, reqOpts.body)
-		for k, v := range reqOpts.headers {
-			r.Header.Set(k, v)
-		}
-
-		q := r.URL.Query()
-		for k, v := range reqOpts.params {
-			q.Add(k, v)
-		}
-		r.URL.RawQuery = q.Encode()
-		return r
-	}
-
-	testCases := []struct {
-		name               string
-		req                *http.Request
-		includeQueryParams bool
-		wantError          bool
-		expectedResponse   string
-	}{
-		{
-			name:             "Empty request body with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com"}),
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Empty request body with query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Some payload with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			expectedResponse: `{"key":"value"}`,
-		},
-		{
-			name:             "Empty request body with query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			expectedResponse: `{"query_parameters":{"key":["value"]}}`,
-		},
-		{
-			name:             "Error reading request body for Shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: iotest.ErrReader(errors.New("some error"))}),
-			wantError:        true,
-			expectedResponse: "",
-		},
-		{
-			name:             "Some payload with no query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			expectedResponse: `{"key":"value","query_parameters":{}}`,
-		},
-		{
-			name:             "Some payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
-			expectedResponse: `{"key1":"value1","query_parameters":{"key2":["value2"]}}`,
-		},
-		{
-			name:             "No payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key2": "value2"}}),
-			expectedResponse: `{"query_parameters":{"key2":["value2"]}}`,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req)
-			if tc.wantError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedResponse, string(result))
-		})
-	}
 }
 
 func TestAllowGetReqForWebhookSrc(t *testing.T) {
