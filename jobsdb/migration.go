@@ -526,59 +526,45 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 	).RecordDuration()()
 
 	var delCount, totalCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
-		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
-	}
+	var oldTerminalJobsExist bool
+	var maxCreatedAt time.Time
 
-	// Jobs which have either succeeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
-                                      from %q
-                                      WHERE job_state IN ('%s')`,
-		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&delCount); err != nil {
-		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
+	query := fmt.Sprintf(
+		`with combinedResult as (
+			select
+			(select count(*) from %[1]q) as totalJobCount,
+			(select count(*) from %[2]q where job_state = ANY($1)) as terminalJobCount,
+			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
+			(select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1) as retentionExpired
+		)
+		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`,
+		ds.JobTable, ds.JobStatusTable)
+
+	if err := jd.dbHandle.QueryRow(
+		query,
+		pq.Array(validTerminalStates),
+		time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load()),
+	).Scan(&totalCount, &delCount, &maxCreatedAt, &oldTerminalJobsExist); err != nil {
+		return false, false, 0, fmt.Errorf("error running check query in %s: %w", ds.JobStatusTable, err)
 	}
 
 	recordsLeft = totalCount - delCount
 
-	if jd.conf.minDSRetentionPeriod.Load() > 0 {
-		var maxCreatedAt time.Time
-		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&maxCreatedAt); err != nil {
-			return false, false, 0, fmt.Errorf("error getting max created_at from %s: %w", ds.JobTable, err)
-		}
-
-		if time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
-			return false, false, recordsLeft, nil
-		}
+	if jd.conf.minDSRetentionPeriod.Load() > 0 && time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
+		return false, false, recordsLeft, nil
 	}
 
-	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		var terminalJobsExist bool
-		sqlStatement = fmt.Sprintf(`SELECT EXISTS (
-									SELECT id
-										FROM %q
-										WHERE job_state = ANY($1) and exec_time < $2)`,
-			ds.JobStatusTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement, pq.Array(validTerminalStates), time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load())).Scan(&terminalJobsExist); err != nil {
-			return false, false, 0, fmt.Errorf("checking terminalJobsExist %s: %w", ds.JobStatusTable, err)
-		}
-		if terminalJobsExist {
-			return true, false, recordsLeft, nil
-		}
+	if jd.conf.maxDSRetentionPeriod.Load() > 0 && oldTerminalJobsExist {
+		return true, false, recordsLeft, nil
 	}
 
-	smallThreshold := jd.conf.migration.jobMinRowsMigrateThres() * float64(jd.conf.MaxDSSize.Load())
-	isSmall := func() bool {
-		return float64(totalCount) < smallThreshold
-	}
+	isSmall := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres()*float64(jd.conf.MaxDSSize.Load())
 
 	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres() {
-		return true, isSmall(), recordsLeft, nil
+		return true, isSmall, recordsLeft, nil
 	}
 
-	if isSmall() {
+	if isSmall {
 		return true, true, recordsLeft, nil
 	}
 
