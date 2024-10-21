@@ -38,6 +38,21 @@ func (m *MockFeaturesService) EXPECT() *MockFeaturesServiceMockRecorder {
 	return m.recorder
 }
 
+// CheckTransformerVersionCompatibility mocks base method.
+func (m *MockFeaturesService) CheckTransformerVersionCompatibility(arg0 bool) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CheckTransformerVersionCompatibility", arg0)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CheckTransformerVersionCompatibility indicates an expected call of CheckTransformerVersionCompatibility.
+func (mr *MockFeaturesServiceMockRecorder) CheckTransformerVersionCompatibility(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckTransformerVersionCompatibility", reflect.TypeOf((*MockFeaturesService)(nil).CheckTransformerVersionCompatibility), arg0)
+}
+
 // Regulations mocks base method.
 func (m *MockFeaturesService) Regulations() []string {
 	m.ctrl.T.Helper()
@@ -64,20 +79,6 @@ func (m *MockFeaturesService) RouterTransform(arg0 string) bool {
 func (mr *MockFeaturesServiceMockRecorder) RouterTransform(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouterTransform", reflect.TypeOf((*MockFeaturesService)(nil).RouterTransform), arg0)
-}
-
-// SourceTransformerVersion mocks base method.
-func (m *MockFeaturesService) SourceTransformerVersion() string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SourceTransformerVersion")
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// SourceTransformerVersion indicates an expected call of SourceTransformerVersion.
-func (mr *MockFeaturesServiceMockRecorder) SourceTransformerVersion() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SourceTransformerVersion", reflect.TypeOf((*MockFeaturesService)(nil).SourceTransformerVersion))
 }
 
 // TransformerProxyVersion mocks base method.

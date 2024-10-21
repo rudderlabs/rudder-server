@@ -9,7 +9,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,11 +17,11 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
@@ -277,29 +276,6 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
-	defer func() {
-		_ = req.Body.Close()
-	}()
-
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, errors.New(response.RequestBodyReadFailed)
-	}
-
-	if len(body) == 0 {
-		body = []byte("{}") // If body is empty, set it to an empty JSON object
-	}
-
-	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
-		queryParams := req.URL.Query()
-
-		return sjson.SetBytes(body, "query_parameters", queryParams)
-	}
-
-	return body, nil
-}
-
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
@@ -333,7 +309,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			var payload []byte
-			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			body, _, err := requesttojson.RequestToJSON(req.request, "{}")
 			if err == nil && !json.Valid(body) {
 				err = errors.New(response.InvalidJSON)
 			}
