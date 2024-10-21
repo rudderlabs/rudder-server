@@ -9,6 +9,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	cacheTtl "github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -38,6 +39,7 @@ type OAuthHandler struct {
 	ExpirationTimeDiff        time.Duration
 	ConfigBEURL               string
 	cpConnectorTimeout        time.Duration
+	authStatusInactiveMap     *cacheTtl.Cache[string, string] // used to check if authStatus is inactive for a destination
 }
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -117,6 +119,7 @@ func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OA
 	if h.ExpirationTimeDiff.Seconds() == 0 {
 		h.ExpirationTimeDiff = 1 * time.Minute
 	}
+	h.authStatusInactiveMap = cacheTtl.New[string, string](cacheTtl.WithNow(func() time.Time { return time.Now() }))
 	return h
 }
 
@@ -269,6 +272,12 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 
 	authStatusToggleUrl := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.ConfigBEURL, params.WorkspaceID, destinationId)
 
+	inActive := h.authStatusInactiveMap.Get(destinationId)
+	if inActive == common.AuthStatusInActive {
+		// If authStatus is already inactive, return bad request and not make the call to Control Plane
+		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
+	}
+
 	authStatusInactiveCpReq := &controlplane.Request{
 		URL:           authStatusToggleUrl,
 		Method:        http.MethodPut,
@@ -286,6 +295,9 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 	statusCode, respBody = h.CpConn.CpApiCall(authStatusInactiveCpReq)
 	authStatusToggleStats.statName = GetOAuthActionStatName("request_latency")
 	authStatusToggleStats.SendTimerStats(cpiCallStartTime)
+	// Update the authStatusInactiveMap
+	h.authStatusInactiveMap.Put(destinationId, common.AuthStatusInActive, 1*time.Hour)
+
 	h.Logger.Debugn("[request] :: Response from CP for auth status inactive req",
 		logger.NewIntField("StatusCode", int64(statusCode)),
 		logger.NewStringField("Response", respBody))
