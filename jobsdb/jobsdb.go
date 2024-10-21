@@ -1202,51 +1202,55 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	return nil
 }
 
-func (jd *Handle) getTableRowCount(tx *Tx, jobTable string) int {
-	var count int
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, jobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&count)
-	jd.assertError(err)
-	return count
-}
-
-func (jd *Handle) getTableSize(tx *Tx, jobTable string) int64 {
-	var tableSize int64
-
-	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&tableSize)
-	jd.assertError(err)
-	return tableSize
-}
-
 func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
+	var (
+		minJobCreatedAt sql.NullTime
+		tableSize       int64
+		rowCount        int
+	)
+
+	sqlStatement := fmt.Sprintf(
+		`with combinedResult as (
+			SELECT
+			(SELECT created_at FROM %[1]q ORDER BY job_id ASC LIMIT 1) AS minJobCreatedAt,
+			(SELECT PG_TOTAL_RELATION_SIZE('%[1]s')) AS tableSize,
+			(SELECT COUNT(*) FROM %[1]q) AS rowCount
+		)
+		SELECT minJobCreatedAt, tableSize, rowCount FROM combinedResult`,
+		ds.JobTable,
+	)
+	row := tx.QueryRow(sqlStatement)
+	err := row.Scan(&minJobCreatedAt, &tableSize, &rowCount)
+	if err != nil {
+		return false, err
+	}
+	if !minJobCreatedAt.Valid {
+		return false, nil
+	}
+
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		var minJobCreatedAt sql.NullTime
-		sqlStatement := fmt.Sprintf(`SELECT created_at FROM %q ORDER BY job_id ASC LIMIT 1`, ds.JobTable)
-		row := tx.QueryRow(sqlStatement)
-		err := row.Scan(&minJobCreatedAt)
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		} else if err != nil {
-			return false, err
-		}
-		if minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
+		if time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
 		}
 	}
 
-	tableSize := jd.getTableSize(tx, ds.JobTable)
-	totalCount := jd.getTableRowCount(tx, ds.JobTable)
 	if tableSize > jd.conf.maxTableSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
+		jd.logger.Infon(
+			"[JobsDB] DS full in size",
+			logger.NewField("ds", ds),
+			logger.NewField("rowCount", rowCount),
+			logger.NewField("tableSize", tableSize),
+		)
 		return true, nil
 	}
 
-	if totalCount > jd.conf.MaxDSSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
+	if rowCount > jd.conf.MaxDSSize.Load() {
+		jd.logger.Infon(
+			"[JobsDB] DS full by rows",
+			logger.NewField("ds", ds),
+			logger.NewField("rowCount", rowCount),
+			logger.NewField("tableSize", tableSize),
+		)
 		return true, nil
 	}
 
