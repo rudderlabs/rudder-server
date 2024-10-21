@@ -26,7 +26,7 @@ replace (
 require (
 	cloud.google.com/go/bigquery v1.63.1
 	cloud.google.com/go/pubsub v1.44.0
-	cloud.google.com/go/storage v1.44.0
+	cloud.google.com/go/storage v1.45.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -71,12 +71,12 @@ require (
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/prometheus/client_model v0.6.1
-	github.com/redis/go-redis/v9 v9.6.2
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/rs/cors v1.11.1
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.43.0
+	github.com/rudderlabs/rudder-go-kit v0.44.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
 	github.com/rudderlabs/rudder-schemas v0.5.3
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
@@ -103,7 +103,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
-	go.uber.org/mock v0.4.0
+	go.uber.org/mock v0.5.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.23.0
 	golang.org/x/sync v0.8.0

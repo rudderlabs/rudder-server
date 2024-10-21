@@ -33,9 +33,9 @@ func Test_Dedup(t *testing.T) {
 		{
 			name: "Scylla",
 		},
-		//{
-		//	name: "MirrorScylla",
-		//},
+		{
+			name: "MirrorScylla",
+		},
 		{
 			name: "MirrorBadger",
 		},
@@ -134,6 +134,8 @@ func Test_Dedup(t *testing.T) {
 				for _, kv := range kvs {
 					require.Equal(t, expected[kv], found[kv])
 				}
+				err = d.Commit([]string{"h"})
+				require.NoError(t, err)
 			})
 		})
 	}

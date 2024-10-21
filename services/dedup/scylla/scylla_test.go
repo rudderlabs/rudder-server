@@ -65,4 +65,61 @@ func Test_Scylla(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, found)
 	})
+	t.Run("Same messageID should be deduped for same workspace from cache for Batch call", func(t *testing.T) {
+		keys := []types.KeyValue{
+			{Key: "c", Value: 1, WorkspaceID: "test", JobID: 1},
+			{Key: "c", Value: 1, WorkspaceID: "test", JobID: 2},
+			{Key: "d", Value: 1, WorkspaceID: "test", JobID: 3},
+		}
+		expected := map[types.KeyValue]bool{
+			keys[0]: true,
+			keys[1]: false,
+			keys[2]: true,
+		}
+		found, _, err := scylla.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 3)
+		for _, key := range keys {
+			require.Equal(t, expected[key], found[key])
+		}
+		err = scylla.Commit([]string{"c", "d"})
+		require.NoError(t, err)
+	})
+	t.Run("Different messageID should not be deduped for same workspace", func(t *testing.T) {
+		keys := []types.KeyValue{
+			{Key: "e", Value: 1, WorkspaceID: "test", JobID: 1},
+			{Key: "f", Value: 1, WorkspaceID: "test", JobID: 2},
+			{Key: "g", Value: 1, WorkspaceID: "test", JobID: 3},
+		}
+		found, _, err := scylla.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 3)
+		for _, key := range keys {
+			require.True(t, found[key])
+		}
+	})
+	t.Run("Same messageID should not be deduped for different workspace", func(t *testing.T) {
+		keys := []types.KeyValue{
+			{Key: "h", Value: 1, WorkspaceID: "test1", JobID: 1},
+		}
+		found, _, err := scylla.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 1)
+		for _, key := range keys {
+			require.True(t, found[key])
+		}
+		err = scylla.Commit([]string{"h"})
+		require.NoError(t, err)
+		keys = []types.KeyValue{
+			{Key: "h", Value: 1, WorkspaceID: "test2", JobID: 1},
+		}
+		found, _, err = scylla.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 1)
+		for _, key := range keys {
+			require.True(t, found[key])
+		}
+		err = scylla.Commit([]string{"h"})
+		require.NoError(t, err)
+	})
 }
