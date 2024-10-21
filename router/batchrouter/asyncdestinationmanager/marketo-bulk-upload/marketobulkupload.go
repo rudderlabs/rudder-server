@@ -24,7 +24,7 @@ type MarketoBulkUploader struct {
 	dataHashToJobId   map[string]int64
 	hasFailures       bool
 	hasWarning        bool
-	apiService        *MarketoAPIService
+	apiService        MarketoAPIServiceInterface
 }
 
 type MarketoAsyncFailedInput struct {

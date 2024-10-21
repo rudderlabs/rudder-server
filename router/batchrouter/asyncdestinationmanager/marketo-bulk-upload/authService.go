@@ -16,6 +16,10 @@ type MarketoAccessToken struct {
 	Scope       string `json:"scope"`
 }
 
+type MarketoAuthServiceInterface interface {
+	GetAccessToken() (string, error)
+}
+
 type MarketoAuthService struct {
 	httpCLient   *http.Client
 	munchkinId   string

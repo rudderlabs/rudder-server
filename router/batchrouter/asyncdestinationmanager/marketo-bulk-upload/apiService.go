@@ -13,12 +13,18 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
+type MarketoAPIServiceInterface interface {
+	ImportLeads(csvFilePath, deduplicationField string) (string, *APIError)
+	PollImportStatus(importId string) (*MarketoResponse, *APIError)
+	GetLeadStatus(url string) ([]map[string]string, *APIError)
+}
+
 type MarketoAPIService struct {
 	logger       logger.Logger
 	statsFactory stats.Stats
 	httpClient   *http.Client
 	munchkinId   string
-	authService  *MarketoAuthService
+	authService  MarketoAuthServiceInterface
 }
 
 type APIError struct {
