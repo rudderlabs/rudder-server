@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -110,9 +111,13 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return err
 				}
 
-				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
-				jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
-				jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
+				jd.logger.Infon(
+					"[[ migrateDSLoop ]]",
+					logger.NewField("pendingJobsCount", pendingJobsCount),
+					logger.NewField("migrateFrom", migrateFrom),
+					logger.NewField("to", destination),
+					logger.NewField("insert before", insertBeforeDS),
+				)
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
 				if err != nil {
@@ -491,6 +496,7 @@ func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
 		if err := jd.dropDSInTx(tx, ds); err != nil {
 			return err
 		}
+		delete(jd.dsRangeFuncMap, ds.Index)
 	}
 	return nil
 }
@@ -535,7 +541,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 			(select count(*) from %[1]q) as totalJobCount,
 			(select count(*) from %[2]q where job_state = ANY($1)) as terminalJobCount,
 			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
-			(select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1) as retentionExpired
+			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired
 		)
 		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`,
 		ds.JobTable, ds.JobStatusTable)

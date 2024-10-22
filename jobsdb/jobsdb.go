@@ -441,6 +441,11 @@ type dataSetRangeT struct {
 	ds       dataSetT
 }
 
+type dsRangeMinMax struct {
+	minJobID sql.NullInt64
+	maxJobID sql.NullInt64
+}
+
 /*
 Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
@@ -455,6 +460,7 @@ type Handle struct {
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
+	dsRangeFuncMap   map[string]func() (dsRangeMinMax, error)
 	dsListLock       *lock.Locker
 	dsMigrationLock  *lock.Locker
 	noResultsCache   *cache.NoResultsCache[ParameterFilterT]
@@ -755,6 +761,7 @@ func (jd *Handle) init() {
 	if jd.logger == nil {
 		jd.logger = logger.NewLogger().Child("jobsdb").Child(jd.tablePrefix)
 	}
+	jd.dsRangeFuncMap = make(map[string]func() (dsRangeMinMax, error))
 
 	if jd.config == nil {
 		jd.config = config.Default
@@ -1155,23 +1162,37 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	}
 	var datasetRangeList []dataSetRangeT
 
-	for idx, ds := range dsList {
+	for idx := 0; idx < len(dsList)-1; idx++ {
+		ds := dsList[idx]
 		jd.assert(ds.Index != "", "ds.Index is empty")
 
-		getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
-			var minID, maxID sql.NullInt64
-			sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
-			row := jd.dbHandle.QueryRow(sqlStatement)
-			if err := row.Scan(&minID, &maxID); err != nil {
-				return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
+		if _, ok := jd.dsRangeFuncMap[ds.Index]; !ok {
+			getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
+				var minID, maxID sql.NullInt64
+				sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
+				row := jd.dbHandle.QueryRow(sqlStatement)
+				if err := row.Scan(&minID, &maxID); err != nil {
+					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
+				}
+				jd.logger.Debug(sqlStatement, minID, maxID)
+				return minID, maxID, nil
 			}
-			jd.logger.Debug(sqlStatement, minID, maxID)
-			return minID, maxID, nil
+			jd.dsRangeFuncMap[ds.Index] = sync.OnceValues(func() (dsRangeMinMax, error) {
+				minID, maxID, err := getIndex()
+				if err != nil {
+					return dsRangeMinMax{}, fmt.Errorf("getIndex %w", err)
+				}
+				return dsRangeMinMax{
+					minJobID: minID,
+					maxJobID: maxID,
+				}, nil
+			})
 		}
-		minID, maxID, err := getIndex()
+		minMax, err := jd.dsRangeFuncMap[ds.Index]()
 		if err != nil {
 			return err
 		}
+		minID, maxID := minMax.minJobID, minMax.maxJobID
 
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
@@ -1185,18 +1206,16 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 			continue
 		}
 
-		if idx < len(dsList)-1 {
-			// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
-			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
-			datasetRangeList = append(datasetRangeList,
-				dataSetRangeT{
-					minJobID: minID.Int64,
-					maxJobID: maxID.Int64,
-					ds:       ds,
-				})
-			prevMax = maxID.Int64
-		}
+		// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
+		jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
+		jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
+		datasetRangeList = append(datasetRangeList,
+			dataSetRangeT{
+				minJobID: minID.Int64,
+				maxJobID: maxID.Int64,
+				ds:       ds,
+			})
+		prevMax = maxID.Int64
 	}
 	jd.datasetRangeList = datasetRangeList
 	return nil
