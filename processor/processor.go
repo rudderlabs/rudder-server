@@ -1713,6 +1713,20 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			spans = append(spans, span)
 		}
 
+		newStatus := jobsdb.JobStatusT{
+			JobID:         batchEvent.JobID,
+			JobState:      jobsdb.Succeeded.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "200",
+			ErrorResponse: []byte(`{"success":"OK"}`),
+			Parameters:    []byte(`{}`),
+			JobParameters: batchEvent.Parameters,
+			WorkspaceId:   batchEvent.WorkspaceId,
+		}
+		statusList = append(statusList, &newStatus)
+
 		parameters := batchEvent.Parameters
 		var gatewayBatchEvent types.GatewayBatchRequest
 		if err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent); err != nil {
@@ -1721,9 +1735,15 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			}
 			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
+			continue
 		}
 		requestIP := gatewayBatchEvent.RequestIP
 		receivedAt := gatewayBatchEvent.ReceivedAt
+
+		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
+			"sourceId":    eventParams.SourceId,
+			"workspaceId": batchEvent.WorkspaceId,
+		}).Since(receivedAt)
 
 		source, err := proc.getSourceBySourceID(eventParams.SourceId)
 		if err != nil {
@@ -1765,10 +1785,6 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 				customVal:     batchEvent.CustomVal,
 			})
 			dedupKeysWithWorkspaceID = append(dedupKeysWithWorkspaceID, dedupKey)
-			proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
-				"sourceId":    eventParams.SourceId,
-				"workspaceId": batchEvent.WorkspaceId,
-			}).Since(receivedAt)
 		}
 	}
 
@@ -1786,20 +1802,6 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		if event.eventParams.DestinationID != "" {
 			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
 		}
-		newStatus := jobsdb.JobStatusT{
-			JobID:         event.jobID,
-			JobState:      jobsdb.Succeeded.State,
-			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "200",
-			ErrorResponse: []byte(`{"success":"OK"}`),
-			Parameters:    []byte(`{}`),
-			JobParameters: event.parameters,
-			WorkspaceId:   event.workspaceID,
-		}
-		statusList = append(statusList, &newStatus)
-
 		payloadFunc := ro.Memoize(func() json.RawMessage {
 			payloadBytes, err := jsonfast.Marshal(event.singularEvent)
 			if err != nil {
