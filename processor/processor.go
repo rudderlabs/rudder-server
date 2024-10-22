@@ -103,7 +103,6 @@ type Handle struct {
 	dedup                      dedup.Dedup
 	reporting                  types.Reporting
 	reportingEnabled           bool
-	enableParallelScan         bool
 	backgroundWait             func() error
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
@@ -155,6 +154,7 @@ type Handle struct {
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
+		enableParallelScan              bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
@@ -390,7 +390,6 @@ func (proc *Handle) Setup(
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
-	proc.enableParallelScan = config.GetBoolVar(true, "Dedup.enableParallelScan")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -802,6 +801,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.enableParallelScan = config.GetBoolVar(false, "Dedup.enableParallelScan")
 
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -3562,7 +3562,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 
 	var transMessage *transformationMessage
 	var err error
-	if !proc.enableParallelScan {
+	if !proc.config.enableParallelScan {
 		transMessage, err = proc.processJobsForDest(partition, subJob{
 			subJobs:       unprocessedList.Jobs,
 			hasMore:       false,
