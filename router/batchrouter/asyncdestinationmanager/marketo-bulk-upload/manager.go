@@ -41,6 +41,7 @@ func NewMarketoBulkUploader(destinationName string, statsFactory stats.Stats, de
 		httpClient:   &http.Client{},
 		munchkinId:   destConfig.MunchkinId,
 		authService:  authService,
+		maxRetries:   3,
 	}
 
 	return &MarketoBulkUploader{

@@ -25,12 +25,21 @@ type MarketoAPIService struct {
 	httpClient   *http.Client
 	munchkinId   string
 	authService  MarketoAuthServiceInterface
+	maxRetries   int
 }
 
 type APIError struct {
 	StatusCode int64
 	Category   string
 	Message    string
+}
+
+func (m *MarketoAPIService) waitForTokenExpiry(tokenExpiresIn int64) {
+	// Calculate how long to wait based on when the token was fetched and its expiry time
+	// Add a small buffer (5 seconds) to ensure the token has fully expired
+	waitDuration := time.Duration(tokenExpiresIn)*time.Second + 5*time.Second
+	m.logger.Info(fmt.Sprintf("Waiting %v for token to expire before retrying", waitDuration))
+	time.Sleep(waitDuration)
 }
 
 func (m *MarketoAPIService) checkForCSVLikeResponse(resp *http.Response) bool {
@@ -91,17 +100,36 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 		return importID, nil
 	}
 
-	// If we get a token refresh error, retry once
-	if apiError.Category == "RefreshToken" {
+	retryCount := 0
+	for retryCount < m.maxRetries {
 
-		fmt.Println("Token refresh required. Retrying import after fetching new token.")
+		if apiError.Category == "RefreshToken" {
 
-		m.logger.Info("Token refresh required. Retrying import after fetching new token.")
-		time.Sleep(5 * time.Second) // Wait for 5 seconds before retrying
-		return m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
+			tokenInfo := m.authService.GetAccessTokenInfo()
+
+			// Wait for the token to expire before retrying
+			m.waitForTokenExpiry(tokenInfo.ExpiresIn)
+
+			m.logger.Info(fmt.Sprintf("Retrying import after token expiry (attempt %d of %d)", retryCount+1, m.maxRetries))
+			importID, apiError = m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
+
+			if apiError == nil {
+				return importID, nil
+			}
+
+			retryCount++
+
+		} else {
+			// If it's not a token refresh error, don't retry
+			return "", apiError
+		}
 	}
 
-	return "", apiError
+	return "", &APIError{
+		StatusCode: 500,
+		Category:   "Retryable",
+		Message:    fmt.Sprintf("Failed to import after %d retries", m.maxRetries),
+	}
 }
 
 func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse, *APIError) {

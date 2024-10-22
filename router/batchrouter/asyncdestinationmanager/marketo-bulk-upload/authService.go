@@ -18,6 +18,7 @@ type MarketoAccessToken struct {
 
 type MarketoAuthServiceInterface interface {
 	GetAccessToken() (string, error)
+	GetAccessTokenInfo() MarketoAccessToken
 }
 
 type MarketoAuthService struct {
@@ -85,4 +86,8 @@ func (m *MarketoAuthService) GetAccessToken() (string, error) {
 	}
 
 	return m.accessToken.AccessToken, nil
+}
+
+func (m *MarketoAuthService) GetAccessTokenInfo() MarketoAccessToken {
+	return m.accessToken
 }
