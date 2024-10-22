@@ -37,6 +37,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -458,12 +459,13 @@ type Handle struct {
 	logger               logger.Logger
 	stats                stats.Stats
 
-	datasetList      []dataSetT
-	datasetRangeList []dataSetRangeT
-	dsRangeFuncMap   map[string]func() (dsRangeMinMax, error)
-	dsListLock       *lock.Locker
-	dsMigrationLock  *lock.Locker
-	noResultsCache   *cache.NoResultsCache[ParameterFilterT]
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsRangeFuncMap                map[string]func() (dsRangeMinMax, error)
+	distinctParameterSingleFlight *singleflight.Group
+	dsListLock                    *lock.Locker
+	dsMigrationLock               *lock.Locker
+	noResultsCache                *cache.NoResultsCache[ParameterFilterT]
 
 	// table count stats
 	statTableCount        stats.Measurement
@@ -762,6 +764,7 @@ func (jd *Handle) init() {
 		jd.logger = logger.NewLogger().Child("jobsdb").Child(jd.tablePrefix)
 	}
 	jd.dsRangeFuncMap = make(map[string]func() (dsRangeMinMax, error))
+	jd.distinctParameterSingleFlight = new(singleflight.Group)
 
 	if jd.config == nil {
 		jd.config = config.Default
@@ -1936,47 +1939,59 @@ func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-	}
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
+	res, err, shared := jd.distinctParameterSingleFlight.Do(parameterName, func() (interface{}, error) {
+		if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+		}
+		defer jd.dsMigrationLock.RUnlock()
+		if !jd.dsListLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		}
+		dsList := jd.getDSList()
+		jd.dsListLock.RUnlock()
 
-	var values []string
-	var queries []string
-	for _, ds := range dsList {
-		queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+		var values []string
+		var queries []string
+		for _, ds := range dsList {
+			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
 				(SELECT parameters->>'%[1]s' as parameter FROM %[2]q ORDER BY parameters->>'%[1]s' LIMIT 1)
 				UNION ALL
 				(SELECT s.* FROM t, LATERAL(
-				  SELECT parameters->>'%[1]s' as parameter FROM %[2]q f
-				  WHERE f.parameters->>'%[1]s' > t.parameter
-				  ORDER BY parameters->>'%[1]s' LIMIT 1) s)
-			  )
-			  SELECT * FROM t) a`, parameterName, ds.JobTable))
+					SELECT parameters->>'%[1]s' as parameter FROM %[2]q f
+					WHERE f.parameters->>'%[1]s' > t.parameter
+					ORDER BY parameters->>'%[1]s' LIMIT 1) s)
+					)
+					SELECT * FROM t) a`, parameterName, ds.JobTable))
+		}
+		query := strings.Join(queries, " UNION ")
+		rows, err := jd.dbHandle.QueryContext(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", parameterName, err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var value string
+			err := rows.Scan(&value)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't scan distinct parameter-%s: %w", parameterName, err)
+			}
+			values = append(values, value)
+		}
+		if err = rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows.Err() on distinct parameter-%s: %w", parameterName, err)
+		}
+		return values, nil
+	})
+	if shared {
+		jd.stats.NewTaggedStat("jobsdb_get_distinct_parameter_values_shared", stats.CountType, stats.Tags{
+			"parameter":   parameterName,
+			"tablePrefix": jd.tablePrefix,
+		}).Increment()
 	}
-	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var value string
-		err := rows.Scan(&value)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-	return values, nil
+	return res.([]string), nil
 }
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
