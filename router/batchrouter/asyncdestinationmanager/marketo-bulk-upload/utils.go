@@ -209,7 +209,7 @@ func calculateHashCode(data []string) string {
 func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplicationField string) (*http.Response, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while opening the file: %v", err)
 	}
 	defer file.Close()
 
@@ -218,11 +218,11 @@ func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplic
 	part, err := writer.CreateFormFile("file", filepath.Base(csvFilePath))
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while creating form file: %v", err)
 	}
 	_, err = io.Copy(part, file)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while copying file: %v", err)
 	}
 
 	_ = writer.WriteField("format", "csv")
@@ -238,7 +238,7 @@ func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplic
 
 	req, err := http.NewRequest("POST", uploadURL, body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while creating request: %v", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 

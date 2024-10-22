@@ -99,6 +99,9 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	}
 	payloadSizeStat.Gauge(float64(fileInfo.Size()))
 
+	fmt.Println("File Upload Started for Dest Type ", destType)
+	fmt.Println("File size: ", fileInfo.Size())
+
 	importID, apiError := b.apiService.ImportLeads(csvFilePath, b.destinationConfig.DeduplicationField)
 
 	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
@@ -106,6 +109,9 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if apiError != nil {
 
 		if apiError.Category == "RefreshToken" {
+
+			fmt.Println("Token Expired at Upload - ", apiError.Message)
+
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 				FailedReason:  "BRT: Error in Uploading File: Token Expired " + apiError.Message,
@@ -115,7 +121,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 
 		switch apiError.StatusCode {
-		case 500:
+		case 429, 500:
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 				FailedReason:  "BRT: Error in Uploading File: " + apiError.Message,
@@ -127,13 +133,6 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 				AbortJobIDs:   append(failedJobIDs, importingJobIDs...),
 				AbortReason:   "BRT: Error in Uploading File: " + apiError.Message,
 				AbortCount:    len(failedJobIDs) + len(importingJobIDs),
-				DestinationID: destinationID,
-			}
-		case 429:
-			return common.AsyncUploadOutput{
-				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedReason:  "BRT: Error in Uploading File: " + apiError.Message,
-				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}
 		}

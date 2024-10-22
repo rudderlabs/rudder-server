@@ -54,6 +54,7 @@ func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
 		return err
 	}
 
+	// 1657211
 	accessToken.FetchedAt = time.Now().Unix()
 	m.accessToken = accessToken
 	return nil
@@ -62,19 +63,26 @@ func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
 
 func (m *MarketoAuthService) GetAccessToken() (string, error) {
 
-	if m.accessToken.AccessToken == "" {
-		err := m.fetchOrUpdateAccessToken()
-		if err != nil {
-			return "", err
-		}
+	// if m.accessToken.AccessToken == "" {
+	// 	err := m.fetchOrUpdateAccessToken()
+	// 	if err != nil {
+	// 		return "", err
+	// 	}
 
-		// If the access token is nil or about to expire in 10 seconds, wait 10 seconds and fetch a new access token
-	} else if m.accessToken.FetchedAt+m.accessToken.ExpiresIn < 10 {
-		time.Sleep(11 * time.Second)
-		err := m.fetchOrUpdateAccessToken()
-		if err != nil {
-			return "", err
-		}
+	// 	// If the access token is nil or about to expire in 10 seconds, wait 10 seconds and fetch a new access token
+	// } else if m.accessToken.FetchedAt+m.accessToken.ExpiresIn-int64(time.Second) < 10 {
+	// 	time.Sleep(11 * time.Second)
+	// 	err := m.fetchOrUpdateAccessToken()
+	// 	if err != nil {
+	// 		return "", err
+	// 	}
+	// }
+
+	// leeping simple logic for now
+	err := m.fetchOrUpdateAccessToken()
+	if err != nil {
+		return "", err
 	}
+
 	return m.accessToken.AccessToken, nil
 }

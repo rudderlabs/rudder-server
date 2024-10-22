@@ -93,6 +93,9 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 
 	// If we get a token refresh error, retry once
 	if apiError.Category == "RefreshToken" {
+
+		fmt.Println("Token refresh required. Retrying import after fetching new token.")
+
 		m.logger.Info("Token refresh required. Retrying import after fetching new token.")
 		time.Sleep(5 * time.Second) // Wait for 5 seconds before retrying
 		return m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
