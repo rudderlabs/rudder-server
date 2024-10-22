@@ -1,0 +1,123 @@
+{
+    "properties": {
+        "link_text": "",
+        "page_title": "The Warehouse Native Customer Data Platform",
+        "link_location": "top nav logo",
+        "timezone": {
+            "name": "Europe/Amsterdam"
+        },
+        "target_url": "https://www.rudderstack.com/",
+        "click_type": "link",
+        "gclid": "",
+        "utm_referrer": "",
+        "mutiny_experiences": [],
+        "mutiny_visitor": {
+            "data": {
+                "browser": {
+                    "device_type": "desktop",
+                    "referrer": "https://www.rudderstack.com/",
+                    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+                },
+                "person": {
+                    "behavior": {
+                        "session_number": 24,
+                        "viewed_questionnaires": [],
+                        "visited_url": [
+                            {
+                                "query": {},
+                                "token": "a04111a7-53b3-44ba-be06-d574e47037a1",
+                                "url": "https://www.rudderstack.com/"
+                            }
+                        ],
+                        "conversions": []
+                    }
+                },
+                "query": {},
+                "client": {
+                    "mode": "default",
+                    "disabled": false
+                },
+                "person_identification_token": {},
+                "metadata": {
+                    "succeeded_data_sources": [
+                        "campaigns",
+                        "account.lists[]",
+                        "account.properties",
+                        "account.cleaned_properties",
+                        "web_experience_variation",
+                        "client",
+                        "user",
+                        "generated_at",
+                        "person_identification_token",
+                        "dynamic_dom_updates"
+                    ],
+                    "failed_data_sources": [],
+                    "company_token": "7cca9eb51a274bf4"
+                },
+                "generated_at": "2024-10-19T15:40:49-07:00",
+                "dynamic_dom_updates": {},
+                "account": {
+                    "properties": {},
+                    "lists": [],
+                    "cleaned_properties": {}
+                }
+            }
+        }
+    },
+    "event": "click",
+    "type": "track",
+    "channel": "web",
+    "context": {
+        "traits": {
+            "activation_api_experience": false
+        },
+        "sessionId": 1729377650910,
+        "app": {
+            "name": "RudderLabs JavaScript SDK",
+            "namespace": "com.rudderlabs.javascript",
+            "version": "3.0.3"
+        },
+        "library": {
+            "name": "RudderLabs JavaScript SDK",
+            "version": "3.0.3"
+        },
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "os": {
+            "name": "",
+            "version": ""
+        },
+        "locale": "en-GB",
+        "screen": {
+            "width": 1728,
+            "height": 1117,
+            "density": 2,
+            "innerWidth": 976,
+            "innerHeight": 936
+        },
+        "campaign": {},
+        "page": {
+            "path": "/001/",
+            "referrer": "https://www.rudderstack.com/",
+            "referring_domain": "www.rudderstack.com",
+            "search": "",
+            "title": "The Warehouse Native Customer Data Platform",
+            "url": "https://www.rudderstack.com/001/",
+            "tab_url": "https://www.rudderstack.com/001/",
+            "initial_referrer": "https://www.google.com/",
+            "initial_referring_domain": "www.google.com"
+        },
+        "timezone": "GMT+0200"
+    },
+    "originalTimestamp": "2024-10-19T22:41:12.794Z",
+    "integrations": {
+        "Google Analytics 4 (GA4)": {
+            "sessionId": 1729377650910,
+            "sessionNumber": 64
+        },
+        "All": true
+    },
+    "messageId": "ff08966e-89ac-41a3-baed-aed4a35137ee",
+    "userId": "460492d0-7aa5-41a4-9913-9c6184141eb8",
+    "anonymousId": "460492d0-7aa5-41a4-9913-9c6184141eb8",
+    "sentAt": "2024-10-19T22:41:24.764Z"
+}
