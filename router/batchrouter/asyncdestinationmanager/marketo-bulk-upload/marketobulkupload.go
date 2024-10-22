@@ -114,7 +114,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedReason:  "BRT: Error in Uploading File: Token Expired " + apiError.Message,
+				FailedReason:  "BRT: Error in Uploading File: Token Expired  ----- " + apiError.Message,
 				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}
@@ -124,7 +124,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		case 429, 500:
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedReason:  "BRT: Error in Uploading File: " + apiError.Message,
+				FailedReason:  "BRT: Error in Uploading File:  %%% " + apiError.Message,
 				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}

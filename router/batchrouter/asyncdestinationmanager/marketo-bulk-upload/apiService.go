@@ -39,6 +39,7 @@ func (m *MarketoAPIService) waitForTokenExpiry(tokenExpiresIn int64) {
 	// Add a small buffer (5 seconds) to ensure the token has fully expired
 	waitDuration := time.Duration(tokenExpiresIn)*time.Second + 5*time.Second
 	m.logger.Info(fmt.Sprintf("Waiting %v for token to expire before retrying", waitDuration))
+	fmt.Println("Waiting for token to expire before retrying")
 	time.Sleep(waitDuration)
 }
 
@@ -83,6 +84,11 @@ func (m *MarketoAPIService) attemptImport(uploadURL, csvFilePath, deduplicationF
 		return marketoResponse.Result[0].ImportID, nil
 	}
 
+	fmt.Println("Error in attemptImport ", statusCode, category, errorMessage)
+	responseJSON, _ := json.Marshal(marketoResponse)
+	fmt.Println("Marketo Response: ", string(responseJSON))
+	fmt.Println("access token: ", token)
+
 	return "", &APIError{StatusCode: statusCode, Category: category, Message: errorMessage}
 }
 
@@ -106,6 +112,9 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 		if apiError.Category == "RefreshToken" {
 
 			tokenInfo := m.authService.GetAccessTokenInfo()
+
+			tokent_info_json, _ := json.Marshal(tokenInfo)
+			fmt.Println("Token Info: ", string(tokent_info_json))
 
 			// Wait for the token to expire before retrying
 			m.waitForTokenExpiry(tokenInfo.ExpiresIn)
