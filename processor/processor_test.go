@@ -5751,3 +5751,44 @@ func TestStoreMessageMerge(t *testing.T) {
 		start:          time.UnixMicro(99999999),
 	})
 }
+
+/*
+2024/10/22 18:07:17 maxprocs: Leaving GOMAXPROCS=10: CPU quota undefined
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/processor
+cpu: Apple M1 Pro
+=== RUN   BenchmarkGetPayloadOld
+BenchmarkGetPayloadOld
+=== RUN   BenchmarkGetPayloadOld/GetPayloadOld
+BenchmarkGetPayloadOld/GetPayloadOld
+BenchmarkGetPayloadOld/GetPayloadOld-10                   125299              9523 ns/op            7507 B/op        133 allocs/op
+=== RUN   BenchmarkGetPayloadOld/GetPayload
+BenchmarkGetPayloadOld/GetPayload
+BenchmarkGetPayloadOld/GetPayload-10                    31323073                38.49 ns/op            0 B/op          0 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/processor   3.779s
+*/
+func BenchmarkGetPayloadOld(b *testing.B) {
+	payload := []byte(`{"batch": [{"type": "track", "event": "Demo Track", "sentAt": "2019-08-12T05:08:30.909Z", "channel": "android-sdk", "context": {"app": {"name": "RudderAndroidClient", "build": "1", "version": "1.0", "namespace": "com.rudderlabs.android.sdk"}, "device": {"id": "49e4bdd1c280bc00", "name": "generic_x86", "model": "Android SDK built for x86", "manufacturer": "Google"}, "locale": "en-US", "screen": {"width": 1080, "height": 1794, "density": 420}, "traits": {"anonymousId": "49e4bdd1c280bc00"}, "library": {"name": "com.rudderstack.android.sdk.core"}, "network": {"carrier": "Android"}, "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"}, "rudderId": "90ca6da0-292e-4e79-9880-f8009e0ae4a3", "messageId": "71d09e20-1d96-42d6-8642-d1319b9e3ce9", "properties": {"label": "Demo Label", "value": 5, "testMap": {"t1": "a", "t2": 4}, "category": "Demo Category", "floatVal": 4.501, "testArray": [{"id": "elem1", "value": "e1"}, {"id": "elem2", "value": "e2"}]}, "receivedAt": "2024-10-22T17:30:03.697+05:30", "request_ip": "[::1]", "anonymousId": "anon_id", "integrations": {"All": true}, "originalTimestamp": "2019-08-12T05:08:30.909Z"}], "writeKey": "2Lj2CdRryCKqlWkUtaKV6Kb2NDP", "requestIP": "[::1]", "receivedAt": "2024-10-22T17:30:03.697+05:30"}`)
+
+	var gatewayBatchEvent types.GatewayBatchRequest
+	err := json.Unmarshal(payload, &gatewayBatchEvent)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.Run("GetPayloadOld", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			getPayloadOld(gatewayBatchEvent.Batch[0])
+		}
+	})
+
+	b.ResetTimer()
+	b.Run("GetPayload", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			getEventFromBatch(payload)
+		}
+	})
+}
