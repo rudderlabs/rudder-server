@@ -18,6 +18,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
+const (
+	maxFileSize    = 10 * 1024 * 1024 // 10MB in bytes
+	estimateBuffer = 0.95             // 95% of max size to account for any calculation discrepancies
+)
+
 // Docs: https://experienceleague.adobe.com/en/docs/marketo-developer/marketo/rest/error-codes
 func categorizeMarketoError(errorCode string) (status string, message string) {
 	// Convert string error code to integer
@@ -127,6 +132,24 @@ func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, strin
 
 // ==== Response Parsing End ====
 
+// calculateRowSize calculates the exact size of a CSV row after escaping
+func calculateRowSize(row []string) (int64, error) {
+	buf := &bytes.Buffer{}
+	writer := csv.NewWriter(buf)
+	writer.UseCRLF = true // Use CRLF as that's what encoding/csv uses
+
+	err := writer.Write(row)
+	if err != nil {
+		return 0, fmt.Errorf("error writing to buffer: %w", err)
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return 0, fmt.Errorf("error flushing buffer: %w", err)
+	}
+
+	return int64(buf.Len()), nil
+}
+
 func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, "marketo_bulk_upload")
 	csvFile, err := os.Create(csvFilePath)
@@ -137,13 +160,13 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 
 	overflowedJobIDs := make([]int64, 0)
 	insertedJobIDs := make([]int64, 0)
-	currentSize := int64(0)
 
 	headers := make(map[string]int)
 	var headerOrder []string
 
 	// Create a CSV writer
 	writer := csv.NewWriter(csvFile)
+	writer.UseCRLF = true // Use CRLF as that's what encoding/csv uses
 	defer writer.Flush()
 
 	// First pass: collect all unique headers we are taking value as its the marketo field name
@@ -154,14 +177,22 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 		}
 	}
 
-	// Write header row
-	headerRow := strings.Join(headerOrder, ",") + "\n"
-
-	err = writer.Write(headerOrder)
+	// Calculate and verify header size
+	headerSize, err := calculateRowSize(headerOrder)
 	if err != nil {
+		return "", nil, nil, nil, fmt.Errorf("error calculating header size: %w", err)
+	}
+
+	if headerSize > maxFileSize {
+		return "", nil, nil, nil, fmt.Errorf("header size exceeds maximum file size")
+	}
+
+	if err = writer.Write(headerOrder); err != nil {
 		return "", nil, nil, nil, err
 	}
-	currentSize += int64(len(headerRow))
+
+	currentSize := headerSize
+	maxSizeWithBuffer := int64(float64(maxFileSize) * estimateBuffer)
 
 	// Second pass: write data rows
 	for _, job := range input {
@@ -172,24 +203,33 @@ func createCSVFile(destinationID string, destConfig MarketoConfig, input []commo
 				row[headers[key]] = fmt.Sprintf("%v", value)
 			}
 		}
-		line := strings.Join(row, ",") + "\n"
-		lineSize := int64(len(line))
 
-		if currentSize+lineSize > 10*1024*1024 { // 10MB in bytes
-			overflowedJobIDs = append(overflowedJobIDs, int64(job.Metadata["job_id"].(float64)))
+		// Calculate row size before writing
+		rowSize, err := calculateRowSize(row)
+		if err != nil {
+			return "", nil, nil, nil, fmt.Errorf("error calculating row size: %w", err)
+		}
+
+		jobID := int64(job.Metadata["job_id"].(float64))
+
+		// Check if adding this row would exceed the size limit
+		if currentSize+rowSize > maxSizeWithBuffer {
+			overflowedJobIDs = append(overflowedJobIDs, jobID)
 			continue
 		}
 
-		err := writer.Write(row)
-		if err != nil {
-			return "", nil, nil, nil, err
+		// Write the row if it fits
+		if err := writer.Write(row); err != nil {
+			return "", nil, nil, nil, fmt.Errorf("error writing row: %w", err)
 		}
-		currentSize += lineSize
-		insertedJobIDs = append(insertedJobIDs, int64(job.Metadata["job_id"].(float64)))
+
+		currentSize += rowSize
+
+		insertedJobIDs = append(insertedJobIDs, jobID)
 		// Calculate hash code for the row
 		dataHash := calculateHashCode(row)
 		// Store the mapping of data hash to job ID
-		dataHashToJobId[dataHash] = int64(job.Metadata["job_id"].(float64))
+		dataHashToJobId[dataHash] = jobID
 	}
 
 	return csvFilePath, headerOrder, insertedJobIDs, overflowedJobIDs, nil
