@@ -1,10 +1,10 @@
 package scylla
 
 import (
-	"github.com/google/uuid"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -126,9 +126,8 @@ func Test_Scylla(t *testing.T) {
 	})
 }
 
-//Benchmark_ScyllaGet/Get-12         	      20	  71365577 ns/op
-//Benchmark_ScyllaGet/GetBatch-12    	     266	   4006687 ns/op
-
+// Benchmark_ScyllaGet/Get-12         	      20	  71365577 ns/op
+// Benchmark_ScyllaGet/GetBatch-12    	     266	   4006687 ns/op
 func Benchmark_ScyllaGet(b *testing.B) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(b, err)
