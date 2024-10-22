@@ -1,6 +1,8 @@
 package scylla
 
 import (
+	"github.com/google/uuid"
+	"strings"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -121,5 +123,51 @@ func Test_Scylla(t *testing.T) {
 		}
 		err = scylla.Commit([]string{"h"})
 		require.NoError(t, err)
+	})
+}
+
+//Benchmark_ScyllaGet/Get-12         	      20	  71365577 ns/op
+//Benchmark_ScyllaGet/GetBatch-12    	     266	   4006687 ns/op
+
+func Benchmark_ScyllaGet(b *testing.B) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(b, err)
+	keySpace := strings.ToUpper(rand.String(5))
+	table := rand.String(5)
+	resource, err := scylla.Setup(pool, b, scylla.WithKeyspace(keySpace))
+	require.NoError(b, err)
+	conf := config.New()
+	conf.Set("Scylla.Hosts", resource.URL)
+	conf.Set("Scylla.Keyspace", keySpace)
+	conf.Set("Scylla.TableName", table)
+	scylla, err := New(conf, stats.NOP)
+	require.NoError(b, err)
+	b.Run("Get", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			var keys []string
+			for j := 0; j < 100; j++ {
+				key := uuid.New().String()
+				keys = append(keys, key)
+				_, _, err = scylla.Get(types.KeyValue{Key: key, Value: 1, WorkspaceID: "test", JobID: int64(i*100 + j)})
+				require.NoError(b, err)
+			}
+			err = scylla.Commit(keys)
+			require.NoError(b, err)
+		}
+	})
+	b.Run("GetBatch", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			var keys []types.KeyValue
+			var commitKeys []string
+			for j := 0; j < 100; j++ {
+				key := uuid.New().String()
+				keys = append(keys, types.KeyValue{Key: key, Value: 1, WorkspaceID: "test", JobID: int64(i*100 + j)})
+				commitKeys = append(commitKeys, key)
+			}
+			_, _, err = scylla.GetBatch(keys)
+			require.NoError(b, err)
+			err = scylla.Commit(commitKeys)
+			require.NoError(b, err)
+		}
 	})
 }

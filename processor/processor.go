@@ -390,7 +390,7 @@ func (proc *Handle) Setup(
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
-	proc.enableParallelScan = config.GetBoolVar(false, "Dedup.enableParallelScan")
+	proc.enableParallelScan = config.GetBoolVar(true, "Dedup.enableParallelScan")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
