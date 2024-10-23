@@ -126,7 +126,6 @@ func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, strin
 		}
 
 	}
-
 	return statusCode, category, errorMessage
 }
 
@@ -246,7 +245,7 @@ func calculateHashCode(data []string) string {
 	return hashCode
 }
 
-func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplicationField string) (*http.Response, error) {
+func sendHTTPRequest(uploadURL, csvFilePath, accessToken, deduplicationField string) (*http.Response, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("error while opening the file: %v", err)

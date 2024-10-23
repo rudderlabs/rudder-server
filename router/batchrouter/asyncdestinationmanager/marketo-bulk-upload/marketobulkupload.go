@@ -42,8 +42,10 @@ type MarketoAsyncFailedPayload struct {
 	MetaData common.MetaDataT
 }
 
-const MARKETO_WARNING_HEADER = "Import Warning Reason"
-const MARKETO_FAILED_HEADER = "Import Failure Reason"
+const (
+	MARKETO_WARNING_HEADER = "Import Warning Reason"
+	MARKETO_FAILED_HEADER  = "Import Failure Reason"
+)
 
 func getImportingParameters(importID string) json.RawMessage {
 	return json.RawMessage(`{"importId": "` + importID + `"}`)
