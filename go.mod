@@ -25,7 +25,7 @@ replace (
 
 require (
 	cloud.google.com/go/bigquery v1.63.1
-	cloud.google.com/go/pubsub v1.44.0
+	cloud.google.com/go/pubsub v1.45.0
 	cloud.google.com/go/storage v1.45.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -107,8 +107,8 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.23.0
 	golang.org/x/sync v0.8.0
-	google.golang.org/api v0.201.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241007155032-5fefd90f89a9
+	google.golang.org/api v0.202.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.35.1
 )
@@ -343,8 +343,8 @@ require (
 	golang.org/x/time v0.7.0 // indirect
 	golang.org/x/tools v0.25.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto v0.0.0-20241007155032-5fefd90f89a9 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240930140551-af27646dc61f // indirect
+	google.golang.org/genproto v0.0.0-20241015192408-796eee8c2d53 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20241007155032-5fefd90f89a9 // indirect
 	google.golang.org/grpc/stats/opentelemetry v0.0.0-20240907200651-3ffb98b2c93a // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
