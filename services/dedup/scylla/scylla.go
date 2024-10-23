@@ -21,8 +21,9 @@ type ScyllaDB struct {
 	// Time to live in seconds for an entry in the DB
 	ttl int
 	// Maximum number of keys to commit in a single batch
-	batchSize int
-	tableName string
+	readBatchSize  int
+	writeBatchSize int
+	tableName      string
 
 	cacheMu  sync.Mutex
 	cache    map[string]types.KeyValue
@@ -63,24 +64,27 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 			messageIDs = append(messageIDs, job.Key)
 		}
 
-		// Query to get all jobIDs for the given workspaceID and messageIDs
-		query := fmt.Sprintf("SELECT id, size FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
-		iter := d.scylla.Query(query, workspaceID, messageIDs).Iter()
+		messageIDChunks := lo.Chunk(messageIDs, d.readBatchSize)
+		for _, chunk := range messageIDChunks {
+			// Query to get all jobIDs for the given workspaceID and messageIDs
+			query := fmt.Sprintf("SELECT id, size FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
+			iter := d.scylla.Query(query, workspaceID, chunk).Iter()
 
-		var dbMessageID string
-		var size int64
-		for iter.Scan(&dbMessageID, &size) {
-			val, ok := d.cache[dbMessageID]
-			if ok {
-				results[val] = false
-				sizes[val] = size
+			var dbMessageID string
+			var size int64
+			for iter.Scan(&dbMessageID, &size) {
+				val, ok := d.cache[dbMessageID]
+				if ok {
+					results[val] = false
+					sizes[val] = size
+				}
+				d.cacheMu.Lock()
+				delete(d.cache, dbMessageID)
+				d.cacheMu.Unlock()
 			}
-			d.cacheMu.Lock()
-			delete(d.cache, dbMessageID)
-			d.cacheMu.Unlock()
-		}
-		if err := iter.Close(); err != nil {
-			return nil, nil, fmt.Errorf("error closing iterator: %v", err)
+			if err := iter.Close(); err != nil {
+				return nil, nil, fmt.Errorf("error closing iterator: %v", err)
+			}
 		}
 	}
 
@@ -127,7 +131,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceID: value.WorkspaceID}
 	}
 	d.cacheMu.Unlock()
-	batches := lo.Chunk(kvs, d.batchSize)
+	batches := lo.Chunk(kvs, d.writeBatchSize)
 	for _, batch := range batches {
 		scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 		for _, key := range batch {
@@ -172,14 +176,15 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 	}
 
 	scylla := &ScyllaDB{
-		scylla:    session,
-		conf:      conf,
-		keyspace:  keySpace,
-		stat:      stats,
-		ttl:       conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
-		batchSize: conf.GetInt("Scylla.BatchSize", 100),
-		tableName: table,
-		cache:     make(map[string]types.KeyValue),
+		scylla:         session,
+		conf:           conf,
+		keyspace:       keySpace,
+		stat:           stats,
+		ttl:            conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
+		readBatchSize:  conf.GetInt("Scylla.ReadBatchSize", 100),
+		writeBatchSize: conf.GetInt("Scylla.WriteBatchSize", 100),
+		tableName:      table,
+		cache:          make(map[string]types.KeyValue),
 	}
 	return scylla, nil
 }
