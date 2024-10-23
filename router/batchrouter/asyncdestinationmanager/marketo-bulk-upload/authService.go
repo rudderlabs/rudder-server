@@ -79,7 +79,7 @@ func (m *MarketoAuthService) GetAccessToken() (string, error) {
 	// 	}
 	// }
 
-	// leeping simple logic for now
+	// keeping simple logic for now
 	err := m.fetchOrUpdateAccessToken()
 	if err != nil {
 		return "", err

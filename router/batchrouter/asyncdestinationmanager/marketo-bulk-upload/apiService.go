@@ -34,13 +34,13 @@ type APIError struct {
 	Message    string
 }
 
-func (m *MarketoAPIService) waitForTokenExpiry(tokenExpiresIn int64) {
-	// Calculate how long to wait based on when the token was fetched and its expiry time
-	// Add a small buffer (5 seconds) to ensure the token has fully expired
-	waitDuration := time.Duration(tokenExpiresIn)*time.Second + 5*time.Second
-	m.logger.Info(fmt.Sprintf("Waiting %v for token to expire before retrying", waitDuration))
-	time.Sleep(waitDuration)
-}
+// func (m *MarketoAPIService) waitForTokenExpiry(tokenExpiresIn int64) {
+// 	// Calculate how long to wait based on when the token was fetched and its expiry time
+// 	// Add a small buffer (5 seconds) to ensure the token has fully expired
+// 	waitDuration := time.Duration(tokenExpiresIn)*time.Second + 5*time.Second
+// 	m.logger.Info(fmt.Sprintf("Waiting %v for token to expire before retrying", waitDuration))
+// 	time.Sleep(waitDuration)
+// }
 
 func (m *MarketoAPIService) checkForCSVLikeResponse(resp *http.Response) bool {
 	// check for csv like response by checking the headers
@@ -105,9 +105,11 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 
 		if apiError.Category == "RefreshToken" {
 
-			tokenInfo := m.authService.GetAccessTokenInfo()
+			// tokenInfo := m.authService.GetAccessTokenInfo()
 			// Wait for the token to expire before retrying
-			m.waitForTokenExpiry(tokenInfo.ExpiresIn)
+			// m.waitForTokenExpiry(tokenInfo.ExpiresIn)
+
+			time.Sleep(time.Duration((retryCount+1)*5) * time.Second)
 
 			m.logger.Info(fmt.Sprintf("Retrying import after token expiry (attempt %d of %d)", retryCount+1, m.maxRetries))
 			importID, apiError = m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)

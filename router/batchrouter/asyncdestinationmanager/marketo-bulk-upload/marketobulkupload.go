@@ -73,6 +73,9 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		"destID":   destinationID,
 	})
 	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, err := createCSVFile(destinationID, b.destinationConfig, input, b.dataHashToJobId)
+
+	b.logger.Infof("Number of jobs in the batch: %d", len(insertedJobIDs))
+
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
