@@ -1813,12 +1813,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		if proc.config.enableDedup {
 			p := payloadFunc()
 			messageSize := int64(len(p))
-			dedupKey := dedupTypes.KeyValue{
-				Key:         fmt.Sprintf("%v%v", event.messageID, event.eventParams.SourceJobRunId),
-				Value:       messageSize,
-				WorkspaceID: event.workspaceID,
-				JobID:       event.jobID,
-			}
+			dedupKey := event.dedupKey
 			ok, previousSize := keyMap[dedupKey], sizeMap[dedupKey]
 			if !ok {
 				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
@@ -2480,6 +2475,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			}
 		}
 	}
+
+	if len(statusList) != len(jobList) {
+		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+	}
+
 	return proc.generateTransformationMessage(
 		&preTransformationMessage{
 			partition:                    partition,

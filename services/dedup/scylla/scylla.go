@@ -73,12 +73,12 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 			var dbMessageID string
 			var size int64
 			for iter.Scan(&dbMessageID, &size) {
+				d.cacheMu.Lock()
 				val, ok := d.cache[dbMessageID]
 				if ok {
 					results[val] = false
 					sizes[val] = size
 				}
-				d.cacheMu.Lock()
 				delete(d.cache, dbMessageID)
 				d.cacheMu.Unlock()
 			}
