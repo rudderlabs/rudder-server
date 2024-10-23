@@ -495,6 +495,10 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		IdleConnTimeout:     30 * time.Second,
 	}
 	if config.GetBool("Transformer.Client.cslbEnabled", false) {
+		// Reduce the TTL to 10 seconds from the default 5 minutes to account for frequent evictions of the transformer
+		os.Setenv("cslb_srv_ttl", fmt.Sprintf("%v", 10*time.Second))
+		// Disable the health checks in CSLB in lieu of health checks performed by k8s readiness probes
+		os.Setenv("cslb_options", "H")
 		cslb.Setup()
 		cslb.Enable(trans.tr)
 	}
