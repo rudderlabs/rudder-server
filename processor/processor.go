@@ -1690,6 +1690,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		source        *backendconfig.SourceT
 		uuid          uuid.UUID
 		customVal     string
+		payloadFunc   func() json.RawMessage
 	}
 
 	var jobsWithMetaData []jobWithMetaData
@@ -1761,9 +1762,16 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
+			payloadFunc := ro.Memoize(func() json.RawMessage {
+				payloadBytes, err := jsonfast.Marshal(singularEvent)
+				if err != nil {
+					return nil
+				}
+				return payloadBytes
+			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
-				Value:       int64(len(singularEvent)),
+				Value:       int64(len(payloadFunc())),
 				WorkspaceID: batchEvent.WorkspaceId,
 				JobID:       batchEvent.JobID,
 			}
@@ -1783,6 +1791,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 				source:        source,
 				uuid:          batchEvent.UUID,
 				customVal:     batchEvent.CustomVal,
+				payloadFunc:   payloadFunc,
 			})
 			dedupKeysWithWorkspaceID = append(dedupKeysWithWorkspaceID, dedupKey)
 		}
@@ -1802,16 +1811,9 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		if event.eventParams.DestinationID != "" {
 			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
 		}
-		payloadFunc := ro.Memoize(func() json.RawMessage {
-			payloadBytes, err := jsonfast.Marshal(event.singularEvent)
-			if err != nil {
-				return nil
-			}
-			return payloadBytes
-		})
 
 		if proc.config.enableDedup {
-			p := payloadFunc()
+			p := event.payloadFunc()
 			messageSize := int64(len(p))
 			dedupKey := event.dedupKey
 			ok, previousSize := keyMap[dedupKey], sizeMap[dedupKey]
@@ -1844,7 +1846,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			// TODO: could use source.SourceDefinition.Category instead?
 			commonMetadataFromSingularEvent.SourceJobRunID == "" &&
 			!sourceIsTransient {
-			if eventPayload := payloadFunc(); eventPayload != nil {
+			if eventPayload := event.payloadFunc(); eventPayload != nil {
 				eventSchemaJobs = append(eventSchemaJobs,
 					&jobsdb.JobT{
 						UUID:         event.uuid,
@@ -1863,7 +1865,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		if proc.config.archivalEnabled.Load() &&
 			commonMetadataFromSingularEvent.SourceJobRunID == "" && // archival enabled&&
 			!sourceIsTransient {
-			if eventPayload := payloadFunc(); eventPayload != nil {
+			if eventPayload := event.payloadFunc(); eventPayload != nil {
 				archivalJobs = append(archivalJobs,
 					&jobsdb.JobT{
 						UUID:         event.uuid,
@@ -1895,7 +1897,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 					if sourceIsTransient {
 						return []byte(`{}`)
 					}
-					if payload := payloadFunc(); payload != nil {
+					if payload := event.payloadFunc(); payload != nil {
 						return payload
 					}
 					return []byte("{}")
