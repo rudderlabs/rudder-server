@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/samber/lo"
 
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -109,7 +109,6 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if apiError != nil {
 
 		if apiError.Category == "RefreshToken" {
-
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
 				FailedReason:  "BRT: Error in Uploading File: Token Expired" + apiError.Message,
@@ -149,7 +148,6 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 }
 
 func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-
 	importId := pollInput.ImportId
 
 	marketoResponse, apiError := b.apiService.PollImportStatus(importId)
@@ -283,7 +281,6 @@ func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 }
 
 func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
-
 	metadata := common.EventStatMeta{
 		FailedKeys:     make([]int64, 0),
 		WarningKeys:    make([]int64, 0),

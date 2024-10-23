@@ -30,7 +30,6 @@ type MarketoAuthService struct {
 }
 
 func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
-
 	accessTokenURL := fmt.Sprintf("https://%s.mktorest.com/identity/oauth/token?client_id=%s&client_secret=%s&grant_type=client_credentials", m.munchkinId, m.clientId, m.clientSecret)
 	req, err := http.NewRequest("POST", accessTokenURL, nil)
 	if err != nil {
@@ -59,11 +58,9 @@ func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
 	accessToken.FetchedAt = time.Now().Unix()
 	m.accessToken = accessToken
 	return nil
-
 }
 
 func (m *MarketoAuthService) GetAccessToken() (string, error) {
-
 	// if m.accessToken.AccessToken == "" {
 	// 	err := m.fetchOrUpdateAccessToken()
 	// 	if err != nil {

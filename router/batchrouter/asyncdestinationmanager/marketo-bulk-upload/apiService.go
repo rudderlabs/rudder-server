@@ -102,7 +102,6 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 
 	retryCount := 0
 	for retryCount < m.maxRetries {
-
 		if apiError.Category == "RefreshToken" {
 
 			// tokenInfo := m.authService.GetAccessTokenInfo()
@@ -144,7 +143,6 @@ func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse,
 
 	// Make the API request
 	req, err := http.NewRequest("GET", apiURL, nil)
-
 	if err != nil {
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in creating request"}
 	}
@@ -177,11 +175,9 @@ func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse,
 	}
 
 	return nil, &APIError{StatusCode: statusCode, Category: category, Message: errorMessage}
-
 }
 
 func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *APIError) {
-
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in creating request"}
@@ -250,5 +246,4 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 	}
 
 	return records, nil
-
 }

@@ -24,7 +24,7 @@ const (
 )
 
 // Docs: https://experienceleague.adobe.com/en/docs/marketo-developer/marketo/rest/error-codes
-func categorizeMarketoError(errorCode string) (status string, message string) {
+func categorizeMarketoError(errorCode string) (status, message string) {
 	// Convert string error code to integer
 	code, err := strconv.Atoi(errorCode)
 	if err != nil {
@@ -256,7 +256,6 @@ func sendHTTPRequest(uploadURL, csvFilePath string, accessToken string, deduplic
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("file", filepath.Base(csvFilePath))
-
 	if err != nil {
 		return nil, fmt.Errorf("error while creating form file: %v", err)
 	}

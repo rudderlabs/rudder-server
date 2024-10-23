@@ -321,7 +321,7 @@ func TestCreateCSVFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Override the temporary directory for this test
-			os.Setenv("TMPDIR", tmpDir)
+			t.Setenv("TMPDIR", tmpDir)
 
 			gotPath, gotHeaders, gotInserted, gotOverflowed, err := createCSVFile(
 				tt.destinationID,

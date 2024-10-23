@@ -27,7 +27,6 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 }
 
 func NewMarketoBulkUploader(destinationName string, statsFactory stats.Stats, destConfig MarketoConfig) *MarketoBulkUploader {
-
 	authService := &MarketoAuthService{
 		munchkinId:   destConfig.MunchkinId,
 		clientId:     destConfig.ClientId,
