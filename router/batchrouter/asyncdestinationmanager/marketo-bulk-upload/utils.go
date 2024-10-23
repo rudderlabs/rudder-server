@@ -124,7 +124,6 @@ func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, strin
 			// Handle the case where Errors array is empty
 			statusCode, category, errorMessage = handleMarketoErrorCode("Unknown")
 		}
-
 	}
 	return statusCode, category, errorMessage
 }
