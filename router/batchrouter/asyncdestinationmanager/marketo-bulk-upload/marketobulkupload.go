@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/samber/lo"
-
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
