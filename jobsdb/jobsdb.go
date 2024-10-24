@@ -527,7 +527,7 @@ type Handle struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
 
-		payloadBinary      bool
+		payloadBinary      config.ValueLoader[bool]
 		payloadCompression bool
 	}
 }
@@ -712,7 +712,7 @@ func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
 	}
 }
 
-func WithBinaryPayload(enabled bool) OptsFunc {
+func WithBinaryPayload(enabled config.ValueLoader[bool]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.payloadBinary = enabled
 	}
@@ -995,6 +995,10 @@ func (jd *Handle) loadConfig() {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
+	}
+
+	if jd.conf.payloadBinary == nil {
+		jd.conf.payloadBinary = jd.config.GetReloadableBoolVar(false, "JobsDB.payloadBinary")
 	}
 }
 
@@ -1425,7 +1429,7 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	var payloadType = "JSONB"
-	if jd.conf.payloadBinary {
+	if jd.conf.payloadBinary.Load() {
 		payloadType = "BYTEA"
 	}
 
