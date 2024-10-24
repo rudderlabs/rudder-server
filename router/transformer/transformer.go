@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/cslb"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -49,8 +50,8 @@ const (
 // handle is the handle for this class
 type handle struct {
 	tr *http.Transport
-	// http client for router transformation request
-	client *http.Client
+	// http recycledClient for router transformation request
+	recycledClient *sysUtils.RecycledHTTPClient
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
@@ -179,7 +180,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)
 		} else {
-			resp, err = trans.client.Do(req)
+			resp, err = trans.recycledClient.GetClient().Do(req)
 		}
 
 		if err == nil {
@@ -493,6 +494,15 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
 		IdleConnTimeout:     30 * time.Second,
 	}
+	if config.GetBool("Transformer.Client.cslbEnabled", false) {
+		// Reduce the TTL to 10 seconds from the default 5 minutes to account for frequent evictions of the transformer
+		os.Setenv("cslb_srv_ttl", fmt.Sprintf("%v", 10*time.Second))
+		// Disable the health checks in CSLB in lieu of health checks performed by k8s readiness probes
+		os.Setenv("cslb_options", "H")
+		cslb.Setup()
+		cslb.Enable(trans.tr)
+	}
+
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout
@@ -500,7 +510,10 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	trans.recycledClient = sysUtils.NewRecycledHTTPClient(
+		func() *http.Client {
+			return &http.Client{Transport: trans.tr.Clone(), Timeout: trans.transformTimeout}
+		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
