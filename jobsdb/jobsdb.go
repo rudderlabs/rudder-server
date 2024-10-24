@@ -51,7 +51,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
-	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
@@ -490,8 +489,6 @@ type Handle struct {
 		started bool
 	}
 
-	compressor *compress.Compressor
-
 	config *config.Config
 	conf   struct {
 		maxTableSize                   config.ValueLoader[int64]
@@ -527,8 +524,7 @@ type Handle struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
 
-		payloadBinary      config.ValueLoader[bool]
-		payloadCompression bool
+		payloadBinary config.ValueLoader[bool]
 	}
 }
 
@@ -718,12 +714,6 @@ func WithBinaryPayload(enabled config.ValueLoader[bool]) OptsFunc {
 	}
 }
 
-func WithPayloadCompression(enabled bool) OptsFunc {
-	return func(jd *Handle) {
-		jd.conf.payloadCompression = enabled
-	}
-}
-
 func NewForRead(tablePrefix string, opts ...OptsFunc) *Handle {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -825,12 +815,9 @@ func (jd *Handle) init() {
 		jd.assertError(jd.dbHandle.Ping())
 	}
 
-	var err error
-	jd.compressor, err = compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdFastest)
-	jd.assertError(err)
 	jd.workersAndAuxSetup()
 
-	err = jd.WithTx(func(tx *Tx) error {
+	err := jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,

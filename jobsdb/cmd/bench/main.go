@@ -182,9 +182,6 @@ func main() {
 			jobsdb.WithBinaryPayload(config.SingleValueLoader(true)),
 		)
 	}
-	if compression {
-		opts = append(opts, jobsdb.WithPayloadCompression(true))
-	}
 
 	// Use the db connection for your jobsdb
 	jobsDB := jobsdb.NewForReadWrite("bench_db", opts...)
