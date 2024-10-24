@@ -288,6 +288,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
+	github.com/rudderlabs/cslb v0.0.0-20241022023330-a4acff3d7b42
 	github.com/rudderlabs/goqu/v10 v10.3.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.6.0 // indirect
