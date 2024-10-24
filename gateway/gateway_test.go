@@ -1832,7 +1832,7 @@ var _ = Describe("Gateway", func() {
 			Expect(statStore.GetByName("gateway.event_pickup_lag_seconds")).To(Equal([]memstats.Metric{
 				{
 					Name: "gateway.event_pickup_lag_seconds",
-					Tags: map[string]string{"sourceId": SourceIDEnabled, "workspaceId": WorkspaceID},
+					Tags: map[string]string{"workspaceId": WorkspaceID},
 					Durations: []time.Duration{
 						time.Second,
 					},

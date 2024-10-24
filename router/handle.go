@@ -151,7 +151,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var discardedCount int
 	limiter := rt.limiter.pickup
 	limiterStats := rt.limiter.stats.pickup
-	limiterEnd := limiter.BeginWithPriority(partition, LimiterPriorityValueFrom(limiterStats.Score(partition), 100))
+	limiterEnd := limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(partition), 100))
 	defer limiterEnd()
 
 	defer func() {

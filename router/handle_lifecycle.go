@@ -226,8 +226,7 @@ func (rt *Handle) Setup(
 			allPStats := pstats.All()
 			for _, pstat := range allPStats {
 				statTags := stats.Tags{
-					"destType":  rt.destType,
-					"partition": pstat.Partition,
+					"destType": rt.destType,
 				}
 				stats.Default.NewTaggedStat("rt_"+key+"_limiter_stats_throughput", stats.GaugeType, statTags).Gauge(pstat.Throughput)
 				stats.Default.NewTaggedStat("rt_"+key+"_limiter_stats_errors", stats.GaugeType, statTags).Gauge(pstat.Errors)

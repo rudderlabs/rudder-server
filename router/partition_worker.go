@@ -68,7 +68,7 @@ type partitionWorker struct {
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
 	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers)
-	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Since(start)
+	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
 	worked := pw.pickupCount > 0
 	if worked && !pw.limitsReached { // sleep only if we worked and we didn't reach the limits

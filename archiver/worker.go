@@ -151,7 +151,7 @@ func (w *worker) Stop() {
 }
 
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, error) {
-	defer w.uploadLimiter.Begin(w.sourceID)()
+	defer w.uploadLimiter.Begin("")()
 	firstJobCreatedAt := jobs[0].CreatedAt.UTC()
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 	workspaceID := jobs[0].WorkspaceId
@@ -212,7 +212,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 }
 
 func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
-	defer w.fetchLimiter.Begin(w.sourceID)()
+	defer w.fetchLimiter.Begin("")()
 	params := w.queryParams
 	params.PayloadSizeLimit = w.payloadLimitFunc(w.config.payloadLimit())
 	params.EventsLimit = w.config.eventsLimit()
@@ -242,7 +242,7 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 func (w *worker) markStatus(
 	jobs []*jobsdb.JobT, state string, response []byte,
 ) error {
-	defer w.updateLimiter.Begin(w.sourceID)()
+	defer w.updateLimiter.Begin("")()
 	workspaceID := jobs[0].WorkspaceId
 	if err := misc.RetryWithNotify(
 		w.lifecycle.ctx,

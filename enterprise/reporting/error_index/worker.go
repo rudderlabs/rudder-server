@@ -156,7 +156,7 @@ func (w *worker) Work() bool {
 }
 
 func (w *worker) fetchJobs() (jobsdb.JobsResult, error) {
-	defer w.limiter.fetch.Begin(w.sourceID)()
+	defer w.limiter.fetch.Begin("")()
 
 	return w.jobsDB.GetUnprocessed(w.lifecycle.ctx, jobsdb.GetQueryParams{
 		ParameterFilters: []jobsdb.ParameterFilterT{
@@ -172,7 +172,7 @@ func (w *worker) fetchJobs() (jobsdb.JobsResult, error) {
 // It aggregates payloads from a list of jobs, applies transformations if needed,
 // uploads the payloads, and returns the concatenated locations of the uploaded files.
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb.JobStatusT, error) {
-	defer w.limiter.upload.Begin(w.sourceID)()
+	defer w.limiter.upload.Begin("")()
 
 	jobWithPayloadsMap := make(map[string][]jobWithPayload)
 	for _, job := range jobs {
@@ -286,7 +286,7 @@ func (w *worker) encodeToParquet(wr io.Writer, payloads []payload) error {
 
 // markJobsStatus marks the status of the jobs in the erridx jobsDB.
 func (w *worker) markJobsStatus(statusList []*jobsdb.JobStatusT) error {
-	defer w.limiter.update.Begin(w.sourceID)()
+	defer w.limiter.update.Begin("")()
 
 	err := misc.RetryWithNotify(
 		w.lifecycle.ctx,
