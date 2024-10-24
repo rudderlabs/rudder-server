@@ -139,6 +139,9 @@ type drainer struct {
 func (d *drainer) Drain(
 	job *jobsdb.JobT,
 ) (bool, string) {
+	if job.CustomVal == "Null" {
+		return true, DrainReasonDestDisabled
+	}
 	createdAt := job.CreatedAt
 	var jobParams JobParameters
 	_ = json.Unmarshal(job.Parameters, &jobParams)
