@@ -1593,7 +1593,7 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if proc.limiter.preprocess != nil {
-		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.preprocess.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	jobList := subJobs.subJobs
@@ -2115,7 +2115,7 @@ type transformationMessage struct {
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
 	if proc.limiter.transform != nil {
-		defer proc.limiter.transform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.transform.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2303,7 +2303,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 
 	if proc.limiter.store != nil {
-		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.store.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
@@ -3042,7 +3042,7 @@ func ConvertToFilteredTransformerResponse(
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	if proc.limiter.read != nil {
-		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	s := time.Now()

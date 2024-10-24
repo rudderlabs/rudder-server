@@ -242,7 +242,7 @@ func (*mockWorkerHandle) stats() *processorStats {
 
 func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
-		defer m.limiters.query.Begin(partition)()
+		defer m.limiters.query.Begin("")()
 	}
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
@@ -307,7 +307,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 
 func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
 	if m.limiters.process != nil {
-		defer m.limiters.process.Begin(partition)()
+		defer m.limiters.process.Begin("")()
 	}
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
@@ -328,7 +328,7 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 
 func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {
 	if m.limiters.transform != nil {
-		defer m.limiters.transform.Begin(partition)()
+		defer m.limiters.transform.Begin("")()
 	}
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
@@ -346,7 +346,7 @@ func (m *mockWorkerHandle) transformations(partition string, in *transformationM
 
 func (m *mockWorkerHandle) Store(partition string, in *storeMessage) {
 	if m.limiters.store != nil {
-		defer m.limiters.store.Begin(partition)()
+		defer m.limiters.store.Begin("")()
 	}
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()

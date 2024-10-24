@@ -1762,7 +1762,6 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 	tags := statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	command := func() moreQueryResult {
@@ -2044,7 +2043,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	tags := statTags{
 		StateFilters:     stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      workspaceID,
 	}
 
@@ -3055,7 +3053,6 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	tags := &statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
@@ -3165,7 +3162,6 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	tags := statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	command := func() queryResult {
