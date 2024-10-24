@@ -290,14 +290,13 @@ func TestMigration(t *testing.T) {
 		// add some more jobs to the new DS
 		require.NoError(t, jobDB.Store(context.Background(), jobs[10:20]))
 
-		c.Set("JobsDB.payloadBinary", false)
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 		require.EqualValues(t, 3, jobDB.GetMaxDSIndex())
 		thirdTableName := fmt.Sprintf("%s_jobs_3", tablePrefix)
 		err = jobDB.dbHandle.QueryRowContext(context.Background(), fmt.Sprintf(`select data_type from information_schema.columns where table_name='%s' and column_name='event_payload';`, thirdTableName)).Scan(&payloadType)
 		require.NoError(t, err)
-		require.EqualValues(t, "jsonb", payloadType)
+		require.EqualValues(t, "bytea", payloadType)
 
 		// last DS
 		// should have enough statuses for a clean up to be triggered
@@ -335,6 +334,7 @@ func TestMigration(t *testing.T) {
 		require.NoError(t, err)
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // waits for last loop to finish
+		c.Set("JobsDB.payloadBinary", false)
 
 		// we should see that in the three DSs we have,
 		// the first one should only have non-terminal jobs left now(with only the last status) in an jobs_1_1
