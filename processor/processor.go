@@ -913,7 +913,7 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
 		err = errors.New("source not found for sourceId")
-		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
+		proc.logger.Errorn(`Processor : source not found for sourceId`, logger.NewStringField("sourceID", sourceId))
 	}
 	return &source, err
 }
@@ -1492,7 +1492,7 @@ func (proc *Handle) getTransformationMetrics(
 	return jobs, metrics, countMap
 }
 
-func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
+func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, source *backendconfig.SourceT) {
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
@@ -1501,11 +1501,6 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	}()
 	var eventType string
 	var eventName string
-	source, err := proc.getSourceBySourceID(sourceId)
-	if err != nil {
-		proc.logger.Errorf("[Processor] Failed to get source by source id: %s", sourceId)
-		return
-	}
 	if val, ok := event["type"]; ok {
 		eventType, _ = val.(string)
 		tags := map[string]string{
@@ -1644,6 +1639,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			span.End()
 		}
 	}()
+	sourceCacheMap := make(map[string]*backendconfig.SourceT)
 
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
@@ -1703,8 +1699,18 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 		}
 		statusList = append(statusList, &newStatus)
 
-		source, err := proc.getSourceBySourceID(sourceID)
-		if err != nil {
+		var source *backendconfig.SourceT
+		if cachedSource, ok := sourceCacheMap[sourceID]; ok {
+			source = cachedSource
+		} else {
+			source, err = proc.getSourceBySourceID(sourceID)
+			if err != nil {
+				sourceCacheMap[sourceID] = nil
+			} else {
+				sourceCacheMap[sourceID] = source
+			}
+		}
+		if source == nil {
 			if span != nil {
 				span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
 			}
@@ -1722,11 +1728,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
-				// payloadBytes, err := jsonfast.Marshal(singularEvent)
-				// if err != nil {
-				// 	return nil
-				// }
-				// return payloadBytes
 				return getEventFromBatch(batchEvent.EventPayload)
 			})
 
@@ -1746,7 +1747,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 				dedupKeys[dedupKey] = struct{}{}
 			}
 
-			proc.updateSourceEventStatsDetailed(singularEvent, sourceID)
+			proc.updateSourceEventStatsDetailed(singularEvent, source)
 
 			// We count this as one, not destination specific ones
 			totalEvents++
@@ -1970,8 +1971,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	defer proc.stats.marshalSingularEvents(partition).SendTiming(marshalTime)
 
 	for sourceID, events := range groupedEventsBySourceId {
-		source, err := proc.getSourceBySourceID(string(sourceID))
-		if err != nil {
+		source, ok := sourceCacheMap[string(sourceID)]
+		if !ok {
 			continue
 		}
 
@@ -2006,7 +2007,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			source, _ := proc.getSourceBySourceID(sourceId)
+			source, _ := sourceCacheMap[sourceId]
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
