@@ -503,7 +503,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.recycledClient = sysUtils.NewRecycledHTTPClient(
 		func() *http.Client {
 			return &http.Client{Transport: trans.tr.Clone(), Timeout: trans.transformTimeout}
-		}, config.GetDuration("Transformer.Client.ttl", 2, time.Minute))
+		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
