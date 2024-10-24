@@ -49,8 +49,8 @@ const (
 // handle is the handle for this class
 type handle struct {
 	tr *http.Transport
-	// http client for router transformation request
-	client *http.Client
+	// http recycledClient for router transformation request
+	recycledClient *sysUtils.RecycledHTTPClient
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
@@ -113,14 +113,14 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
+func NewTransformer(ctx context.Context, destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
 	cache := oauthv2.NewCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	handle := &handle{
 		oAuthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
 	}
-	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
+	handle.setup(ctx, destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
 	return handle
 }
 
@@ -179,7 +179,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)
 		} else {
-			resp, err = trans.client.Do(req)
+			resp, err = trans.recycledClient.GetClient().Do(req)
 		}
 
 		if err == nil {
@@ -480,7 +480,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 }
 
-func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
+func (trans *handle) setup(ctx context.Context, destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -500,7 +500,10 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	trans.recycledClient = sysUtils.NewRecycledHTTPClient(ctx,
+		func() *http.Client {
+			return &http.Client{Transport: trans.tr.Clone(), Timeout: trans.transformTimeout}
+		}, config.GetDuration("Transformer.Client.ttl", 2, time.Minute))
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,

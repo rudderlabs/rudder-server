@@ -52,6 +52,14 @@ func (rt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
 ) {
+	ctx, cancel := context.WithCancel(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
+
+	rt.backgroundCtx = ctx
+	rt.backgroundGroup = g
+	rt.backgroundCancel = cancel
+	rt.backgroundWait = g.Wait
+
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
 	rt.throttlerFactory = throttlerFactory
@@ -120,7 +128,7 @@ func (rt *Handle) Setup(
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
+	rt.transformer = transformer.NewTransformer(ctx, rt.netClientTimeout, rt.transformerTimeout,
 		backendConfig, rt.reloadableConfig.oauthV2Enabled,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 	)
@@ -161,14 +169,6 @@ func (rt *Handle) Setup(
 			return rt.eventOrderingDisabledForWorkspace(key.WorkspaceID) || rt.eventOrderingDisabledForDestination(key.DestinationID)
 		}),
 	)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := errgroup.WithContext(ctx)
-
-	rt.backgroundCtx = ctx
-	rt.backgroundGroup = g
-	rt.backgroundCancel = cancel
-	rt.backgroundWait = g.Wait
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("Router.Limiter.statsPeriod", 15, time.Second)
