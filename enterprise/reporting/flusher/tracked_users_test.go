@@ -79,7 +79,6 @@ func generateReport(reportedAt time.Time, workspaceId, sourceId string, numUsers
 		SourceID:                 sourceId,
 		InstanceID:               "instance1",
 		UserIDHLL:                &userIdHLL,
-		AnonymousIDHLL:           &anonymousIdHLL,
 		IdentifiedAnonymousIDHLL: &identifiedAnonymousIdHLL,
 	}
 }
@@ -92,17 +91,15 @@ func addReportsToDB(ctx context.Context, db *sql.DB, reports []*aggregator.Track
 				workspace_id,
 				source_id,
 				instance_id,
-				userid_hll,
-				anonymousid_hll,
-				identified_anonymousid_hll
-			) VALUES ($1, $2, $3, $4, $5, $6, $7)
+				tracked_identifiers_hll,
+				merged_identifiers_hll
+			) VALUES ($1, $2, $3, $4, $5, $6)
 		`,
 			report.ReportedAt,
 			report.WorkspaceID,
 			report.SourceID,
 			report.InstanceID,
 			hllToString(report.UserIDHLL),
-			hllToString(report.AnonymousIDHLL),
 			hllToString(report.IdentifiedAnonymousIDHLL),
 		)
 		if err != nil {
@@ -208,7 +205,6 @@ func TestTrackedUsersFlush(t *testing.T) {
 		}
 
 		reports[0].UserIDHLL.Union(*reports[1].UserIDHLL)
-		reports[0].AnonymousIDHLL.Union(*reports[1].AnonymousIDHLL)
 		reports[0].IdentifiedAnonymousIDHLL.Union(*reports[1].IdentifiedAnonymousIDHLL)
 
 		expectedPayloads := map[string]map[string]interface{}{
@@ -218,7 +214,6 @@ func TestTrackedUsersFlush(t *testing.T) {
 				"sourceId":                 "source1",
 				"instanceId":               "instance1",
 				"userIdHLL":                hllToString(reports[0].UserIDHLL),
-				"anonymousIdHLL":           hllToString(reports[0].AnonymousIDHLL),
 				"identifiedAnonymousIdHLL": hllToString(reports[0].IdentifiedAnonymousIDHLL),
 			},
 			"workspace1-source2-instance1": {
@@ -227,7 +222,6 @@ func TestTrackedUsersFlush(t *testing.T) {
 				"sourceId":                 "source2",
 				"instanceId":               "instance1",
 				"userIdHLL":                hllToString(reports[2].UserIDHLL),
-				"anonymousIdHLL":           hllToString(reports[2].AnonymousIDHLL),
 				"identifiedAnonymousIdHLL": hllToString(reports[2].IdentifiedAnonymousIDHLL),
 			},
 			"workspace2-source1-instance1": {
@@ -236,7 +230,6 @@ func TestTrackedUsersFlush(t *testing.T) {
 				"sourceId":                 "source1",
 				"instanceId":               "instance1",
 				"userIdHLL":                hllToString(reports[3].UserIDHLL),
-				"anonymousIdHLL":           hllToString(reports[3].AnonymousIDHLL),
 				"identifiedAnonymousIdHLL": hllToString(reports[3].IdentifiedAnonymousIDHLL),
 			},
 		}
@@ -257,7 +250,6 @@ func TestTrackedUsersFlush(t *testing.T) {
 			assert.Equal(t, expectedPayload["sourceId"], item["sourceId"])
 			assert.Equal(t, expectedPayload["instanceId"], item["instanceId"])
 			assert.Equal(t, expectedPayload["userIdHLL"], item["userIdHLL"])
-			assert.Equal(t, expectedPayload["anonymousIdHLL"], item["anonymousIdHLL"])
 			assert.Equal(t, expectedPayload["identifiedAnonymousIdHLL"], item["identifiedAnonymousIdHLL"])
 		}
 	}
