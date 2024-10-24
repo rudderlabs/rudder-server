@@ -9,8 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/enterprise/replay"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -37,24 +35,11 @@ type ReportingFeature interface {
 	Setup(cxt context.Context, backendConfig backendconfig.BackendConfig) types.Reporting
 }
 
-/*********************************
-Replay Feature
-*********************************/
-
-// ReplayFeature handles inserting of failed jobs into respective gw/rt jobsdb
-type ReplayFeature interface {
-	Setup(ctx context.Context, config *config.Config, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.Handle) (replay.Replay, error)
-}
-
-// ReplayFeatureSetup is a function that initializes a Replay feature
-type ReplayFeatureSetup func(App) ReplayFeature
-
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
 	SuppressUser SuppressUserFeature
 	ConfigEnv    ConfigEnvFeature
 	Reporting    ReportingFeature
-	Replay       ReplayFeature
 	TrackedUsers TrackedUsersFeature
 }
 

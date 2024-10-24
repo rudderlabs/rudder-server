@@ -17,7 +17,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
-	"github.com/rudderlabs/rudder-server/enterprise/replay"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -85,10 +84,6 @@ func (a *app) initFeatures() {
 		Reporting: &reporting.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
 			Log:             enterpriseLogger.Child("reporting"),
-		},
-		Replay: &replay.Factory{
-			EnterpriseToken: a.options.EnterpriseToken,
-			Log:             enterpriseLogger.Child("replay"),
 		},
 		ConfigEnv: &configenv.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,

@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/samber/lo"
@@ -377,18 +376,9 @@ loop:
 		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
-		if err != nil {
-			var pqErr *pq.Error
-
-			switch {
-			case errors.Is(err, context.Canceled),
-				errors.Is(err, context.DeadlineExceeded),
-				errors.As(err, &pqErr) && pqErr.Code == "57014":
-				break loop
-			default:
-				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
-				return err
-			}
+		if err != nil && ctx.Err() == nil {
+			r.logger.Errorn("Error getting uploads to process", logger.NewErrorField(err))
+			return err
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {

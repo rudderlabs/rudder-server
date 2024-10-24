@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -48,6 +49,7 @@ type uploaderImpl[E any] struct {
 	maxBatchSize, maxRetry, maxESQueueSize config.ValueLoader[int]
 	batchTimeout, retrySleep               config.ValueLoader[time.Duration]
 	region                                 string
+	authorizer                             identity.Authorizer
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -66,12 +68,12 @@ func (uploader *uploaderImpl[E]) Setup() {
 	uploader.region = config.GetString("region", "")
 }
 
-func New[E any](url string, transformer Transformer[E]) Uploader[E] {
+func New[E any](url string, authorizer identity.Authorizer, transformer Transformer[E]) Uploader[E] {
 	eventBatchChannel := make(chan E)
 	eventBuffer := make([]E, 0)
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.debugger.timeout", 30, time.Second)}
 
-	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
+	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}, authorizer: authorizer}
 	uploader.Setup()
 	return uploader
 }
@@ -128,7 +130,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-		req.SetBasicAuth(config.GetWorkspaceToken(), "")
+		req.SetBasicAuth(uploader.authorizer.BasicAuth())
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {

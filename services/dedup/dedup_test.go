@@ -100,6 +100,43 @@ func Test_Dedup(t *testing.T) {
 				err = d.Commit([]string{"d"})
 				require.NotNil(t, err)
 			})
+
+			t.Run("test GetBatch with unique keys", func(t *testing.T) {
+				kvs := []types.KeyValue{
+					{Key: "e", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+					{Key: "f", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+					{Key: "g", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+				}
+				found, _, err := d.GetBatch(kvs)
+				require.Nil(t, err)
+				require.Len(t, found, 3)
+				for _, kv := range kvs {
+					require.Equal(t, true, found[kv])
+				}
+				err = d.Commit([]string{"e", "f", "g"})
+				require.NoError(t, err)
+			})
+
+			t.Run("test GetBatch with non-unique keys", func(t *testing.T) {
+				kvs := []types.KeyValue{
+					{Key: "g", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 3},
+					{Key: "h", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 4},
+					{Key: "h", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 5},
+				}
+				expected := map[types.KeyValue]bool{
+					kvs[0]: false,
+					kvs[1]: true,
+					kvs[2]: false,
+				}
+				found, _, err := d.GetBatch(kvs)
+				require.Nil(t, err)
+				require.Len(t, found, 3)
+				for _, kv := range kvs {
+					require.Equal(t, expected[kv], found[kv])
+				}
+				err = d.Commit([]string{"h"})
+				require.NoError(t, err)
+			})
 		})
 	}
 }
@@ -209,4 +246,61 @@ func Benchmark_Dedup(b *testing.B) {
 	}
 
 	b.Log("db size:", string(out))
+}
+
+// Benchmark_DedupModes/MirrorBadger-12   	    1072	   1101878 ns/op
+// Benchmark_DedupModes/MirrorScylla-12   	     566	   1986533 ns/op
+// Benchmark_DedupModes/Scylla-12         	     990	   1525086 ns/op
+// Benchmark_DedupModes/Badger-12         	  108246	      9981 ns/op
+
+func Benchmark_DedupModes(b *testing.B) {
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "Badger",
+		},
+		{
+			name: "Scylla",
+		},
+		{
+			name: "MirrorScylla",
+		},
+		{
+			name: "MirrorBadger",
+		},
+		{
+			name: "Random",
+		},
+	}
+	pool, err := dockertest.NewPool("")
+	require.NoError(b, err)
+	keySpace := strings.ToUpper(rand.String(5))
+	table := rand.String(5)
+	resource, err := scylla.Setup(pool, b, scylla.WithKeyspace(keySpace))
+	require.NoError(b, err)
+	for _, tc := range testCases {
+		config.Reset()
+		logger.Reset()
+		misc.Init()
+		dbPath := b.TempDir()
+		conf := config.New()
+		conf.Set("Scylla.Hosts", resource.URL)
+		conf.Set("Scylla.Keyspace", keySpace)
+		conf.Set("Scylla.TableName", table)
+		b.Setenv("RUDDER_TMPDIR", dbPath)
+		conf.Set("Dedup.Mode", tc.name)
+		d, err := dedup.New(conf, stats.Default)
+		require.Nil(b, err)
+		b.Run(tc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				key := uuid.New().String()
+				_, _, err = d.Get(types.KeyValue{Key: key, Value: int64(i + 1), WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"})
+				require.NoError(b, err)
+				err = d.Commit([]string{key})
+				require.NoError(b, err)
+			}
+		})
+		d.Close()
+	}
 }

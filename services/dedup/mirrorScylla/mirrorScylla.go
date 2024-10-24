@@ -32,7 +32,18 @@ func (ms *MirrorScylla) Close() {
 	ms.badger.Close()
 }
 
+func (ms *MirrorScylla) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	defer ms.stat.NewTaggedStat("dedup_get_batch_duration_seconds", stats.TimerType, stats.Tags{"mode": "mirror_scylla"}).RecordDuration()()
+	_, _, err := ms.badger.GetBatch(kvs)
+	if err != nil {
+		ms.stat.NewTaggedStat("dedup_mirror_scylla_get_batch_error", stats.CountType, stats.Tags{}).Increment()
+	}
+	return ms.scylla.GetBatch(kvs)
+}
+
 func (ms *MirrorScylla) Get(kv types.KeyValue) (bool, int64, error) {
+	defer ms.stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "mirror_scylla"}).RecordDuration()()
+
 	_, _, err := ms.badger.Get(kv)
 	if err != nil {
 		ms.stat.NewTaggedStat("dedup_mirror_scylla_get_error", stats.CountType, stats.Tags{}).Increment()
@@ -41,6 +52,8 @@ func (ms *MirrorScylla) Get(kv types.KeyValue) (bool, int64, error) {
 }
 
 func (ms *MirrorScylla) Commit(keys []string) error {
+	defer ms.stat.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "mirror_scylla"}).RecordDuration()()
+
 	_ = ms.badger.Commit(keys)
 	return ms.scylla.Commit(keys)
 }
