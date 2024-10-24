@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
+	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/stretchr/testify/require"
@@ -173,7 +174,7 @@ func TestTransformer(t *testing.T) {
 			tr.stat = statsStore
 			tr.logger = logger.NOP
 			tr.conf = config.Default
-			tr.client = srv.Client()
+			tr.recycledClient = sysUtils.NewRecycledHTTPClient(srv.Client, 0)
 			tr.guardConcurrency = make(chan struct{}, 200)
 			tr.sentStat = tr.stat.NewStat("transformer_sent", stats.CountType)
 			tr.receivedStat = tr.stat.NewStat("transformer_received", stats.CountType)
@@ -359,7 +360,7 @@ func TestTransformer(t *testing.T) {
 				tr.stat = stats.Default
 				tr.logger = logger.NOP
 				tr.conf = config.Default
-				tr.client = client
+				tr.recycledClient = sysUtils.NewRecycledHTTPClient(func() *http.Client { return client }, 0)
 				tr.config.maxRetry = config.SingleValueLoader(tc.retries)
 				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(tc.failOnUserTransformTimeout)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
@@ -422,7 +423,7 @@ func TestTransformer(t *testing.T) {
 		tr.stat = stats.Default
 		tr.logger = logger.NOP
 		tr.conf = config.Default
-		tr.client = srv.Client()
+		tr.recycledClient = sysUtils.NewRecycledHTTPClient(srv.Client, 0)
 		tr.config.maxRetry = config.SingleValueLoader(1)
 		tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
 		tr.config.timeoutDuration = 1 * time.Second
@@ -553,7 +554,7 @@ func TestTransformer(t *testing.T) {
 				tr.stat = stats.Default
 				tr.logger = logger.NOP
 				tr.conf = config.Default
-				tr.client = srv.Client()
+				tr.recycledClient = sysUtils.NewRecycledHTTPClient(srv.Client, 0)
 				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
 				tr.config.maxRetry = config.SingleValueLoader(tc.retries)
 				tr.config.failOnError = config.SingleValueLoader(tc.failOnError)
@@ -653,7 +654,7 @@ func TestTransformer(t *testing.T) {
 				defer srv.Close()
 
 				tr := handle{}
-				tr.client = srv.Client()
+				tr.recycledClient = sysUtils.NewRecycledHTTPClient(srv.Client, 0)
 				tr.stat = stats.Default
 				tr.conf = config.Default
 				tr.logger = logger.NOP
