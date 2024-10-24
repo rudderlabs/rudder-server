@@ -51,7 +51,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
-	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
@@ -490,8 +489,6 @@ type Handle struct {
 		started bool
 	}
 
-	compressor *compress.Compressor
-
 	config *config.Config
 	conf   struct {
 		maxTableSize                   config.ValueLoader[int64]
@@ -527,8 +524,7 @@ type Handle struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
 
-		payloadBinary      bool
-		payloadCompression bool
+		payloadBinary config.ValueLoader[bool]
 	}
 }
 
@@ -712,15 +708,9 @@ func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
 	}
 }
 
-func WithBinaryPayload(enabled bool) OptsFunc {
+func WithBinaryPayload(enabled config.ValueLoader[bool]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.payloadBinary = enabled
-	}
-}
-
-func WithPayloadCompression(enabled bool) OptsFunc {
-	return func(jd *Handle) {
-		jd.conf.payloadCompression = enabled
 	}
 }
 
@@ -825,12 +815,9 @@ func (jd *Handle) init() {
 		jd.assertError(jd.dbHandle.Ping())
 	}
 
-	var err error
-	jd.compressor, err = compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdFastest)
-	jd.assertError(err)
 	jd.workersAndAuxSetup()
 
-	err = jd.WithTx(func(tx *Tx) error {
+	err := jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,
@@ -995,6 +982,10 @@ func (jd *Handle) loadConfig() {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
+	}
+
+	if jd.conf.payloadBinary == nil {
+		jd.conf.payloadBinary = jd.config.GetReloadableBoolVar(false, "JobsDB.payloadBinary")
 	}
 }
 
@@ -1425,7 +1416,7 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	var payloadType = "JSONB"
-	if jd.conf.payloadBinary {
+	if jd.conf.payloadBinary.Load() {
 		payloadType = "BYTEA"
 	}
 

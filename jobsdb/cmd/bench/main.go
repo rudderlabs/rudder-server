@@ -178,10 +178,9 @@ func main() {
 		jobsdb.WithDBHandle(db), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP),
 	}
 	if binaryPayload {
-		opts = append(opts, jobsdb.WithBinaryPayload(true))
-	}
-	if compression {
-		opts = append(opts, jobsdb.WithPayloadCompression(true))
+		opts = append(opts,
+			jobsdb.WithBinaryPayload(config.SingleValueLoader(true)),
+		)
 	}
 
 	// Use the db connection for your jobsdb
