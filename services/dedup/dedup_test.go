@@ -100,6 +100,43 @@ func Test_Dedup(t *testing.T) {
 				err = d.Commit([]string{"d"})
 				require.NotNil(t, err)
 			})
+
+			t.Run("test GetBatch with unique keys", func(t *testing.T) {
+				kvs := []types.KeyValue{
+					{Key: "e", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+					{Key: "f", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+					{Key: "g", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh"},
+				}
+				found, _, err := d.GetBatch(kvs)
+				require.Nil(t, err)
+				require.Len(t, found, 3)
+				for _, kv := range kvs {
+					require.Equal(t, true, found[kv])
+				}
+				err = d.Commit([]string{"e", "f", "g"})
+				require.NoError(t, err)
+			})
+
+			t.Run("test GetBatch with non-unique keys", func(t *testing.T) {
+				kvs := []types.KeyValue{
+					{Key: "g", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 3},
+					{Key: "h", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 4},
+					{Key: "h", Value: 1, WorkspaceID: "2DAZvjf8PEMrAkbVm6smqEJnh", JobID: 5},
+				}
+				expected := map[types.KeyValue]bool{
+					kvs[0]: false,
+					kvs[1]: true,
+					kvs[2]: false,
+				}
+				found, _, err := d.GetBatch(kvs)
+				require.Nil(t, err)
+				require.Len(t, found, 3)
+				for _, kv := range kvs {
+					require.Equal(t, expected[kv], found[kv])
+				}
+				err = d.Commit([]string{"h"})
+				require.NoError(t, err)
+			})
 		})
 	}
 }
