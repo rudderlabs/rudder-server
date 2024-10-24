@@ -113,14 +113,14 @@ type Transformer interface {
 }
 
 // NewTransformer creates a new transformer
-func NewTransformer(ctx context.Context, destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
+func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
 	cache := oauthv2.NewCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	handle := &handle{
 		oAuthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
 	}
-	handle.setup(ctx, destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
+	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
 	return handle
 }
 
@@ -480,7 +480,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 }
 
-func (trans *handle) setup(ctx context.Context, destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
+func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -500,7 +500,7 @@ func (trans *handle) setup(ctx context.Context, destinationTimeout, transformTim
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.recycledClient = sysUtils.NewRecycledHTTPClient(ctx,
+	trans.recycledClient = sysUtils.NewRecycledHTTPClient(
 		func() *http.Client {
 			return &http.Client{Transport: trans.tr.Clone(), Timeout: trans.transformTimeout}
 		}, config.GetDuration("Transformer.Client.ttl", 2, time.Minute))

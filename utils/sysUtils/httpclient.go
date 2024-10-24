@@ -2,7 +2,6 @@
 package sysUtils
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -14,36 +13,30 @@ type HTTPClientI interface {
 }
 
 type RecycledHTTPClient struct {
-	client *http.Client
-	lock   sync.Mutex
+	client          *http.Client
+	lastRefreshTime time.Time
+	ttl             time.Duration
+	clientFunc      func() *http.Client
+	lock            sync.Mutex
 }
 
-func NewRecycledHTTPClient(ctx context.Context, clientFunc func() *http.Client, ttl time.Duration) *RecycledHTTPClient {
-	recycledHTTPClient := &RecycledHTTPClient{
-		client: clientFunc(),
+func NewRecycledHTTPClient(_clientFunc func() *http.Client, _ttl time.Duration) *RecycledHTTPClient {
+	return &RecycledHTTPClient{
+		client:          _clientFunc(),
+		clientFunc:      _clientFunc,
+		ttl:             _ttl,
+		lastRefreshTime: time.Now(),
 	}
-
-	go func() {
-		ticker := time.NewTicker(ttl)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				recycledHTTPClient.lock.Lock()
-				recycledHTTPClient.client = clientFunc()
-				recycledHTTPClient.lock.Unlock()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return recycledHTTPClient
 }
 
 func (r *RecycledHTTPClient) GetClient() *http.Client {
 	r.lock.Lock()
 	defer r.lock.Unlock()
+
+	if r.ttl > 0 && time.Since(r.lastRefreshTime) > r.ttl {
+		r.client.CloseIdleConnections()
+		r.client = r.clientFunc()
+		r.lastRefreshTime = time.Now()
+	}
 	return r.client
 }
