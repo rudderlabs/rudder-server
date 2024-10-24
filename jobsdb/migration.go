@@ -98,6 +98,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				return nil
 			}
 
+			migrateFromDatasets := lo.Map(migrateFrom, func(ds dsWithPendingJobCount, _ int) dataSetT { return ds.ds })
 			if pendingJobsCount > 0 { // migrate incomplete jobs
 				var destination dataSetT
 				if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
@@ -113,13 +114,13 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 				jd.logger.Infon(
 					"[[ migrateDSLoop ]]",
-					logger.NewField("pendingJobsCount", pendingJobsCount),
-					logger.NewField("migrateFrom", migrateFrom),
-					logger.NewField("to", destination),
-					logger.NewField("insert before", insertBeforeDS),
+					logger.NewIntField("pendingJobsCount", int64(pendingJobsCount)),
+					logger.NewIntField("migrateFrom", int64(len(migrateFrom))),
+					logger.NewStringField("to", destination.Index),
+					logger.NewStringField("insert before", insertBeforeDS.Index),
 				)
 
-				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
+				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
 				if err != nil {
 					return fmt.Errorf("failed to marshal journal payload: %w", err)
 				}
@@ -135,13 +136,33 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 				totalJobsMigrated := 0
 				var noJobsMigrated int
-				for _, source := range migrateFrom {
-					jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
-					noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
-					if err != nil {
-						return fmt.Errorf("failed to migrate jobs: %w", err)
+				for i := range migrateFrom {
+					source := migrateFrom[i]
+					if source.numJobsPending > 0 {
+						jd.logger.Infon(
+							"[[ migrateDSLoop ]]: Migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
+						noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source.ds, destination)
+						if err != nil {
+							return fmt.Errorf("failed to migrate jobs: %w", err)
+						}
+						jd.assert(
+							noJobsMigrated == source.numJobsPending,
+							fmt.Sprintf(
+								"noJobsMigrated: %d != source.numJobsPending: %d",
+								noJobsMigrated, source.numJobsPending,
+							),
+						)
+						totalJobsMigrated += noJobsMigrated
+					} else {
+						jd.logger.Infon(
+							"[[ migrateDSLoop ]]: No jobs to migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
 					}
-					totalJobsMigrated += noJobsMigrated
 				}
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
@@ -152,7 +173,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
 
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
 			if err != nil {
 				return fmt.Errorf("failed to marshal journal payload: %w", err)
 			}
@@ -165,7 +186,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to acquire lock: %w", err)
 			}
-			if err = jd.postMigrateHandleDS(tx, migrateFrom); err != nil {
+			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
 				return fmt.Errorf("failed to post migrate handle ds: %w", err)
 			}
 			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
@@ -185,6 +206,11 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 	}
 	return err
+}
+
+type dsWithPendingJobCount struct {
+	ds             dataSetT
+	numJobsPending int
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
@@ -369,15 +395,15 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 // getMigrationList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
-func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
+func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendingJobCount, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
 	var (
 		liveDSCount, migrateDSProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
 		maxDSSize = jd.conf.MaxDSSize.Load()
-		waiting   *smallDS
+		waiting   *dsWithPendingJobCount
 	)
 
-	jd.logger.Debugf("[[ migrateDSLoop ]]: DS list %+v", dsList)
+	jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewField("dsList", dsList))
 
 	for idx, ds := range dsList {
 		var idxCheck bool
@@ -398,25 +424,28 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 			err = migrateErr
 			return
 		}
-		jd.logger.Debugf(
-			"[[ migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
-			migrate, isSmall, recordsLeft, ds,
+		jd.logger.Debugn(
+			"[[ migrateDSLoop ]]: Migrate check",
+			logger.NewBoolField("migrate", migrate),
+			logger.NewBoolField("isSmall", isSmall),
+			logger.NewIntField("recordsLeft", int64(recordsLeft)),
+			logger.NewStringField("ds", ds.Index),
 		)
 
 		if migrate {
 			if waiting != nil { // add current and waiting DS, no matter if the current ds is small or not, it doesn't matter
-				migrateFrom = append(migrateFrom, waiting.ds, ds)
+				migrateFrom = append(migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
-				pendingJobsCount += waiting.recordsLeft + recordsLeft
+				pendingJobsCount += waiting.numJobsPending + recordsLeft
 				liveDSCount += 2
 				waiting = nil
 			} else if !isSmall || len(migrateFrom) > 0 { // add only if the current DS is not small or if we already have some DS in the list
-				migrateFrom = append(migrateFrom, ds)
+				migrateFrom = append(migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
 				pendingJobsCount += recordsLeft
 				liveDSCount++
 			} else { // add the current small DS as waiting for the next iteration to pickup
-				waiting = &smallDS{ds: ds, recordsLeft: recordsLeft}
+				waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
 			}
 		} else {
 			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
