@@ -2075,6 +2075,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	processJobThroughput := throughputPerSecond(totalEvents, processTime)
 	// processJob throughput per second.
 	proc.stats.processJobThroughput(partition).Count(processJobThroughput)
+	proc.logger.Infon("Processed jobs",
+		logger.NewIntField("numEvents", int64(totalEvents)),
+		logger.NewDurationField("processTime", processTime),
+	)
 	return &transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
