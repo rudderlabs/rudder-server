@@ -74,8 +74,12 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 
 	for _, job := range testData {
 		jobBytes, _ := json.Marshal(job)
-		tempFile.Write(jobBytes)
-		tempFile.Write([]byte("\n"))
+		if _, err := tempFile.Write(jobBytes); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tempFile.Write([]byte("\n")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	tempFile.Close()
 
@@ -253,8 +257,13 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 	// Write test data to temp file
 	for _, job := range testData {
 		jobBytes, _ := json.Marshal(job)
-		tempFile.Write(jobBytes)
-		tempFile.Write([]byte("\n"))
+		if _, err := tempFile.Write(jobBytes); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := tempFile.Write([]byte("\n")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	tempFile.Close()
 
