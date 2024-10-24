@@ -40,6 +40,7 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 	results := make(map[types.KeyValue]bool)
 	sizes := make(map[types.KeyValue]int64)
 
+	d.stat.NewTaggedStat("dedup_get_batch_size", stats.GaugeType, stats.Tags{"mode": "scylla"}).Gauge(len(kvs))
 	// Group jobs by workspaceID for batch querying
 	workspaceJobsMap := make(map[string][]types.KeyValue)
 	d.cacheMu.Lock()
@@ -67,6 +68,7 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 		messageIDChunks := lo.Chunk(messageIDs, d.readBatchSize)
 		for _, chunk := range messageIDChunks {
 			// Query to get all jobIDs for the given workspaceID and messageIDs
+			startTime := time.Now()
 			query := fmt.Sprintf("SELECT id, size FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
 			iter := d.scylla.Query(query, workspaceID, chunk).Iter()
 
@@ -85,6 +87,7 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 			if err := iter.Close(); err != nil {
 				return nil, nil, fmt.Errorf("error closing iterator: %v", err)
 			}
+			d.stat.NewTaggedStat("dedup_get_batch_query_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).Since(startTime)
 		}
 	}
 
