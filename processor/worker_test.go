@@ -23,7 +23,7 @@ import (
 )
 
 func TestWorkerPool(t *testing.T) {
-	run := func(t *testing.T, pipelining, limitsReached, shouldProcessMultipleSubJobs bool) {
+	run := func(t *testing.T, pipelining, parallelScan, limitsReached, shouldProcessMultipleSubJobs bool) {
 		wh := &mockWorkerHandle{
 			pipelining: pipelining,
 			log:        logger.NOP,
@@ -39,6 +39,7 @@ func TestWorkerPool(t *testing.T) {
 			}{},
 			limitsReached:                limitsReached,
 			shouldProcessMultipleSubJobs: shouldProcessMultipleSubJobs,
+			enableParallelScan:           parallelScan,
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -89,25 +90,49 @@ func TestWorkerPool(t *testing.T) {
 
 	t.Run("work without pipelining", func(t *testing.T) {
 		t.Run("limits not reached", func(t *testing.T) {
-			run(t, false, false, false)
+			run(t, false, false, false, false)
 		})
 		t.Run("limits reached", func(t *testing.T) {
-			run(t, false, true, false)
+			run(t, false, false, true, false)
+		})
+	})
+
+	t.Run("work without pipelining and parallelScan", func(t *testing.T) {
+		t.Run("limits not reached", func(t *testing.T) {
+			run(t, false, true, false, false)
+		})
+		t.Run("limits reached", func(t *testing.T) {
+			run(t, false, true, true, false)
 		})
 	})
 
 	t.Run("work with pipelining", func(t *testing.T) {
 		t.Run("limits not reached", func(t *testing.T) {
-			run(t, true, false, false)
+			run(t, true, false, false, false)
 		})
 		t.Run("limits reached", func(t *testing.T) {
-			run(t, true, true, false)
+			run(t, true, false, true, false)
 		})
 		t.Run("limits reached with multiple sub jobs", func(t *testing.T) {
-			run(t, true, true, true)
+			run(t, true, false, true, true)
 		})
 		t.Run("limits not reached with multiple sub jobs", func(t *testing.T) {
-			run(t, true, false, true)
+			run(t, true, false, false, true)
+		})
+	})
+
+	t.Run("work with pipelining with parallelScan", func(t *testing.T) {
+		t.Run("limits not reached", func(t *testing.T) {
+			run(t, true, true, false, false)
+		})
+		t.Run("limits reached", func(t *testing.T) {
+			run(t, true, true, true, false)
+		})
+		t.Run("limits reached with multiple sub jobs", func(t *testing.T) {
+			run(t, true, true, true, true)
+		})
+		t.Run("limits not reached with multiple sub jobs", func(t *testing.T) {
+			run(t, true, true, false, true)
 		})
 	})
 }
@@ -152,11 +177,12 @@ func TestWorkerPoolIdle(t *testing.T) {
 }
 
 type mockWorkerHandle struct {
-	pipelining     bool
-	loopEvents     int
-	statsMu        sync.RWMutex
-	log            logger.Logger
-	partitionStats map[string]struct {
+	pipelining         bool
+	enableParallelScan bool
+	loopEvents         int
+	statsMu            sync.RWMutex
+	log                logger.Logger
+	partitionStats     map[string]struct {
 		queried      int
 		marked       int
 		processed    int
@@ -175,6 +201,27 @@ type mockWorkerHandle struct {
 
 	limitsReached                bool
 	shouldProcessMultipleSubJobs bool
+}
+
+func (m *mockWorkerHandle) processJobsForDestV2(partition string, subJobs subJob) (*transformationMessage, error) {
+	if m.limiters.process != nil {
+		defer m.limiters.process.Begin(partition)()
+	}
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	s := m.partitionStats[partition]
+	s.processed += len(subJobs.subJobs)
+	s.subBatches += 1
+	m.partitionStats[partition] = s
+	m.log.Infof("processJobsForDestV2 partition: %s stats: %+v", partition, s)
+
+	return &transformationMessage{
+		totalEvents: len(subJobs.subJobs),
+		hasMore:     subJobs.hasMore,
+		trackedUsersReports: []*trackedusers.UsersReport{
+			{WorkspaceID: sampleWorkspaceID},
+		},
+	}, nil
 }
 
 func (m *mockWorkerHandle) tracer() stats.Tracer {
@@ -205,6 +252,7 @@ func (m *mockWorkerHandle) config() workerHandleConfig {
 		subJobSize:            10,
 		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
 		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
+		enableParallelScan:    m.enableParallelScan,
 	}
 }
 
@@ -219,8 +267,18 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
+		var dest *transformationMessage
+		var err error
+		if m.enableParallelScan {
+			dest, err = m.processJobsForDestV2(partition, subJob)
+		} else {
+			dest, err = m.processJobsForDest(partition, subJob)
+		}
+		if err != nil {
+			return false
+		}
 		m.Store(partition, m.transformations(partition,
-			m.processJobsForDest(partition, subJob),
+			dest,
 		))
 	}
 	return len(jobs.Jobs) > 0
@@ -305,7 +363,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *transformationMessage {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}
@@ -323,7 +381,7 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 		trackedUsersReports: []*trackedusers.UsersReport{
 			{WorkspaceID: sampleWorkspaceID},
 		},
-	}
+	}, nil
 }
 
 func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {

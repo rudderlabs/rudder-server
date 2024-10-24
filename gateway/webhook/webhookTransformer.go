@@ -25,21 +25,11 @@ type sourceTransformAdapter interface {
 	getTransformerURL(sourceType string) (string, error)
 }
 
-type v0Adapter struct{}
-
 type v1Adapter struct{}
 
 type V1TransformerEvent struct {
 	Event  json.RawMessage       `json:"event"`
 	Source backendconfig.SourceT `json:"source"`
-}
-
-func (v0 *v0Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
-	return body, nil
-}
-
-func (v0 *v0Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V0, sourceType)
 }
 
 func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
@@ -68,12 +58,8 @@ func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
 }
 
 func newSourceTransformAdapter(version string) sourceTransformAdapter {
-	switch version {
-	case "v1":
-		return &v1Adapter{}
-	}
-
-	return &v0Adapter{}
+	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
+	return &v1Adapter{}
 }
 
 func getTransformerURL(version, sourceType string) (string, error) {
