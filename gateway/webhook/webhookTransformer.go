@@ -32,18 +32,6 @@ type V1TransformerEvent struct {
 	Source backendconfig.SourceT `json:"source"`
 }
 
-// --------- v0 deprecation -------
-
-// type v0Adapter struct{}
-
-// func (v0 *v0Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
-// 	return body, nil
-// }
-
-// func (v0 *v0Adapter) getTransformerURL(sourceType string) (string, error) {
-// 	return getTransformerURL(transformer.V0, sourceType)
-// }
-
 func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
 	source := authCtx.Source
 
