@@ -51,6 +51,9 @@ type Dedup interface {
 	// Get returns [true] if it was the first time the key was encountered, otherwise it returns [false] along with the previous value
 	Get(kv types.KeyValue) (bool, int64, error)
 
+	// GetBatch
+	GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error)
+
 	// Commit commits a list of previously set keys to the DB
 	Commit(keys []string) error
 
