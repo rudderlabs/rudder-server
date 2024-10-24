@@ -432,7 +432,7 @@ func getColumnConversion(srcType, destType string) string {
 	if srcType == "bytea" {
 		return "convert_from(j.event_payload, 'UTF8')::jsonb"
 	}
-	return "convert_to(j.event_payload, 'UTF8')::bytea"
+	return "convert_to(j.event_payload::TEXT, 'UTF8')::bytea"
 }
 
 func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
