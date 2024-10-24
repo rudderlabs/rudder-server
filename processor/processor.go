@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1721,11 +1722,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+				// payloadBytes, err := jsonfast.Marshal(singularEvent)
+				// if err != nil {
+				// 	return nil
+				// }
+				// return payloadBytes
+				return getEventFromBatch(batchEvent.EventPayload)
 			})
 
 			if proc.config.enableDedup {
@@ -2073,6 +2075,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *transf
 	processJobThroughput := throughputPerSecond(totalEvents, processTime)
 	// processJob throughput per second.
 	proc.stats.processJobThroughput(partition).Count(processJobThroughput)
+	proc.logger.Infon("Processed jobs",
+		logger.NewIntField("numEvents", int64(totalEvents)),
+		logger.NewDurationField("processTime", processTime),
+	)
 	return &transformationMessage{
 		groupedEvents,
 		trackingPlanEnabledMap,
@@ -3309,4 +3315,23 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
+}
+
+func getEventFromBatch(batch []byte) []byte {
+	end := []byte(`], "writeKey": `)
+	start := []byte(`{"batch": [`)
+	endIndex := bytes.Index(batch, end)
+	if endIndex == -1 {
+		panic(string(batch))
+	}
+	res := batch[len(start):endIndex]
+	return res
+}
+
+func getPayloadOld(event types.SingularEventT) []byte {
+	payloadBytes, err := jsonfast.Marshal(event)
+	if err != nil {
+		return nil
+	}
+	return payloadBytes
 }
