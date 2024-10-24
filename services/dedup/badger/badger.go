@@ -176,6 +176,25 @@ type Dedup struct {
 	cache    map[string]int64
 }
 
+func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	err := d.badgerDB.init()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	found := make(map[types.KeyValue]bool)
+	previous := make(map[types.KeyValue]int64)
+	for _, kv := range kvs {
+		foundKey, size, err := d.Get(kv)
+		if err != nil {
+			return nil, nil, err
+		}
+		found[kv] = foundKey
+		previous[kv] = size
+	}
+	return found, previous, nil
+}
+
 func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
 	err := d.badgerDB.init()
 	if err != nil {

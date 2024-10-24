@@ -68,4 +68,35 @@ func Test_MirrorBadger(t *testing.T) {
 		require.Nil(t, err)
 		require.False(t, found)
 	})
+	t.Run("different messageID should not be deduped for batch", func(t *testing.T) {
+		keys := []types.KeyValue{
+			{Key: "c", Value: 1, WorkspaceID: "test"},
+			{Key: "d", Value: 1, WorkspaceID: "test"},
+			{Key: "e", Value: 1, WorkspaceID: "test"},
+		}
+		found, _, err := mirrorBadger.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 3)
+		for _, key := range keys {
+			require.True(t, found[key])
+		}
+	})
+	t.Run("same messageID should be deduped for batch", func(t *testing.T) {
+		keys := []types.KeyValue{
+			{Key: "f", Value: 1, WorkspaceID: "test", JobID: 3},
+			{Key: "f", Value: 1, WorkspaceID: "test", JobID: 4},
+			{Key: "g", Value: 1, WorkspaceID: "test", JobID: 5},
+		}
+		expected := map[types.KeyValue]bool{
+			keys[0]: true,
+			keys[1]: false,
+			keys[2]: true,
+		}
+		found, _, err := mirrorBadger.GetBatch(keys)
+		require.NoError(t, err)
+		require.Len(t, found, 3)
+		for _, key := range keys {
+			require.Equal(t, expected[key], found[key])
+		}
+	})
 }

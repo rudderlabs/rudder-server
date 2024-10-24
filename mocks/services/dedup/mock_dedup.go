@@ -80,3 +80,19 @@ func (mr *MockDedupMockRecorder) Get(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), arg0)
 }
+
+// GetBatch mocks base method.
+func (m *MockDedup) GetBatch(arg0 []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBatch", arg0)
+	ret0, _ := ret[0].(map[types.KeyValue]bool)
+	ret1, _ := ret[1].(map[types.KeyValue]int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetBatch indicates an expected call of GetBatch.
+func (mr *MockDedupMockRecorder) GetBatch(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatch", reflect.TypeOf((*MockDedup)(nil).GetBatch), arg0)
+}
