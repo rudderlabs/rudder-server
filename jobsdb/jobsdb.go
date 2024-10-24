@@ -51,6 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
+	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
@@ -489,6 +490,8 @@ type Handle struct {
 		started bool
 	}
 
+	compressor *compress.Compressor
+
 	config *config.Config
 	conf   struct {
 		maxTableSize                   config.ValueLoader[int64]
@@ -523,6 +526,9 @@ type Handle struct {
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
+
+		payloadBinary      bool
+		payloadCompression bool
 	}
 }
 
@@ -706,6 +712,18 @@ func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
 	}
 }
 
+func WithBinaryPayload(enabled bool) OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.payloadBinary = enabled
+	}
+}
+
+func WithPayloadCompression(enabled bool) OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.payloadCompression = enabled
+	}
+}
+
 func NewForRead(tablePrefix string, opts ...OptsFunc) *Handle {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -807,9 +825,12 @@ func (jd *Handle) init() {
 		jd.assertError(jd.dbHandle.Ping())
 	}
 
+	var err error
+	jd.compressor, err = compress.New(compress.CompressionAlgoZstd, compress.CompressionLevelZstdFastest)
+	jd.assertError(err)
 	jd.workersAndAuxSetup()
 
-	err := jd.WithTx(func(tx *Tx) error {
+	err = jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,
@@ -1403,6 +1424,11 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	var payloadType = "JSONB"
+	if jd.conf.payloadBinary {
+		payloadType = "BYTEA"
+	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
@@ -1410,7 +1436,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		user_id TEXT NOT NULL,
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
-		event_payload JSONB NOT NULL,
+		event_payload `+payloadType+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
@@ -2182,6 +2208,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorCode sql.NullString
 		var jsErrorResponse []byte
 		var jsParameters []byte
+
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
