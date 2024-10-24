@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/stretchr/testify/assert"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/marketo_bulk_upload"
@@ -174,7 +175,6 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 	})
 
 	t.Run("polling with failures", func(t *testing.T) {
-
 		marketoResponse := &mbu.MarketoResponse{
 			Success: true,
 			Result: []mbu.Result{

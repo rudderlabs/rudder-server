@@ -78,4 +78,3 @@ func (mr *MockMarketoAPIServiceInterfaceMockRecorder) PollImportStatus(arg0 inte
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PollImportStatus", reflect.TypeOf((*MockMarketoAPIServiceInterface)(nil).PollImportStatus), arg0)
 }
-
