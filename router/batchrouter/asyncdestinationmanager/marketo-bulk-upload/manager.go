@@ -10,6 +10,15 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
+// MarketoBulkUploaderOptions contains all dependencies needed for the uploader
+type MarketoBulkUploaderOptions struct {
+	DestinationName   string
+	DestinationConfig MarketoConfig
+	Logger            logger.Logger
+	StatsFactory      stats.Stats
+	APIService        MarketoAPIServiceInterface
+}
+
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
 	destConfig := MarketoConfig{}
 	jsonConfig, err := stdjson.Marshal(destination.Config)
@@ -23,32 +32,45 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 
 	destName := destination.DestinationDefinition.Name
 
-	return NewMarketoBulkUploader(destName, statsFactory, destConfig), nil
+	marketoHttpClient := getDefaultHTTPClient()
+
+	return NewMarketoBulkUploader(destName, logger, statsFactory, marketoHttpClient, destConfig), nil
 }
 
-func NewMarketoBulkUploader(destinationName string, statsFactory stats.Stats, destConfig MarketoConfig) *MarketoBulkUploader {
+func NewMarketoBulkUploader(destinationName string, log logger.Logger, statsFactory stats.Stats, httpClient *http.Client, destConfig MarketoConfig) *MarketoBulkUploader {
 	authService := &MarketoAuthService{
 		munchkinId:   destConfig.MunchkinId,
 		clientId:     destConfig.ClientId,
 		clientSecret: destConfig.ClientSecret,
-		httpCLient:   &http.Client{},
+		httpCLient:   httpClient,
 	}
 
 	apiService := &MarketoAPIService{
-		logger:       logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload").Child("API Service"),
+		logger:       log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload").Child("API Service"),
 		statsFactory: statsFactory,
-		httpClient:   &http.Client{},
+		httpClient:   httpClient,
 		munchkinId:   destConfig.MunchkinId,
 		authService:  authService,
 		maxRetries:   3,
 	}
 
+	return NewMarketoBulkUploaderWithOptions(MarketoBulkUploaderOptions{
+		DestinationName:   destinationName,
+		Logger:            log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload"),
+		DestinationConfig: destConfig,
+		StatsFactory:      statsFactory,
+		APIService:        apiService,
+	})
+}
+
+// NewMarketoBulkUploaderWithOptions creates a new MarketoBulkUploader with the given options
+func NewMarketoBulkUploaderWithOptions(options MarketoBulkUploaderOptions) *MarketoBulkUploader {
 	return &MarketoBulkUploader{
-		destName:          destinationName,
-		logger:            logger.NewLogger().Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload"),
-		destinationConfig: destConfig,
+		destName:          options.DestinationName,
+		logger:            options.Logger,
+		destinationConfig: options.DestinationConfig,
+		statsFactory:      options.StatsFactory,
+		apiService:        options.APIService,
 		dataHashToJobId:   make(map[string]int64),
-		statsFactory:      statsFactory,
-		apiService:        apiService,
 	}
 }
