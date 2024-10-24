@@ -221,6 +221,22 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		}
 	}
 
+	enableIdleConnClose := conf.GetBool("Transformer.Client.enableIdleConnClose", true)
+
+	// Add a new configuration value for the idle connection close interval
+	idleConnCloseInterval := conf.GetDuration("Transformer.Client.idleConnCloseInterval", 120, time.Second)
+
+	// Conditionally start the goroutine based on the feature flag
+	if enableIdleConnClose {
+		go func() {
+			ticker := time.NewTicker(idleConnCloseInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				trans.client.CloseIdleConnections()
+			}
+		}()
+	}
+
 	for _, opt := range opts {
 		opt(&trans)
 	}
