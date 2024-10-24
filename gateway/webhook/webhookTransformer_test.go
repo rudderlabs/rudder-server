@@ -39,8 +39,8 @@ func TestV1Adapter(t *testing.T) {
 		require.Nil(t, err)
 
 		v1TransformerEvent := V1TransformerEvent{
-			Event:  testBody,
-			Source: backendconfig.SourceT{ID: mockSrc.ID},
+			EventRequest: testBody,
+			Source:       backendconfig.SourceT{ID: mockSrc.ID},
 		}
 		expectedBody, err := json.Marshal(v1TransformerEvent)
 		require.Nil(t, err)

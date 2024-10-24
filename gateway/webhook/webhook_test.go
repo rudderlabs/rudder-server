@@ -73,6 +73,10 @@ func (v0 *mockSourceTransformAdapter) getTransformerURL(string) (string, error) 
 	return v0.url, nil
 }
 
+func (v0 *mockSourceTransformAdapter) getAdapterVersion() string {
+	return transformer.V0
+}
+
 func getMockSourceTransformAdapterFunc(url string) func(ctx context.Context) (sourceTransformAdapter, error) {
 	return func(ctx context.Context) (sourceTransformAdapter, error) {
 		mst := &mockSourceTransformAdapter{}
@@ -481,7 +485,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.EqualValues(t, m.LastValue(), 1)
 }
 
-func TestPrepareRequestBody(t *testing.T) {
+func TestPrepareTransformerEventRequestV1(t *testing.T) {
 	type requestOpts struct {
 		method  string
 		target  string
@@ -565,7 +569,7 @@ func TestPrepareRequestBody(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
+			result, err := prepareTransformerEventRequestV1(tc.req, tc.sourceType, []string{"adjust", "shopify"})
 			if tc.wantError {
 				require.Error(t, err)
 				return
