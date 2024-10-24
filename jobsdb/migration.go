@@ -443,7 +443,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 
 	columnTypeMap := map[string]string{srcDS.JobTable: "jsonb", destDS.JobTable: "jsonb"}
 	// find colummn types first - to differentiate between `bytea` and `jsonb`
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`select table_name, data_type from information_schema.columns where table_name IN ('%[1]s', '%[2]s') and column_name='event_payload';`, srcDS.JobTable, srcDS.JobStatusTable))
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`select table_name, data_type from information_schema.columns where table_name IN ('%[1]s', '%[2]s') and column_name='event_payload';`, srcDS.JobTable, destDS.JobTable))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get column types: %w", err)
 	}
