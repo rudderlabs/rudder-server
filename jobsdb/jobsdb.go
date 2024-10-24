@@ -3294,11 +3294,6 @@ func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 	return v, nil
 }
 
-type smallDS struct {
-	ds          dataSetT
-	recordsLeft int
-}
-
 func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
 	advisoryLock := jd.getAdvisoryLockForOperation(operation)
 	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))
