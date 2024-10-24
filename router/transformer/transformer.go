@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/cslb"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -493,6 +494,15 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
 		IdleConnTimeout:     30 * time.Second,
 	}
+	if config.GetBool("Transformer.Client.cslbEnabled", false) {
+		// Reduce the TTL to 10 seconds from the default 5 minutes to account for frequent evictions of the transformer
+		os.Setenv("cslb_srv_ttl", fmt.Sprintf("%v", 10*time.Second))
+		// Disable the health checks in CSLB in lieu of health checks performed by k8s readiness probes
+		os.Setenv("cslb_options", "H")
+		cslb.Setup()
+		cslb.Enable(trans.tr)
+	}
+
 	// The timeout between server and transformer
 	// Basically this timeout is more for communication between transformer and server
 	trans.transformTimeout = transformTimeout
