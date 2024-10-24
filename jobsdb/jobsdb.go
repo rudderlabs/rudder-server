@@ -1991,7 +1991,11 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName 
 	if err != nil {
 		return nil, err
 	}
-	return res.([]string), nil
+	val, ok := res.([]string)
+	if !ok {
+		return nil, fmt.Errorf("type assertion failed")
+	}
+	return val, nil
 }
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
