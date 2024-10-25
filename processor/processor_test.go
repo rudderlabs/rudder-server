@@ -4900,14 +4900,17 @@ var _ = Describe("Processor", Ordered, func() {
 			singularEventWithReceivedAt1 := types.SingularEventWithReceivedAt{
 				SingularEvent: event1,
 				ReceivedAt:    time.Now(),
+				PayloadFunc:   func() json.RawMessage { return []byte("payload1") },
 			}
 			singularEventWithReceivedAt2 := types.SingularEventWithReceivedAt{
 				SingularEvent: event2,
 				ReceivedAt:    time.Now(),
+				PayloadFunc:   func() json.RawMessage { return []byte("payload2") },
 			}
 			singularEventWithReceivedAt3 := types.SingularEventWithReceivedAt{
 				SingularEvent: event3,
 				ReceivedAt:    time.Now(),
+				PayloadFunc:   func() json.RawMessage { return []byte("payload3") },
 			}
 			eventsByMessageID := map[string]types.SingularEventWithReceivedAt{
 				"msg1": singularEventWithReceivedAt1,

@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -1130,12 +1130,12 @@ func (proc *Handle) getTransformerEvents(
 		userTransformedEvent := &response.Events[i]
 		messages := lo.Map(
 			userTransformedEvent.Metadata.GetMessagesIDs(),
-			func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
+			func(msgID string, _ int) func() json.RawMessage {
+				return eventsByMessageID[msgID].PayloadFunc
 			},
 		)
 
-		for _, message := range messages {
+		for _, messageFunc := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
 				if pu != types.TRACKINGPLAN_VALIDATOR {
 					return []byte(`{}`)
@@ -1144,12 +1144,7 @@ func (proc *Handle) getTransformerEvents(
 					return []byte(`{}`)
 				}
 
-				sampleEvent, err := jsonfast.Marshal(message)
-				if err != nil {
-					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-					sampleEvent = []byte(`{}`)
-				}
-				return sampleEvent
+				return messageFunc()
 			},
 				nil)
 		}
@@ -1403,15 +1398,21 @@ func (proc *Handle) getTransformationMetrics(
 		failedEvent := &transformerResponses[i]
 		messages := lo.Map(
 			failedEvent.Metadata.GetMessagesIDs(),
-			func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
+			func(msgID string, _ int) []byte {
+				return eventsByMessageID[msgID].PayloadFunc()
 			},
 		)
-		payload, err := jsonfast.Marshal(messages)
-		if err != nil {
-			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
-			continue
-		}
+		payload := bytes.Join(
+			[][]byte{
+				[]byte(`[`),
+				bytes.Join(
+					messages,
+					[]byte(`,`),
+				),
+				[]byte(`]`),
+			},
+			[]byte(``),
+		)
 
 		for _, message := range messages {
 			proc.updateMetricMaps(
@@ -1426,12 +1427,7 @@ func (proc *Handle) getTransformationMetrics(
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
 						return []byte(`{}`)
 					}
-					sampleEvent, err := jsonfast.Marshal(message)
-					if err != nil {
-						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
-					}
-					return sampleEvent
+					return message
 				},
 				eventsByMessageID)
 		}
@@ -1762,7 +1758,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
-			payloadFunc := ro.Memoize(func() json.RawMessage {
+			payloadFunc := sync.OnceValue(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
 				if err != nil {
 					return nil
@@ -1830,6 +1826,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
 			SingularEvent: event.singularEvent,
 			ReceivedAt:    event.recievedAt,
+			PayloadFunc:   event.payloadFunc,
 		}
 
 		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
@@ -2325,7 +2322,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
 
-			payloadFunc := ro.Memoize(func() json.RawMessage {
+			payloadFunc := sync.OnceValue(func() json.RawMessage {
 				payloadBytes, err := jsonfast.Marshal(singularEvent)
 				if err != nil {
 					return nil
@@ -2356,6 +2353,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
 				SingularEvent: singularEvent,
 				ReceivedAt:    receivedAt,
+				PayloadFunc:   payloadFunc,
 			}
 
 			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(

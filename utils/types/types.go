@@ -4,6 +4,7 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -21,6 +22,7 @@ type SingularEventT map[string]interface{}
 
 type SingularEventWithReceivedAt struct {
 	SingularEvent SingularEventT
+	PayloadFunc   func() json.RawMessage
 	ReceivedAt    time.Time
 }
 
