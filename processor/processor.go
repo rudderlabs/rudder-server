@@ -1759,11 +1759,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := sync.OnceValue(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+				return getEventFromBatch(batchEvent.EventPayload)
 			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
@@ -1796,12 +1792,14 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	var keyMap map[dedupTypes.KeyValue]bool
 	var sizeMap map[dedupTypes.KeyValue]int64
 	var err error
+	dedupStart := time.Now()
 	if proc.config.enableDedup {
 		keyMap, sizeMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
 			return nil, err
 		}
 	}
+	proc.statsFactory.NewStat("processor.event_pickup_lag_seconds", stats.TimerType).Since(dedupStart)
 	for _, event := range jobsWithMetaData {
 		sourceId := event.eventParams.SourceId
 		if event.eventParams.DestinationID != "" {
@@ -2323,11 +2321,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := sync.OnceValue(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+				return getEventFromBatch(batchEvent.EventPayload)
 			})
 
 			if proc.config.enableDedup {
@@ -3740,4 +3734,23 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
+}
+
+func getEventFromBatch(batch []byte) []byte {
+	end := []byte(`], "writeKey": `)
+	start := []byte(`{"batch": [`)
+	endIndex := bytes.Index(batch, end)
+	if endIndex == -1 {
+		panic(string(batch))
+	}
+	res := batch[len(start):endIndex]
+	return res
+}
+
+func getPayloadOld(event types.SingularEventT) []byte {
+	payloadBytes, err := jsonfast.Marshal(event)
+	if err != nil {
+		return nil
+	}
+	return payloadBytes
 }
