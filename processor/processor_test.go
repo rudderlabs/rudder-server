@@ -6261,7 +6261,7 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData, eve
 	}
 	batch := strings.Join(payloads, ",")
 	return []byte(fmt.Sprintf(
-		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
+		`{"batch":[%s], "writeKey":%q, "requestIP":"1.2.3.4","receivedAt":%q}`, batch, writeKey, receivedAt,
 	))
 }
 
