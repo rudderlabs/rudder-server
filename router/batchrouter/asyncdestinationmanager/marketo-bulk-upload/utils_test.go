@@ -492,7 +492,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				"",
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: unexpected end of JSON input",
+			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found \x00, error found in #0 byte of ...||..., bigger context ...||...",
 		},
 		{
 			name: "Invalid JSON in line",
@@ -501,7 +501,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				`{"invalid json`,
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: unexpected end of JSON input",
+			errContains: "BRT: Error in Unmarshalling Job: common.AsyncJob.readFieldHash: incomplete field name, error found in #10 byte of ...|valid json|..., bigger context ...|{\"invalid json|...",
 		},
 		{
 			name: "Line with non-JSON content",
@@ -510,16 +510,16 @@ func TestReadJobsFromFile(t *testing.T) {
 				"This is not JSON at all",
 			},
 			wantErr:     true,
-			errContains: "Error in Unmarshalling Job",
+			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found T, error found in #1 byte of ...|This is not|..., bigger context ...|This is not JSON at all|...",
 		},
 		{
-			name: "Line with JSON array instead of object",
+			name: "Line with array instead of object",
 			lines: []string{
 				string(job1JSON),
 				"[1, 2, 3]",
 			},
 			wantErr:     true,
-			errContains: "Error in Unmarshalling Job",
+			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found [, error found in #1 byte of ...|[1, 2, 3]|..., bigger context ...|[1, 2, 3]|...",
 		},
 		{
 			name: "Line with extra whitespace",
