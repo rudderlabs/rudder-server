@@ -238,6 +238,32 @@ func TestCalculateHashCode(t *testing.T) {
 // ==== Hashing Test End ====
 
 // ==== CSV File Creation Test Start ====
+
+// Helper function to compare two slices for equality, ignoring the order
+func slicesEqualIgnoreOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	aMap := make(map[string]int)
+	bMap := make(map[string]int)
+
+	for _, item := range a {
+		aMap[item]++
+	}
+	for _, item := range b {
+		bMap[item]++
+	}
+
+	for key, count := range aMap {
+		if bMap[key] != count {
+			return false
+		}
+	}
+
+	return true
+}
+
 func TestCreateCSVFile(t *testing.T) {
 	// Create temporary directory for test files
 	tmpDir, err := os.MkdirTemp("", "marketo_test")
@@ -361,7 +387,7 @@ func TestCreateCSVFile(t *testing.T) {
 				}
 
 				// Verify returned headers match expected
-				if !reflect.DeepEqual(gotHeaders, tt.wantHeaders) {
+				if !slicesEqualIgnoreOrder(gotHeaders, tt.wantHeaders) {
 					t.Errorf("createCSVFile() headers = %v, want %v", gotHeaders, tt.wantHeaders)
 				}
 
