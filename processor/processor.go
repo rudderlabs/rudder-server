@@ -1800,12 +1800,14 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	var keyMap map[dedupTypes.KeyValue]bool
 	var sizeMap map[dedupTypes.KeyValue]int64
 	var err error
+	dedupStart := time.Now()
 	if proc.config.enableDedup {
 		keyMap, sizeMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
 			return nil, err
 		}
 	}
+	proc.statsFactory.NewStat("processor.event_pickup_lag_seconds", stats.TimerType).Since(dedupStart)
 	for _, event := range jobsWithMetaData {
 		sourceId := event.eventParams.SourceId
 		if event.eventParams.DestinationID != "" {
