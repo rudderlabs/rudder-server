@@ -1764,7 +1764,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
-				return getEventFromBatch(batchEvent.EventPayload)
+				return getEventFromBatch(batchEvent.EventPayload, singularEvent)
 			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
@@ -2325,7 +2325,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			messageId := stringify.Any(singularEvent["messageId"])
 
 			payloadFunc := ro.Memoize(func() json.RawMessage {
-				return getEventFromBatch(batchEvent.EventPayload)
+				return getEventFromBatch(batchEvent.EventPayload, singularEvent)
 			})
 
 			if proc.config.enableDedup {
@@ -3739,14 +3739,13 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		})
 }
 
-func getEventFromBatch(batch []byte) []byte {
-	end := []byte(`], "writeKey": `)
-	start := []byte(`{"batch": [`)
-	endIndex := bytes.Index(batch, end)
-	if endIndex == -1 {
-		panic(string(batch))
+func getEventFromBatch(batch []byte, singularEvent types.SingularEventT) []byte {
+	end := bytes.LastIndex(batch, []byte(`]`))
+	start := bytes.Index(batch, []byte(`[{`))
+	if end == -1 || start == -1 {
+		return getPayloadOld(singularEvent)
 	}
-	res := batch[len(start):endIndex]
+	res := batch[start+1 : end]
 	return res
 }
 
