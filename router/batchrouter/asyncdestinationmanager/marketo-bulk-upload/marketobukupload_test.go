@@ -128,7 +128,7 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 
 		assert.Equal(t, 0, result.ImportingCount)
 		assert.Greater(t, result.FailedCount, 0)
-		assert.Contains(t, result.FailedReason, "BRT: Error in Uploading File:Internal Server Error")
+		assert.Contains(t, result.FailedReason, "BRT: Error in Uploading File: Internal Server Error")
 	})
 }
 
