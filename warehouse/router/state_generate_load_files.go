@@ -16,6 +16,7 @@ func (job *UploadJob) generateLoadFiles(hasSchemaChanged bool) error {
 		slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
 		job.config.alwaysRegenerateAllLoadFiles
 
+	job.logger.Info("Creating load files")
 	var startLoadFileID, endLoadFileID int64
 	var err error
 	if generateAll {
@@ -27,14 +28,19 @@ func (job *UploadJob) generateLoadFiles(hasSchemaChanged bool) error {
 		return err
 	}
 
+	job.logger.Info("Setting load file ids")
 	if err := job.setLoadFileIDs(startLoadFileID, endLoadFileID); err != nil {
 		return err
 	}
+	job.logger.Info("Matching rows in staging and load files")
 	if err := job.matchRowsInStagingAndLoadFiles(job.ctx); err != nil {
 		return err
 	}
 
+	job.logger.Info("Record load file generation time stat")
 	_ = job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
+
+	job.logger.Info("Created load files")
 	return nil
 }
 

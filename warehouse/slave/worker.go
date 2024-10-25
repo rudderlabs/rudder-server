@@ -117,7 +117,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			}
 			w.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			w.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
+			w.log.Infof("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
 				claimedJob.Job.ID,
 				w.workerIdx,
 				slaveID,
@@ -198,7 +198,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 
 	jr := newJobRun(job, w.conf, w.log, w.statsFactory, w.encodingFactory)
 
-	w.log.Debugf("Starting processing staging file: %v at %s for %s",
+	w.log.Infof("Starting processing staging file: %v at %s for %s",
 		job.StagingFileID,
 		job.StagingFileLocation,
 		jr.identifier,
@@ -406,7 +406,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 		jr.tableEventCountMap[tableName]++
 	}
 
-	jr.logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
+	jr.logger.Infof("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)

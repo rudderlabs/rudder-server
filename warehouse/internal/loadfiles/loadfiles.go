@@ -166,12 +166,14 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if err != nil {
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
 	}
+	lf.Logger.Infof("[WH]: Destination revision ID map: %d", len(destinationRevisionIDMap))
 
 	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
+	lf.Logger.Infof("[WH]: Deleted previous load files for staging files: %d", len(stagingFileIDs))
 
 	// Set staging file status to executing
 	if err := lf.StageRepo.SetStatuses(
@@ -181,6 +183,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	); err != nil {
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
+	lf.Logger.Infof("[WH]: Set staging file status to executing for staging files: %d", len(stagingFileIDs))
 
 	defer func() {
 		// ensure that if there is an error, we set the staging file status to failed
@@ -199,6 +202,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 	var sampleError error
 	for _, chunk := range lo.Chunk(toProcessStagingFiles, publishBatchSize) {
+		lf.Logger.Infof("[WH]: Processing %d staging files", len(chunk))
 		// td : add prefix to payload for s3 dest
 		var messages []stdjson.RawMessage
 		for _, stagingFile := range chunk {
@@ -236,6 +240,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 			messages = append(messages, payloadJSON)
 		}
 
+		lf.Logger.Infof("[WH]: Marshalling %d staging files for %s:%s", len(messages), destType, destID)
 		uploadSchemaJSON, err := json.Marshal(struct {
 			UploadSchema model.Schema
 		}{
@@ -256,6 +261,9 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to notifier: %w", err)
 		}
+
+		lf.Logger.Infof("[WH]: Published %d staging files for %s:%s to notifier", len(messages), destType, destID)
+
 		// set messages to nil to release mem allocated
 		messages = nil
 		startId := chunk[0].ID
@@ -323,12 +331,16 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 				return nil
 			}
 
+			lf.Logger.Infof("[WH]: Inserting %d load files for %s:%s", len(loadFiles), destType, destID)
 			if err = lf.LoadRepo.Insert(ctx, loadFiles); err != nil {
 				return fmt.Errorf("inserting load files: %w", err)
 			}
+
+			lf.Logger.Infof("[WH]: Setting staging file status to succeeded for staging files: %d", len(successfulStagingFileIDs))
 			if err = lf.StageRepo.SetStatuses(ctx, successfulStagingFileIDs, warehouseutils.StagingFileSucceededState); err != nil {
 				return fmt.Errorf("setting staging file status to succeeded: %w", err)
 			}
+			lf.Logger.Infof("[WH]: Completed processing %d staging files for %s:%s", len(successfulStagingFileIDs), destType, destID)
 			return nil
 		})
 	}
@@ -336,6 +348,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if err := g.Wait(); err != nil {
 		return 0, 0, err
 	}
+	lf.Logger.Infof("[WH]: Completed batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 
 	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
@@ -344,6 +357,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if len(loadFiles) == 0 {
 		return 0, 0, fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
 	}
+	lf.Logger.Infof("[WH]: Getting load files for %s:%s", destType, destID)
 
 	if !slices.IsSortedFunc(loadFiles, func(a, b model.LoadFile) int {
 		return int(a.ID - b.ID)
