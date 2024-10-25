@@ -161,11 +161,11 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		}
 		switch apiError.StatusCode {
 		case 500:
-			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: false}
+			return common.PollStatusResponse{StatusCode: apiError.StatusCode, Error: apiError.Message, Complete: false}
 		case 400:
-			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: true, HasFailed: true}
+			return common.PollStatusResponse{StatusCode: apiError.StatusCode, Error: apiError.Message, Complete: true, HasFailed: true}
 		case 429:
-			return common.PollStatusResponse{StatusCode: int(apiError.StatusCode), Error: apiError.Message, Complete: false}
+			return common.PollStatusResponse{StatusCode: apiError.StatusCode, Error: apiError.Message, Complete: false}
 		}
 
 	}
