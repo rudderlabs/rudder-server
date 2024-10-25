@@ -177,6 +177,7 @@ type Dedup struct {
 }
 
 func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+	defer d.badgerDB.stats.NewTaggedStat("dedup_get_batch_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
 	err := d.badgerDB.init()
 	if err != nil {
 		return nil, nil, err
