@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -21,6 +20,7 @@ import (
 const (
 	maxFileSize    = 10 * 1024 * 1024 // 10MB in bytes
 	estimateBuffer = 0.95             // 95% of max size to account for any calculation discrepancies
+	fileName       = "marketo_bulk_upload"
 )
 
 // Docs: https://experienceleague.adobe.com/en/docs/marketo-developer/marketo/rest/error-codes
@@ -93,7 +93,7 @@ func categorizeMarketoError(errorCode string) (status, message string) {
 	}
 }
 
-func handleMarketoErrorCode(errorCode string) (int64, string, string) {
+func handleMarketoErrorCode(errorCode string) (int, string, string) {
 	category, message := categorizeMarketoError(errorCode)
 	switch category {
 	case "Retryable":
@@ -109,8 +109,8 @@ func handleMarketoErrorCode(errorCode string) (int64, string, string) {
 	}
 }
 
-func parseMarketoResponse(marketoResponse MarketoResponse) (int64, string, string) {
-	statusCode := int64(200)
+func parseMarketoResponse(marketoResponse MarketoResponse) (int, string, string) {
+	statusCode := 200
 	category := "Success"
 	errorMessage := ""
 	if !marketoResponse.Success {
@@ -149,7 +149,7 @@ func calculateRowSize(row []string) (int64, error) {
 }
 
 func createCSVFile(destinationID string, destConfig MarketoConfig, input []common.AsyncJob, dataHashToJobId map[string]int64) (string, []string, []int64, []int64, error) {
-	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, "marketo_bulk_upload")
+	csvFilePath := fmt.Sprintf("/tmp/%s_%s.csv", destinationID, fileName)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
 		return "", nil, nil, nil, err
@@ -298,7 +298,7 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	for scanner.Scan() {
 		var tempJob common.AsyncJob
 		jobBytes := scanner.Bytes()
-		err := json.Unmarshal(jobBytes, &tempJob)
+		err := jsonfast.Unmarshal(jobBytes, &tempJob)
 		if err != nil {
 			return nil, fmt.Errorf("BRT: Error in Unmarshalling Job: %v", err)
 		}

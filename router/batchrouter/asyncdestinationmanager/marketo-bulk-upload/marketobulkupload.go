@@ -80,7 +80,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  "BRT: Error in Creating CSV File: " + err.Error(),
+			FailedReason:  fmt.Sprintf("BRT: Error in Creating CSV File: %v", err),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -89,14 +89,14 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	importingJobIDs = insertedJobIDs
 	failedJobIDs = append(failedJobIDs, overflowedJobIDs...)
 
-	defer os.Remove(csvFilePath) // Clean up the temporary file
+	defer func() { _ = os.Remove(csvFilePath) }() // Clean up the temporary file
 
 	// Check file size
 	fileInfo, err := os.Stat(csvFilePath)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  "BRT: Error in Getting File Info: " + err.Error(),
+			FailedReason:  fmt.Sprintf("BRT: Error in Getting File Info: %v", err),
 			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -112,7 +112,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		if apiError.Category == "RefreshToken" {
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedReason:  "BRT: Error in Uploading File: Token Expired" + apiError.Message,
+				FailedReason:  fmt.Sprintf("BRT: Error in Uploading File: Token Expired: %v", apiError.Message),
 				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}
@@ -122,14 +122,14 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		case 429, 500:
 			return common.AsyncUploadOutput{
 				FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-				FailedReason:  "BRT: Error in Uploading File:" + apiError.Message,
+				FailedReason:  fmt.Sprintf("BRT: Error in Uploading File: %v", apiError.Message),
 				FailedCount:   len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}
 		case 400:
 			return common.AsyncUploadOutput{
 				AbortJobIDs:   append(failedJobIDs, importingJobIDs...),
-				AbortReason:   "BRT: Error in Uploading File: (Aborted)" + apiError.Message,
+				AbortReason:   fmt.Sprintf("BRT: Error in Uploading File (Aborted): %v", apiError.Message),
 				AbortCount:    len(failedJobIDs) + len(importingJobIDs),
 				DestinationID: destinationID,
 			}
@@ -233,7 +233,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	var params struct {
 		ImportId string `json:"importId"`
 	}
-	err := json.Unmarshal(input.Parameters, &params)
+	err := jsonfast.Unmarshal(input.Parameters, &params)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
@@ -250,10 +250,9 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		if apiError != nil {
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
-				Error:      "Failed to fetch failed jobs: " + apiError.Message,
+				Error:      fmt.Sprintf("Failed to fetch failed jobs: %s", apiError.Message),
 			}
 		}
-
 	}
 
 	var warningJobs []map[string]string
@@ -264,7 +263,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 		if apiError != nil {
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
-				Error:      "Failed to fetch warning jobs: " + apiError.Message,
+				Error:      fmt.Sprintf("Failed to fetch warning jobs: %s", apiError.Message),
 			}
 		}
 	}

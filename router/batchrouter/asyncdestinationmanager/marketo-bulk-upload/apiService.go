@@ -29,7 +29,7 @@ type MarketoAPIService struct {
 }
 
 type APIError struct {
-	StatusCode int64
+	StatusCode int
 	Category   string
 	Message    string
 }
@@ -64,7 +64,7 @@ func (m *MarketoAPIService) attemptImport(uploadURL, csvFilePath, deduplicationF
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", &APIError{StatusCode: int64(resp.StatusCode), Category: "Retryable", Message: "Error in sending request"}
+		return "", &APIError{StatusCode: resp.StatusCode, Category: "Retryable", Message: "Error in sending request"}
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)

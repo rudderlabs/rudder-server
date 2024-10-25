@@ -1,7 +1,6 @@
 package marketobulkupload
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 
@@ -21,11 +20,11 @@ type MarketoBulkUploaderOptions struct {
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
 	destConfig := MarketoConfig{}
-	jsonConfig, err := stdjson.Marshal(destination.Config)
+	jsonConfig, err := jsonfast.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("error in marshalling destination config: %v", err)
 	}
-	err = stdjson.Unmarshal(jsonConfig, &destConfig)
+	err = jsonfast.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
@@ -46,7 +45,7 @@ func NewMarketoBulkUploader(destinationName string, log logger.Logger, statsFact
 	}
 
 	apiService := &MarketoAPIService{
-		logger:       log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload").Child("API Service"),
+		logger:       log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo_Builk_Upload").Child("API_Service"),
 		statsFactory: statsFactory,
 		httpClient:   httpClient,
 		munchkinId:   destConfig.MunchkinId,
@@ -56,7 +55,7 @@ func NewMarketoBulkUploader(destinationName string, log logger.Logger, statsFact
 
 	return NewMarketoBulkUploaderWithOptions(MarketoBulkUploaderOptions{
 		DestinationName:   destinationName,
-		Logger:            log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo Builk Upload"),
+		Logger:            log.Child("batchRouter").Child("AsyncDestinationManager").Child("Marketo").Child("Marketo_Builk_Upload"),
 		DestinationConfig: destConfig,
 		StatsFactory:      statsFactory,
 		APIService:        apiService,

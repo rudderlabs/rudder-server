@@ -83,7 +83,7 @@ func TestHandleMarketoErrorCode(t *testing.T) {
 	tests := []struct {
 		name         string
 		errorCode    string
-		wantStatus   int64
+		wantStatus   int
 		wantCategory string
 		wantMessage  string
 	}{
@@ -137,7 +137,7 @@ func TestParseMarketoResponse(t *testing.T) {
 	tests := []struct {
 		name         string
 		response     MarketoResponse
-		wantStatus   int64
+		wantStatus   int
 		wantCategory string
 		wantMessage  string
 	}{
