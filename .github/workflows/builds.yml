@@ -21,7 +21,7 @@ env:
     type=ref,event=branch
     type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
     type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=${{ github.head_ref }}-${{ github.sha }},enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}
@@ -31,7 +31,7 @@ env:
   docker_ent_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=${{ github.head_ref }}-${{ github.sha }},enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}
@@ -41,7 +41,7 @@ env:
   docker_sbsvc_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=${{ github.head_ref }}-${{ github.sha }},enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}
@@ -417,3 +417,4 @@ jobs:
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
           done <<< "${{ needs.docker-sbsvc-meta.outputs.tags }}"
+
