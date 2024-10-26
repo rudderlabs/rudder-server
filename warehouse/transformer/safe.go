@@ -94,7 +94,15 @@ func SafeColumnName(destType string, options integrationsOptions, columnName str
 	return safeName(destType, options, columnName), nil
 }
 
+var safeNameCache = &SafeCache[string, string]{}
+
 func safeName(destType string, options integrationsOptions, name string) string {
+	cacheKey := destType + ":" + name
+	if cachedName, ok := safeNameCache.Get(cacheKey); ok {
+		return cachedName
+	}
+
+	var result string
 	switch destType {
 	case whutils.SNOWFLAKE:
 		name = strings.ToUpper(name)
@@ -109,9 +117,13 @@ func safeName(destType string, options integrationsOptions, name string) string 
 		name = "_" + name
 	}
 	if utils.IsDataLake(destType) {
-		return name
+		result = name
+	} else {
+		result = misc.TruncateStr(name, 127)
 	}
-	return misc.TruncateStr(name, 127)
+
+	safeNameCache.Set(cacheKey, result)
+	return result
 }
 
 // SafeCache provides a thread-safe generic cache
