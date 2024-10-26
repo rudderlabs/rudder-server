@@ -14,6 +14,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/snakecase"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	"sync"
 )
 
 var (
@@ -112,16 +114,35 @@ func safeName(destType string, options integrationsOptions, name string) string 
 	return misc.TruncateStr(name, 127)
 }
 
+// SafeCache provides a thread-safe generic cache
+type SafeCache[K comparable, V any] struct {
+	cache sync.Map
+}
+
+// Get retrieves a value from the cache
+func (c *SafeCache[K, V]) Get(key K) (V, bool) {
+	if value, ok := c.cache.Load(key); ok {
+		return value.(V), true
+	}
+	var zero V
+	return zero, false
+}
+
+// Set stores a value in the cache
+func (c *SafeCache[K, V]) Set(key K, value V) {
+	c.cache.Store(key, value)
+}
+
 var (
-	transformTableNameCache = make(map[string]string)
+	transformTableNameCache  = &SafeCache[string, string]{}
+	transformColumnNameCache = &SafeCache[string, string]{}
 )
 
 // TransformTableName applies transformation to the input table name based on the destination type and configuration options.
 // If `useBlendoCasing` is enabled, it converts the table name to lowercase and trims spaces.
 // Otherwise, it applies a more general transformation using the `transformName` function.
 func TransformTableName(integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, tableName string) string {
-	// FIXME: not thread safe, ignores integrations/destConfigOptions
-	if cachedName, ok := transformTableNameCache[tableName]; ok {
+	if cachedName, ok := transformTableNameCache.Get(tableName); ok {
 		return cachedName
 	}
 
@@ -144,21 +165,16 @@ func TransformTableName(integrationsOptions integrationsOptions, destConfigOptio
 	if startsWithDigit(name) {
 		name = "_" + name
 	}
-	transformColumnNameCache[tableName] = name
+	transformTableNameCache.Set(tableName, name)
 
 	return name
 }
-
-var (
-	transformColumnNameCache = make(map[string]string)
-)
 
 // TransformColumnName applies transformation to the input column name based on the destination type and configuration options.
 // If `useBlendoCasing` is enabled, it transforms the column name into Blendo casing.
 // Otherwise, it applies a more general transformation using the `transformName` function.
 func TransformColumnName(destType string, integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, columnName string) string {
-	// FIXME: not thread safe, ignores integrations/destConfigOptions
-	if cachedName, ok := transformColumnNameCache[columnName]; ok {
+	if cachedName, ok := transformColumnNameCache.Get(columnName); ok {
 		return cachedName
 	}
 
@@ -186,7 +202,7 @@ func TransformColumnName(destType string, integrationsOptions integrationsOption
 		name = misc.TruncateStr(name, 63)
 	}
 
-	transformColumnNameCache[columnName] = name
+	transformColumnNameCache.Set(columnName, name)
 	return name
 }
 
