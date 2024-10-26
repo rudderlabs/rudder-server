@@ -3188,8 +3188,14 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
-			proc.handleResponseForWarehouseTransformation(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
+
+			if _, ok := warehouseutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
+				tw := time.Now()
+				response = proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+				proc.statsFactory.NewStat("proc_warehouse_transformations_time", stats.TimerType).Since(tw)
+			} else {
+				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			}
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
