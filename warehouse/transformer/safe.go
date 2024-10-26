@@ -112,10 +112,19 @@ func safeName(destType string, options integrationsOptions, name string) string 
 	return misc.TruncateStr(name, 127)
 }
 
+var (
+	transformTableNameCache = make(map[string]string)
+)
+
 // TransformTableName applies transformation to the input table name based on the destination type and configuration options.
 // If `useBlendoCasing` is enabled, it converts the table name to lowercase and trims spaces.
 // Otherwise, it applies a more general transformation using the `transformName` function.
 func TransformTableName(integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, tableName string) string {
+	// FIXME: not thread safe, ignores integrations/destConfigOptions
+	if cachedName, ok := transformTableNameCache[tableName]; ok {
+		return cachedName
+	}
+
 	if integrationsOptions.useBlendoCasing {
 		return strings.TrimSpace(strings.ToLower(tableName))
 	}
@@ -135,13 +144,24 @@ func TransformTableName(integrationsOptions integrationsOptions, destConfigOptio
 	if startsWithDigit(name) {
 		name = "_" + name
 	}
+	transformColumnNameCache[tableName] = name
+
 	return name
 }
+
+var (
+	transformColumnNameCache = make(map[string]string)
+)
 
 // TransformColumnName applies transformation to the input column name based on the destination type and configuration options.
 // If `useBlendoCasing` is enabled, it transforms the column name into Blendo casing.
 // Otherwise, it applies a more general transformation using the `transformName` function.
 func TransformColumnName(destType string, integrationsOptions integrationsOptions, destConfigOptions destConfigOptions, columnName string) string {
+	// FIXME: not thread safe, ignores integrations/destConfigOptions
+	if cachedName, ok := transformColumnNameCache[columnName]; ok {
+		return cachedName
+	}
+
 	if integrationsOptions.useBlendoCasing {
 		return transformNameToBlendoCase(destType, columnName)
 	}
@@ -165,6 +185,8 @@ func TransformColumnName(destType string, integrationsOptions integrationsOption
 	if destType == whutils.POSTGRES {
 		name = misc.TruncateStr(name, 63)
 	}
+
+	transformColumnNameCache[columnName] = name
 	return name
 }
 
