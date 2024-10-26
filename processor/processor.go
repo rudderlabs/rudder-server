@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -3189,11 +3190,13 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
 
-			if _, ok := warehouseutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
+			if _, ok := warehouseutils.WarehouseDestinationMap[commonMetaData.DestinationType]; ok {
+				// Warehouse transformer
 				tw := time.Now()
 				response = proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 				proc.statsFactory.NewStat("proc_warehouse_transformations_time", stats.TimerType).Since(tw)
 			} else {
+				// External transformer
 				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 			}
 

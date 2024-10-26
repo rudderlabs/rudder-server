@@ -1415,7 +1415,7 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
-	var payloadType = "JSONB"
+	payloadType := "JSONB"
 	if jd.conf.payloadBinary.Load() {
 		payloadType = "BYTEA"
 	}

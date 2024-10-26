@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -20,15 +22,13 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/phayes/freeport"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	_ "embed"
-	"encoding/json"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-
-	"bufio"
 )
 
 var (
@@ -311,7 +311,6 @@ func readWorker(ctx context.Context, db jobsdb.JobsDB) error {
 
 			var statusList []*jobsdb.JobStatusT
 			for _, job := range jobs.Jobs {
-
 				statusList = append(statusList, &jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					JobState:      jobsdb.Succeeded.State,
