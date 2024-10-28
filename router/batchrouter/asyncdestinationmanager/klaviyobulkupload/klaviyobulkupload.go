@@ -77,7 +77,7 @@ func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements in
 			return nil, fmt.Errorf("failed to marshal profile: %w", err)
 		}
 
-		profileSize := len(profileJSON)
+		profileSize := len(profileJSON) + 1 // +1 for comma character
 
 		if (chunkSize+profileSize >= maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
 			chunks = append(chunks, chunk)
@@ -330,6 +330,11 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
 		}
 		profileStructure := kbu.ExtractProfile(input)
+		// if profileStructure length is more than 5 mb, throw an error
+		profileStructureJSON, _ := json.Marshal(profileStructure)
+		if float64(len(profileStructureJSON)) >= 5000000 {
+			return kbu.generateKlaviyoErrorOutput("Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 5 mb", err, importingJobIDs, destinationID)
+		}
 		combinedProfiles = append(combinedProfiles, profileStructure)
 	}
 
