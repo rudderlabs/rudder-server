@@ -388,12 +388,14 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		if resp.StatusCode != 202 {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
 			kbu.logger.Error("Got non 202 as statusCode.", errors.New(string(bodyBytes)))
+			continue
 		}
 		var uploadresp UploadResp
 		uploadRespErr := json.Unmarshal((bodyBytes), &uploadresp)
 		if uploadRespErr != nil {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
 			kbu.logger.Error("Error while unmarshaling response.", uploadRespErr)
+			continue
 		}
 		importIds = append(importIds, uploadresp.Data.Id)
 	}
