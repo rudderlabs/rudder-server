@@ -314,7 +314,6 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if sourceTransformAdapter.getAdapterVersion() == transformer.V1 {
 				eventRequest, err = prepareTransformerEventRequestV1(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
 			} else {
-				// default is v2
 				eventRequest, err = prepareTransformerEventRequestV2(req.request)
 			}
 
