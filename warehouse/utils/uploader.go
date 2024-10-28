@@ -7,11 +7,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-type (
-	ModelWarehouse   = model.Warehouse
-	ModelTableSchema = model.TableSchema
-)
-
 //go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
 	IsWarehouseSchemaEmpty() bool
@@ -28,29 +23,33 @@ type Uploader interface {
 	CanAppend() bool
 }
 
-type NopUploader struct{}
+type noopUploader struct{}
 
-func (n *NopUploader) IsWarehouseSchemaEmpty() bool {
+func NewNoOpUploader() Uploader {
+	return &noopUploader{}
+}
+
+func (n *noopUploader) IsWarehouseSchemaEmpty() bool {
 	return false
 }
-func (n *NopUploader) GetLocalSchema(ctx context.Context) (model.Schema, error)         { return nil, nil } // nolint:nilnil
-func (n *NopUploader) UpdateLocalSchema(ctx context.Context, schema model.Schema) error { return nil }
-func (n *NopUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema     { return nil }
-func (n *NopUploader) GetTableSchemaInUpload(tableName string) model.TableSchema        { return nil }
-func (n *NopUploader) ShouldOnDedupUseNewRecord() bool                                  { return false }
-func (n *NopUploader) UseRudderStorage() bool                                           { return false }
-func (n *NopUploader) GetLoadFileGenStartTIme() time.Time                               { return time.Time{} }
-func (n *NopUploader) GetLoadFileType() string                                          { return "" }
-func (n *NopUploader) CanAppend() bool                                                  { return false }
-func (n *NopUploader) GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) ([]LoadFile, error) {
+func (n *noopUploader) GetLocalSchema(ctx context.Context) (model.Schema, error)         { return nil, nil } // nolint:nilnil
+func (n *noopUploader) UpdateLocalSchema(ctx context.Context, schema model.Schema) error { return nil }
+func (n *noopUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema     { return nil }
+func (n *noopUploader) GetTableSchemaInUpload(tableName string) model.TableSchema        { return nil }
+func (n *noopUploader) ShouldOnDedupUseNewRecord() bool                                  { return false }
+func (n *noopUploader) UseRudderStorage() bool                                           { return false }
+func (n *noopUploader) GetLoadFileGenStartTIme() time.Time                               { return time.Time{} }
+func (n *noopUploader) GetLoadFileType() string                                          { return "" }
+func (n *noopUploader) CanAppend() bool                                                  { return false }
+func (n *noopUploader) GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) ([]LoadFile, error) {
 	return nil, nil
 }
 
-func (n *NopUploader) GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error) {
+func (n *noopUploader) GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error) {
 	return "", nil
 }
 
-func (n *NopUploader) GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error) {
+func (n *noopUploader) GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error) {
 	return LoadFile{}, nil
 }
-func (n *NopUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }
+func (n *noopUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }

@@ -27,8 +27,10 @@ func (a *API) DeleteChannel(ctx context.Context, channelID string, sync bool) er
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusAccepted {
-		return fmt.Errorf("invalid status code for delete channel: %d, body: %s", resp.StatusCode, string(mustReadAll(resp.Body)))
+	switch resp.StatusCode {
+	case http.StatusNoContent, http.StatusAccepted:
+		return nil
+	default:
+		return fmt.Errorf("invalid status code for delete channel: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
-	return nil
 }

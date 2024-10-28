@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -11,8 +10,8 @@ import (
 )
 
 func (a *API) Status(ctx context.Context, channelID string) (*model.StatusResponse, error) {
-	statusReqURL := a.clientURL + "/channels/" + channelID + "/status"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusReqURL, nil)
+	statusURL := a.clientURL + "/channels/" + channelID + "/status"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating status request: %w", err)
 	}
@@ -25,7 +24,7 @@ func (a *API) Status(ctx context.Context, channelID string) (*model.StatusRespon
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code for status: %d, body: %s", resp.StatusCode, string(mustReadAll(resp.Body)))
+		return nil, fmt.Errorf("invalid status code for status: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
 
 	var res model.StatusResponse

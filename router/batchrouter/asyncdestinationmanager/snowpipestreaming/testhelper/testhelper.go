@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/stretchr/testify/require"
 
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 )
 
 const (
 	TestKeyPairUnencrypted = "SNOWPIPE_STREAMING_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS"
+	TestKeyPairEncrypted   = "SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS"
 )
 
 type TestCredentials struct {
@@ -40,20 +40,18 @@ func GetSnowPipeTestCredentials(key string) (*TestCredentials, error) {
 	var credentials TestCredentials
 	err := json.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshall %s to snowpipe test credentials: %v", key, err)
+		return nil, fmt.Errorf("unable to marshall %s to snowpipe test credentials: %w", key, err)
 	}
 	return &credentials, nil
 }
 
-func RandSchema(provider string) string {
+func RandSchema() string {
 	hex := strings.ToLower(rand.String(12))
 	namespace := fmt.Sprintf("test_%s_%d", hex, time.Now().Unix())
-	return whutils.ToProviderCase(provider, whutils.ToSafeNamespace(provider,
-		namespace,
-	))
+	return strings.ToUpper(namespace)
 }
 
-func DropSchema(t *testing.T, db *sql.DB, namespace string) {
+func DropSchema(t testing.TB, db *sql.DB, namespace string) {
 	t.Helper()
 	t.Log("dropping schema", namespace)
 

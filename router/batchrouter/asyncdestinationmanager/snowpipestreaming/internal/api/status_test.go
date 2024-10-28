@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 )
 
@@ -33,7 +34,7 @@ func TestStatus(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Success", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, snowPipeServer.Client())
+		manager := api.New(snowPipeServer.URL, snowPipeServer.Client())
 		res, err := manager.Status(ctx, channelID)
 		require.NoError(t, err)
 		require.Equal(t, &model.StatusResponse{
@@ -45,7 +46,7 @@ func TestStatus(t *testing.T) {
 		)
 	})
 	t.Run("Request failure", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			err: errors.New("bad client"),
 			response: &http.Response{
 				StatusCode: http.StatusOK,
@@ -56,7 +57,7 @@ func TestStatus(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusBadRequest,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -67,7 +68,7 @@ func TestStatus(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (invalid response)", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},

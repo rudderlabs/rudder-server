@@ -38,17 +38,18 @@ import (
 )
 
 const (
-	RS            = "RS"
-	BQ            = "BQ"
-	SNOWFLAKE     = "SNOWFLAKE"
-	POSTGRES      = "POSTGRES"
-	CLICKHOUSE    = "CLICKHOUSE"
-	MSSQL         = "MSSQL"
-	AzureSynapse  = "AZURE_SYNAPSE"
-	DELTALAKE     = "DELTALAKE"
-	S3Datalake    = "S3_DATALAKE"
-	GCSDatalake   = "GCS_DATALAKE"
-	AzureDatalake = "AZURE_DATALAKE"
+	RS                = "RS"
+	BQ                = "BQ"
+	SNOWFLAKE         = "SNOWFLAKE"
+	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	POSTGRES          = "POSTGRES"
+	CLICKHOUSE        = "CLICKHOUSE"
+	MSSQL             = "MSSQL"
+	AzureSynapse      = "AZURE_SYNAPSE"
+	DELTALAKE         = "DELTALAKE"
+	S3Datalake        = "S3_DATALAKE"
+	GCSDatalake       = "GCS_DATALAKE"
+	AzureDatalake     = "AZURE_DATALAKE"
 )
 
 const (
@@ -206,18 +207,6 @@ type ColumnInfo struct {
 	Type  string
 }
 
-type Destination struct {
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-}
-
-type Schema model.Schema
-
-type KeyValue struct {
-	Key   string
-	Value interface{}
-}
-
 type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64
@@ -229,6 +218,11 @@ type LoadFile struct {
 	Location string
 	Metadata json.RawMessage
 }
+
+type (
+	ModelWarehouse   = model.Warehouse
+	ModelTableSchema = model.TableSchema
+)
 
 func IDResolutionEnabled() bool {
 	return enableIDResolution
@@ -523,7 +517,8 @@ ToProviderCase converts string provided to case generally accepted in the wareho
 e.g. columns are uppercase in SNOWFLAKE and lowercase etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
-	if strings.ToUpper(provider) == SNOWFLAKE {
+	upperCaseProvider := strings.ToUpper(provider)
+	if upperCaseProvider == SNOWFLAKE || upperCaseProvider == SnowpipeStreaming {
 		str = strings.ToUpper(str)
 	}
 	return str

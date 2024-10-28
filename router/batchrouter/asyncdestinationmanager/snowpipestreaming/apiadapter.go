@@ -2,70 +2,123 @@ package snowpipestreaming
 
 import (
 	"context"
+	"strconv"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 )
 
-type apiAdapter struct {
-	stats struct {
-		createChannelCount        stats.Counter
-		deleteChannelCount        stats.Counter
-		insertCount               stats.Counter
-		statusCount               stats.Counter
-		createChannelResponseTime stats.Timer
-		deleteChannelResponseTime stats.Timer
-		insertResponseTime        stats.Timer
-		statusResponseTime        stats.Timer
-	}
+const (
+	createChannelAPI = "create_channel"
+	deleteChannelAPI = "delete_channel"
+	insertAPI        = "insert"
+	statusAPI        = "status"
+)
 
-	api
+func newApiAdapter(
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	api api,
+	destination *backendconfig.DestinationT,
+) api {
+	return &apiAdapter{
+		logger:       logger,
+		statsFactory: statsFactory,
+		api:          api,
+		destination:  destination,
+	}
 }
 
-func newApiAdapter(api api, statsFactory stats.Stats, destination *backendconfig.DestinationT) *apiAdapter {
-	adapter := &apiAdapter{}
-	adapter.api = api
-
-	tags := stats.Tags{
+func (a *apiAdapter) defaultTags(apiName string) stats.Tags {
+	return stats.Tags{
 		"module":        "batch_router",
-		"workspaceId":   destination.WorkspaceID,
-		"destType":      destination.DestinationDefinition.Name,
-		"destinationId": destination.ID,
+		"workspaceId":   a.destination.WorkspaceID,
+		"destType":      a.destination.DestinationDefinition.Name,
+		"destinationId": a.destination.ID,
+		"api":           apiName,
 	}
-	adapter.stats.createChannelCount = statsFactory.NewTaggedStat("snowpipestreaming_create_channel_count", stats.CountType, tags)
-	adapter.stats.deleteChannelCount = statsFactory.NewTaggedStat("snowpipestreaming_delete_channel_count", stats.CountType, tags)
-	adapter.stats.insertCount = statsFactory.NewTaggedStat("snowpipestreaming_insert_count", stats.CountType, tags)
-	adapter.stats.statusCount = statsFactory.NewTaggedStat("snowpipestreaming_status_count", stats.CountType, tags)
-	adapter.stats.createChannelResponseTime = statsFactory.NewTaggedStat("snowpipestreaming_create_channel_response_time", stats.TimerType, tags)
-	adapter.stats.deleteChannelResponseTime = statsFactory.NewTaggedStat("snowpipestreaming_delete_channel_response_time", stats.TimerType, tags)
-	adapter.stats.insertResponseTime = statsFactory.NewTaggedStat("snowpipestreaming_insert_response_time", stats.TimerType, tags)
-	adapter.stats.statusResponseTime = statsFactory.NewTaggedStat("snowpipestreaming_status_response_time", stats.TimerType, tags)
-
-	return adapter
 }
 
 func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannelRequest) (*model.ChannelResponse, error) {
-	defer a.stats.createChannelCount.Increment()
-	defer a.stats.createChannelResponseTime.RecordDuration()()
-	return a.api.CreateChannel(ctx, req)
+	a.logger.Infon("Creating channel",
+		logger.NewStringField("rudderIdentifier", req.RudderIdentifier),
+		logger.NewStringField("partition", req.Partition),
+		logger.NewStringField("database", req.TableConfig.Database),
+		logger.NewStringField("namespace", req.TableConfig.Schema),
+		logger.NewStringField("table", req.TableConfig.Table),
+	)
+
+	tags := a.defaultTags(createChannelAPI)
+	defer a.recordDuration(tags)()
+
+	resp, err := a.api.CreateChannel(ctx, req)
+	if err != nil {
+		tags["success"] = "false"
+		return nil, err
+	}
+	tags["success"] = strconv.FormatBool(resp.Success)
+	tags["code"] = resp.Code
+	return resp, nil
 }
 
 func (a *apiAdapter) DeleteChannel(ctx context.Context, channelID string, sync bool) error {
-	defer a.stats.deleteChannelCount.Increment()
-	defer a.stats.deleteChannelResponseTime.RecordDuration()()
-	return a.api.DeleteChannel(ctx, channelID, sync)
+	a.logger.Infon("Deleting channel",
+		logger.NewStringField("channelId", channelID),
+		logger.NewBoolField("sync", sync),
+	)
+
+	tags := a.defaultTags(deleteChannelAPI)
+	defer a.recordDuration(tags)()
+
+	err := a.api.DeleteChannel(ctx, channelID, sync)
+	if err != nil {
+		tags["success"] = "false"
+		return err
+	}
+	tags["success"] = "true"
+	return nil
 }
 
 func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error) {
-	defer a.stats.insertCount.Increment()
-	defer a.stats.insertResponseTime.RecordDuration()()
-	return a.api.Insert(ctx, channelID, insertRequest)
+	a.logger.Debugn("Inserting data",
+		logger.NewStringField("channelId", channelID),
+		logger.NewIntField("rows", int64(len(insertRequest.Rows))),
+		logger.NewStringField("offset", insertRequest.Offset),
+	)
+
+	tags := a.defaultTags(insertAPI)
+	defer a.recordDuration(tags)()
+
+	resp, err := a.api.Insert(ctx, channelID, insertRequest)
+	if err != nil {
+		tags["success"] = "false"
+		return nil, err
+	}
+	tags["success"] = strconv.FormatBool(resp.Success)
+	tags["code"] = resp.Code
+	return resp, nil
 }
 
 func (a *apiAdapter) Status(ctx context.Context, channelID string) (*model.StatusResponse, error) {
-	defer a.stats.statusCount.Increment()
-	defer a.stats.statusResponseTime.RecordDuration()()
-	return a.api.Status(ctx, channelID)
+	a.logger.Debugn("Getting status",
+		logger.NewStringField("channelId", channelID),
+	)
+
+	tags := a.defaultTags(statusAPI)
+	defer a.recordDuration(tags)()
+
+	resp, err := a.api.Status(ctx, channelID)
+	if err != nil {
+		tags["success"] = "false"
+		return nil, err
+	}
+	tags["success"] = strconv.FormatBool(resp.Success)
+	return resp, nil
+}
+
+func (a *apiAdapter) recordDuration(tags stats.Tags) func() {
+	return a.statsFactory.NewTaggedStat("snowpipe_streaming_api_response_time", stats.TimerType, tags).RecordDuration()
 }

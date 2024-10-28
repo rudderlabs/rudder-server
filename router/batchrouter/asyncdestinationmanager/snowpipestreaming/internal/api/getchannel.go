@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -26,7 +25,7 @@ func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelR
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code for get channel: %d, body: %s", resp.StatusCode, string(mustReadAll(resp.Body)))
+		return nil, fmt.Errorf("invalid status code for get channel: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
 
 	var res model.ChannelResponse

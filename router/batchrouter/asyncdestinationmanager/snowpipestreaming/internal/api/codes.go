@@ -1,6 +1,6 @@
 package api
 
-var (
+const (
 	ErrUnknownError                        = "ERR_UNKNOWN_ERROR"
 	ErrValidationError                     = "ERR_VALIDATION_ERROR"
 	ErrAuthenticationFailed                = "ERR_AUTHENTICATION_FAILED"

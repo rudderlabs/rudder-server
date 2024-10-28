@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 )
 
@@ -48,13 +49,13 @@ func TestInsert(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Insert success", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, snowPipeServer.Client())
+		manager := api.New(snowPipeServer.URL, snowPipeServer.Client())
 		res, err := manager.Insert(ctx, successChannelID, ir)
 		require.NoError(t, err)
 		require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, res)
 	})
 	t.Run("Insert failure", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, snowPipeServer.Client())
+		manager := api.New(snowPipeServer.URL, snowPipeServer.Client())
 		res, err := manager.Insert(ctx, failureChannelID, ir)
 		require.NoError(t, err)
 		require.Equal(t, &model.InsertResponse{
@@ -71,7 +72,8 @@ func TestInsert(t *testing.T) {
 					RowIndex:                    1,
 					ExtraColNames:               []string{"UNKNOWN"},
 					NullValueForNotNullColNames: nil,
-					Message:                     "The given row cannot be converted to the internal format: Extra columns: [UNKNOWN]. Columns not present in the table shouldn't be specified, rowIndex:1"},
+					Message:                     "The given row cannot be converted to the internal format: Extra columns: [UNKNOWN]. Columns not present in the table shouldn't be specified, rowIndex:1",
+				},
 			},
 			Code: "ERR_SCHEMA_CONFLICT",
 		},
@@ -79,7 +81,7 @@ func TestInsert(t *testing.T) {
 		)
 	})
 	t.Run("Request failure", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			err: errors.New("bad client"),
 			response: &http.Response{
 				StatusCode: http.StatusOK,
@@ -90,7 +92,7 @@ func TestInsert(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusBadRequest,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -101,7 +103,7 @@ func TestInsert(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (invalid response)", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},

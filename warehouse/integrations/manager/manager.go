@@ -64,7 +64,7 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
-	case warehouseutils.SNOWFLAKE:
+	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
@@ -89,7 +89,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
-	case warehouseutils.SNOWFLAKE:
+	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil

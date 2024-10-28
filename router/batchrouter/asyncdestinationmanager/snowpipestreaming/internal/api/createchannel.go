@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -18,8 +17,8 @@ func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannel
 		return nil, fmt.Errorf("marshalling create channel request: %w", err)
 	}
 
-	channelReqURL := a.clientURL + "/channels"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, channelReqURL, bytes.NewBuffer(reqJSON))
+	createChannelURL := a.clientURL + "/channels"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, createChannelURL, bytes.NewBuffer(reqJSON))
 	if err != nil {
 		return nil, fmt.Errorf("creating create channel request: %w", err)
 	}
@@ -32,7 +31,7 @@ func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannel
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code for create channel: %d, body: %s", resp.StatusCode, string(mustReadAll(resp.Body)))
+		return nil, fmt.Errorf("invalid status code for create channel: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
 
 	var res model.ChannelResponse

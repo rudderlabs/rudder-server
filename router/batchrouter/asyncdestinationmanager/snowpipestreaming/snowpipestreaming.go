@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -22,17 +23,13 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-var (
-	errInvalidStatusResponse = errors.New("invalid status response")
-	errInsertingDataFailed   = errors.New("inserting data failed")
-)
+var errInvalidStatusResponse = errors.New("invalid status response")
 
 func New(
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
-	opts ...Opt,
 ) *Manager {
 	m := &Manager{
 		conf: conf,
@@ -46,10 +43,8 @@ func New(
 		now:          timeutil.Now,
 		channelCache: sync.Map{},
 	}
-	for _, opt := range opts {
-		opt(m)
-	}
 
+	m.config.client.url = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
 	m.config.client.maxHTTPConnections = conf.GetInt("SnowpipeStreaming.Client.maxHTTPConnections", 10)
 	m.config.client.maxHTTPIdleConnections = conf.GetInt("SnowpipeStreaming.Client.maxHTTPIdleConnections", 5)
 	m.config.client.maxIdleConnDuration = conf.GetDuration("SnowpipeStreaming.Client.maxIdleConnDuration", 30, time.Second)
@@ -58,12 +53,8 @@ func New(
 	m.config.client.retryWaitMin = conf.GetDuration("SnowpipeStreaming.Client.retryWaitMin", 100, time.Millisecond)
 	m.config.client.retryWaitMax = conf.GetDuration("SnowpipeStreaming.Client.retryWaitMax", 10, time.Second)
 	m.config.client.retryMax = conf.GetInt("SnowpipeStreaming.Client.retryWaitMin", 5)
-	m.config.clientURL = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
 	m.config.instanceID = conf.GetString("INSTANCE_ID", "1")
-	m.config.pollFrequency = conf.GetDuration("SnowpipeStreaming.pollFrequency", 300, time.Millisecond)
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
-	m.config.maxConcurrentPollWorkers = conf.GetReloadableIntVar(10, 1, "SnowpipeStreaming.maxConcurrentPollWorkers")
-	m.config.maxConcurrentUploadWorkers = conf.GetReloadableIntVar(8, 1, "SnowpipeStreaming.maxConcurrentUploadWorkers")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -71,19 +62,29 @@ func New(
 		"destType":      destination.DestinationDefinition.Name,
 		"destinationId": destination.ID,
 	}
-	m.stats.successJobCount = statsFactory.NewTaggedStat("snowpipestreaming_success_job_count", stats.CountType, tags)
-	m.stats.failedJobCount = statsFactory.NewTaggedStat("snowpipestreaming_failed_jobs_count", stats.CountType, tags)
-	m.stats.discardCount = statsFactory.NewTaggedStat("snowpipestreaming_discards_count", stats.CountType, tags)
-	m.stats.channelSchemaCreationErrorCount = statsFactory.NewTaggedStat("snowpipestreaming_create_channel_schema_error", stats.CountType, tags)
-	m.stats.channelTableCreationErrorCount = statsFactory.NewTaggedStat("snowpipestreaming_create_channel_table_error", stats.CountType, tags)
+	m.stats.jobs.importing = statsFactory.NewTaggedStat("snowpipe_streaming_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+		"status": "importing",
+	}))
+	m.stats.jobs.succeeded = statsFactory.NewTaggedStat("snowpipe_streaming_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+		"status": "succeeded",
+	}))
+	m.stats.jobs.failed = statsFactory.NewTaggedStat("snowpipe_streaming_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+		"status": "failed",
+	}))
+	m.stats.jobs.aborted = statsFactory.NewTaggedStat("snowpipe_streaming_jobs", stats.CountType, lo.Assign(tags, stats.Tags{
+		"status": "aborted",
+	}))
+
+	m.stats.discards = statsFactory.NewTaggedStat("snowpipe_streaming_discards", stats.CountType, tags)
 
 	if m.requestDoer == nil {
 		m.requestDoer = m.retryableClient().StandardClient()
 	}
 
 	m.api = newApiAdapter(
-		snowpipeapi.New(m.config.clientURL, m.requestDoer),
+		m.logger,
 		statsFactory,
+		snowpipeapi.New(m.config.client.url, m.requestDoer),
 		destination,
 	)
 	return m

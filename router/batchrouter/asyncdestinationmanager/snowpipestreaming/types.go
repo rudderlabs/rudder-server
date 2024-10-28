@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -29,6 +31,7 @@ type (
 
 		config struct {
 			client struct {
+				url                    string
 				maxHTTPConnections     int
 				maxHTTPIdleConnections int
 				maxIdleConnDuration    time.Duration
@@ -38,21 +41,18 @@ type (
 				retryWaitMax           time.Duration
 				retryMax               int
 			}
-
-			clientURL                  string
-			instanceID                 string
-			pollFrequency              time.Duration
-			maxBufferCapacity          config.ValueLoader[int64]
-			maxConcurrentPollWorkers   config.ValueLoader[int]
-			maxConcurrentUploadWorkers config.ValueLoader[int]
+			instanceID        string
+			maxBufferCapacity config.ValueLoader[int64]
 		}
 
 		stats struct {
-			successJobCount                 stats.Counter
-			failedJobCount                  stats.Counter
-			discardCount                    stats.Counter
-			channelSchemaCreationErrorCount stats.Counter
-			channelTableCreationErrorCount  stats.Counter
+			jobs struct {
+				importing stats.Counter
+				succeeded stats.Counter
+				failed    stats.Counter
+				aborted   stats.Counter
+			}
+			discards stats.Counter
 		}
 	}
 
@@ -84,12 +84,13 @@ type (
 		Namespace            string `mapstructure:"namespace"`
 	}
 
-	uploadInfo struct {
+	importInfo struct {
 		ChannelID string `json:"channelId"`
 		Offset    string `json:"offset"`
 		Table     string `json:"table"`
 		Failed    bool   `json:"failed"`
 		Reason    string `json:"reason"`
+		Count     int    `json:"count"`
 	}
 
 	discardInfo struct {
@@ -100,16 +101,43 @@ type (
 		uuidTS    string
 	}
 
+	uploadInfo struct {
+		tableName              string
+		events                 []*event
+		jobIDs                 []int64
+		eventsSchema           whutils.ModelTableSchema
+		discardChannelResponse *model.ChannelResponse
+		latestJobID            int64
+	}
+
 	api interface {
 		CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error)
 		DeleteChannel(ctx context.Context, channelID string, sync bool) error
 		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error)
 		Status(ctx context.Context, channelID string) (*model.StatusResponse, error)
 	}
+
+	apiAdapter struct {
+		logger       logger.Logger
+		statsFactory stats.Stats
+		destination  *backendconfig.DestinationT
+		api
+	}
 )
 
+func (d *destConfig) Decode(m map[string]interface{}) error {
+	if err := mapstructure.Decode(m, d); err != nil {
+		return err
+	}
+	d.Namespace = whutils.ToProviderCase(
+		whutils.SnowpipeStreaming,
+		whutils.ToSafeNamespace(whutils.SnowpipeStreaming, d.Namespace),
+	)
+	return nil
+}
+
 func (e *event) setUUIDTimestamp(formattedTimestamp string) {
-	uuidTimestampColumn := whutils.ToProviderCase(whutils.SNOWFLAKE, "uuid_ts")
+	uuidTimestampColumn := whutils.ToProviderCase(whutils.SnowpipeStreaming, "uuid_ts")
 	if _, columnExists := e.Message.Metadata.Columns[uuidTimestampColumn]; columnExists {
 		e.Message.Data[uuidTimestampColumn] = formattedTimestamp
 	}

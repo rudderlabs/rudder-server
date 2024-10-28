@@ -4,17 +4,47 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	internalapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+func (m *Manager) prepareChannelResponse(
+	ctx context.Context,
+	destinationID string,
+	destConf *destConfig,
+	tableName string,
+	eventSchema whutils.ModelTableSchema,
+) (*model.ChannelResponse, error) {
+	channelResponse, err := m.createChannel(ctx, destinationID, destConf, tableName, eventSchema)
+	if err != nil {
+		return nil, fmt.Errorf("creating channel for table %s: %w", tableName, err)
+	}
+
+	columnInfos := findNewColumns(eventSchema, channelResponse.SnowPipeSchema)
+	if len(columnInfos) > 0 {
+		if err := m.addColumns(ctx, destConf.Namespace, tableName, columnInfos); err != nil {
+			return nil, fmt.Errorf("adding columns for table %s: %w", tableName, err)
+		}
+
+		channelResponse, err = m.recreateChannel(ctx, destinationID, destConf, tableName, eventSchema, channelResponse.ChannelID)
+		if err != nil {
+			return nil, fmt.Errorf("recreating channel for table %s: %w", tableName, err)
+		}
+	}
+	return channelResponse, nil
+}
+
+// createChannel creates a new channel for importing data to Snowpipe.
+// If the channel already exists in the cache, it returns the cached response. Otherwise, it sends a request to create a new channel.
+// It also handles errors related to missing schemas and tables.
 func (m *Manager) createChannel(
 	ctx context.Context,
-	asyncDest *common.AsyncDestinationStruct,
-	destConf destConfig,
+	rudderIdentifier string,
+	destConf *destConfig,
 	tableName string,
 	eventSchema whutils.ModelTableSchema,
 ) (*model.ChannelResponse, error) {
@@ -23,7 +53,7 @@ func (m *Manager) createChannel(
 	}
 
 	req := &model.CreateChannelRequest{
-		RudderIdentifier: asyncDest.Destination.ID,
+		RudderIdentifier: rudderIdentifier,
 		Partition:        m.config.instanceID,
 		AccountConfig: model.AccountConfig{
 			Account:              destConf.Account,
@@ -41,7 +71,7 @@ func (m *Manager) createChannel(
 
 	resp, err := m.api.CreateChannel(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("creating channel: %v", err)
+		return nil, fmt.Errorf("creating channel: %w", err)
 	}
 	if resp.Success {
 		m.channelCache.Store(tableName, resp)
@@ -52,94 +82,111 @@ func (m *Manager) createChannel(
 	case internalapi.ErrSchemaDoesNotExistOrNotAuthorized:
 		resp, err = m.handleSchemaError(ctx, req, eventSchema)
 		if err != nil {
-			return nil, fmt.Errorf("handling schema error: %v", err)
+			return nil, fmt.Errorf("creating channel for schema error: %w", err)
 		}
 		if !resp.Success {
-			return nil, fmt.Errorf("creating channel for schema error: %s", resp.Error)
+			return nil, fmt.Errorf("creating channel for schema error with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
 	case internalapi.ErrTableDoesNotExistOrNotAuthorized:
 		resp, err = m.handleTableError(ctx, req, eventSchema)
 		if err != nil {
-			return nil, fmt.Errorf("handling table error: %v", err)
+			return nil, fmt.Errorf("creating channel for table error: %w", err)
 		}
 		if !resp.Success {
-			return nil, fmt.Errorf("creating channel for table error: %s", resp.Error)
+			return nil, fmt.Errorf("creating channel for table error with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
 	default:
-		return nil, fmt.Errorf("creating channel: %v", err)
+		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
 }
 
+// handleSchemaError handles errors related to missing schemas.
+// It creates the necessary schema and table, then attempts to create the channel again.
 func (m *Manager) handleSchemaError(
 	ctx context.Context,
 	channelReq *model.CreateChannelRequest,
 	eventSchema whutils.ModelTableSchema,
 ) (*model.ChannelResponse, error) {
-	m.stats.channelSchemaCreationErrorCount.Increment()
+	m.logger.Infon("Handling schema error",
+		logger.NewStringField("schema", channelReq.TableConfig.Schema),
+		logger.NewStringField("table", channelReq.TableConfig.Table),
+	)
 
 	snowflakeManager, err := m.createSnowflakeManager(ctx, channelReq.TableConfig.Schema)
 	if err != nil {
-		return nil, fmt.Errorf("creating snowflake manager: %v", err)
+		return nil, fmt.Errorf("creating snowflake manager: %w", err)
 	}
 	defer func() {
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateSchema(ctx); err != nil {
-		return nil, fmt.Errorf("creating schema: %v", err)
+		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		return nil, fmt.Errorf("creating table: %v", err)
+		return nil, fmt.Errorf("creating table: %w", err)
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
 
+// handleTableError handles errors related to missing tables.
+// It creates the necessary table and then attempts to create the channel again.
 func (m *Manager) handleTableError(
 	ctx context.Context,
 	channelReq *model.CreateChannelRequest,
 	eventSchema whutils.ModelTableSchema,
 ) (*model.ChannelResponse, error) {
-	m.stats.channelTableCreationErrorCount.Increment()
+	m.logger.Infon("Handling table error",
+		logger.NewStringField("schema", channelReq.TableConfig.Schema),
+		logger.NewStringField("table", channelReq.TableConfig.Table),
+	)
 
 	snowflakeManager, err := m.createSnowflakeManager(ctx, channelReq.TableConfig.Schema)
 	if err != nil {
-		return nil, fmt.Errorf("creating snowflake manager: %v", err)
+		return nil, fmt.Errorf("creating snowflake manager: %w", err)
 	}
 	defer func() {
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		return nil, fmt.Errorf("creating table: %v", err)
+		return nil, fmt.Errorf("creating table: %w", err)
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
 
+// recreateChannel deletes an existing channel and then creates a new one.
 func (m *Manager) recreateChannel(
 	ctx context.Context,
-	asyncDest *common.AsyncDestinationStruct,
-	destConf destConfig,
+	destinationID string,
+	destConf *destConfig,
 	tableName string,
 	eventSchema whutils.ModelTableSchema,
-	existingChannelResponse *model.ChannelResponse,
+	existingChannelID string,
 ) (*model.ChannelResponse, error) {
-	if err := m.deleteChannel(ctx, tableName, existingChannelResponse.ChannelID); err != nil {
-		return nil, fmt.Errorf("deleting channel: %v", err)
+	m.logger.Infon("Recreating channel",
+		logger.NewStringField("destinationID", destinationID),
+		logger.NewStringField("tableName", tableName),
+	)
+
+	if err := m.deleteChannel(ctx, tableName, existingChannelID); err != nil {
+		return nil, fmt.Errorf("deleting channel: %w", err)
 	}
 
-	channelResponse, err := m.createChannel(ctx, asyncDest, destConf, tableName, eventSchema)
+	channelResponse, err := m.createChannel(ctx, destinationID, destConf, tableName, eventSchema)
 	if err != nil {
-		return nil, fmt.Errorf("recreating channel: %v", err)
+		return nil, fmt.Errorf("recreating channel: %w", err)
 	}
 	return channelResponse, nil
 }
 
-func (m *Manager) deleteChannel(ctx context.Context, tableName string, channelID string) error {
+// deleteChannel removes a channel from the cache and deletes it from the Snowpipe.
+func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string) error {
 	m.channelCache.Delete(tableName)
 	if err := m.api.DeleteChannel(ctx, channelID, true); err != nil {
-		return fmt.Errorf("deleting channel: %v", err)
+		return fmt.Errorf("deleting channel: %w", err)
 	}
 	return nil
 }
@@ -154,13 +201,13 @@ func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) 
 	}
 	modelWarehouse.Destination.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
 
-	sf, err := manager.New(whutils.SNOWFLAKE, m.conf, m.logger, m.statsFactory)
+	sf, err := manager.New(whutils.SnowpipeStreaming, m.conf, m.logger, m.statsFactory)
 	if err != nil {
-		return nil, fmt.Errorf("creating snowflake manager: %v", err)
+		return nil, fmt.Errorf("creating snowflake manager: %w", err)
 	}
-	err = sf.Setup(ctx, modelWarehouse, &whutils.NopUploader{})
+	err = sf.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
 	if err != nil {
-		return nil, fmt.Errorf("setting up snowflake manager: %v", err)
+		return nil, fmt.Errorf("setting up snowflake manager: %w", err)
 	}
 	return sf, nil
 }

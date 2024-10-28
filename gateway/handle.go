@@ -42,7 +42,6 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -489,7 +488,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
 			if !ok || !arctx.ReplaySource {
-				receivedAt = timeutil.Now().Format(misc.RFC3339Milli)
+				receivedAt = gw.now().Format(misc.RFC3339Milli)
 			}
 			singularEventBatch := SingularEventBatch{
 				Batch:      userEvent.events,

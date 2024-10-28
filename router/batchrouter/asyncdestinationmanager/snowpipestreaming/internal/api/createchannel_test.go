@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -12,7 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestCreateChannel(t *testing.T) {
@@ -80,51 +82,23 @@ func TestCreateChannel(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Status=200(success=true)", func(t *testing.T) {
-		manager := New(successSnowPipeServer.URL, successSnowPipeServer.Client())
+		manager := api.New(successSnowPipeServer.URL, successSnowPipeServer.Client())
 		res, err := manager.CreateChannel(ctx, ccr)
 		require.NoError(t, err)
 		require.EqualValues(t, &model.ChannelResponse{
-			Success:     true,
-			ChannelID:   "channelId",
-			ChannelName: "channelName",
-			ClientName:  "clientName",
-			Valid:       true,
-			Deleted:     false,
-			TableSchema: map[string]map[string]interface{}{
-				"EVENT": {
-					"byteLength":  1.6777216e+07,
-					"length":      1.6777216e+07,
-					"logicalType": "TEXT",
-					"nullable":    true,
-					"precision":   nil,
-					"scale":       nil,
-					"type":        "VARCHAR(16777216)",
-				},
-				"ID": {
-					"byteLength":  1.6777216e+07,
-					"length":      1.6777216e+07,
-					"logicalType": "TEXT",
-					"nullable":    true,
-					"precision":   nil,
-					"scale":       nil,
-					"type":        "VARCHAR(16777216)",
-				},
-				"TIMESTAMP": {
-					"byteLength":  nil,
-					"length":      nil,
-					"logicalType": "TIMESTAMP_TZ",
-					"nullable":    true,
-					"precision":   float64(0),
-					"scale":       float64(9),
-					"type":        "TIMESTAMP_TZ(9)",
-				},
-			},
+			Success:        true,
+			ChannelID:      "channelId",
+			ChannelName:    "channelName",
+			ClientName:     "clientName",
+			Valid:          true,
+			Deleted:        false,
+			SnowPipeSchema: whutils.ModelTableSchema{"EVENT": "string", "ID": "string", "TIMESTAMP": "datetime"},
 		},
 			res,
 		)
 	})
 	t.Run("Status=200(success=false)", func(t *testing.T) {
-		manager := New(failureSnowPipeServer.URL, failureSnowPipeServer.Client())
+		manager := api.New(failureSnowPipeServer.URL, failureSnowPipeServer.Client())
 		res, err := manager.CreateChannel(ctx, ccr)
 		require.NoError(t, err)
 		require.EqualValues(t, &model.ChannelResponse{
@@ -140,7 +114,7 @@ func TestCreateChannel(t *testing.T) {
 		)
 	})
 	t.Run("Request failure", func(t *testing.T) {
-		manager := New(successSnowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(successSnowPipeServer.URL, &mockRequestDoer{
 			err: errors.New("bad client"),
 		})
 		res, err := manager.CreateChannel(ctx, ccr)
@@ -148,7 +122,7 @@ func TestCreateChannel(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-		manager := New(successSnowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(successSnowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusBadRequest,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -159,7 +133,7 @@ func TestCreateChannel(t *testing.T) {
 		require.Nil(t, res)
 	})
 	t.Run("Request failure (invalid response)", func(t *testing.T) {
-		manager := New(successSnowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(successSnowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},

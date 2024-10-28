@@ -3,16 +3,22 @@ package api
 import (
 	"io"
 	"net/http"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
-type API struct {
-	clientURL   string
-	requestDoer requestDoer
-}
+type (
+	API struct {
+		clientURL   string
+		requestDoer requestDoer
+	}
 
-type requestDoer interface {
-	Do(*http.Request) (*http.Response, error)
-}
+	requestDoer interface {
+		Do(*http.Request) (*http.Response, error)
+	}
+)
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(clientURL string, requestDoer requestDoer) *API {
 	return &API{
@@ -21,7 +27,7 @@ func New(clientURL string, requestDoer requestDoer) *API {
 	}
 }
 
-func mustReadAll(r io.Reader) []byte {
+func mustRead(r io.Reader) []byte {
 	data, _ := io.ReadAll(r)
 	return data
 }

@@ -3,126 +3,89 @@ package snowpipestreaming
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"reflect"
+
+	"github.com/samber/lo"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (m *Manager) loadDiscardsToSnowPipe(
+// sendDiscardEventsToSnowpipe uploads discarded records to the Snowpipe discards table.
+// In case of failure, it deletes the channel.
+func (m *Manager) sendDiscardEventsToSnowpipe(
 	ctx context.Context,
-	asyncDest *common.AsyncDestinationStruct,
-	destConf destConfig,
+	offset string,
+	discardsChannelID string,
 	discardInfos []discardInfo,
-) (*uploadInfo, error) {
-	tableName, eventSchema := discardsTable(), discardsSchema()
+) (*importInfo, error) {
+	tableName := discardsTable()
 
 	log := m.logger.Withn(
 		logger.NewStringField("table", tableName),
-		logger.NewIntField("events", int64(len(discardInfos))),
+		logger.NewIntField("discards", int64(len(discardInfos))),
+		logger.NewStringField("offset", offset),
 	)
-	log.Infon("Uploading data to table")
-
-	channelResponse, err := m.createChannel(ctx, asyncDest, destConf, tableName, eventSchema)
-	if err != nil {
-		return nil, fmt.Errorf("creating channel: %v", err)
-	}
-
-	columnInfos := findNewColumns(eventSchema, channelResponse.SnowPipeSchema())
-	if len(columnInfos) > 0 {
-		if err := m.addColumns(ctx, destConf.Namespace, tableName, columnInfos); err != nil {
-			return nil, fmt.Errorf("adding columns: %v", err)
-		}
-
-		channelResponse, err = m.recreateChannel(ctx, asyncDest, destConf, tableName, eventSchema, channelResponse)
-		if err != nil {
-			return nil, fmt.Errorf("recreating channel: %v", err)
-		}
-	}
-
-	offset := strconv.FormatInt(m.now().Unix(), 10)
 
 	insertReq := &model.InsertRequest{
-		Rows:   createRowsFromDiscardInfos(discardInfos),
+		Rows:   discardedInfosToRows(discardInfos),
 		Offset: offset,
 	}
-	insertRes, err := m.api.Insert(ctx, channelResponse.ChannelID, insertReq)
-	if err != nil {
-		if deleteErr := m.deleteChannel(ctx, tableName, channelResponse.ChannelID); deleteErr != nil {
-			m.logger.Warnn("Failed to delete channel",
-				logger.NewStringField("table", tableName),
-				obskit.Error(deleteErr),
-			)
+	insertRes, err := m.api.Insert(ctx, discardsChannelID, insertReq)
+	defer func() {
+		if err != nil || !insertRes.Success {
+			if deleteErr := m.deleteChannel(ctx, tableName, discardsChannelID); deleteErr != nil {
+				log.Warnn("Failed to delete channel", obskit.Error(deleteErr))
+			}
 		}
-		return nil, fmt.Errorf("inserting data: %v", err)
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("inserting data to discards: %v", err)
 	}
 	if !insertRes.Success {
-		if deleteErr := m.deleteChannel(ctx, tableName, channelResponse.ChannelID); deleteErr != nil {
-			m.logger.Warnn("Failed to delete channel",
-				logger.NewStringField("table", tableName),
-				obskit.Error(deleteErr),
-			)
-		}
-		return nil, errInsertingDataFailed
+		errorMessages := lo.Map(insertRes.Errors, func(ie model.InsertError, _ int) string {
+			return ie.Message
+		})
+		return nil, fmt.Errorf("inserting data %s failed: %v", tableName, errorMessages)
 	}
-	m.logger.Infon("Successfully uploaded data to table",
-		logger.NewStringField("table", tableName),
-		logger.NewIntField("events", int64(len(discardInfos))),
-	)
-	m.stats.discardCount.Count(len(discardInfos))
 
-	idOffset := &uploadInfo{
-		ChannelID: channelResponse.ChannelID,
+	m.stats.discards.Count(len(discardInfos))
+
+	imInfo := &importInfo{
+		ChannelID: discardsChannelID,
 		Offset:    offset,
 		Table:     tableName,
+		Count:     len(discardInfos),
 	}
-	return idOffset, nil
+	return imInfo, nil
 }
 
 func discardsTable() string {
-	return whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.DiscardsTable)
+	return whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.DiscardsTable)
 }
 
 func discardsSchema() whutils.ModelTableSchema {
 	return lo.MapEntries(whutils.DiscardsSchema, func(colName, colType string) (string, string) {
-		return whutils.ToProviderCase(whutils.SNOWFLAKE, colName), colType
+		return whutils.ToProviderCase(whutils.SnowpipeStreaming, colName), colType
 	})
 }
 
-func createRowsFromDiscardInfos(discardInfos []discardInfo) []model.Row {
-	return lo.FilterMap(discardInfos, func(info discardInfo, _ int) (model.Row, bool) {
-		id, idExists := info.eventData[whutils.ToProviderCase(whutils.SNOWFLAKE, "id")]
-		receivedAt, receivedAtExists := info.eventData[whutils.ToProviderCase(whutils.SNOWFLAKE, "received_at")]
-
-		if !idExists || !receivedAtExists {
-			return nil, false
-		}
-
-		return model.Row{
-			"column_name":  info.colName,
-			"column_value": info.eventData[info.colName],
-			"reason":       info.reason,
-			"received_at":  receivedAt,
-			"row_id":       id,
-			"table_name":   info.table,
-			"uuid_ts":      info.uuidTS,
-		}, true
-	})
-}
-
+// discardedRecords returns the records that were discarded due to schema mismatch
+// It also updates the event data with the converted values
+// If the conversion fails, the value is discarded
+// If the value is a slice, it is marshalled to a string
 func discardedRecords(
-	event event,
+	event *event,
 	snowPipeSchema whutils.ModelTableSchema,
 	tableName string,
 	formattedTS string,
 ) (discardedRecords []discardInfo) {
+	sliceType := reflect.TypeOf([]interface{}{})
 	for colName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := snowPipeSchema[colName]; exists && actualType != expectedType {
 			if convertedVal, err := slave.HandleSchemaChange(expectedType, actualType, event.Message.Data[colName]); err != nil {
@@ -140,6 +103,37 @@ func discardedRecords(
 				event.Message.Data[colName] = convertedVal
 			}
 		}
+		if reflect.TypeOf(event.Message.Data[colName]) == sliceType {
+			marshalledVal, err := json.Marshal(event.Message.Data[colName])
+			if err != nil {
+				// Discard value if marshalling fails
+				event.Message.Data[colName] = nil
+			} else {
+				event.Message.Data[colName] = string(marshalledVal)
+			}
+		}
 	}
 	return discardedRecords
+}
+
+// discardedInfosToRows converts discardInfo to model.Row
+func discardedInfosToRows(discardInfos []discardInfo) []model.Row {
+	return lo.FilterMap(discardInfos, func(info discardInfo, _ int) (model.Row, bool) {
+		id, idExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")]
+		receivedAt, receivedAtExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "received_at")]
+
+		if !idExists || !receivedAtExists {
+			return nil, false
+		}
+
+		return model.Row{
+			"column_name":  info.colName,
+			"column_value": info.eventData[info.colName],
+			"reason":       info.reason,
+			"received_at":  receivedAt,
+			"row_id":       id,
+			"table_name":   info.table,
+			"uuid_ts":      info.uuidTS,
+		}, true
+	})
 }

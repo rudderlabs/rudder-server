@@ -1,14 +1,13 @@
 package model
 
 import (
-	"regexp"
+	"strings"
+	"sync"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-)
-
-var (
-	reType = regexp.MustCompile(`(.+?)\([^)]*\)`)
 )
 
 type (
@@ -32,19 +31,24 @@ type (
 	}
 
 	ChannelResponse struct {
-		Success                bool                      `json:"success"`
-		ChannelID              string                    `json:"channelId"`
-		ChannelName            string                    `json:"channelName"`
-		ClientName             string                    `json:"clientName"`
-		Valid                  bool                      `json:"valid"`
-		Deleted                bool                      `json:"deleted"`
-		TableSchema            map[string]map[string]any `json:"tableSchema"`
-		Error                  string                    `json:"error"`
-		Code                   string                    `json:"code"`
-		SnowflakeSDKCode       string                    `json:"snowflakeSDKCode"`
-		SnowflakeAPIHttpCode   int64                     `json:"snowflakeAPIHttpCode"`
-		SnowflakeAPIStatusCode int64                     `json:"snowflakeAPIStatusCode"`
-		SnowflakeAPIMessage    string                    `json:"snowflakeAPIMessage"`
+		Success                bool                     `json:"success"`
+		ChannelID              string                   `json:"channelId"`
+		ChannelName            string                   `json:"channelName"`
+		ClientName             string                   `json:"clientName"`
+		Valid                  bool                     `json:"valid"`
+		Deleted                bool                     `json:"deleted"`
+		SnowPipeSchema         whutils.ModelTableSchema `json:"-"`
+		Error                  string                   `json:"error"`
+		Code                   string                   `json:"code"`
+		SnowflakeSDKCode       string                   `json:"snowflakeSDKCode"`
+		SnowflakeAPIHttpCode   int64                    `json:"snowflakeAPIHttpCode"`
+		SnowflakeAPIStatusCode int64                    `json:"snowflakeAPIStatusCode"`
+		SnowflakeAPIMessage    string                   `json:"snowflakeAPIMessage"`
+	}
+
+	ColumnInfo struct {
+		Type  *string  `json:"type,omitempty"`
+		Scale *float64 `json:"scale,omitempty"`
 	}
 
 	InsertRequest struct {
@@ -73,24 +77,66 @@ type (
 	}
 )
 
-func (c *ChannelResponse) SnowPipeSchema() whutils.ModelTableSchema {
-	warehouseSchema := make(whutils.ModelTableSchema)
+var (
+	dataTypeCache = sync.Map{}
+	json          = jsoniter.ConfigCompatibleWithStandardLibrary
+)
 
-	for column, info := range c.TableSchema {
-		dataType, isValidType := info["type"].(string)
-		if !isValidType {
+func (c *ChannelResponse) UnmarshalJSON(data []byte) error {
+	type Alias ChannelResponse // Prevent recursion
+	temp := &struct {
+		TableSchema map[string]ColumnInfo `json:"tableSchema"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+	c.SnowPipeSchema = generateSnowPipeSchema(temp.TableSchema)
+	return nil
+}
+
+func generateSnowPipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTableSchema {
+	if len(tableSchema) == 0 {
+		return nil
+	}
+
+	warehouseSchema := make(whutils.ModelTableSchema)
+	for column, info := range tableSchema {
+		if info.Type == nil {
 			continue
 		}
 
 		numericScale := int64(0)
-		if scale, scaleExists := info["scale"].(float64); scaleExists {
-			numericScale = int64(scale)
+		if info.Scale != nil {
+			numericScale = int64(*info.Scale)
 		}
 
-		cleanedDataType := reType.ReplaceAllString(dataType, "$1")
-
-		snowflakeType, _ := snowflake.CalculateDataType(cleanedDataType, numericScale)
-		warehouseSchema[column] = snowflakeType
+		dataType := extractDataType(*info.Type)
+		snowflakeDataType, ok := snowflake.CalculateDataType(dataType, numericScale)
+		if !ok {
+			continue
+		}
+		warehouseSchema[column] = snowflakeDataType
 	}
 	return warehouseSchema
+}
+
+func extractDataType(input string) string {
+	if cachedResult, found := dataTypeCache.Load(input); found {
+		return cachedResult.(string)
+	}
+
+	cleanedType := cleanDataType(input)
+	dataTypeCache.Store(input, cleanedType)
+	return cleanedType
+}
+
+func cleanDataType(input string) string {
+	// Extract the portion before the first '('
+	if idx := strings.Index(input, "("); idx != -1 {
+		return input[:idx]
+	}
+	return input // Return as-is if no '(' is found
 }

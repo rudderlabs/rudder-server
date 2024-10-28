@@ -1,4 +1,4 @@
-package api
+package api_test
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 )
 
 func TestDeleteChannel(t *testing.T) {
@@ -33,25 +35,25 @@ func TestDeleteChannel(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		t.Run("sync=true", func(t *testing.T) {
-			manager := New(snowPipeServer.URL, snowPipeServer.Client())
+			manager := api.New(snowPipeServer.URL, snowPipeServer.Client())
 			err := manager.DeleteChannel(ctx, channelID, true)
 			require.NoError(t, err)
 		})
 		t.Run("sync=false", func(t *testing.T) {
-			manager := New(snowPipeServer.URL, snowPipeServer.Client())
+			manager := api.New(snowPipeServer.URL, snowPipeServer.Client())
 			err := manager.DeleteChannel(ctx, channelID, false)
 			require.NoError(t, err)
 		})
 	})
 	t.Run("Request failure", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			err: errors.New("bad client"),
 		})
 		err := manager.DeleteChannel(ctx, channelID, true)
 		require.Error(t, err)
 	})
 	t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-		manager := New(snowPipeServer.URL, &mockRequestDoer{
+		manager := api.New(snowPipeServer.URL, &mockRequestDoer{
 			response: &http.Response{
 				StatusCode: http.StatusBadRequest,
 				Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
