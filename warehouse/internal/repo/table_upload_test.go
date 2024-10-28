@@ -111,6 +111,21 @@ func TestTableUploadRepo(t *testing.T) {
 			}
 		})
 
+		t.Run("last exec time is nil", func(t *testing.T) {
+			uploadID := int64(2)
+
+			err := r.Insert(ctx, uploadID, tables)
+			require.NoError(t, err)
+
+			syncsInfos, err := r.SyncsInfo(ctx, uploadID)
+			require.NoError(t, err)
+			require.Len(t, syncsInfos, len(tables))
+			for i := range syncsInfos {
+				require.Zero(t, syncsInfos[i].LastExecAt)
+				require.Zero(t, syncsInfos[i].Duration)
+			}
+		})
+
 		t.Run("invalid sync id", func(t *testing.T) {
 			syncsInfos, err := r.SyncsInfo(ctx, int64(-1))
 			require.NoError(t, err)

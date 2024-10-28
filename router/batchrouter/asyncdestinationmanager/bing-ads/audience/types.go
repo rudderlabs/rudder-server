@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"os"
 
-	bingads "github.com/rudderlabs/bing-ads-go-sdk/bingads"
+	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type Client struct {
@@ -18,6 +19,7 @@ type BingAdsBulkUploader struct {
 	destName      string
 	service       bingads.BulkServiceI
 	logger        logger.Logger
+	statsFactory  stats.Stats
 	client        Client
 	fileSizeLimit int64
 	eventsLimit   int64

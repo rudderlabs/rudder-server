@@ -338,6 +338,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				timeout := uploadIntervalMap[destinationID]
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
+					brt.asyncDestinationStruct[destinationID].PartFileNumber++
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
@@ -365,12 +366,20 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums 
 	if err != nil {
 		panic(err)
 	}
+
+	existingJobRunID := brt.asyncDestinationStruct[destinationID].SourceJobRunID
+	newJobRunID := getFirstSourceJobRunID(originalJobParameters)
+	if newJobRunID != existingJobRunID {
+		brt.asyncDestinationStruct[destinationID].PartFileNumber = 0
+	}
+
 	brt.asyncDestinationStruct[destinationID].Exists = true
 	brt.asyncDestinationStruct[destinationID].AttemptNums = attemptNums
 	brt.asyncDestinationStruct[destinationID].FirstAttemptedAts = firstAttemptedAts
 	brt.asyncDestinationStruct[destinationID].OriginalJobParameters = originalJobParameters
 	brt.asyncDestinationStruct[destinationID].FileName = jsonPath
 	brt.asyncDestinationStruct[destinationID].CreatedAt = time.Now()
+	brt.asyncDestinationStruct[destinationID].SourceJobRunID = newJobRunID
 }
 
 func (brt *Handle) asyncStructCleanUp(destinationID string) {

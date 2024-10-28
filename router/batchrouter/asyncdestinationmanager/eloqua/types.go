@@ -1,10 +1,13 @@
 package eloqua
 
+//go:generate mockgen -destination=../../../../mocks/router/eloqua/mock_eloqua.go -package=mock_bulkservice github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua EloquaService
+
 import (
 	"io"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type EloquaService interface {
@@ -21,6 +24,7 @@ type EloquaService interface {
 type EloquaBulkUploader struct {
 	destName          string
 	logger            logger.Logger
+	statsFactory      stats.Stats
 	authorization     string
 	baseEndpoint      string
 	fileSizeLimit     int64

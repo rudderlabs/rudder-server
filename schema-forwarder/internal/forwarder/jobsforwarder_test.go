@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -36,12 +36,14 @@ func Test_JobsForwarder(t *testing.T) {
 
 	postgres, err := pgdocker.Setup(pool, t)
 	require.NoError(t, err)
+	t.Setenv("JOBS_DB_HOST", postgres.Host)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
 	t.Setenv("JOBS_DB_USER", postgres.User)
 	t.Setenv("JOBS_DB_DB_NAME", postgres.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)

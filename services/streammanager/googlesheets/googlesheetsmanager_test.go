@@ -3,18 +3,14 @@ package googlesheets
 import (
 	"context"
 	"crypto/tls"
-	"flag"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
@@ -22,12 +18,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/testhelper"
-)
-
-var (
-	hold       bool
-	testConfig TestConfig
 )
 
 const (
@@ -39,6 +29,13 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	pool.MaxWait = 2 * time.Minute
+	require.NoError(t, err)
+
+	testConfig, err := SetupTestGoogleSheets(pool, t)
+	require.NoError(t, err)
+
 	mockCtrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
@@ -84,50 +81,6 @@ func Test_Timeout(t *testing.T) {
 	if responseMessage != expectedResponseMessage {
 		t.Errorf("Expected response message %s, got %s.", expectedResponseMessage, responseMessage)
 	}
-}
-
-func TestMain(m *testing.M) {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
-
-	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	pool.MaxWait = 2 * time.Minute
-	if err != nil {
-		log.Printf("Could not connect to docker: %s", err)
-		return -1
-	}
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
-	config, err := SetupTestGoogleSheets(pool, cleanup)
-	if err != nil {
-		log.Printf("Could not start google sheets service: %s", err)
-		return -1
-	}
-	testConfig = *config
-	code := m.Run()
-	blockOnHold()
-
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
 }
 
 type cleaner interface {

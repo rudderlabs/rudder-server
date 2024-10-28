@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"time"
@@ -35,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -48,7 +50,6 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableReplay       bool
 		processorDSLimit   config.ValueLoader[int]
 		routerDSLimit      config.ValueLoader[int]
 		batchRouterDSLimit config.ValueLoader[int]
@@ -57,15 +58,11 @@ type embeddedApp struct {
 }
 
 func (a *embeddedApp) Setup() error {
-	a.config.enableReplay = config.GetBoolVar(types.DefaultReplayEnabled, "Replay.enabled")
 	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
-		return err
-	}
-	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
 		return err
 	}
 	if err := rudderCoreNodeSetup(); err != nil {
@@ -77,6 +74,8 @@ func (a *embeddedApp) Setup() error {
 
 func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	config := config.Default
+	statsFactory := stats.Default
+
 	if !a.setupDone {
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
@@ -90,6 +89,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 
+	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
+	if err != nil {
+		return fmt.Errorf("could not setup tracked users: %w", err)
+	}
+	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
+	if err != nil {
+		return fmt.Errorf("could not run tracked users database migration: %w", err)
+	}
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
@@ -120,7 +127,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(deploymentType, true, statsFactory)
 	if err != nil {
 		return err
 	}
@@ -131,13 +138,25 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		FeaturesRetryMaxAttempts: 10,
 	})
 
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "embedded-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
+	}
+
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
+	defer gatewayDB.Close()
 	if err = gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
 	}
@@ -150,6 +169,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -157,6 +178,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -164,6 +187,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer batchRouterDB.Close()
 
@@ -173,13 +198,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
+	defer errDBForWrite.Close()
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
 	}
@@ -190,6 +220,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer schemaDB.Close()
 
@@ -198,11 +230,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
 			},
 		),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer archivalDB.Close()
 
@@ -213,9 +247,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -225,7 +259,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, statsFactory)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
@@ -235,15 +269,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			_ = enricher.Close()
 		}
 	}()
-
-	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
-	if err != nil {
-		return fmt.Errorf("could not setup tracked users: %w", err)
-	}
-	err = trackedUsersReporter.MigrateDatabase(misc.GetConnectionString(config, "tracked_users"), config)
-	if err != nil {
-		return fmt.Errorf("could not run tracked users database migration: %w", err)
-	}
 
 	proc := processor.New(
 		ctx,
@@ -266,7 +291,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		trackedUsersReporter,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := rtThrottler.NewFactory(config, stats.Default)
+	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
@@ -310,29 +335,29 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			archivalDB,
 			fileUploaderProvider,
 			config,
-			stats.Default,
+			statsFactory,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),
 	}
 
-	rateLimiter, err := gwThrottler.New(stats.Default)
+	rateLimiter, err := gwThrottler.New(statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create gw rate limiter: %w", err)
 	}
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
 	defer drainConfigManager.Stop()
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.DrainConfigRoutine(ctx)
 	}))
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
-	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), stats.Default, a.app, backendconfig.DefaultBackendConfig,
+	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
 		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
@@ -351,23 +376,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
-	if a.config.enableReplay {
-		var replayDB jobsdb.Handle
-		err := replayDB.Setup(
-			jobsdb.ReadWrite, options.ClearDB, "replay",
-		)
-		if err != nil {
-			return fmt.Errorf("could not setup replayDB: %w", err)
-		}
-		replay, err := a.app.Features().Replay.Setup(ctx, config, &replayDB, gatewayDB, routerDB, batchRouterDB)
-		if err != nil {
-			return err
-		}
-		if err := replay.Start(); err != nil {
-			return fmt.Errorf("could not start replay: %w", err)
-		}
-		defer func() { _ = replay.Stop() }()
-	}
 
 	g.Go(func() error {
 		// This should happen only after setupDatabaseTables() is called and journal table migrations are done
@@ -381,8 +389,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	})
 
 	g.Go(func() error {
-		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
-		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		replicationLagStat := statsFactory.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := statsFactory.NewStat("rsources_log_replication_slot", stats.GaugeType)
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
 		return nil
 	})

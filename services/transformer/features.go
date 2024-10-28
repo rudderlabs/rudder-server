@@ -38,6 +38,7 @@ var defaultTransformerFeatures = `{
 	  "HS": true
 	},
 	"regulations": ["AM"],
+	"supportSourceTransformV1": true,
   }`
 
 func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
@@ -73,7 +74,8 @@ func (*noopService) Regulations() []string {
 }
 
 func (*noopService) SourceTransformerVersion() string {
-	return V0
+	// v0 is deprecated
+	return V1
 }
 
 func (*noopService) TransformerProxyVersion() string {

@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/samber/lo"
@@ -73,6 +76,7 @@ func (m *mockFetchSchemaRepo) FetchSchema(context.Context) (model.Schema, model.
 }
 
 func TestSchema_UpdateLocalSchema(t *testing.T) {
+	workspaceID := "test-workspace-id"
 	sourceID := "test_source_id"
 	destinationID := "test_destination_id"
 	namespace := "test_namespace"
@@ -151,8 +155,12 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				schemaMap: map[string]model.WHSchema{},
 			}
 
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			s := Schema{
 				warehouse: model.Warehouse{
+					WorkspaceID: workspaceID,
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -165,10 +173,18 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				schemaRepo:        mockRepo,
 				schemaInWarehouse: schemaInWarehouse,
 			}
+			tags := stats.Tags{
+				"module":        "warehouse",
+				"workspaceId":   s.warehouse.WorkspaceID,
+				"destType":      s.warehouse.Destination.DestinationDefinition.Name,
+				"sourceId":      s.warehouse.Source.ID,
+				"destinationId": s.warehouse.Destination.ID,
+			}
+			s.stats.schemaSize = statsStore.NewTaggedStat("warehouse_schema_size", stats.HistogramType, tags)
 
 			ctx := context.Background()
 
-			err := s.UpdateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
+			err = s.UpdateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 				require.Equal(t, tc.wantSchema, s.localSchema)
@@ -178,6 +194,9 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Empty(t, s.localSchema)
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 			}
+			marshalledSchema, err := json.Marshal(tc.mockSchema.Schema)
+			require.NoError(t, err)
+			require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 
 			err = s.UpdateLocalSchemaWithWarehouse(ctx, uploadID)
 			if tc.wantError == nil {
@@ -188,7 +207,11 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
 				require.Empty(t, s.localSchema)
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
+				require.EqualValues(t, float64(241), statsStore.Get("warehouse_schema_size", tags).LastValue())
 			}
+			marshalledSchema, err = json.Marshal(schemaInWarehouse)
+			require.NoError(t, err)
+			require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 		})
 	}
 }
@@ -711,6 +734,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
 					"loaded_at":    "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -726,6 +750,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -790,6 +815,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -858,6 +884,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -898,6 +925,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -942,6 +970,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -986,6 +1015,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1020,6 +1050,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1067,6 +1098,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1103,6 +1135,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
 					"loaded_at":    "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1133,6 +1166,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 				"rudder_identity_mappings": model.TableSchema{
 					"merge_property_type":  "string",
@@ -1205,6 +1239,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1281,6 +1316,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1369,6 +1405,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1407,6 +1444,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1451,6 +1489,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1495,6 +1534,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1549,6 +1589,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1615,6 +1656,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 			expectedSchema: model.Schema{
@@ -1652,6 +1694,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 					"row_id":       "string",
 					"table_name":   "string",
 					"uuid_ts":      "datetime",
+					"reason":       "string",
 				},
 			},
 		},
@@ -1772,6 +1815,9 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.False(t, schemaChanged)
 	})
 	t.Run("schema changed", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		testSchema := model.Schema{
 			tableName: model.TableSchema{
 				"test_int":       "int",
@@ -1823,6 +1869,14 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 			schemaRepo: mockSchemaRepo,
 			log:        logger.NOP,
 		}
+		tags := stats.Tags{
+			"module":        "warehouse",
+			"workspaceId":   s.warehouse.WorkspaceID,
+			"destType":      s.warehouse.Destination.DestinationDefinition.Name,
+			"sourceId":      s.warehouse.Source.ID,
+			"destinationId": s.warehouse.Destination.ID,
+		}
+		s.stats.schemaSize = statsStore.NewTaggedStat("warehouse_schema_size", stats.HistogramType, tags)
 
 		mockFetchSchemaRepo := &mockFetchSchemaRepo{
 			err:                           nil,
@@ -1839,6 +1893,10 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.Equal(t, schemaInWarehouse, mockSchemaRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 		require.Equal(t, schemaInWarehouse, s.schemaInWarehouse)
 		require.Equal(t, schemaInWarehouse, s.unrecognizedSchemaInWarehouse)
+
+		marshalledSchema, err := json.Marshal(s.localSchema)
+		require.NoError(t, err)
+		require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 	})
 	t.Run("schema not changed", func(t *testing.T) {
 		testSchema := model.Schema{

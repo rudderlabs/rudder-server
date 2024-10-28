@@ -671,127 +671,6 @@ func TestTimingFromJSONString(t *testing.T) {
 	}
 }
 
-func TestGetConfigValue(t *testing.T) {
-	inputs := []struct {
-		key       string
-		value     string
-		warehouse model.Warehouse
-	}{
-		{
-			key:   "k1",
-			value: "v1",
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": "v1",
-					},
-				},
-			},
-		},
-		{
-			key: "u1",
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-		{
-			key:   "u1",
-			value: "v1",
-			warehouse: model.Warehouse{
-				Source: backendconfig.SourceT{
-					ID: "source_id",
-				},
-				Destination: backendconfig.DestinationT{
-					ID:     "destination_id",
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-	}
-	config.Set("Warehouse.pipeline.source_id.destination_id.u1", "v1")
-	for _, input := range inputs {
-		value := GetConfigValue(input.key, input.warehouse)
-		require.Equal(t, value, input.value)
-	}
-}
-
-func TestGetConfigValueBoolString(t *testing.T) {
-	inputs := []struct {
-		key       string
-		value     string
-		warehouse model.Warehouse
-	}{
-		{
-			key:   "k1",
-			value: "true",
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": true,
-					},
-				},
-			},
-		},
-		{
-			key:   "k1",
-			value: "false",
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": false,
-					},
-				},
-			},
-		},
-		{
-			key:   "u1",
-			value: "false",
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-	}
-	for _, input := range inputs {
-		value := GetConfigValueBoolString(input.key, input.warehouse)
-		require.Equal(t, value, input.value)
-	}
-}
-
-func TestGetConfigValueAsMap(t *testing.T) {
-	inputs := []struct {
-		key    string
-		value  map[string]interface{}
-		config map[string]interface{}
-	}{
-		{
-			key: "map",
-			value: map[string]interface{}{
-				"k1": "v1",
-			},
-			config: map[string]interface{}{
-				"map": map[string]interface{}{
-					"k1": "v1",
-				},
-			},
-		},
-		{
-			key:    "map",
-			value:  map[string]interface{}{},
-			config: map[string]interface{}{},
-		},
-	}
-	for idx, input := range inputs {
-		value := GetConfigValueAsMap(input.key, input.config)
-		if !reflect.DeepEqual(value, input.value) {
-			t.Errorf("got %q want %q input %d", value, input.value, idx)
-		}
-	}
-}
-
 func TestJoinWithFormatting(t *testing.T) {
 	separator := ","
 	format := func(idx int, name string) string {
@@ -938,7 +817,7 @@ func TestObjectStorageType(t *testing.T) {
 }
 
 func TestGetTablePathInObjectStorage(t *testing.T) {
-	require.NoError(t, os.Setenv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-test-payload"))
+	t.Setenv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-test-payload")
 	inputs := []struct {
 		namespace string
 		tableName string

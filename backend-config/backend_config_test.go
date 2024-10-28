@@ -16,13 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
@@ -55,6 +57,48 @@ var sampleBackendConfig = ConfigT{
 					IsProcessorEnabled: true,
 				},
 			},
+		},
+	},
+}
+
+var sampleConfigWithConnection = ConfigT{
+	WorkspaceID: sampleWorkspaceID,
+	Sources: []SourceT{
+		{
+			ID:       "1",
+			WriteKey: "d",
+			Enabled:  false,
+		}, {
+			ID:       "2",
+			WriteKey: "d2",
+			Enabled:  false,
+			Destinations: []DestinationT{
+				{
+					ID:                 "d1",
+					Name:               "processor Disabled",
+					IsProcessorEnabled: false,
+				}, {
+					ID:                 "d2",
+					Name:               "processor Enabled",
+					IsProcessorEnabled: true,
+				},
+			},
+		},
+	},
+	Connections: map[string]Connection{
+		"1": {
+			SourceID:         "2",
+			DestinationID:    "d1",
+			Enabled:          true,
+			Config:           map[string]interface{}{"key": "value"},
+			ProcessorEnabled: false,
+		},
+		"2": {
+			SourceID:         "2",
+			DestinationID:    "d2",
+			Enabled:          true,
+			Config:           map[string]interface{}{"key2": "value2"},
+			ProcessorEnabled: true,
 		},
 	},
 }
@@ -262,6 +306,37 @@ func TestConfigUpdate(t *testing.T) {
 		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
 		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleBackendConfig})
 	})
+
+	t.Run("new config with connections", func(t *testing.T) {
+		var (
+			ctrl        = gomock.NewController(t)
+			ctx, cancel = context.WithCancel(context.Background())
+			workspaces  = "foo"
+			cacheStore  = cache.NewMockCache(ctrl)
+		)
+		defer ctrl.Finish()
+		defer cancel()
+
+		wc := NewMockworkspaceConfig(ctrl)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{workspaces: sampleConfigWithConnection}, nil).Times(1)
+
+		var pubSub pubsub.PublishSubscriber
+		bc := &backendConfigImpl{
+			eb:              &pubSub,
+			workspaceConfig: wc,
+			cache:           cacheStore,
+		}
+		bc.curSourceJSON = map[string]ConfigT{workspaces: sampleBackendConfig2}
+
+		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
+		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
+
+		bc.configUpdate(ctx)
+		require.True(t, bc.initialized)
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
+		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleConfigWithConnection})
+		require.Equal(t, bc.curSourceJSON[workspaces].Connections, sampleConfigWithConnection.Connections)
+	})
 }
 
 func TestFilterProcessorEnabledDestinations(t *testing.T) {
@@ -399,42 +474,18 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not connect to docker: %s\n", err)
 	}
-	database := "jobsdb"
-	resourcePostgres, err := pool.Run("postgres", "15-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
+	resourcePostgres, err := postgres.Setup(pool, t)
 	if err != nil {
 		t.Fatalf("Could not start resource: %s\n", err)
 	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			t.Fatalf("Could not purge resource: %s \n", err)
-		}
-	}()
-	port := resourcePostgres.GetPort("5432/tcp")
-	DB_DSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
-	fmt.Println("DB_DSN:", DB_DSN)
-	t.Setenv("JOBS_DB_DB_NAME", database)
-	t.Setenv("JOBS_DB_HOST", "localhost")
-	t.Setenv("JOBS_DB_NAME", database)
-	t.Setenv("JOBS_DB_USER", "rudder")
-	t.Setenv("JOBS_DB_PASSWORD", "password")
-	t.Setenv("JOBS_DB_PORT", port)
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	var db *sql.DB
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", DB_DSN)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		t.Fatalf("Could not connect to docker: %s\n", err)
-	}
-
+	t.Logf("DB_DSN: %s", resourcePostgres.DBDsn)
+	t.Setenv("JOBS_DB_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_HOST", resourcePostgres.Host)
+	t.Setenv("JOBS_DB_NAME", resourcePostgres.Database)
+	t.Setenv("JOBS_DB_USER", resourcePostgres.User)
+	t.Setenv("JOBS_DB_PASSWORD", resourcePostgres.Password)
+	t.Setenv("JOBS_DB_PORT", resourcePostgres.Port)
+	db := resourcePostgres.DB
 	t.Run("initialize from cache when a call to control plane fails", func(t *testing.T) {
 		var (
 			ctrl        = gomock.NewController(t)

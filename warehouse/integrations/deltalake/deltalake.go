@@ -3,6 +3,7 @@ package deltalake
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -10,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
-	dbsql "github.com/databricks/databricks-sql-go"
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -28,23 +31,16 @@ import (
 )
 
 const (
-	host         = "host"
-	port         = "port"
-	path         = "path"
-	token        = "token"
-	catalog      = "catalog"
-	useSTSTokens = "useSTSTokens"
-	userAgent    = "Rudderstack"
+	provider       = warehouseutils.DELTALAKE
+	tableNameLimit = 127 // Maximum table name length in rudder-transformer
+)
 
-	provider = warehouseutils.DELTALAKE
-
-	// Corresponds to the max length set for event rudder-transformer
-	// https://github.com/rudderlabs/rudder-transformer/blob/fb8b818b2cbd05f784117b9f3040856dab1a7346/src/warehouse/v1/util.js#L34
-	tableNameLimit = 127
-
+const (
 	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
 	columnsAlreadyExists = "already exists in root"
+)
 
+const (
 	rudderStagingTableRegex    = "^rudder_staging_.*$"       // matches rudder_staging_* tables
 	nonRudderStagingTableRegex = "^(?!rudder_staging_.*$).*" // matches tables that do not start with rudder_staging_
 )
@@ -131,6 +127,7 @@ type Deltalake struct {
 	Warehouse      model.Warehouse
 	Uploader       warehouseutils.Uploader
 	connectTimeout time.Duration
+	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
 
@@ -148,6 +145,7 @@ type Deltalake struct {
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl := &Deltalake{}
 
+	dl.conf = conf
 	dl.logger = log.Child("integration").Child("deltalake")
 	dl.stats = stat
 
@@ -185,38 +183,50 @@ func (d *Deltalake) Setup(_ context.Context, warehouse model.Warehouse, uploader
 
 // connect connects to the warehouse
 func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
-	port, err := strconv.Atoi(warehouseutils.GetConfigValue(port, d.Warehouse))
+	var (
+		host       = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
+		portString = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
+		path       = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
+		token      = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
+		catalog    = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
+		timeout    = d.connectTimeout
+	)
+
+	port, err := strconv.Atoi(portString)
 	if err != nil {
 		return nil, fmt.Errorf("port is not a number: %w", err)
 	}
 
-	connector, err := dbsql.NewConnector(
-		dbsql.WithServerHostname(warehouseutils.GetConfigValue(host, d.Warehouse)),
-		dbsql.WithPort(port),
-		dbsql.WithHTTPPath(warehouseutils.GetConfigValue(path, d.Warehouse)),
-		dbsql.WithAccessToken(warehouseutils.GetConfigValue(token, d.Warehouse)),
-		dbsql.WithSessionParams(map[string]string{
+	data := sqlconnectconfig.Databricks{
+		Host:    host,
+		Port:    port,
+		Path:    path,
+		Token:   token,
+		Catalog: catalog,
+		Timeout: timeout,
+		SessionParams: map[string]string{
 			"ansi_mode": "false",
-		}),
-		dbsql.WithUserAgentEntry(userAgent),
-		dbsql.WithTimeout(d.connectTimeout),
-		dbsql.WithInitialNamespace(
-			warehouseutils.GetConfigValue(catalog, d.Warehouse),
-			"",
-		),
-		dbsql.WithRetries(d.config.maxRetries, d.config.retryMinWait, d.config.retryMaxWait),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating connector: %w", err)
+		},
+		RetryAttempts:    d.config.maxRetries,
+		MinRetryWaitTime: d.config.retryMinWait,
+		MaxRetryWaitTime: d.config.retryMaxWait,
 	}
 
+	credentialsJSON, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling credentials: %w", err)
+	}
+
+	sqlConnectDB, err := sqlconnect.NewDB("databricks", credentialsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
+	}
 	if err = dbsqllog.SetLogLevel("disabled"); err != nil {
 		return nil, fmt.Errorf("setting log level: %w", err)
 	}
 
-	db := sql.OpenDB(connector)
 	middleware := sqlmiddleware.New(
-		db,
+		sqlConnectDB.SqlDB(),
 		sqlmiddleware.WithStats(d.stats),
 		sqlmiddleware.WithLogger(d.logger),
 		sqlmiddleware.WithKeyAndValues(
@@ -516,10 +526,10 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 
 // tableLocationQuery returns the location query for the table.
 func (d *Deltalake) tableLocationQuery(tableName string) string {
-	enableExternalLocation := warehouseutils.GetConfigValueBoolString("enableExternalLocation", d.Warehouse)
-	externalLocation := warehouseutils.GetConfigValue("externalLocation", d.Warehouse)
+	enableExternalLocation := d.Warehouse.GetBoolDestinationConfig(model.EnableExternalLocationSetting)
+	externalLocation := d.Warehouse.GetStringDestinationConfig(d.conf, model.ExternalLocationSetting)
 
-	if enableExternalLocation != "true" || externalLocation == "" {
+	if enableExternalLocation || externalLocation == "" {
 		return ""
 	}
 
@@ -954,7 +964,7 @@ func (d *Deltalake) authQuery() (string, error) {
 // canUseAuth returns true if the warehouse is configured to use RudderObjectStorage or STS tokens
 func (d *Deltalake) canUseAuth() bool {
 	canUseRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(d.Warehouse.Destination.Config)
-	canUseSTSTokens := warehouseutils.GetConfigValueBoolString(useSTSTokens, d.Warehouse) == "true"
+	canUseSTSTokens := d.Warehouse.GetBoolDestinationConfig(model.UseSTSTokensSetting)
 
 	return canUseRudderStorage || canUseSTSTokens
 }
@@ -972,8 +982,8 @@ func (d *Deltalake) getLoadFolder(location string) string {
 
 // hasAWSCredentials returns true if the warehouse is configured to use AWS credentials
 func (d *Deltalake) hasAWSCredentials() bool {
-	awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, d.Warehouse)
-	awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, d.Warehouse)
+	awsAccessKey := d.Warehouse.GetStringDestinationConfig(d.conf, model.AWSAccessKeySetting)
+	awsSecretKey := d.Warehouse.GetStringDestinationConfig(d.conf, model.AWSAccessSecretSetting)
 
 	return awsAccessKey != "" && awsSecretKey != ""
 }

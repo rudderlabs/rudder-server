@@ -13,7 +13,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/hashicorp/yamux"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"

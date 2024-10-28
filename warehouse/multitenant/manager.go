@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -49,9 +50,9 @@ func (m *Manager) Run(ctx context.Context) {
 	chIn := m.backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for data := range chIn {
 		m.sourceMu.Lock()
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID := range config {
-			for _, source := range config[workspaceID].Sources {
+		wConfig := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID := range wConfig {
+			for _, source := range wConfig[workspaceID].Sources {
 				m.sourceIDToWorkspaceID[source.ID] = workspaceID
 			}
 		}

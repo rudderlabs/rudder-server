@@ -1,0 +1,746 @@
+[
+  {
+    "message": {
+      "context": {
+        "traits": {
+          "email": "rhedricks+5@example.com",
+          "logins": 2,
+          "name": "Richard Hendricks"
+        }
+      },
+      "messageId": "5519f8c0-429e-41b1-a314-b1297f43b61c",
+      "originalTimestamp": "2023-05-12T04:32:48.750+00:00",
+      "receivedAt": "2023-05-12T04:32:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:32:48.750+00:00",
+      "timestamp": "2023-05-12T04:32:48.750+00:00",
+      "type": "identify",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "5519f8c0-429e-41b1-a314-b1297f43b61c",
+      "receivedAt": "2023-05-12T04:32:48.750+00:00",
+      "eventType": "identify",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "event": "Product Track",
+      "messageId": "1b8f4e80-37a6-453c-9368-2ee090dd8fa4",
+      "originalTimestamp": "2023-05-12T04:33:48.750+00:00",
+      "properties": {
+        "product_id": "5",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "receivedAt": "2023-05-12T04:33:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:33:48.750+00:00",
+      "timestamp": "2023-05-12T04:33:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "1b8f4e80-37a6-453c-9368-2ee090dd8fa4",
+      "receivedAt": "2023-05-12T04:33:48.750+00:00",
+      "eventName": "Product Track",
+      "eventType": "track",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "96088371-cbd7-46e5-932b-09ff3f74a147",
+      "name": "Home",
+      "originalTimestamp": "2023-05-12T04:34:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 5",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:34:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:34:48.750+00:00",
+      "timestamp": "2023-05-12T04:34:48.750+00:00",
+      "type": "page",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "96088371-cbd7-46e5-932b-09ff3f74a147",
+      "receivedAt": "2023-05-12T04:34:48.750+00:00",
+      "eventType": "page",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "6c5d48a9-116d-460a-baa4-d42a861c8966",
+      "name": "Main",
+      "originalTimestamp": "2023-05-12T04:35:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 5",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:35:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:35:48.750+00:00",
+      "timestamp": "2023-05-12T04:35:48.750+00:00",
+      "type": "screen",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "6c5d48a9-116d-460a-baa4-d42a861c8966",
+      "receivedAt": "2023-05-12T04:35:48.750+00:00",
+      "eventType": "screen",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "groupId": "5e8a78ba9d32d3b1898a6247",
+      "messageId": "7dbbf719-320c-427a-bc13-590196b92484",
+      "originalTimestamp": "2023-05-12T04:36:48.750+00:00",
+      "receivedAt": "2023-05-12T04:36:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:36:48.750+00:00",
+      "timestamp": "2023-05-12T04:36:48.750+00:00",
+      "traits": {
+        "employees": 4500,
+        "industry": "Technology 5",
+        "name": "Hooli",
+        "plan": "basic"
+      },
+      "type": "group",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "7dbbf719-320c-427a-bc13-590196b92484",
+      "receivedAt": "2023-05-12T04:36:48.750+00:00",
+      "eventType": "group",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "85b39ba2-d840-4ecc-9519-d6bb534e5472",
+      "originalTimestamp": "2023-05-12T04:37:48.750+00:00",
+      "previousId": "gbelson+5@example.com",
+      "receivedAt": "2023-05-12T04:37:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:37:48.750+00:00",
+      "timestamp": "2023-05-12T04:37:48.750+00:00",
+      "type": "alias",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "85b39ba2-d840-4ecc-9519-d6bb534e5472",
+      "receivedAt": "2023-05-12T04:37:48.750+00:00",
+      "eventType": "alias",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "context": {
+        "traits": {
+          "email": "rhedricks+6@example.com",
+          "logins": 2,
+          "name": "Richard Hendricks"
+        }
+      },
+      "messageId": "89fbe252-a3ed-41c8-b9f3-f19f7e9ec863",
+      "originalTimestamp": "2023-05-12T04:38:48.750+00:00",
+      "receivedAt": "2023-05-12T04:38:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:38:48.750+00:00",
+      "timestamp": "2023-05-12T04:38:48.750+00:00",
+      "type": "identify",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "89fbe252-a3ed-41c8-b9f3-f19f7e9ec863",
+      "receivedAt": "2023-05-12T04:38:48.750+00:00",
+      "eventType": "identify",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "event": "Product Track",
+      "messageId": "824f7653-3d75-4e78-8d9d-e936df497f13",
+      "originalTimestamp": "2023-05-12T04:39:48.750+00:00",
+      "properties": {
+        "product_id": "6",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "receivedAt": "2023-05-12T04:39:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:39:48.750+00:00",
+      "timestamp": "2023-05-12T04:39:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "824f7653-3d75-4e78-8d9d-e936df497f13",
+      "receivedAt": "2023-05-12T04:39:48.750+00:00",
+      "eventName": "Product Track",
+      "eventType": "track",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "1f56e6fc-5be6-40d2-a0d3-14015b293919",
+      "name": "Home",
+      "originalTimestamp": "2023-05-12T04:40:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 6",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:40:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:40:48.750+00:00",
+      "timestamp": "2023-05-12T04:40:48.750+00:00",
+      "type": "page",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "1f56e6fc-5be6-40d2-a0d3-14015b293919",
+      "receivedAt": "2023-05-12T04:40:48.750+00:00",
+      "eventType": "page",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "e463cb40-9326-4b22-bd76-b01dab49ef0e",
+      "name": "Main",
+      "originalTimestamp": "2023-05-12T04:41:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 6",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:41:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:41:48.750+00:00",
+      "timestamp": "2023-05-12T04:41:48.750+00:00",
+      "type": "screen",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "e463cb40-9326-4b22-bd76-b01dab49ef0e",
+      "receivedAt": "2023-05-12T04:41:48.750+00:00",
+      "eventType": "screen",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "groupId": "5e8a78ba9d32d3b1898a6247",
+      "messageId": "0d089014-bc87-4543-9c69-c30e86ff6867",
+      "originalTimestamp": "2023-05-12T04:42:48.750+00:00",
+      "receivedAt": "2023-05-12T04:42:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:42:48.750+00:00",
+      "timestamp": "2023-05-12T04:42:48.750+00:00",
+      "traits": {
+        "employees": 4500,
+        "industry": "Technology 6",
+        "name": "Hooli",
+        "plan": "basic"
+      },
+      "type": "group",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "0d089014-bc87-4543-9c69-c30e86ff6867",
+      "receivedAt": "2023-05-12T04:42:48.750+00:00",
+      "eventType": "group",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "a6eb36dc-b3a6-4c16-a311-fdd9354dfb5e",
+      "originalTimestamp": "2023-05-12T04:43:48.750+00:00",
+      "previousId": "gbelson+6@example.com",
+      "receivedAt": "2023-05-12T04:43:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:43:48.750+00:00",
+      "timestamp": "2023-05-12T04:43:48.750+00:00",
+      "type": "alias",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "a6eb36dc-b3a6-4c16-a311-fdd9354dfb5e",
+      "receivedAt": "2023-05-12T04:43:48.750+00:00",
+      "eventType": "alias",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "context": {
+        "traits": {
+          "email": "rhedricks+7@example.com",
+          "logins": 2,
+          "name": "Richard Hendricks"
+        }
+      },
+      "messageId": "13bf264c-1b82-48a9-9718-d2d111aba2e2",
+      "originalTimestamp": "2023-05-12T04:44:48.750+00:00",
+      "receivedAt": "2023-05-12T04:44:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:44:48.750+00:00",
+      "timestamp": "2023-05-12T04:44:48.750+00:00",
+      "type": "identify",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "13bf264c-1b82-48a9-9718-d2d111aba2e2",
+      "receivedAt": "2023-05-12T04:44:48.750+00:00",
+      "eventType": "identify",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "event": "Product Track",
+      "messageId": "0acd70af-2afe-4eb4-b092-cf3dda54c681",
+      "originalTimestamp": "2023-05-12T04:45:48.750+00:00",
+      "properties": {
+        "product_id": "7",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43"
+      },
+      "receivedAt": "2023-05-12T04:45:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:45:48.750+00:00",
+      "timestamp": "2023-05-12T04:45:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "0acd70af-2afe-4eb4-b092-cf3dda54c681",
+      "receivedAt": "2023-05-12T04:45:48.750+00:00",
+      "eventName": "Product Track",
+      "eventType": "track",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "ca5a3529-a90e-4019-929c-422cdb453e30",
+      "name": "Home",
+      "originalTimestamp": "2023-05-12T04:46:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 7",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:46:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:46:48.750+00:00",
+      "timestamp": "2023-05-12T04:46:48.750+00:00",
+      "type": "page",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "ca5a3529-a90e-4019-929c-422cdb453e30",
+      "receivedAt": "2023-05-12T04:46:48.750+00:00",
+      "eventType": "page",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "788d7056-a605-448f-8877-c6972c1316d8",
+      "name": "Main",
+      "originalTimestamp": "2023-05-12T04:47:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 7",
+        "url": "http://www.rudderstack.com"
+      },
+      "receivedAt": "2023-05-12T04:47:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:47:48.750+00:00",
+      "timestamp": "2023-05-12T04:47:48.750+00:00",
+      "type": "screen",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "788d7056-a605-448f-8877-c6972c1316d8",
+      "receivedAt": "2023-05-12T04:47:48.750+00:00",
+      "eventType": "screen",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "groupId": "5e8a78ba9d32d3b1898a6247",
+      "messageId": "c11f1b76-2433-4b6c-857f-cb70bbdddfca",
+      "originalTimestamp": "2023-05-12T04:48:48.750+00:00",
+      "receivedAt": "2023-05-12T04:48:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:48:48.750+00:00",
+      "timestamp": "2023-05-12T04:48:48.750+00:00",
+      "traits": {
+        "employees": 4500,
+        "industry": "Technology 7",
+        "name": "Hooli",
+        "plan": "basic"
+      },
+      "type": "group",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "c11f1b76-2433-4b6c-857f-cb70bbdddfca",
+      "receivedAt": "2023-05-12T04:48:48.750+00:00",
+      "eventType": "group",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "efed87b9-dbf3-43bf-989b-e7ac71649743",
+      "originalTimestamp": "2023-05-12T04:49:48.750+00:00",
+      "previousId": "gbelson+7@example.com",
+      "receivedAt": "2023-05-12T04:49:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:49:48.750+00:00",
+      "timestamp": "2023-05-12T04:49:48.750+00:00",
+      "type": "alias",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "efed87b9-dbf3-43bf-989b-e7ac71649743",
+      "receivedAt": "2023-05-12T04:49:48.750+00:00",
+      "eventType": "alias",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "context": {
+        "traits": {
+          "as": "non escaped column",
+          "between": "non escaped column",
+          "email": "rhedricks+8@example.com",
+          "logins": 2,
+          "name": "Richard Hendricks"
+        }
+      },
+      "messageId": "3a79a351-dc6c-43f3-b761-2aae5bccf80a",
+      "originalTimestamp": "2023-05-12T04:50:48.750+00:00",
+      "receivedAt": "2023-05-12T04:50:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:50:48.750+00:00",
+      "timestamp": "2023-05-12T04:50:48.750+00:00",
+      "type": "identify",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "3a79a351-dc6c-43f3-b761-2aae5bccf80a",
+      "receivedAt": "2023-05-12T04:50:48.750+00:00",
+      "eventType": "identify",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "event": "Product Track",
+      "messageId": "9a072d06-c7de-43da-83c6-4afd700940d1",
+      "originalTimestamp": "2023-05-12T04:51:48.750+00:00",
+      "properties": {
+        "product_id": "8",
+        "rating": 3,
+        "review_body": "OK for the price. It works but the material feels flimsy.",
+        "review_id": "86ac1cd43",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "receivedAt": "2023-05-12T04:51:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:51:48.750+00:00",
+      "timestamp": "2023-05-12T04:51:48.750+00:00",
+      "type": "track",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "9a072d06-c7de-43da-83c6-4afd700940d1",
+      "receivedAt": "2023-05-12T04:51:48.750+00:00",
+      "eventName": "Product Track",
+      "eventType": "track",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "ff4c965e-f2b3-4f9a-b5a2-d540d72d4535",
+      "name": "Home",
+      "originalTimestamp": "2023-05-12T04:52:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 8",
+        "url": "http://www.rudderstack.com",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "receivedAt": "2023-05-12T04:52:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:52:48.750+00:00",
+      "timestamp": "2023-05-12T04:52:48.750+00:00",
+      "type": "page",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "ff4c965e-f2b3-4f9a-b5a2-d540d72d4535",
+      "receivedAt": "2023-05-12T04:52:48.750+00:00",
+      "eventType": "page",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "16d73325-0eea-4ae7-bc0c-7c9913c1d71a",
+      "name": "Main",
+      "originalTimestamp": "2023-05-12T04:53:48.750+00:00",
+      "properties": {
+        "title": "Home | RudderStack | 8",
+        "url": "http://www.rudderstack.com",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "receivedAt": "2023-05-12T04:53:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:53:48.750+00:00",
+      "timestamp": "2023-05-12T04:53:48.750+00:00",
+      "type": "screen",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "16d73325-0eea-4ae7-bc0c-7c9913c1d71a",
+      "receivedAt": "2023-05-12T04:53:48.750+00:00",
+      "eventType": "screen",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "groupId": "5e8a78ba9d32d3b1898a6247",
+      "messageId": "6c062c97-eb80-427a-8877-2ace53782280",
+      "originalTimestamp": "2023-05-12T04:54:48.750+00:00",
+      "receivedAt": "2023-05-12T04:54:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:54:48.750+00:00",
+      "timestamp": "2023-05-12T04:54:48.750+00:00",
+      "traits": {
+        "employees": 4500,
+        "industry": "Technology 8",
+        "name": "Hooli",
+        "plan": "basic",
+        "as": "non escaped column",
+        "between": "non escaped column"
+      },
+      "type": "group",
+      "userId": "{{.userID}}"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "6c062c97-eb80-427a-8877-2ace53782280",
+      "receivedAt": "2023-05-12T04:54:48.750+00:00",
+      "eventType": "group",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  },
+  {
+    "message": {
+      "messageId": "b16ac193-6ee8-4258-8fef-57d674cb75cf",
+      "originalTimestamp": "2023-05-12T04:55:48.750+00:00",
+      "previousId": "gbelson+8@example.com",
+      "receivedAt": "2023-05-12T04:55:48.750+00:00",
+      "request_ip": "[::1]",
+      "sentAt": "2023-05-12T04:55:48.750+00:00",
+      "timestamp": "2023-05-12T04:55:48.750+00:00",
+      "type": "alias",
+      "userId": "{{.userID}}",
+      "as": "non escaped column",
+      "between": "non escaped column"
+    },
+    "metadata": {
+      "sourceId": "{{.sourceID}}",
+      "sourceName": "Rudderstack Sample HTTP Source",
+      "workspaceId": "{{.workspaceID}}",
+      "sourceType": "HTTP",
+      "destinationId": "{{.destID}}",
+      "destinationType": "{{.destType}}",
+      "messageId": "b16ac193-6ee8-4258-8fef-57d674cb75cf0",
+      "receivedAt": "2023-05-12T04:55:48.750+00:00",
+      "eventType": "alias",
+      "sourceDefinitionId": "1dCzCUAtpWDzNxgGUYzq9sZdZZB"
+    },
+    "destination": {{.destination}}
+  }
+]

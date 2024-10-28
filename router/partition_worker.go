@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -38,7 +39,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		}
 		pw.workers[i] = worker
 
-		pw.g.Go(misc.WithBugsnag(func() error {
+		pw.g.Go(crash.Wrapper(func() error {
 			worker.workLoop()
 			return nil
 		}))
@@ -67,7 +68,7 @@ type partitionWorker struct {
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
 	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers)
-	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Since(start)
+	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
 	worked := pw.pickupCount > 0
 	if worked && !pw.limitsReached { // sleep only if we worked and we didn't reach the limits

@@ -124,6 +124,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("DEPLOYMENT_TYPE", deployment.DedicatedType)
 			config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
+			config.Set("DB.host", postgresContainer.Host)
 			config.Set("DB.port", postgresContainer.Port)
 			config.Set("DB.user", postgresContainer.User)
 			config.Set("DB.name", postgresContainer.Database)

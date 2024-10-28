@@ -16,7 +16,7 @@
         "destinations": [
           {
           "config": {
-            "hostName": "localhost",
+            "hostName": "{{.kafkaHost}}",
             "port": "{{.kafkaPort}}",
             "topic": "{{.kafkaTopic}}",
             "sslEnabled": false,

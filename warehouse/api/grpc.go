@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -198,7 +199,12 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 		offset = 0
 	}
 
-	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	var sourceIDs []string
+	if request.SourceId != "" {
+		sourceIDs = []string{request.SourceId}
+	} else {
+		sourceIDs = g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
+	}
 	if len(sourceIDs) == 0 {
 		return &proto.WHUploadsResponse{},
 			status.Errorf(codes.Code(code.Code_UNAUTHENTICATED), "no sources found for workspace: %v", request.WorkspaceId)
@@ -237,7 +243,7 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 	}
 
 	uploads := lo.Map(uploadInfos, func(item model.UploadInfo, index int) *proto.WHUploadResponse {
-		return &proto.WHUploadResponse{
+		ur := &proto.WHUploadResponse{
 			Id:               item.ID,
 			SourceId:         item.SourceID,
 			DestinationId:    item.DestinationID,
@@ -249,12 +255,17 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 			CreatedAt:        timestamppb.New(item.CreatedAt),
 			FirstEventAt:     timestamppb.New(item.FirstEventAt),
 			LastEventAt:      timestamppb.New(item.LastEventAt),
-			LastExecAt:       timestamppb.New(item.LastExecAt),
-			NextRetryTime:    timestamppb.New(item.NextRetryTime),
 			Duration:         int32(item.Duration),
 			Tables:           []*proto.WHTable{},
 			IsArchivedUpload: item.IsArchivedUpload,
 		}
+		if !item.NextRetryTime.IsZero() {
+			ur.NextRetryTime = timestamppb.New(item.NextRetryTime)
+		}
+		if !item.LastExecAt.IsZero() {
+			ur.LastExecAt = timestamppb.New(item.LastExecAt)
+		}
+		return ur
 	})
 
 	response := &proto.WHUploadsResponse{Uploads: uploads, Pagination: &proto.Pagination{
@@ -309,19 +320,22 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 	}
 
 	tables := lo.Map(syncTableInfos, func(item model.TableUploadInfo, index int) *proto.WHTable {
-		return &proto.WHTable{
-			Id:         item.ID,
-			UploadId:   item.UploadID,
-			Name:       item.Name,
-			Status:     item.Status,
-			Error:      item.Error,
-			LastExecAt: timestamppb.New(syncUploadInfo.LastExecAt),
-			Count:      int32(item.Count),
-			Duration:   int32(item.Duration),
+		wht := &proto.WHTable{
+			Id:       item.ID,
+			UploadId: item.UploadID,
+			Name:     item.Name,
+			Status:   item.Status,
+			Error:    item.Error,
+			Count:    int32(item.Count),
+			Duration: int32(item.Duration),
 		}
+		if !item.LastExecAt.IsZero() {
+			wht.LastExecAt = timestamppb.New(item.LastExecAt)
+		}
+		return wht
 	})
 
-	return &proto.WHUploadResponse{
+	ur := &proto.WHUploadResponse{
 		Id:               syncUploadInfo.ID,
 		SourceId:         syncUploadInfo.SourceID,
 		DestinationId:    syncUploadInfo.DestinationID,
@@ -333,12 +347,17 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 		CreatedAt:        timestamppb.New(syncUploadInfo.CreatedAt),
 		FirstEventAt:     timestamppb.New(syncUploadInfo.FirstEventAt),
 		LastEventAt:      timestamppb.New(syncUploadInfo.LastEventAt),
-		LastExecAt:       timestamppb.New(syncUploadInfo.LastExecAt),
-		NextRetryTime:    timestamppb.New(syncUploadInfo.NextRetryTime),
 		Duration:         int32(syncUploadInfo.Duration),
 		Tables:           tables,
 		IsArchivedUpload: syncUploadInfo.IsArchivedUpload,
-	}, nil
+	}
+	if !syncUploadInfo.NextRetryTime.IsZero() {
+		ur.NextRetryTime = timestamppb.New(syncUploadInfo.NextRetryTime)
+	}
+	if !syncUploadInfo.LastExecAt.IsZero() {
+		ur.LastExecAt = timestamppb.New(syncUploadInfo.LastExecAt)
+	}
+	return ur, nil
 }
 
 func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {

@@ -1,0 +1,8 @@
+version: "3.9"
+
+services:
+  gcs:
+    image: fsouza/fake-gcs-server:latest
+    ports:
+      - "4443"
+    command: [ "-scheme", "http", "-location", "us-east-1", "-backend", "memory" ]

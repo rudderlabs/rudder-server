@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -19,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var useGlueConfig = "useGlue"
 
 // glue specific config
 var (
@@ -41,15 +40,17 @@ type GlueSchemaRepository struct {
 	s3prefix   string
 	Warehouse  model.Warehouse
 	Namespace  string
+	conf       *config.Config
 	logger     logger.Logger
 }
 
-func NewGlueSchemaRepository(wh model.Warehouse, log logger.Logger) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(conf *config.Config, log logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
+		s3bucket:  wh.GetStringDestinationConfig(conf, model.AWSBucketNameSetting),
+		s3prefix:  wh.GetStringDestinationConfig(conf, model.AWSPrefixSetting),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
+		conf:      conf,
 		logger:    log.Child("schema-repository"),
 	}
 
@@ -262,7 +263,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName
 	gl.logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
-	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
+	if layout := gl.Warehouse.GetStringDestinationConfig(gl.conf, model.TimeWindowLayoutSetting); layout == "" {
 		return nil
 	}
 
@@ -352,7 +353,7 @@ func (gl *GlueSchemaRepository) partitionColumns() (columns []*glue.Column, err 
 		partitionGroups map[string]string
 	)
 
-	if layout = warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
+	if layout = gl.Warehouse.GetStringDestinationConfig(gl.conf, model.TimeWindowLayoutSetting); layout == "" {
 		return
 	}
 

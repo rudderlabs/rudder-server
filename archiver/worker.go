@@ -3,9 +3,11 @@ package archiver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,8 +72,12 @@ start:
 
 	workspaceID := jobs[0].WorkspaceId
 	log := w.log.With("workspaceID", workspaceID)
-	storagePrefs, err := w.storageProvider.GetStoragePreferences(workspaceID)
+	storagePrefs, err := w.storageProvider.GetStoragePreferences(w.lifecycle.ctx, workspaceID)
 	if err != nil {
+		if errors.Is(err, fileuploader.ErrNotSubscribed) {
+			log.Debug("not subscribed to backend config")
+			return false
+		}
 		log.Errorw("failed to fetch storage preferences", "error", err)
 		if err := w.markStatus(
 			jobs,
@@ -145,18 +151,25 @@ func (w *worker) Stop() {
 }
 
 func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, error) {
-	defer w.uploadLimiter.Begin(w.sourceID)()
+	defer w.uploadLimiter.Begin("")()
 	firstJobCreatedAt := jobs[0].CreatedAt.UTC()
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 	workspaceID := jobs[0].WorkspaceId
 
-	gzWriter := fileuploader.NewGzMultiFileWriter()
 	filePath := path.Join(
 		lo.Must(misc.CreateTMPDIR()),
 		"rudder-backups",
 		w.sourceID,
 		fmt.Sprintf("%d_%d_%s_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID, uuid.NewString()),
 	)
+	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+		return "", fmt.Errorf("creating gz file %q: mkdir error: %w", filePath, err)
+	}
+	gzWriter, err := misc.CreateGZ(filePath)
+	if err != nil {
+		return "", fmt.Errorf("create gz writer: %w", err)
+	}
+	defer func() { _ = os.Remove(filePath) }()
 
 	for _, job := range jobs {
 		j, err := marshalJob(job)
@@ -164,7 +177,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 			_ = gzWriter.Close()
 			return "", fmt.Errorf("marshal job: %w", err)
 		}
-		if _, err := gzWriter.Write(filePath, append(j, '\n')); err != nil {
+		if _, err := gzWriter.Write(append(j, '\n')); err != nil {
 			_ = gzWriter.Close()
 			return "", fmt.Errorf("write to file: %w", err)
 		}
@@ -172,9 +185,8 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	if err := gzWriter.Close(); err != nil {
 		return "", fmt.Errorf("close writer: %w", err)
 	}
-	defer func() { _ = os.Remove(filePath) }()
 
-	fileUploader, err := w.storageProvider.GetFileManager(workspaceID)
+	fileUploader, err := w.storageProvider.GetFileManager(w.lifecycle.ctx, workspaceID)
 	if err != nil {
 		return "", fmt.Errorf("no file manager found: %w", err)
 	}
@@ -200,7 +212,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 }
 
 func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
-	defer w.fetchLimiter.Begin(w.sourceID)()
+	defer w.fetchLimiter.Begin("")()
 	params := w.queryParams
 	params.PayloadSizeLimit = w.payloadLimitFunc(w.config.payloadLimit())
 	params.EventsLimit = w.config.eventsLimit()
@@ -230,7 +242,7 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 func (w *worker) markStatus(
 	jobs []*jobsdb.JobT, state string, response []byte,
 ) error {
-	defer w.updateLimiter.Begin(w.sourceID)()
+	defer w.updateLimiter.Begin("")()
 	workspaceID := jobs[0].WorkspaceId
 	if err := misc.RetryWithNotify(
 		w.lifecycle.ctx,

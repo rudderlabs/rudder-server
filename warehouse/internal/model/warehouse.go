@@ -1,22 +1,11 @@
 package model
 
 import (
+	"fmt"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-)
-
-type DestinationConfigSetting interface {
-	String() string
-	protected()
-}
-
-type destConfSetting string
-
-func (destConfSetting) protected()       {}
-func (s destConfSetting) String() string { return string(s) }
-
-var (
-	PreferAppendSetting     DestinationConfigSetting = destConfSetting("preferAppend")
-	UseRudderStorageSetting DestinationConfigSetting = destConfSetting("useRudderStorage")
 )
 
 type Warehouse struct {
@@ -36,6 +25,31 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 		}
 	}
 	return false
+}
+
+func (w *Warehouse) GetStringDestinationConfig(conf *config.Config, key DestinationConfigSetting) string {
+	configKey := fmt.Sprintf("Warehouse.pipeline.%s.%s.%s", w.Source.ID, w.Destination.ID, key)
+	if conf.IsSet(configKey) {
+		return conf.GetString(configKey, "")
+	}
+
+	destConfig := w.Destination.Config
+	if destConfig[key.String()] != nil {
+		if val, ok := destConfig[key.String()].(string); ok {
+			return val
+		}
+	}
+	return ""
+}
+
+func (w *Warehouse) GetMapDestinationConfig(key DestinationConfigSetting) map[string]interface{} {
+	destConfig := w.Destination.Config
+	if destConfig[key.String()] != nil {
+		if val, ok := destConfig[key.String()].(map[string]interface{}); ok {
+			return val
+		}
+	}
+	return map[string]interface{}{}
 }
 
 func (w *Warehouse) GetPreferAppendSetting() bool {

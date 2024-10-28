@@ -11,6 +11,7 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -77,24 +78,58 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	if os.Getenv("SLOW") == "0" {
-		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-
 	hold = os.Getenv("HOLD") == "true"
 
-	var tearDownStart time.Time
-	defer func() {
-		if tearDownStart == (time.Time{}) {
-			t.Log("--- Teardown done (unexpected)")
-		} else {
-			t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
-		}
-	}()
+	t.Run("common connection pool to database", func(t *testing.T) {
+		var tearDownStart time.Time
+		defer func() {
+			if tearDownStart == (time.Time{}) {
+				t.Log("--- Teardown done (unexpected)")
+			} else {
+				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
+			}
+		}()
 
-	svcCtx, svcCancel := context.WithCancel(context.Background())
-	svcDone := setupMainFlow(svcCtx, t)
-	sendEventsToGateway(t)
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		svcDone := setupMainFlow(svcCtx, t, true)
+		sendEventsToGateway(t)
+
+		testCases(t)
+
+		blockOnHold(t)
+		svcCancel()
+		t.Log("Waiting for service to stop")
+		<-svcDone
+
+		tearDownStart = time.Now()
+	})
+
+	t.Run("separate connection pools to database", func(t *testing.T) {
+		var tearDownStart time.Time
+		defer func() {
+			if tearDownStart == (time.Time{}) {
+				t.Log("--- Teardown done (unexpected)")
+			} else {
+				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
+			}
+		}()
+
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		svcDone := setupMainFlow(svcCtx, t, false)
+		sendEventsToGateway(t)
+
+		testCases(t)
+
+		blockOnHold(t)
+		svcCancel()
+		t.Log("Waiting for service to stop")
+		<-svcDone
+
+		tearDownStart = time.Now()
+	})
+}
+
+func testCases(t *testing.T) {
 	t.Run("webhook", func(t *testing.T) {
 		require.Eventually(t, func() bool {
 			return webhook.RequestsCount() == 11
@@ -206,7 +241,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Ports[0])
+		kafkaHost := kafkaContainer.Brokers[0]
 
 		// Create new consumer
 		tc := testutil.New("tcp", kafkaHost)
@@ -261,16 +296,9 @@ func TestMainFlow(t *testing.T) {
 		}`)
 		sendEvent(t, payload, "beacon/v1/batch", writeKey)
 	})
-
-	blockOnHold(t)
-	svcCancel()
-	t.Log("Waiting for service to stop")
-	<-svcDone
-
-	tearDownStart = time.Now()
 }
 
-func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
+func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan struct{} {
 	setupStart := time.Now()
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
@@ -291,7 +319,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaContainer.Ports[0])
+		return waitForKafka(kafkaCtx, t, kafkaContainer.Brokers[0])
 	})
 	containersGroup.Go(func() (err error) {
 		redisContainer, err = redis.Setup(containersCtx, pool, t)
@@ -319,10 +347,15 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		t.Log("INFO: No .env file found.")
 	}
 
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	if !commonPool {
+		t.Setenv("RSERVER_DB_POOL_SHARED", strconv.FormatBool(commonPool))
+	}
 
 	httpPortInt, err := kithelper.GetFreePort()
 	require.NoError(t, err)
@@ -343,6 +376,9 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Cleanup(disableDestinationWebhook.Close)
 	disableDestinationWebhookURL = disableDestinationWebhook.Server.URL
 
+	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
+	require.NoError(t, err)
+
 	writeKey = rand.String(27)
 	workspaceID = rand.String(27)
 	mapWorkspaceConfig := map[string]any{
@@ -350,12 +386,15 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"disableDestinationwebhookUrl": disableDestinationWebhookURL,
 		"writeKey":                     writeKey,
 		"workspaceId":                  workspaceID,
+		"postgresHost":                 postgresContainer.Host,
 		"postgresPort":                 postgresContainer.Port,
 		"address":                      redisContainer.Addr,
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
+		"kafkaPort":                    kafkaPort,
+		"kafkaHost":                    kafkaHost,
 	}
-	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Ports[0]
+	t.Logf("workspace config: %v", mapWorkspaceConfig)
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,
@@ -818,8 +857,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 	return messages, errors
 }
 
-func waitForKafka(ctx context.Context, t *testing.T, port string) error {
-	kafkaHost := "localhost:" + port
+func waitForKafka(ctx context.Context, t *testing.T, kafkaHost string) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	for {
 		select {

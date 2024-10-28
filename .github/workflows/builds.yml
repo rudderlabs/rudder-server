@@ -101,13 +101,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Build image (no-push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          push: false
+          tags: ${{ matrix.build-config.tags }}
+          labels: ${{ matrix.build-config.labels }}
+          build-args: |
+            BUILD_DATE=${{ needs.docker-oss-meta.outputs.build-date }}
+            VERSION=${{ needs.docker-oss-meta.outputs.version }}
+            COMMIT_HASH=${{ github.sha }}
+            REVISION=${{ needs.docker-oss-meta.outputs.revision }}
+          outputs: type=docker,dest=${{ runner.temp }}/local-rudder-server.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v ${{ runner.temp }}:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/local-rudder-server.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
+        if: success()
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -120,7 +145,7 @@ jobs:
             VERSION=${{ needs.docker-oss-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
-
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   docker-ent-meta:
     runs-on: ubuntu-latest
     outputs:
@@ -177,11 +202,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build image (no-push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          push: false
+          tags: ${{ matrix.build-config.tags }}
+          labels: ${{ matrix.build-config.labels }}
+          build-args: |
+            BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
+            VERSION=${{ needs.docker-ent-meta.outputs.version }}
+            COMMIT_HASH=${{ github.sha }}
+            REVISION=${{ needs.docker-ent-meta.outputs.revision }}
+            ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
+          outputs: type=docker,dest=${{ runner.temp }}/local-rudder-server.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v ${{ runner.temp }}:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/local-rudder-server.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
+        if: success()
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -195,6 +246,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
@@ -251,11 +303,37 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build image (no-push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.build-config.platform }}
+          file: ./suppression-backup-service/Dockerfile
+          push: false
+          tags: ${{ matrix.build-config.tags }}
+          labels: ${{ matrix.build-config.labels }}
+          build-args: |
+            BUILD_DATE=${{ needs.docker-sbsvc-meta.outputs.build-date }}
+            VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
+            COMMIT_HASH=${{ github.sha }}
+            REVISION=${{ needs.docker-sbsvc-meta.outputs.revision }}
+          outputs: type=docker,dest=${{ runner.temp }}/suppression-backup-service.tar
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache,mode=max,tag=temp
+      - name: Run TruffleHog
+        run: |
+          docker pull trufflesecurity/trufflehog:latest
+          docker run --rm -v ${{ runner.temp }}:/tmp \
+            trufflesecurity/trufflehog:latest \
+            docker --image file:///tmp/suppression-backup-service.tar \
+            --github-actions \
+            --no-verification \
+            --fail
       - name: Build and push
+        if: success()
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -269,6 +347,7 @@ jobs:
             VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-sbsvc-meta.outputs.revision }}
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache,tag=temp
   create-manifest-docker-oss:
     runs-on: ubuntu-latest
     needs: [ docker-oss, docker-oss-meta ]
@@ -276,7 +355,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -299,7 +378,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -322,7 +401,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}

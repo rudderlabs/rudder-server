@@ -23,6 +23,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -351,15 +352,18 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 
 func TestRefreshDSList(t *testing.T) {
 	_ = startPostgres(t)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
+		stats: statStore,
 	}
 
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(ReadWrite, false, prefix)
+	err = jobsDB.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -379,15 +383,18 @@ func TestJobsDBTimeout(t *testing.T) {
 	_ = startPostgres(t)
 	defaultWorkspaceID := "workspaceId"
 	c := config.New()
+	statStore, err := memstats.New()
+	require.NoError(t, err)
 
 	c.Set("JobsDB.maxDSSize", 10)
 	jobDB := Handle{
 		config: c,
+		stats:  statStore,
 	}
 
 	customVal := "MOCKDS"
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobDB.Setup(ReadWrite, false, prefix)
+	err = jobDB.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -463,6 +470,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 1)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
 	triggerAddNewDS1 := make(chan time.Time)
 	// jobsDB-1 setup
 	jobsDB1 := &Handle{
@@ -470,9 +479,10 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 			return triggerAddNewDS1
 		},
 		config: c,
+		stats:  statStore,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB1.Setup(ReadWrite, false, prefix)
+	err = jobsDB1.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
 	defer jobsDB1.TearDown()
@@ -484,6 +494,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 			return triggerAddNewDS2
 		},
 		config: c,
+		stats:  statStore,
 	}
 	err = jobsDB2.Setup(ReadWrite, false, prefix)
 	require.NoError(t, err)
@@ -564,13 +575,16 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		triggerAddNewDS := make(chan time.Time)
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
+		statStore, err := memstats.New()
+		require.NoError(t, err)
 		jobsDB := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
 			},
 			config: c,
+			stats:  statStore,
 		}
-		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
+		err = jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 		require.NoError(t, err)
 		defer jobsDB.TearDown()
 		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -627,17 +641,21 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		triggerRefreshDS := make(chan time.Time)
 		triggerAddNewDS1 := make(chan time.Time)
 
+		statStore, err := memstats.New()
+		require.NoError(t, err)
+
 		// jobsDB-1 setup
 		jobsDB1 := &Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS1
 			},
 			config: c,
+			stats:  statStore,
 		}
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
 		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
-		err := jobsDB1.Setup(ReadWrite, true, prefix)
+		err = jobsDB1.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobsDB1.TearDown()
 		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -652,6 +670,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 				return triggerRefreshDS
 			},
 			config: c,
+			stats:  statStore,
 		}
 		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
@@ -668,6 +687,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 				return triggerRefreshDS
 			},
 			config: c,
+			stats:  statStore,
 		}
 		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix)
 		require.NoError(t, err)
@@ -752,6 +772,9 @@ func TestCacheScenarios(t *testing.T) {
 		maxDSSize := 1
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", maxDSSize)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		var dbWithOneLimit *Handle
 		triggerAddNewDS := make(chan time.Time)
 		if limit > 0 {
@@ -759,11 +782,13 @@ func TestCacheScenarios(t *testing.T) {
 				"cache",
 				WithDSLimit(config.SingleValueLoader(limit)),
 				WithConfig(c),
+				WithStats(statsStore),
 			)
 		} else {
 			dbWithOneLimit = NewForReadWrite(
 				"cache",
 				WithConfig(c),
+				WithStats(statsStore),
 			)
 		}
 		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
@@ -771,7 +796,7 @@ func TestCacheScenarios(t *testing.T) {
 		}
 
 		prefix := strings.ToLower(rsRand.String(5))
-		err := dbWithOneLimit.Setup(ReadWrite, false, prefix)
+		err = dbWithOneLimit.Setup(ReadWrite, false, prefix)
 		require.NoError(t, err)
 		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
 		defer dbWithOneLimit.TearDown()
@@ -1178,7 +1203,7 @@ func TestFailExecuting(t *testing.T) {
 }
 
 func TestMaxAgeCleanup(t *testing.T) {
-	_ = startPostgres(t)
+	pgContainer := startPostgres(t)
 	customVal := "CUSTOMVAL"
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
@@ -1201,24 +1226,17 @@ func TestMaxAgeCleanup(t *testing.T) {
 	}
 
 	destinationID := strings.ToLower(rsRand.String(5))
-	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "0")
-	triggerJobCleanup := make(chan time.Time)
-	jobsDB := &Handle{
-		TriggerJobCleanUp: func() <-chan time.Time {
-			return triggerJobCleanup
-		},
-	}
+	t.Setenv("RSERVER_JOBS_DB_JOB_MAX_AGE", "1ms")
+	jobsDB := &Handle{dbHandle: pgContainer.DB}
 	tablePrefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(
+	require.NoError(t, jobsDB.Setup(
 		ReadWrite,
 		true,
 		tablePrefix,
-	)
-	require.NoError(t, err)
-	defer jobsDB.TearDown()
+	))
 
 	// run cleanup once with an empty db
-	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
+	require.NoError(t, jobsDB.doCleanup(context.Background()))
 
 	// store some jobs
 	require.NoError(
@@ -1255,9 +1273,15 @@ func TestMaxAgeCleanup(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	require.NoError(t, jobsDB.doCleanup(context.Background(), 200))
-	triggerJobCleanup <- time.Now()
-	triggerJobCleanup <- time.Now()
+	// start again to trigger cleanup
+	jobsDB.TearDown()
+	jobsDB = &Handle{dbHandle: pgContainer.DB}
+	require.NoError(t, jobsDB.Setup(
+		ReadWrite,
+		false,
+		tablePrefix,
+	))
+	defer jobsDB.TearDown()
 
 	abortedJobs, err := jobsDB.GetAborted(
 		context.Background(),
@@ -1300,14 +1324,17 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 1)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
 		config: c,
+		stats:  statStore,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
+	err = jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -1412,14 +1439,17 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	_ = startPostgres(t)
 	c := config.New()
 	c.Set("JobsDB.maxDSSize", 1)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
 		},
 		config: c,
+		stats:  statStore,
 	}
-	err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
+	err = jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -1446,6 +1476,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs := generateJobs("param-1", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("stored jobs")
 
 	parameterValues, err := jobsDB.GetDistinctParameterValues(context.Background(), "param")
 	require.NoError(t, err)
@@ -1466,6 +1497,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs = generateJobs("param-2", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("stored jobs again")
 
 	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
 	require.NoError(t, err)
@@ -1484,6 +1516,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	jobs = generateJobs("param-3", 2)
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
+	t.Log("and stored jobs again")
 
 	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
 	require.NoError(t, err)
@@ -1508,6 +1541,7 @@ type testingT interface {
 	FailNow()
 	Setenv(key, value string)
 	Log(...interface{})
+	Logf(format string, args ...interface{})
 	Cleanup(func())
 	Failed() bool
 }
@@ -1522,9 +1556,9 @@ func startPostgres(t testingT) *postgres.Resource {
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
 	t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
 	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("JOBS_DB_USER", postgresContainer.User)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
-	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	initJobsDB()
 	return postgresContainer
 }

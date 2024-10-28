@@ -1,11 +1,7 @@
 package rruntime
 
 import (
-	"context"
-
-	"github.com/bugsnag/bugsnag-go/v2"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 // Go Starts the execution of the function passed as argument in a new Goroutine
@@ -23,16 +19,14 @@ import (
 //	})
 func Go(function func()) {
 	go func() {
-		ctx := bugsnag.StartSession(context.Background())
-		defer misc.BugsnagNotify(ctx, "Core")()
+		defer crash.Notify("Core")()
 		function()
 	}()
 }
 
 func GoForWarehouse(function func()) {
 	go func() {
-		ctx := bugsnag.StartSession(context.Background())
-		defer misc.BugsnagNotify(ctx, "Warehouse")()
+		defer crash.Notify("Warehouse")()
 		function()
 	}()
 }

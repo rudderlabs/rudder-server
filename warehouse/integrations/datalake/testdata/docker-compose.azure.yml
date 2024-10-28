@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  azure:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    ports:
+      - "10000"
+    environment:
+      - AZURITE_ACCOUNTS=MYACCESSKEY:TVlTRUNSRVRLRVk=
+      - DefaultEndpointsProtocol=http
+    healthcheck:
+      test: nc -z 0.0.0.0 10000 || exit 1
+      interval: 1s
+      retries: 25

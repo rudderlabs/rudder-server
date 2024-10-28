@@ -6,20 +6,25 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/bigquery"
+	"google.golang.org/api/option"
+
 	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 func TestQueryWrapper(t *testing.T) {
 	if _, exists := os.LookupEnv(bqHelper.TestKey); !exists {
+		if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+			t.Fatalf("%s environment variable not set", bqHelper.TestKey)
+		}
 		t.Skipf("Skipping %s as %s is not set", t.Name(), bqHelper.TestKey)
 	}
 
@@ -28,10 +33,11 @@ func TestQueryWrapper(t *testing.T) {
 
 	ctx := context.Background()
 
-	db, err := bigquery.Connect(ctx, &bigquery.BQCredentials{
-		ProjectID:   bqTestCredentials.ProjectID,
-		Credentials: bqTestCredentials.Credentials,
-	})
+	db, err := bigquery.NewClient(
+		ctx,
+		bqTestCredentials.ProjectID,
+		option.WithCredentialsJSON([]byte(bqTestCredentials.Credentials)),
+	)
 	require.NoError(t, err)
 
 	testCases := []struct {
@@ -57,11 +63,7 @@ func TestQueryWrapper(t *testing.T) {
 	)
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 

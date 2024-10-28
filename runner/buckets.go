@@ -19,7 +19,13 @@ var (
 	}
 	customBucketsWarehouse = map[string][]float64{
 		"event_delivery_time": {
-			60, 300, 600, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 1m, 5m, 10m, 30m, 1h, 1.5h, 3.5h, 6.5h, 12.5h, 24.5h
+			60, 300, 900, 1800, 2100, 2700, 3900, 4500, 5400, 9900, 11100, 12600, 21600, 23400, 43200, 45000, 82800, 86400, 88200, 108000, 129600, // 1m, 5m, 15m, 30m, 35m, 45m, 1h5m, 1h15m, 1h30m, 2h45m, 3h5m, 3h30m, 6h, 6h30m, 12h, 12h30m, 23h, 24h, 24h30m, 30h, 36h
+		},
+		"warehouse_schema_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB), float64(1 * bytesize.GB),
 		},
 	}
 
@@ -121,6 +127,10 @@ var (
 		"processor_tracked_users_report_gen_seconds": {
 			// 1microsecond, 2.5microsecond, 5microsecond, 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
 			0.00001, 0.00025, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+		},
+		"router_delivery_payload_size_bytes": {
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
 		},
 	}
 )

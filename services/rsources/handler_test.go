@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
 )
@@ -942,7 +943,10 @@ var _ = Describe("Using sources handler", func() {
 				Log:                    testlog.GinkgoLogger,
 				ShouldSetupSharedDB:    true,
 			}
-			_, err := NewJobService(badConfig)
+			sts, err := memstats.New()
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = NewJobService(badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 
@@ -959,7 +963,10 @@ var _ = Describe("Using sources handler", func() {
 				Log:                    testlog.GinkgoLogger,
 				ShouldSetupSharedDB:    true,
 			}
-			_, err := NewJobService(badConfig)
+			sts, err := memstats.New()
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = NewJobService(badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 	})
@@ -1524,7 +1531,10 @@ func (g *mockGauge) wasGauged() bool {
 }
 
 func createService(config JobServiceConfig) JobService {
-	service, err := NewJobService(config)
+	sts, err := memstats.New()
+	Expect(err).NotTo(HaveOccurred())
+
+	service, err := NewJobService(config, sts)
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to create the service")
 	return service
 }
@@ -1574,14 +1584,25 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 			"POSTGRES_DB=" + database,
 			"POSTGRES_USER=" + username,
 		},
+		ExposedPorts: []string{"5432"},
+		PortBindings: map[docker.Port][]docker.PortBinding{
+			"5432/tcp": {
+				{
+					HostIP:   "127.0.0.1",
+					HostPort: "",
+				},
+			},
+		},
 		Cmd: cmd,
+	}, func(hc *docker.HostConfig) {
+		hc.PublishAllPorts = false
 	})
 	if err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
 	port := resource.GetPort("5432/tcp")
-	externalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@localhost:%[3]s/%[4]s?sslmode=disable", username, password, port, database)
+	externalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@127.0.0.1:%[3]s/%[4]s?sslmode=disable", username, password, port, database)
 	internalDSN := fmt.Sprintf("postgres://%[1]s:%[2]s@%[3]s:5432/%[4]s?sslmode=disable", username, password, hostname, database)
 	var (
 		db  *sql.DB

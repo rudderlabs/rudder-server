@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -18,6 +19,7 @@ import (
 
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
 type uploaderContext struct {
@@ -68,7 +70,7 @@ var _ = Describe("Uploader", func() {
 			mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockHTTP = mocksSysUtils.NewMockHttpI(c.mockCtrl)
 			mockTransformer = mocksDebugger.NewMockTransformerAny(c.mockCtrl)
-			uploader = New[any]("http://test", mockTransformer)
+			uploader = New[any]("http://test", &testutils.BasicAuthMock{}, mockTransformer)
 			uploader.Start()
 		})
 
@@ -98,8 +100,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
@@ -128,8 +129,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 400,
 				Body:       r,
@@ -198,9 +198,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
-
+				assertRequest(req)
 				wg.Done()
 			}).Return(&http.Response{
 				StatusCode: 200,
@@ -235,8 +233,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 			}).Return(&http.Response{
 				StatusCode: 200,
 				Body:       r,
@@ -282,8 +279,7 @@ var _ = Describe("Uploader", func() {
 
 			mockHTTPClient.EXPECT().Do(gomock.Any()).Do(func(req *http.Request) {
 				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "test"
+				assertRequest(req)
 				wg.Done()
 			}).Return(&http.Response{
 				StatusCode: 200,
@@ -297,3 +293,12 @@ var _ = Describe("Uploader", func() {
 		})
 	})
 })
+
+func assertRequest(req *http.Request) {
+	username, password, ok := req.BasicAuth()
+	Expect(ok).To(BeTrue())
+	Expect(username).To(Equal("test"))
+	Expect(password).To(Equal("test"))
+	Expect(req.Method).To(Equal("POST"))
+	Expect(req.URL.Host).To(Equal("test"))
+}

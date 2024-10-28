@@ -146,6 +146,7 @@ func Test_RouterThrottling(t *testing.T) {
 	}))
 	t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
 	t.Setenv("WORKSPACE_TOKEN", workspaceToken)
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("JOBS_DB_USER", postgresContainer.User)
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)

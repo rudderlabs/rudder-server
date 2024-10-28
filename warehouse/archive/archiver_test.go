@@ -1,21 +1,19 @@
 package archive_test
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	miniogo "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -157,7 +155,7 @@ func TestArchiver(t *testing.T) {
 			db := sqlmw.New(pgResource.DB)
 
 			archiver := archive.New(
-				config.New(),
+				c,
 				logger.NOP,
 				mockStats,
 				db,
@@ -186,7 +184,12 @@ func TestArchiver(t *testing.T) {
 				}
 			}
 
-			contents := minioContents(t, ctx, minioResource, prefix)
+			minioContents, err := minioResource.Contents(ctx, prefix)
+			require.NoError(t, err)
+
+			contents := lo.SliceToMap(minioContents, func(item minio.File) (string, string) {
+				return item.Key, item.Content
+			})
 
 			var expectedContents map[string]string
 			jsonTestData(t, "testdata/storage.json", &expectedContents)
@@ -211,30 +214,64 @@ func TestArchiver(t *testing.T) {
 	}
 }
 
-func minioContents(t require.TestingT, ctx context.Context, dest *minio.Resource, prefix string) map[string]string {
-	contents := make(map[string]string)
+func TestArchiver_Delete(t *testing.T) {
+	var pgResource *postgres.Resource
 
-	doneCh := make(chan struct{})
-	defer close(doneCh)
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pgResource, err = postgres.Setup(pool, t)
+	require.NoError(t, err)
 
-	opts := miniogo.ListObjectsOptions{
-		Recursive: true,
-		Prefix:    prefix,
-	}
-	for objInfo := range dest.Client.ListObjects(ctx, dest.BucketName, opts) {
-		o, err := dest.Client.GetObject(ctx, dest.BucketName, objInfo.Key, miniogo.GetObjectOptions{})
-		require.NoError(t, err)
+	t.Log("db:", pgResource.DBDsn)
 
-		g, err := gzip.NewReader(o)
-		require.NoError(t, err)
+	err = (&migrator.Migrator{
+		Handle:          pgResource.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse")
+	require.NoError(t, err)
 
-		b, err := io.ReadAll(g)
-		require.NoError(t, err)
+	sqlStatement, err := os.ReadFile("testdata/dump.sql")
+	require.NoError(t, err)
 
-		contents[objInfo.Key] = string(b)
-	}
+	_, err = pgResource.DB.Exec(string(sqlStatement))
+	require.NoError(t, err)
 
-	return contents
+	ctrl := gomock.NewController(t)
+	mockStats := mock_stats.NewMockStats(ctrl)
+	mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).Times(1)
+
+	status := model.ExportedData
+	workspaceID := "1"
+	_, err = pgResource.DB.Exec(`
+				UPDATE wh_uploads SET workspace_id = $1, status = $2
+			`, workspaceID, status)
+	require.NoError(t, err)
+
+	c := config.New()
+	c.Set("Warehouse.uploadRetentionTimeInDays", 0)
+	tenantManager := multitenant.New(c, backendConfig.DefaultBackendConfig)
+
+	db := sqlmw.New(pgResource.DB)
+
+	archiver := archive.New(
+		c,
+		logger.NOP,
+		mockStats,
+		db,
+		filemanager.New,
+		tenantManager,
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = archiver.Delete(ctx)
+	require.NoError(t, err)
+
+	var count int
+	err = pgResource.DB.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %q`, warehouseutils.WarehouseUploadsTable)).Scan(&count)
+	require.NoError(t, err)
+	require.Zero(t, count, "wh_uploads rows should be deleted")
 }
 
 func jsonTestData(t require.TestingT, file string, value any) {

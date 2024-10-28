@@ -22,7 +22,8 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -39,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
@@ -558,7 +560,7 @@ var _ = Describe("Gateway", func() {
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
 			expectedStr := []byte(fmt.Sprintf(
-				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "", "traceparent": ""}`,
+				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "","source_category": "webhook", "traceparent": ""}`,
 				SourceIDEnabled,
 			))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
@@ -1713,7 +1715,7 @@ var _ = Describe("Gateway", func() {
 			)
 			internalBatchPayload := fmt.Sprintf(`[{
 			"properties": {
-				"messageID": "messageID",
+				"requestType": "dummyRequestType",
 				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				"workspaceID": %q,
 				"userID": %q,
@@ -1737,7 +1739,7 @@ var _ = Describe("Gateway", func() {
 			internalBatchPayload := func() string {
 				return fmt.Sprintf(`{
 			"properties": {
-				"messageID": %q,
+				"requestType": "dummyRequestType",
 				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				"workspaceID": %q,
 				"userID": %q,
@@ -1749,7 +1751,7 @@ var _ = Describe("Gateway", func() {
 				"traceID": "traceID"
 			},
 			"payload": %s
-			}`, uuid.NewString(), workspaceID, userID, sourceID, validData)
+			}`, workspaceID, userID, sourceID, validData)
 			}
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
@@ -1830,10 +1832,100 @@ var _ = Describe("Gateway", func() {
 			Expect(statStore.GetByName("gateway.event_pickup_lag_seconds")).To(Equal([]memstats.Metric{
 				{
 					Name: "gateway.event_pickup_lag_seconds",
-					Tags: map[string]string{"sourceId": SourceIDEnabled, "workspaceId": WorkspaceID},
+					Tags: map[string]string{"workspaceId": WorkspaceID},
 					Durations: []time.Duration{
 						time.Second,
 					},
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_successful_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_successful_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_requests",
+					Tags: map[string]string{
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_successful_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_successful_requests",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 1,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_failed_requests")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_failed_requests",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 0,
+				},
+			}))
+			Expect(statStore.GetByName("gateway.write_key_failed_events")).To(Equal([]memstats.Metric{
+				{
+					Name: "gateway.write_key_failed_events",
+					Tags: map[string]string{
+						"source":      "",
+						"writeKey":    WriteKeyEnabled,
+						"reqType":     "internalBatch",
+						"workspaceId": WorkspaceID,
+						"sourceID":    SourceIDEnabled,
+						"sourceType":  "",
+						"sdkVersion":  "",
+					},
+					Value: 0,
 				},
 			}))
 		})
@@ -1858,6 +1950,18 @@ var _ = Describe("Gateway", func() {
 			defer httputil.CloseResponse(resp)
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
+			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+				"writeKey":    "",
+				"reqType":     "internalBatch",
+				"reason":      response.NotRudderEvent,
+				"workspaceId": "",
+				"sourceID":    "",
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(failedRequestStat).To(Not(BeNil()))
+			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
 		})
 
 		It("request failed unmarshall error", func() {
@@ -1870,18 +1974,29 @@ var _ = Describe("Gateway", func() {
 			defer httputil.CloseResponse(resp)
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
-		})
-
-		It("request failed message validation error", func() {
-			req, err := http.NewRequest(http.MethodPost, internalBatchEndpoint, bytes.NewBuffer([]byte(`[{}]`)))
-			Expect(err).To(BeNil())
-			resp, err := client.Do(req)
-			Expect(err).To(BeNil())
-			Expect(http.StatusBadRequest, resp.StatusCode)
-			respData, err := io.ReadAll(resp.Body)
-			defer httputil.CloseResponse(resp)
-			Expect(err).To(BeNil())
-			Expect(string(respData)).Should(ContainSubstring(response.InvalidStreamMessage))
+			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+				"writeKey":    "",
+				"reqType":     "internalBatch",
+				"reason":      response.InvalidJSON,
+				"workspaceId": "",
+				"sourceID":    "",
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(failedRequestStat).To(Not(BeNil()))
+			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
+			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
+				"writeKey":    "",
+				"reqType":     "internalBatch",
+				"reason":      response.InvalidJSON,
+				"workspaceId": "",
+				"sourceID":    "",
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(failedEventStat).To(BeNil())
 		})
 
 		It("request success - suppressed user", func() {
@@ -1891,6 +2006,17 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(successfulReqStat).To(Not(BeNil()))
+			Expect(successfulReqStat.Values()).To(Equal([]float64{1}))
 		})
 
 		It("request success - multiple messages", func() {
@@ -1902,6 +2028,39 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
+			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(successfulReqStat).To(Not(BeNil()))
+			Expect(successfulReqStat.LastValue()).To(Equal(float64(3)))
+			successfulEventStat := statStore.Get("gateway.write_key_successful_events", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(successfulEventStat).To(Not(BeNil()))
+			Expect(successfulEventStat.LastValue()).To(Equal(float64(3)))
+			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(eventsStat).To(Not(BeNil()))
+			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3}))
 		})
 
 		It("request failed db error", func() {
@@ -1912,6 +2071,41 @@ var _ = Describe("Gateway", func() {
 			resp, err := client.Do(req)
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
+			failedReqStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+				"reason":      "storeFailed",
+			})
+			Expect(failedReqStat).To(Not(BeNil()))
+			Expect(failedReqStat.Values()).To(Equal([]float64{1}))
+			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+				"reason":      "storeFailed",
+			})
+			Expect(failedEventStat).To(Not(BeNil()))
+			Expect(failedEventStat.Values()).To(Equal([]float64{1}))
+			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
+				"writeKey":    WriteKeyEnabled,
+				"reqType":     "internalBatch",
+				"workspaceId": WorkspaceID,
+				"sourceID":    SourceIDEnabled,
+				"sourceType":  "",
+				"sdkVersion":  "",
+				"source":      "",
+			})
+			Expect(eventsStat).To(Not(BeNil()))
+			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3, 4}))
 		})
 	})
 
@@ -1932,7 +2126,7 @@ var _ = Describe("Gateway", func() {
 
 		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
 			properties := stream.MessageProperties{
-				MessageID:     "messageID",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -1954,8 +2148,16 @@ var _ = Describe("Gateway", func() {
 				done:           make(chan<- string),
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
 			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(
+				gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				},
+			))
 
 			var job struct {
 				Batch []struct {
@@ -1963,8 +2165,8 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			Expect(jobForm).To(HaveLen(1))
-			err = json.Unmarshal(jobForm[0].EventPayload, &job)
+			jobForm := jobsWithStats[0].job
+			err = json.Unmarshal(jobForm.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
@@ -1973,7 +2175,7 @@ var _ = Describe("Gateway", func() {
 
 		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
 			properties := stream.MessageProperties{
-				MessageID:     "messageID",
+				RequestType:   "dummyRequestType",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				WorkspaceID:   "workspaceID",
 				SourceID:      "sourceID",
@@ -1994,8 +2196,14 @@ var _ = Describe("Gateway", func() {
 				done:           make(chan<- string),
 				requestPayload: payload,
 			}
-			jobForm, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
 			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
 
 			var job struct {
 				Batch []struct {
@@ -2003,12 +2211,192 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			Expect(jobForm).To(HaveLen(1))
-			err = json.Unmarshal(jobForm[0].EventPayload, &job)
+			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000Z"))
 			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
+		})
+
+		It("adds messageID, rudderId in the request payload if it's not already present", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := json.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+					RudderID  string `json:"rudderId"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].MessageID).To(Not(BeEmpty()))
+			Expect(job.Batch[0].RudderID).To(Not(BeEmpty()))
+		})
+
+		It("doesn't override if messageID already exists in payload", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{"messageId": "dummyMessageID"}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := json.Marshal(messages)
+			Expect(err).To(BeNil())
+
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(
+				gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				},
+			))
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageId"`
+				} `json:"batch"`
+			}
+			jobForm := jobsWithStats[0].job
+			err = json.Unmarshal(jobForm.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].MessageID).To(ContainSubstring("dummyMessageID"))
+		})
+
+		It("adds type in the request payload if RequestType Property is not one of batch, replay, retl, import", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := json.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
+
+			var job struct {
+				Batch []struct {
+					Type string `json:"type"`
+				} `json:"batch"`
+			}
+			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].Type).To(ContainSubstring("dummyRequestType"))
+		})
+
+		It("does not change type if  RequestType Property is batch, replay, retl, import", func() {
+			requestTypes := []string{"batch", "replay", "retl", "import"}
+			for _, reqType := range requestTypes {
+				properties := stream.MessageProperties{
+					RequestType:   reqType,
+					RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+					WorkspaceID:   "workspaceID",
+					SourceID:      "sourceID",
+					ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+					RequestIP:     "dummyIP",
+					DestinationID: "destinationID",
+				}
+				msg := stream.Message{
+					Properties: properties,
+					Payload:    []byte(`{"type": "dummyType"}`),
+				}
+				messages := []stream.Message{msg}
+				payload, err := json.Marshal(messages)
+				Expect(err).To(BeNil())
+				req := &webRequestT{
+					reqType:        "batch",
+					authContext:    rCtxEnabled,
+					done:           make(chan<- string),
+					requestPayload: payload,
+				}
+				jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+				Expect(err).To(BeNil())
+				Expect(jobsWithStats).To(HaveLen(1))
+				Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				}))
+
+				var job struct {
+					Batch []struct {
+						Type string `json:"type"`
+					} `json:"batch"`
+				}
+				err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+				Expect(err).To(BeNil())
+				Expect(job.Batch).To(HaveLen(1))
+				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))
+			}
 		})
 	})
 })

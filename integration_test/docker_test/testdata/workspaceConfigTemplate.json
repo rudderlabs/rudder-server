@@ -86,7 +86,7 @@
         },
         {
           "config": {
-            "host": "localhost",
+            "host": "{{.postgresHost}}",
             "database": "jobsdb",
             "user": "rudder",
             "password": "password",
@@ -546,7 +546,7 @@
         },
         {
           "config": {
-            "hostName": "localhost",
+            "hostName": "{{.kafkaHost}}",
             "port": "{{.kafkaPort}}",
             "topic": "dev_integration_test",
             "sslEnabled": false,

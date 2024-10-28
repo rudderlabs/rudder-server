@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +13,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -711,8 +712,8 @@ var oauthTests = []oauthTestCases{
 				Response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
 			},
 		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("problem with user permission or access/refresh token have been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive))},
+		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: errors.New("problem with user permission or access/refresh token have been revoked")},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive)},
 		expectedPayload:              `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
 	},
 	{

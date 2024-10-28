@@ -24,12 +24,14 @@ func Test_BaseForwarder(t *testing.T) {
 
 	postgres, err := pgdocker.Setup(pool, t)
 	require.NoError(t, err)
+	t.Setenv("JOBS_DB_HOST", postgres.Host)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
 	t.Setenv("JOBS_DB_USER", postgres.User)
 	t.Setenv("JOBS_DB_DB_NAME", postgres.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)
@@ -75,12 +77,14 @@ func TestBaseForwarder_MarkJobStautses(t *testing.T) {
 
 	postgres, err := pgdocker.Setup(pool, t)
 	require.NoError(t, err)
+	t.Setenv("JOBS_DB_HOST", postgres.Host)
 	t.Setenv("JOBS_DB_PORT", postgres.Port)
 	t.Setenv("JOBS_DB_USER", postgres.User)
 	t.Setenv("JOBS_DB_DB_NAME", postgres.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgres.Password)
 	schemasDB := jobsdb.NewForReadWrite(
 		"test_event_schema",
+		jobsdb.WithStats(stats.NOP),
 	)
 	err = schemasDB.Start()
 	require.NoError(t, err)

@@ -47,6 +47,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
 	SourceName          string                            `json:"sourceName"`
+	OriginalSourceID    string                            `json:"originalSourceId"`
 	WorkspaceID         string                            `json:"workspaceId"`
 	Namespace           string                            `json:"namespace"`
 	InstanceID          string                            `json:"instanceId"`
@@ -91,6 +92,7 @@ type TransformerEvent struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    Metadata                   `json:"metadata"`
 	Destination backendconfig.DestinationT `json:"destination"`
+	Connection  backendconfig.Connection   `json:"connection"`
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 	Credentials []Credential               `json:"credentials"`
 }
@@ -171,6 +173,7 @@ type handle struct {
 		maxRetry                   config.ValueLoader[int]
 		failOnUserTransformTimeout config.ValueLoader[bool]
 		failOnError                config.ValueLoader[bool]
+		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
 
 		destTransformationURL string
 		userTransformationURL string
@@ -201,6 +204,8 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
+
+	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -247,6 +252,13 @@ func (trans *handle) transform(
 ) Response {
 	if len(clientEvents) == 0 {
 		return Response{}
+	}
+	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
+	// flip back afterwards
+	for i := range clientEvents {
+		if clientEvents[i].Metadata.OriginalSourceID != "" {
+			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
+		}
 	}
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
@@ -303,21 +315,22 @@ func (trans *handle) transform(
 	var failedEvents []TransformerResponse
 
 	for _, batch := range transformResponse {
-		if batch == nil {
-			continue
-		}
-
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
-			if transformerResponse.StatusCode != 200 {
-				failedEvents = append(failedEvents, transformerResponse)
-				continue
+			if transformerResponse.Metadata.OriginalSourceID != "" {
+				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
-			outClientEvents = append(outClientEvents, transformerResponse)
+			switch transformerResponse.StatusCode {
+			case http.StatusOK:
+				outClientEvents = append(outClientEvents, transformerResponse)
+			default:
+				failedEvents = append(failedEvents, transformerResponse)
+			}
 		}
 	}
 
+	trans.sentStat.Count(len(clientEvents))
 	trans.receivedStat.Count(len(outClientEvents))
 
 	return Response{
@@ -353,15 +366,27 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	// endless retry if transformer-control plane connection is down
 	endlessBackoff := backoff.NewExponentialBackOff()
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
+	endlessBackoff.MaxInterval = trans.config.maxRetryBackoffInterval.Load()
 
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
+			transformationID := ""
+			if len(data[0].Destination.Transformations) > 0 {
+				transformationID = data[0].Destination.Transformations[0].ID
+			}
+
 			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, stats.Tags{
+				"destinationType":  data[0].Destination.DestinationDefinition.Name,
+				"destinationId":    data[0].Destination.ID,
+				"sourceId":         data[0].Metadata.SourceID,
+				"transformationId": transformationID,
+				"stage":            stage,
+
+				// Legacy tags: to be removed
 				"dest_type": data[0].Destination.DestinationDefinition.Name,
 				"dest_id":   data[0].Destination.ID,
 				"src_id":    data[0].Metadata.SourceID,
-				"stage":     stage,
 			})
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
@@ -395,7 +420,8 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	}
 
 	var transformerResponses []TransformerResponse
-	if statusCode == http.StatusOK {
+	switch statusCode {
+	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
 
 		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
@@ -403,19 +429,13 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 			err = json.Unmarshal(respData, &transformerResponses)
 		})
 		// This is returned by our JS engine so should  be parsable
-		// but still handling it
+		// Panic the processor to avoid replays
 		if err != nil {
 			trans.logger.Errorf("Data sent to transformer : %v", string(rawJSON))
 			trans.logger.Errorf("Transformer returned : %v", string(respData))
-
-			respData = []byte(fmt.Sprintf("Failed to unmarshal transformer response: %s", string(respData)))
-
-			transformerResponses = nil
-			statusCode = http.StatusBadRequest
+			panic(err)
 		}
-	}
-
-	if statusCode != http.StatusOK {
+	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
@@ -431,6 +451,9 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		resp       *http.Response
 		respData   []byte
 	)
+	retryStrategy := backoff.NewExponentialBackOff()
+	// MaxInterval caps the RetryInterval
+	retryStrategy.MaxInterval = trans.config.maxRetryBackoffInterval.Load()
 
 	err := backoff.RetryNotify(
 		func() error {
@@ -465,7 +488,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
-		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(trans.config.maxRetry.Load())),
+		backoff.WithMaxRetries(retryStrategy, uint64(trans.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
 			trans.logger.Warnn(
@@ -488,12 +511,9 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
-		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
-		if convErr != nil {
-			transformerAPIVersion = 0
-		}
+		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
 		if types.SupportedTransformerApiVersion != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", types.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

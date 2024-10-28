@@ -23,13 +23,14 @@ import (
 // CronTracker Track the status of the staging file whether it has reached the terminal state or not for every warehouse
 // we pick the staging file which is oldest within the range NOW() - 2 * syncFrequency and NOW() - 3 * syncFrequency
 func (r *Router) CronTracker(ctx context.Context) error {
-	tick := r.statsFactory.NewTaggedStat("warehouse_cron_tracker_tick", stats.CountType, stats.Tags{
+	cronTrackerExecTimestamp := r.statsFactory.NewTaggedStat("warehouse_cron_tracker_timestamp_seconds", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
 		"destType": r.destType,
 	})
 	for {
 
-		tick.Count(1)
+		execTime := time.Now()
+		cronTrackerExecTimestamp.Gauge(execTime.Unix())
 
 		r.configSubscriberLock.RLock()
 		warehouses := append([]model.Warehouse{}, r.warehouses...)
@@ -37,9 +38,9 @@ func (r *Router) CronTracker(ctx context.Context) error {
 
 		for _, warehouse := range warehouses {
 			b := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(r.config.cronTrackerRetries.Load())), ctx)
-			err := backoff.RetryNotify(func() error {
+			err := backoff.Retry(func() error {
 				return r.Track(ctx, &warehouse, r.conf)
-			}, b, func(err error, t time.Duration) {})
+			}, b)
 			if err != nil {
 				r.logger.Errorn(
 					"cron tracker failed for",
@@ -51,11 +52,12 @@ func (r *Router) CronTracker(ctx context.Context) error {
 			}
 		}
 
+		nextExecTime := execTime.Add(r.config.uploadStatusTrackFrequency)
 		select {
 		case <-ctx.Done():
 			r.logger.Infon("context is cancelled, stopped running tracking")
 			return nil
-		case <-time.After(r.config.uploadStatusTrackFrequency):
+		case <-time.After(time.Until(nextExecTime)):
 		}
 	}
 }
@@ -105,13 +107,13 @@ func (r *Router) Track(
 		return nil
 	}
 
-	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindow := warehouse.GetMapDestinationConfig(model.ExcludeWindowSetting)
 	excludeWindowStartTime, excludeWindowEndTime := excludeWindowStartEndTimes(excludeWindow)
 	if checkCurrentTimeExistsInExcludeWindow(now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return nil
 	}
 
-	if sf := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, *warehouse); sf != "" {
+	if sf := warehouse.GetStringDestinationConfig(r.conf, model.SyncFrequencySetting); sf != "" {
 		syncFrequency = sf
 	}
 	if value, err := strconv.Atoi(syncFrequency); err == nil {

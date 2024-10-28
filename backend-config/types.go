@@ -94,6 +94,15 @@ type ConfigT struct {
 	Settings        Settings                     `json:"settings"`
 	UpdatedAt       time.Time                    `json:"updatedAt"`
 	Credentials     map[string]Credential        `json:"credentials"`
+	Connections     map[string]Connection        `json:"connections"`
+}
+
+type Connection struct {
+	SourceID         string                 `json:"sourceId"`
+	DestinationID    string                 `json:"destinationId"`
+	Enabled          bool                   `json:"enabled"`
+	Config           map[string]interface{} `json:"config"`
+	ProcessorEnabled bool                   `json:"processorEnabled"`
 }
 
 func (c *ConfigT) SourcesMap() map[string]*SourceT {

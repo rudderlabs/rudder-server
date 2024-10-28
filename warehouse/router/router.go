@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/samber/lo"
@@ -23,7 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/notifier"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -164,6 +163,7 @@ func New(
 		db:                   r.db,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{
+			Conf:               r.conf,
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,
 			StageRepo:          r.stagingRepo,
@@ -187,18 +187,18 @@ func (r *Router) Start(ctx context.Context) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	r.backgroundGroup = g
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.backendConfigSubscriber(gCtx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.runUploadJobAllocator(gCtx)
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		r.mainLoop(gCtx)
 		return nil
 	}))
-	g.Go(misc.WithBugsnagForWarehouse(func() error {
+	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
 	return g.Wait()
@@ -271,7 +271,7 @@ func (r *Router) initWorker() chan *UploadJob {
 
 				err := uploadJob.run()
 				if err != nil {
-					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
+					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+v", err)
 				}
 
 				r.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
@@ -376,18 +376,9 @@ loop:
 		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
-		if err != nil {
-			var pqErr *pq.Error
-
-			switch {
-			case errors.Is(err, context.Canceled),
-				errors.Is(err, context.DeadlineExceeded),
-				errors.As(err, &pqErr) && pqErr.Code == "57014":
-				break loop
-			default:
-				r.logger.Errorf(`Error executing uploadsToProcess: %v`, err)
-				return err
-			}
+		if err != nil && ctx.Err() == nil {
+			r.logger.Errorn("Error getting uploads to process", logger.NewErrorField(err))
+			return err
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {
@@ -536,7 +527,7 @@ func (r *Router) mainLoop(ctx context.Context) {
 }
 
 func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err error) {
-	if ok, err := r.canCreateUpload(ctx, warehouse); !ok {
+	if err := r.canCreateUpload(ctx, warehouse); err != nil {
 		r.statsFactory.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
 			"workspaceId":   warehouse.WorkspaceID,
 			"destinationID": warehouse.Destination.ID,

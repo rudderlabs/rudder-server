@@ -2,6 +2,7 @@ package apphandlers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,8 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"golang.org/x/sync/errgroup"
-
-	"github.com/bugsnag/bugsnag-go/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -35,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -77,9 +77,6 @@ func (a *processorApp) Setup() error {
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
-	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
-		return err
-	}
 	if err := rudderCoreNodeSetup(); err != nil {
 		return err
 	}
@@ -89,6 +86,7 @@ func (a *processorApp) Setup() error {
 
 func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
 	config := config.Default
+	statsFactory := stats.Default
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
@@ -115,7 +113,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	reporting := a.app.Features().Reporting.Setup(ctx, backendconfig.DefaultBackendConfig)
 	defer reporting.Stop()
 	syncer := reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: misc.GetConnectionString(config, "reporting")})
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		syncer()
 		return nil
 	}))
@@ -137,7 +135,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
-	rsourcesService, err := NewRsourcesService(deploymentType, true)
+	rsourcesService, err := NewRsourcesService(deploymentType, true, statsFactory)
 	if err != nil {
 		return err
 	}
@@ -148,11 +146,22 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		FeaturesRetryMaxAttempts: 10,
 	})
 
+	var dbPool *sql.DB
+	if config.GetBoolVar(true, "db.processor.pool.shared", "db.pool.shared") {
+		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "processor-app")
+		if err != nil {
+			return err
+		}
+		defer dbPool.Close()
+	}
+
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -160,6 +169,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.routerDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -167,6 +178,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer batchRouterDB.Close()
 	errDBForRead := jobsdb.NewForRead(
@@ -174,13 +187,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer errDBForRead.Close()
 	errDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
+	errDBForWrite.Close()
 	if err = errDBForWrite.Start(); err != nil {
 		return fmt.Errorf("could not start errDBForWrite: %w", err)
 	}
@@ -189,6 +207,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
+		jobsdb.WithStats(statsFactory),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer schemaDB.Close()
 
@@ -197,11 +217,13 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.processorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(
 			func() time.Duration {
 				return config.GetDuration("archival.jobRetention", 24, time.Hour)
 			},
 		),
+		jobsdb.WithDBHandle(dbPool),
 	)
 	defer archivalDB.Close()
 
@@ -212,9 +234,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, stats.Default)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
@@ -224,7 +246,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
-	enrichers, err := setupPipelineEnrichers(config, a.log, stats.Default)
+	enrichers, err := setupPipelineEnrichers(config, a.log, statsFactory)
 	if err != nil {
 		return fmt.Errorf("setting up pipeline enrichers: %w", err)
 	}
@@ -235,15 +257,15 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		}
 	}()
 
-	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"))
+	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		return fmt.Errorf("drain config manager setup: %v", err)
 	}
 	defer drainConfigManager.Stop()
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.DrainConfigRoutine(ctx)
 	}))
-	g.Go(misc.WithBugsnag(func() (err error) {
+	g.Go(crash.Wrapper(func() (err error) {
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
@@ -268,7 +290,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		trackedUsersReporter,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.NewFactory(config, stats.Default)
+	throttlerFactory, err := throttler.NewFactory(config, statsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
@@ -313,7 +335,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			archivalDB,
 			fileUploaderProvider,
 			config,
-			stats.Default,
+			statsFactory,
 			archiver.WithAdaptiveLimit(adaptiveLimit),
 		),
 	}
@@ -334,8 +356,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	})
 
 	g.Go(func() error {
-		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
-		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		replicationLagStat := statsFactory.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := statsFactory.NewStat("rsources_log_replication_slot", stats.GaugeType)
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
 		return nil
 	})
@@ -351,7 +373,7 @@ func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Han
 	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(a.config.http.webPort),
-		Handler:           bugsnag.Handler(srvMux),
+		Handler:           crash.Handler(srvMux),
 		ReadTimeout:       a.config.http.ReadTimeout,
 		ReadHeaderTimeout: a.config.http.ReadHeaderTimeout,
 		WriteTimeout:      a.config.http.WriteTimeout,

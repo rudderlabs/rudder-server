@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -92,6 +93,7 @@ type ProxyRequestParams struct {
 	DestName     string
 	Adapter      transformerProxyAdapter
 	DestInfo     *oauthv2.DestinationInfo
+	Connection   backendconfig.Connection `json:"connection"`
 }
 
 type ProxyRequestResponse struct {
@@ -299,7 +301,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			destinationJobs = []types.DestinationJobT{}
 			for i := range transformMessage.Data {
 				routerJob := &transformMessage.Data[i]
-				resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, StatusCode: statusCode, Error: invalidResponseError}
+				resp := types.DestinationJobT{
+					Message:          routerJob.Message,
+					JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+					Destination:      routerJob.Destination,
+					Connection:       routerJob.Connection,
+					StatusCode:       statusCode,
+					Error:            invalidResponseError,
+				}
 				destinationJobs = append(destinationJobs, resp)
 			}
 		}
@@ -310,7 +319,14 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 		for i := range transformMessage.Data {
 			routerJob := &transformMessage.Data[i]
-			resp := types.DestinationJobT{Message: routerJob.Message, JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata}, Destination: routerJob.Destination, StatusCode: statusCode, Error: string(respData)}
+			resp := types.DestinationJobT{
+				Message:          routerJob.Message,
+				JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+				Destination:      routerJob.Destination,
+				Connection:       routerJob.Connection,
+				StatusCode:       statusCode,
+				Error:            string(respData),
+			}
 			destinationJobs = append(destinationJobs, resp)
 		}
 	}
@@ -582,7 +598,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
-			err:        fmt.Errorf(errStr),
+			err:        errors.New(errStr),
 		}
 	}
 

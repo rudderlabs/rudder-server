@@ -10,11 +10,14 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -76,7 +79,6 @@ type UploadJob struct {
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
-	loadFileGenStartTime time.Time
 
 	upload         model.Upload
 	warehouse      model.Warehouse
@@ -120,6 +122,7 @@ type UploadJob struct {
 		numStagedEvents                    stats.Measurement
 		uploadSuccess                      stats.Measurement
 		stagingLoadFileEventsCountMismatch stats.Measurement
+		eventDeliveryTime                  stats.Timer
 	}
 }
 
@@ -170,6 +173,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 			dto.Warehouse,
 			f.conf,
 			f.logger.Child("warehouse"),
+			f.statsFactory,
 		),
 
 		upload:         dto.Upload,
@@ -214,6 +218,15 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.stats.uploadSuccess = uj.counterStat("upload_success")
 	uj.stats.stagingLoadFileEventsCountMismatch = uj.gaugeStat(
 		"warehouse_staging_load_file_events_count_mismatched",
+		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
+	)
+
+	syncFrequency := "1440" // 24h
+	if frequency := uj.warehouse.GetStringDestinationConfig(uj.conf, model.SyncFrequencySetting); frequency != "" {
+		syncFrequency = frequency
+	}
+	uj.stats.eventDeliveryTime = uj.timerStat("event_delivery_time",
+		whutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
 	)
 
@@ -285,16 +298,14 @@ func (job *UploadJob) run() (err error) {
 	defer whManager.Cleanup(job.ctx)
 
 	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
-		job.logger.Warnw("Error during recovery (dangling staging table cleanup)",
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.SourceID, job.warehouse.Source.ID,
-			logfield.SourceType, job.warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, job.warehouse.Destination.ID,
-			logfield.DestinationType, job.warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, job.warehouse.WorkspaceID,
-			logfield.Namespace, job.warehouse.Namespace,
-			logfield.Error, err.Error(),
+		job.logger.Warnn("Error during recovery (dangling staging table cleanup)",
+			obskit.DestinationID(job.warehouse.Destination.ID),
+			obskit.DestinationType(job.warehouse.Destination.DestinationDefinition.Name),
+			obskit.WorkspaceID(job.warehouse.WorkspaceID),
+			obskit.Namespace(job.warehouse.Namespace),
+			obskit.Error(err),
+			obskit.SourceID(job.warehouse.Source.ID),
+			obskit.SourceType(job.warehouse.Source.SourceDefinition.Name),
 		)
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
@@ -422,6 +433,7 @@ func (job *UploadJob) run() (err error) {
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == model.ExportedData {
+			_ = job.loadFilesRepo.DeleteByStagingFiles(job.ctx, job.stagingFileIDs)
 			break
 		}
 
@@ -677,8 +689,11 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 
 	failCount := inputCount - outputCount
 	reportingStatus := jobsdb.Failed.State
+	isTerminalPU := false
+
 	if state == model.Aborted {
 		reportingStatus = jobsdb.Aborted.State
+		isTerminalPU = true
 	}
 	reportingMetrics := []*types.PUReportedMetric{{
 		ConnectionDetails: types.ConnectionDetails{
@@ -691,7 +706,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		PUDetails: types.PUDetails{
 			InPU:       types.BATCH_ROUTER,
 			PU:         types.WAREHOUSE,
-			TerminalPU: true,
+			TerminalPU: isTerminalPU,
 		},
 		StatusDetail: &types.StatusDetail{
 			Status:         reportingStatus,
@@ -713,12 +728,12 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			PUDetails: types.PUDetails{
 				InPU:       types.BATCH_ROUTER,
 				PU:         types.WAREHOUSE,
-				TerminalPU: true,
+				TerminalPU: isTerminalPU,
 			},
 			StatusDetail: &types.StatusDetail{
 				Status:         jobsdb.Succeeded.State,
-				StatusCode:     400, // TODO: Change this to error specific code
-				Count:          failCount,
+				StatusCode:     200, // TODO: Change this to error specific code
+				Count:          outputCount,
 				SampleEvent:    []byte("{}"),
 				SampleResponse: string(serializedErr),
 			},
@@ -892,19 +907,8 @@ func (job *UploadJob) UseRudderStorage() bool {
 	return job.upload.UseRudderStorage
 }
 
-func (job *UploadJob) GetLoadFileGenStartTIme() time.Time {
-	if !job.loadFileGenStartTime.IsZero() {
-		return job.loadFileGenStartTime
-	}
-	return model.GetLoadFileGenTime(job.upload.Timings)
-}
-
 func (job *UploadJob) GetLoadFileType() string {
 	return job.upload.LoadFileType
-}
-
-func (job *UploadJob) GetFirstLastEvent() (time.Time, time.Time) {
-	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
 func (job *UploadJob) DTO() *model.UploadJob {

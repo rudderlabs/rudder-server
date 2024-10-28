@@ -34,6 +34,7 @@ type webhookT struct {
 	request     *http.Request
 	writer      http.ResponseWriter
 	done        chan<- transformerResponse
+	sourceID    string
 	sourceType  string
 	authContext *gwtypes.AuthRequestContext
 }
@@ -66,9 +67,11 @@ type HandleT struct {
 	backgroundCancel context.CancelFunc
 
 	config struct {
+		maxReqSize                 config.ValueLoader[int]
 		webhookBatchTimeout        config.ValueLoader[time.Duration]
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
+		forwardGetRequestForSrcMap map[string]struct{}
 	}
 }
 
@@ -104,6 +107,11 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	http.Error(w, reason, statusCode)
 }
 
+func (wb *HandleT) IsGetAndNotAllow(reqMethod, sourceDefName string) bool {
+	_, ok := wb.config.forwardGetRequestForSrcMap[strings.ToLower(sourceDefName)]
+	return reqMethod == http.MethodGet && !ok
+}
+
 func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
@@ -114,7 +122,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	var postFrom url.Values
 	var multipartForm *multipart.Form
 
-	if r.Method == "GET" {
+	if webhook.IsGetAndNotAllow(r.Method, sourceDefName) {
 		return
 	}
 	contentType := r.Header.Get("Content-Type")
@@ -193,7 +201,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	done := make(chan transformerResponse)
-	req := webhookT{request: r, writer: w, done: done, sourceType: sourceDefName, authContext: arctx}
+	req := webhookT{
+		request:     r,
+		writer:      w,
+		done:        done,
+		sourceType:  sourceDefName,
+		sourceID:    arctx.SourceID,
+		authContext: arctx,
+	}
 	webhook.requestQMu.RLock()
 	requestQ := webhook.requestQ[sourceDefName]
 	requestQ <- &req
@@ -278,16 +293,10 @@ func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsi
 
 	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
 		queryParams := req.URL.Query()
-		paramsBytes, err := json.Marshal(queryParams)
-		if err != nil {
-			return nil, errors.New(response.ErrorInMarshal)
-		}
 
-		body, err = sjson.SetRawBytes(body, "query_parameters", paramsBytes)
-		if err != nil {
-			return nil, errors.New(response.InvalidJSON)
-		}
+		return sjson.SetBytes(body, "query_parameters", queryParams)
 	}
+
 	return body, nil
 }
 
@@ -300,6 +309,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
 		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
 		if err != nil {
+			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
+			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(err.Error()))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
 			}
@@ -310,6 +321,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 		transformerURL, err := sourceTransformAdapter.getTransformerURL(breq.sourceType)
 		if err != nil {
+			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
+			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(response.ServiceUnavailable))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.ServiceUnavailable), Err: response.GetStatus(response.ServiceUnavailable)}
 			}
@@ -319,19 +332,22 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var payloadArr [][]byte
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
+			var payload []byte
 			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
-			if err != nil {
-				req.done <- transformerResponse{Err: response.GetStatus(err.Error())}
-				continue
+			if err == nil && !json.Valid(body) {
+				err = errors.New(response.InvalidJSON)
 			}
-			if !json.Valid(body) {
-				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidJSON)}
-				continue
+			if err == nil && len(body) > bt.webhook.config.maxReqSize.Load() {
+				err = errors.New(response.RequestBodyTooLarge)
+			}
+			if err == nil {
+				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, body)
 			}
 
-			payload, err := sourceTransformAdapter.getTransformerEvent(req.authContext, body)
 			if err != nil {
-				req.done <- transformerResponse{Err: response.GetStatus(response.InvalidWebhookSource)}
+				bt.webhook.logger.Errorf("webhook %s source transformation failed for sourceID %s: %s", req.sourceType, req.sourceID, err.Error())
+				bt.webhook.countWebhookErrors(breq.sourceType, req.authContext, err.Error(), response.GetErrorStatusCode(err.Error()), 1)
+				req.done <- transformerResponse{Err: response.GetStatus(err.Error()), StatusCode: response.GetErrorStatusCode(err.Error())}
 				continue
 			}
 

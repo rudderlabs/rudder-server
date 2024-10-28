@@ -45,12 +45,16 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -442,10 +446,12 @@ Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
-	dbHandle    *sql.DB
-	ownerType   OwnerType
-	tablePrefix string
-	logger      logger.Logger
+	dbHandle             *sql.DB
+	sharedConnectionPool bool
+	ownerType            OwnerType
+	tablePrefix          string
+	logger               logger.Logger
+	stats                stats.Stats
 
 	datasetList      []dataSetT
 	datasetRangeList []dataSetRangeT
@@ -478,8 +484,6 @@ type Handle struct {
 	TriggerMigrateDS func() <-chan time.Time
 	TriggerRefreshDS func() <-chan time.Time
 
-	TriggerJobCleanUp func() <-chan time.Time
-
 	lifecycle struct {
 		mu      sync.Mutex
 		started bool
@@ -491,7 +495,6 @@ type Handle struct {
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
-		jobCleanupFrequency            config.ValueLoader[time.Duration]
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
 		refreshDSTimeout               config.ValueLoader[time.Duration]
@@ -631,6 +634,20 @@ const (
 	ReadWrite OwnerType = ""
 )
 
+func (ot OwnerType) Identifier() string {
+	switch ot {
+	case Read:
+		return "r"
+	case Write:
+		return "w"
+	case ReadWrite:
+		return "rw"
+	default:
+		return ""
+
+	}
+}
+
 func init() {
 	for _, js := range jobStates {
 		if !js.isValid {
@@ -668,6 +685,12 @@ func WithDBHandle(dbHandle *sql.DB) OptsFunc {
 func WithConfig(c *config.Config) OptsFunc {
 	return func(jd *Handle) {
 		jd.config = c
+	}
+}
+
+func WithStats(s stats.Stats) OptsFunc {
+	return func(jd *Handle) {
+		jd.stats = s
 	}
 }
 
@@ -737,37 +760,52 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
+	if jd.stats == nil {
+		jd.stats = stats.Default
+	}
+
 	jd.loadConfig()
 
 	// Initialize dbHandle if not already set
-	if jd.dbHandle == nil {
+	if jd.dbHandle != nil {
+		jd.sharedConnectionPool = true
+	} else {
 		var err error
-		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb")
+		psqlInfo := misc.GetConnectionString(jd.config, "jobsdb_"+jd.tablePrefix)
 		jd.dbHandle, err = sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
-	}
 
-	if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
-		jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
-	} else {
-		maxOpenConnections := 2 // buffer
-		maxOpenConnections += jd.conf.maxReaders + jd.conf.maxWriters
-		switch jd.ownerType {
-		case Read:
-			maxOpenConnections += 2 // migrate, refreshDsList
-		case Write:
-			maxOpenConnections += 1 // addNewDS
-		case ReadWrite:
-			maxOpenConnections += 3 // migrate, addNewDS, archive
-		}
-		if maxOpenConnections < jd.conf.maxOpenConnections {
-			jd.dbHandle.SetMaxOpenConns(maxOpenConnections)
+		jd.assertError(
+			jd.stats.RegisterCollector(
+				collectors.NewDatabaseSQLStats(
+					"jobsdb_"+jd.tablePrefix+"_"+jd.ownerType.Identifier(),
+					jd.dbHandle,
+				),
+			),
+		)
+
+		var maxConns int
+		if !jd.conf.enableReaderQueue || !jd.conf.enableWriterQueue {
+			maxConns = jd.conf.maxOpenConnections
 		} else {
-			jd.dbHandle.SetMaxOpenConns(jd.conf.maxOpenConnections)
+			maxConns = 2 // buffer
+			maxConns += jd.conf.maxReaders + jd.conf.maxWriters
+			switch jd.ownerType {
+			case Read:
+				maxConns += 2 // migrate, refreshDsList
+			case Write:
+				maxConns += 1 // addNewDS
+			case ReadWrite:
+				maxConns += 3 // migrate, addNewDS, archive
+			}
+			if maxConns >= jd.conf.maxOpenConnections {
+				maxConns = jd.conf.maxOpenConnections
+			}
 		}
-	}
+		jd.dbHandle.SetMaxOpenConns(maxConns)
 
-	jd.assertError(jd.dbHandle.Ping())
+		jd.assertError(jd.dbHandle.Ping())
+	}
 
 	jd.workersAndAuxSetup()
 
@@ -834,11 +872,11 @@ func (jd *Handle) workersAndAuxSetup() {
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
 	)
 
-	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
-	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.logger.Infon("Connected to DB")
+	jd.statPreDropTableCount = jd.stats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 func (jd *Handle) loadConfig() {
@@ -849,7 +887,6 @@ func (jd *Handle) loadConfig() {
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
-	jd.conf.jobCleanupFrequency = jd.config.GetReloadableDurationVar(24, time.Hour, []string{"JobsDB.jobCleanupFrequency"}...)
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	jd.conf.enableWriterQueue = jd.config.GetBoolVar(true, enableWriterQueueKeys...)
@@ -933,12 +970,6 @@ func (jd *Handle) loadConfig() {
 		}
 	}
 
-	if jd.TriggerJobCleanUp == nil {
-		jd.TriggerJobCleanUp = func() <-chan time.Time {
-			return time.After(jd.conf.jobCleanupFrequency.Load())
-		}
-	}
-
 	if jd.conf.jobMaxAge == nil {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
@@ -991,15 +1022,21 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
 	jd.recoverFromJournal(ReadWrite)
 	jd.assertError(jd.doRefreshDSRangeList(l))
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	g := jd.backgroundGroup
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		jd.refreshDSListLoop(ctx)
 		return nil
 	}))
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
@@ -1014,7 +1051,7 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
 
-	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	jd.backgroundGroup.Go(crash.Wrapper(func() error {
 		jd.addNewDSLoop(ctx)
 		return nil
 	}))
@@ -1024,9 +1061,15 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Read)
 
 	jd.writerSetup(ctx, l)
+	jd.assertError(func() error {
+		err := jd.doCleanup(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		return nil
+	}())
 
 	jd.startMigrateDSLoop(ctx)
-	jd.startCleanupLoop(ctx)
 }
 
 // Stop stops the background goroutines and waits until they finish.
@@ -1053,8 +1096,14 @@ func (jd *Handle) TearDown() {
 // Close closes the database connection.
 //
 //	Stop should be called before Close.
+//
+//	Noop if the connection pool is shared with the handle.
 func (jd *Handle) Close() {
-	_ = jd.dbHandle.Close()
+	if !jd.sharedConnectionPool {
+		if err := jd.dbHandle.Close(); err != nil {
+			jd.logger.Errorw("error closing db connection", "error", err)
+		}
+	}
 }
 
 /*
@@ -1276,7 +1325,7 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infof("Creating new DS %+v", ds)
+	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
 	err := jd.createDSInTx(tx, ds)
 	if err != nil {
 		return err
@@ -1482,8 +1531,9 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pqError, ok := err.(*pq.Error)
-		if ok && pqError.Code == pq.ErrorCode("42P01") {
+		var pqError *pq.Error
+		ok := errors.As(err, &pqError)
+		if ok && pqError.Code == ("42P01") {
 			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
@@ -1712,7 +1762,6 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 	tags := statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	command := func() moreQueryResult {
@@ -1994,7 +2043,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	tags := statTags{
 		StateFilters:     stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      workspaceID,
 	}
 
@@ -2432,7 +2480,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	start := time.Now()
 	var err error
 	defer func() {
-		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
+		jd.stats.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}()
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
@@ -2447,7 +2495,7 @@ func (jd *Handle) refreshDSList(ctx context.Context) error {
 	if previousLastDS.Index == nextLastDS.Index {
 		return nil
 	}
-	defer stats.Default.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
+	defer jd.stats.NewTaggedStat("refresh_ds_loop_lock", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).RecordDuration()()
 	err = jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 		return jd.doRefreshDSRangeList(l)
 	})
@@ -3005,7 +3053,6 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	tags := &statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
@@ -3089,8 +3136,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 
 	statTags := tags.getStatsTags(jd.tablePrefix)
 	statTags["query"] = "get"
-	stats.Default.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	stats.Default.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
 
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID
@@ -3115,7 +3162,6 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	tags := statTags{
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
-		ParameterFilters: params.ParameterFilters,
 		WorkspaceID:      params.WorkspaceID,
 	}
 	command := func() queryResult {
@@ -3177,7 +3223,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
 	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		jd.assertError(err)
 	}
 	return &job

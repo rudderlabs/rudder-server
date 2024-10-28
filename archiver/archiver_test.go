@@ -56,7 +56,7 @@ func TestJobsArchival(t *testing.T) {
 	c.Set("DB.password", postgresResource.Password)
 	misc.Init()
 
-	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c))
+	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
 	require.NoError(t, jd.Start())
 
 	minioResource = make([]*minio.Resource, uniqueWorkspaces)
@@ -166,7 +166,7 @@ func TestJobsArchival(t *testing.T) {
 	downloadedJobs := make([]*jobsdb.JobT, 0)
 	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := fileUploaderProvider.GetFileManager(workspace)
+		fm, err := fileUploaderProvider.GetFileManager(ctx, workspace)
 		require.NoError(t, err)
 		fileIter := fm.ListFilesWithPrefix(context.Background(), "", prefixByWorkspace[i], 20)
 		files, err := getAllFileNames(fileIter)

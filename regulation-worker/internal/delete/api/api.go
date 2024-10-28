@@ -273,7 +273,7 @@ func (m *APIManager) inactivateAuthStatus(destination *model.Destination, job mo
 		AuthStatus:      oauth.AuthStatusInactive,
 	})
 	jobStatus.Status = model.JobStatusAborted
-	jobStatus.Error = fmt.Errorf(resp)
+	jobStatus.Error = errors.New(resp)
 	return jobStatus
 }
 
@@ -289,7 +289,7 @@ func (m *APIManager) refreshOAuthToken(destination *model.Destination, job model
 		if refreshResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
 			// authStatus should be made inactive
 			m.inactivateAuthStatus(destination, job, oAuthDetail)
-			return fmt.Errorf(refreshResponse.ErrorMessage)
+			return errors.New(refreshResponse.ErrorMessage)
 		}
 
 		var refreshRespErr string
@@ -350,7 +350,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 		}
 		if authErrorCategory == common.CategoryAuthStatusInactive {
 			// Abort the regulation request
-			return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(string(params.responseBodyBytes))}
+			return model.JobStatus{Status: model.JobStatusAborted, Error: errors.New(string(params.responseBodyBytes))}
 		}
 	}
 	return jobStatus

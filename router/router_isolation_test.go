@@ -207,6 +207,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("HOSTED_SERVICE_SECRET", "rt_isolation_secret")
 	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
+	config.Set("DB.host", postgresContainer.Host)
 	config.Set("DB.port", postgresContainer.Port)
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
@@ -362,7 +363,7 @@ func (rtIsolationMethods) newMockConfigBackend(t testing.TB, path string) *httpt
 
 // seedRtDB seeds the router database with jobs based on the provided spec
 func (m rtIsolationMethods) seedRtDB(t testing.TB, spec *RtIsolationScenarioSpec, url string) {
-	rtJobsDB := jobsdb.NewForWrite("rt")
+	rtJobsDB := jobsdb.NewForWrite("rt", jobsdb.WithStats(stats.NOP))
 	require.NoError(t, rtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer rtJobsDB.Stop()
 	for _, batch := range m.generateJobs(spec.jobs, url, 100) {

@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -146,6 +147,7 @@ func ArchivalScenario(
 	config.Set("HOSTED_SERVICE_SECRET", "brt_isolation_secret")
 	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
+	config.Set("DB.host", postgresContainer.Host)
 	config.Set("DB.port", postgresContainer.Port)
 	config.Set("DB.user", postgresContainer.User)
 	config.Set("DB.name", postgresContainer.Database)
@@ -310,7 +312,7 @@ func insertJobs(
 	configMap map[string]backendconfig.ConfigT,
 	numJobsPerSource int,
 ) (map[string][]*jobsdb.JobT, int) {
-	gwJobsDB := jobsdb.NewForWrite("gw")
+	gwJobsDB := jobsdb.NewForWrite("gw", jobsdb.WithStats(stats.NOP))
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")
 	defer gwJobsDB.Stop()
 

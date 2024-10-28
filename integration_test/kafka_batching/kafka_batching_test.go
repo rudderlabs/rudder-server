@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,10 +35,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
+	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
-	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -69,7 +70,7 @@ func TestKafkaBatching(t *testing.T) {
 		}
 		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
 		defer kafkaCancel()
-		return waitForKafka(kafkaCtx, t, kafkaTopic, kafkaContainer.Ports[0])
+		return waitForKafka(kafkaCtx, t, kafkaTopic, kafkaContainer.Brokers[0])
 	})
 	group.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t)
@@ -87,10 +88,13 @@ func TestKafkaBatching(t *testing.T) {
 
 	writeKey := rand.String(27)
 	workspaceID := rand.String(27)
+	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
+	require.NoError(t, err)
 	marshalledWorkspaces := th.FillTemplateAndReturn(t, "testdata/backend_config.json", map[string]string{
 		"writeKey":    writeKey,
 		"workspaceId": workspaceID,
-		"kafkaPort":   kafkaContainer.Ports[0],
+		"kafkaHost":   kafkaHost,
+		"kafkaPort":   kafkaPort,
 		"kafkaTopic":  kafkaTopic,
 	})
 	require.NoError(t, err)
@@ -155,6 +159,7 @@ func TestKafkaBatching(t *testing.T) {
 			"INSTANCE_ID="+serverInstanceID,
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
+			"JOBS_DB_HOST="+postgresContainer.Host,
 			"JOBS_DB_PORT="+postgresContainer.Port,
 			"JOBS_DB_USER="+postgresContainer.User,
 			"JOBS_DB_DB_NAME="+postgresContainer.Database,
@@ -220,7 +225,7 @@ func TestKafkaBatching(t *testing.T) {
 		sendEventsToGateway(t, httpPort, writeKey, fmt.Sprintf("msg_%d", i))
 	}
 
-	c, err := kafkaClient.New("tcp", []string{"localhost:" + kafkaContainer.Ports[0]}, kafkaClient.Config{
+	c, err := kafkaClient.New("tcp", kafkaContainer.Brokers, kafkaClient.Config{
 		ClientID: t.Name(),
 	})
 	require.NoError(t, err)
@@ -398,8 +403,8 @@ func sendEvent(t testing.TB, httpPort int, payload *strings.Reader, callType, wr
 	t.Logf("Event Sent Successfully: (%s)", body)
 }
 
-func waitForKafka(ctx context.Context, t testing.TB, topic, port string) (err error) {
-	tc := testutil.New("tcp", "localhost:"+port)
+func waitForKafka(ctx context.Context, t testing.TB, topic, address string) (err error) {
+	tc := testutil.New("tcp", address)
 	for {
 		select {
 		case <-ctx.Done():

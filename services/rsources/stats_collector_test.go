@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	uuid "github.com/google/uuid"
+	"go.uber.org/mock/gomock"
+
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

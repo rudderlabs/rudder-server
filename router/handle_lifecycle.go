@@ -34,7 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -108,6 +108,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, "Router."+destType+".eventOrderKeyThreshold", "Router.eventOrderKeyThreshold")
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
+	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, "Router."+destType+".reportJobsdbPayload", "Router.reportJobsdbPayload")
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
@@ -220,13 +221,12 @@ func (rt *Handle) Setup(
 		return nil
 	})
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		limiterStats := func(key string, pstats *partition.Stats) {
 			allPStats := pstats.All()
 			for _, pstat := range allPStats {
 				statTags := stats.Tags{
-					"destType":  rt.destType,
-					"partition": pstat.Partition,
+					"destType": rt.destType,
 				}
 				stats.Default.NewTaggedStat("rt_"+key+"_limiter_stats_throughput", stats.GaugeType, statTags).Gauge(pstat.Throughput)
 				stats.Default.NewTaggedStat("rt_"+key+"_limiter_stats_errors", stats.GaugeType, statTags).Gauge(pstat.Errors)
@@ -250,7 +250,7 @@ func (rt *Handle) Setup(
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck router
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		for {
 			select {
 			case <-ctx.Done():
@@ -266,12 +266,12 @@ func (rt *Handle) Setup(
 		}
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		rt.collectMetrics(ctx)
 		return nil
 	}))
 
-	g.Go(misc.WithBugsnag(func() error {
+	g.Go(crash.Wrapper(func() error {
 		rt.statusInsertLoop()
 		return nil
 	}))
@@ -324,7 +324,7 @@ func (rt *Handle) Start() {
 	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
-	rt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	rt.backgroundGroup.Go(crash.Wrapper(func() error {
 		defer close(rt.startEnded) // always close the channel
 		select {
 		case <-ctx.Done():
@@ -414,6 +414,7 @@ func (rt *Handle) backendConfigSubscriber() {
 	ch := rt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for configEvent := range ch {
 		destinationsMap := map[string]*routerutils.DestinationWithSources{}
+		connectionsMap := map[types.SourceDest]types.ConnectionWithID{}
 		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range configData {
 			for i := range wConfig.Sources {
@@ -444,8 +445,22 @@ func (rt *Handle) backendConfigSubscriber() {
 					}
 				}
 			}
+			for connectionID := range wConfig.Connections {
+				connection := wConfig.Connections[connectionID]
+				if dest, ok := destinationsMap[connection.DestinationID]; ok &&
+					dest.Destination.DestinationDefinition.Name == rt.destType {
+					connectionsMap[types.SourceDest{
+						SourceID:      connection.SourceID,
+						DestinationID: connection.DestinationID,
+					}] = types.ConnectionWithID{
+						ConnectionID: connectionID,
+						Connection:   connection,
+					}
+				}
+			}
 		}
 		rt.destinationsMapMu.Lock()
+		rt.connectionsMap = connectionsMap
 		rt.destinationsMap = destinationsMap
 		rt.destinationsMapMu.Unlock()
 		if !rt.isBackendConfigInitialized {

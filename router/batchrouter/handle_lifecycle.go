@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
@@ -34,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -181,7 +183,7 @@ func (brt *Handle) Setup(
 		return nil
 	})
 
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.collectMetrics(brt.backgroundCtx)
 		return nil
 	}))
@@ -190,7 +192,7 @@ func (brt *Handle) Setup(
 		brt.startAsyncDestinationManager()
 	}
 
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.backendConfigSubscriber()
 		return nil
 	}))
@@ -230,13 +232,13 @@ func (brt *Handle) startAsyncDestinationManager() {
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
 
 	if asynccommon.IsAsyncRegularDestination(brt.destType) {
-		brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+		brt.backgroundGroup.Go(crash.Wrapper(func() error {
 			brt.pollAsyncStatus(brt.backgroundCtx)
 			return nil
 		}))
 	}
 
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.asyncUploadWorker(brt.backgroundCtx)
 		return nil
 	}))
@@ -245,7 +247,7 @@ func (brt *Handle) startAsyncDestinationManager() {
 // Start starts the batch router's main loop
 func (brt *Handle) Start() {
 	ctx := brt.backgroundCtx
-	brt.backgroundGroup.Go(misc.WithBugsnag(func() error {
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		<-brt.backendConfigInitialized
 		brt.mainLoop(ctx)
 		return nil
@@ -260,7 +262,7 @@ func (brt *Handle) Shutdown() {
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
-	manager, err := asyncdestinationmanager.NewManager(destination, brt.backendConfig)
+	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
 	if err != nil {
 		brt.logger.Errorf("BRT: Error initializing async destination struct for %s destination: %v", destination.Name, err)
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{

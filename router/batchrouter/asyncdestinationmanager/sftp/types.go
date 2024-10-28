@@ -3,12 +3,15 @@ package sftp
 import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sftp"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 // defaultManager is the default manager for SFTP
 type defaultManager struct {
-	FileManager sftp.FileManager
-	logger      logger.Logger
+	logger         logger.Logger
+	statsFactory   stats.Stats
+	FileManager    sftp.FileManager
+	filePathPrefix string
 }
 
 type destConfig struct {
@@ -38,7 +41,7 @@ type destConfig struct {
         "mappedToDestination": "true"
     },
     "fields": {
-        "C_NAME": "john doe,
+        "C_NAME": "john doe",
 		"C_EMAIL": "john.doe@gmail.com",
         "identifier": "e440921e-967c-40d0-abb2-8e0090dfc9ff"
     },

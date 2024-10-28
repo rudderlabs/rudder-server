@@ -11,16 +11,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
-
 	"github.com/cenkalti/backoff/v4"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -30,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	whadmin "github.com/rudderlabs/rudder-server/warehouse/admin"
@@ -234,6 +234,10 @@ func (a *App) setupDatabase(ctx context.Context) error {
 		return fmt.Errorf("could not ping: %w", err)
 	}
 
+	err = a.statsFactory.RegisterCollector(collectors.NewDatabaseSQLStats("warehouse", database))
+	if err != nil {
+		return fmt.Errorf("could not register collector: %w", err)
+	}
 	a.db = sqlquerywrapper.New(
 		database,
 		sqlquerywrapper.WithLogger(a.logger.Child("db")),
@@ -349,7 +353,7 @@ func (a *App) Run(ctx context.Context) error {
 		a.reporting = a.app.Features().Reporting.Setup(gCtx, a.bcConfig)
 		defer a.reporting.Stop()
 		syncer := a.reporting.DatabaseSyncer(types.SyncerConfig{ConnInfo: a.connectionString("reporting"), Label: types.WarehouseReportingLabel})
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			syncer()
 			return nil
 		}))
@@ -375,7 +379,7 @@ func (a *App) Run(ctx context.Context) error {
 	if mode.IsSlave(a.config.mode) {
 		a.logger.Info("Starting warehouse slave...")
 
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			s := slave.New(
 				a.conf,
 				a.logger,
@@ -393,13 +397,13 @@ func (a *App) Run(ctx context.Context) error {
 
 		a.bcConfig.WaitForConfig(ctx)
 
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.notifier.ClearJobs(gCtx)
 		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.monitorDestRouters(gCtx)
 		}))
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			archive.CronArchiver(gCtx, archive.New(
 				a.conf,
 				a.logger,
@@ -414,7 +418,7 @@ func (a *App) Run(ctx context.Context) error {
 			a.grpcServer.Start(gCtx)
 			return nil
 		})
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
+		g.Go(crash.NotifyWarehouse(func() error {
 			return a.sourcesManager.Run(gCtx)
 		}))
 	}
@@ -455,8 +459,8 @@ func (a *App) onConfigDataEvent(
 	enabledDestinations := make(map[string]bool)
 	diffRouters := make(map[string]*router.Router)
 	for _, wConfig := range configMap {
-		for _, source := range wConfig.Sources {
-			for _, destination := range source.Destinations {
+		for _, sConfig := range wConfig.Sources {
+			for _, destination := range sConfig.Destinations {
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 
 				if !slices.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {

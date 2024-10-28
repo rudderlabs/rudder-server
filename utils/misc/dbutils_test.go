@@ -1,6 +1,7 @@
 package misc_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -127,4 +129,31 @@ func TestIdleTxTimeout(t *testing.T) {
 
 		require.NoError(t, tx.Commit())
 	})
+}
+
+func TestCommonPool(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	conf := config.New()
+	conf.Set("DB.host", postgresContainer.Host)
+	conf.Set("DB.user", postgresContainer.User)
+	conf.Set("DB.name", postgresContainer.Database)
+	conf.Set("DB.port", postgresContainer.Port)
+	conf.Set("DB.password", postgresContainer.Password)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	conf.Set("db.test.pool.configUpdateInterval", 10*time.Millisecond)
+	db, err := misc.NewDatabaseConnectionPool(ctx, conf, stats.NOP, "test")
+	require.NoError(t, err)
+	require.NoError(t, db.Ping())
+	defer db.Close()
+	require.Equal(t, 40, db.Stats().MaxOpenConnections)
+
+	conf.Set("db.test.pool.maxOpenConnections", 5)
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, 5, db.Stats().MaxOpenConnections)
 }

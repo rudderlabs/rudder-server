@@ -185,7 +185,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		return
 	}
 
-	defer brt.limiter.read.Begin(partition)()
+	defer brt.limiter.read.Begin("")()
 
 	brt.configSubscriberMu.RLock()
 	destinationsMap := brt.destinationsMap
@@ -274,9 +274,17 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v", time.Now().Unix(), batchJobs.Connection.Source.ID, uuid))
+	gzipFilePath := filepath.Join(
+		tmpDirPath,
+		localTmpDirName,
+		fmt.Sprintf(
+			"%v.%v.%v.json.gz",
+			time.Now().Unix(),
+			batchJobs.Connection.Source.ID,
+			uuid,
+		),
+	)
 
-	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
 		panic(err)

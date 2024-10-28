@@ -846,13 +846,14 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 				uploadInfo.NextRetryTime = nextRetryTime
 			}
 		}
-
-		// set duration as time between updatedAt and lastExec recorded timings for ongoing/retrying uploads
-		// set diff between lastExec and current time
-		if uploadInfo.Status == model.ExportedData || uploadInfo.Status == model.Aborted {
-			uploadInfo.Duration = uploadInfo.UpdatedAt.Sub(uploadInfo.LastExecAt) / time.Second
-		} else {
-			uploadInfo.Duration = u.now().Sub(uploadInfo.LastExecAt) / time.Second
+		if lastExecAt.Valid {
+			// set duration as time between updatedAt and lastExec recorded timings for ongoing/retrying uploads
+			// set diff between lastExec and current time
+			if uploadInfo.Status == model.ExportedData || uploadInfo.Status == model.Aborted {
+				uploadInfo.Duration = uploadInfo.UpdatedAt.Sub(lastExecAt.Time) / time.Second
+			} else {
+				uploadInfo.Duration = u.now().Sub(lastExecAt.Time) / time.Second
+			}
 		}
 
 		// set error only for failed uploads. skip for retried and then successful uploads
@@ -1363,18 +1364,18 @@ func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx conte
 
 	stmt := fmt.Sprintf(`
 	WITH wh_uploads_with_last_successful_upload AS (
-		SELECT 
+		SELECT
 			%[1]s,
 			status,
         	MAX(CASE WHEN status = 'exported_data' THEN created_at ELSE NULL END) OVER (PARTITION BY destination_id) AS last_successful_upload
-		FROM 
+		FROM
 			`+uploadsTableName+`
 		WHERE workspace_id = $1
 		AND created_at >= $2
 	)
 	SELECT %[1]s
 	FROM (
-		SELECT 
+		SELECT
 			*,
 			ROW_NUMBER() OVER (PARTITION BY destination_id ORDER BY created_at) AS row_number
 		FROM wh_uploads_with_last_successful_upload

@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/docker/docker/pkg/fileutils"
-	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"

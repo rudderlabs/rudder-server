@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/oauth2"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"

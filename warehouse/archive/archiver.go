@@ -9,10 +9,6 @@ import (
 	"net/url"
 	"time"
 
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
@@ -21,11 +17,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -47,7 +45,7 @@ type uploadRecord struct {
 	endStagingFileId   int64
 	startLoadFileID    int64
 	endLoadFileID      int64
-	uploadMetdata      json.RawMessage
+	uploadMetadata     json.RawMessage
 	workspaceID        string
 }
 
@@ -61,7 +59,9 @@ type Archiver struct {
 
 	config struct {
 		archiveUploadRelatedRecords config.ValueLoader[bool]
+		canDeleteUploads            config.ValueLoader[bool]
 		uploadsArchivalTimeInDays   config.ValueLoader[int]
+		uploadRetentionTimeInDays   config.ValueLoader[int]
 		archiverTickerTime          config.ValueLoader[time.Duration]
 		backupRowsBatchSize         config.ValueLoader[int]
 		maxLimit                    config.ValueLoader[int]
@@ -88,7 +88,9 @@ func New(
 	}
 
 	a.config.archiveUploadRelatedRecords = a.conf.GetReloadableBoolVar(true, "Warehouse.archiveUploadRelatedRecords")
+	a.config.canDeleteUploads = a.conf.GetReloadableBoolVar(false, "Warehouse.canDeleteUploads")
 	a.config.uploadsArchivalTimeInDays = a.conf.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
+	a.config.uploadRetentionTimeInDays = a.conf.GetReloadableIntVar(90, 1, "Warehouse.uploadRetentionTimeInDays")
 	a.config.backupRowsBatchSize = a.conf.GetReloadableIntVar(100, 1, "Warehouse.Archiver.backupRowsBatchSize")
 	a.config.archiverTickerTime = a.conf.GetReloadableDurationVar(360, time.Minute, "Warehouse.archiverTickerTime", "Warehouse.archiverTickerTimeInMin") // default 6 hours
 	a.config.maxLimit = a.conf.GetReloadableIntVar(10000, 1, "Warehouse.Archiver.maxLimit")
@@ -99,7 +101,7 @@ func New(
 }
 
 func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
-	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,",
+	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,",
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -162,7 +164,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`,
+	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,`,
 		args.uploadID, args.sourceID, args.destID, args.tableName,
 	)
 
@@ -309,7 +311,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			&u.endStagingFileId,
 			&u.startLoadFileID,
 			&u.endLoadFileID,
-			&u.uploadMetdata,
+			&u.uploadMetadata,
 			&u.workspaceID,
 		)
 		if err != nil {
@@ -370,7 +372,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 				continue
 			}
 
-			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
+			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetadata)
 
 			// delete load file records
 			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, hasUsedRudderStorage); err != nil {
@@ -381,14 +383,14 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 		}
 
 		// update upload metadata
-		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
+		u.uploadMetadata, _ = sjson.SetBytes(u.uploadMetadata, "archivedStagingAndLoadFiles", true)
 		stmt := fmt.Sprintf(`
 			UPDATE %s
 			SET metadata = $1
 			WHERE id = $2;`,
 			pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 		)
-		_, err = txn.ExecContext(ctx, stmt, u.uploadMetdata, u.uploadID)
+		_, err = txn.ExecContext(ctx, stmt, u.uploadMetadata, u.uploadID)
 		if err != nil {
 			a.log.Errorf(`[Archiver]: Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
 			_ = txn.Rollback()
@@ -509,4 +511,53 @@ func (a *Archiver) deleteLoadFileRecords(
 	}
 
 	return nil
+}
+
+func (a *Archiver) Delete(ctx context.Context) error {
+	a.log.Infon(`Started deleting for warehouse`)
+
+	maxLimit := a.config.maxLimit.Load()
+
+	for {
+		count, err := a.deleteUploads(ctx, maxLimit)
+		if err != nil {
+			return fmt.Errorf("deleting uploads: %w", err)
+		}
+		if count == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+func (a *Archiver) deleteUploads(ctx context.Context, limit int) (int64, error) {
+	skipWorkspaceIDs := []string{""}
+	skipWorkspaceIDs = append(skipWorkspaceIDs, a.tenantManager.DegradedWorkspaces()...)
+
+	sqlStatement := fmt.Sprintf(`
+		WITH rows_to_delete AS (
+    		SELECT ctid
+    			FROM %[1]s
+    			WHERE created_at < NOW() - $1::interval
+      			AND status = $2
+      			AND NOT workspace_id = ANY ($3)
+    			LIMIT $4
+		)
+		DELETE FROM %[1]s
+		WHERE ctid IN (SELECT ctid FROM rows_to_delete);
+`,
+		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable))
+
+	result, err := a.db.ExecContext(
+		ctx,
+		sqlStatement,
+		fmt.Sprintf("%d DAY", a.config.uploadRetentionTimeInDays.Load()),
+		model.ExportedData,
+		pq.Array(skipWorkspaceIDs),
+		limit,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("error deleting uploads: %w", err)
+	}
+	return result.RowsAffected()
 }

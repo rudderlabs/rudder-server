@@ -10,31 +10,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
 	verifyCA = "verify-ca"
 )
 
@@ -119,6 +109,7 @@ type Postgres struct {
 	Warehouse          model.Warehouse
 	Uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
+	conf               *config.Config
 	logger             logger.Logger
 	stats              stats.Stats
 	LoadFileDownloader downloader.Downloader
@@ -162,6 +153,7 @@ var partitionKeyMap = map[string]string{
 func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg := &Postgres{}
 
+	pg.conf = conf
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
@@ -242,13 +234,13 @@ func (pg *Postgres) connect() (*sqlmiddleware.DB, error) {
 }
 
 func (pg *Postgres) getConnectionCredentials() credentials {
-	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
+	sslMode := pg.Warehouse.GetStringDestinationConfig(pg.conf, model.SSLModeSetting)
 	creds := credentials{
-		host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
-		database: warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, pg.Warehouse),
-		password: warehouseutils.GetConfigValue(password, pg.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		host:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.HostSetting),
+		database: pg.Warehouse.GetStringDestinationConfig(pg.conf, model.DatabaseSetting),
+		user:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.UserSetting),
+		password: pg.Warehouse.GetStringDestinationConfig(pg.conf, model.PasswordSetting),
+		port:     pg.Warehouse.GetStringDestinationConfig(pg.conf, model.PortSetting),
 		sslMode:  sslMode,
 		sslDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.connectTimeout,
@@ -500,7 +492,7 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pg.logger.Error(err.Error())
-			return client.Client{}, fmt.Errorf(err.Error())
+			return client.Client{}, errors.New(err.Error())
 		}
 	}
 	pg.Warehouse = warehouse

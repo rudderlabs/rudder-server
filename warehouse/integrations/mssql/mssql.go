@@ -42,15 +42,6 @@ import (
 )
 
 const (
-	host     = "host"
-	dbName   = "database"
-	user     = "user"
-	password = "password"
-	port     = "port"
-	sslMode  = "sslMode"
-)
-
-const (
 	stringLengthLimit = 512
 	provider          = warehouseutils.MSSQL
 	tableNameLimit    = 127
@@ -99,6 +90,7 @@ type MSSQL struct {
 	connectTimeout     time.Duration
 	LoadFileDownLoader downloader.Downloader
 
+	conf   *config.Config
 	stats  stats.Stats
 	logger logger.Logger
 
@@ -140,6 +132,7 @@ var errorsMappings = []model.JobError{
 
 func New(conf *config.Config, log logger.Logger, stats stats.Stats) *MSSQL {
 	ms := &MSSQL{
+		conf:   conf,
 		stats:  stats,
 		logger: log.Child("integrations").Child("mssql"),
 	}
@@ -203,12 +196,12 @@ func (ms *MSSQL) connect() (*sqlmw.DB, error) {
 
 func (ms *MSSQL) connectionCredentials() *credentials {
 	return &credentials{
-		host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		database: warehouseutils.GetConfigValue(dbName, ms.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, ms.Warehouse),
-		password: warehouseutils.GetConfigValue(password, ms.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+		host:     ms.Warehouse.GetStringDestinationConfig(ms.conf, model.HostSetting),
+		database: ms.Warehouse.GetStringDestinationConfig(ms.conf, model.DatabaseSetting),
+		user:     ms.Warehouse.GetStringDestinationConfig(ms.conf, model.UserSetting),
+		password: ms.Warehouse.GetStringDestinationConfig(ms.conf, model.PasswordSetting),
+		port:     ms.Warehouse.GetStringDestinationConfig(ms.conf, model.PortSetting),
+		sslMode:  ms.Warehouse.GetStringDestinationConfig(ms.conf, model.SSLModeSetting),
 		timeout:  ms.connectTimeout,
 	}
 }

@@ -216,15 +216,24 @@ func getTempFilePath() (string, error) {
 	folderPath := path.Join(tmpDirPath, localTmpDirName)
 	_, e := os.Stat(folderPath)
 	if os.IsNotExist(e) {
-		folderPath, _ = os.MkdirTemp(folderPath, "")
+		if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {
+			return "", err
+		}
 	}
 	tmpFilePath := filepath.Join(folderPath, uuid.NewString())
 	return tmpFilePath, nil
 }
 
-func getUploadFilePath(path string, metadata map[string]any) string {
+func getUploadFilePath(path string, metadata map[string]any) (string, error) {
+	if path == "" {
+		return "", errors.New("upload file path can not be empty")
+	}
+
 	// Get the current date and time
-	now := time.Now()
+	now, ok := metadata["timestamp"].(time.Time)
+	if !ok {
+		now = time.Now()
+	}
 	// Replace dynamic variables with their actual values
 	result := re.ReplaceAllStringFunc(path, func(match string) string {
 		switch match {
@@ -256,7 +265,7 @@ func getUploadFilePath(path string, metadata map[string]any) string {
 		}
 	})
 
-	return result
+	return result, nil
 }
 
 func generateErrorOutput(err string, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
@@ -297,10 +306,21 @@ func validate(d destConfig) error {
 		return err
 	}
 
-	if d.FilePath == "" {
-		return errors.New("filePath cannot be empty")
+	if err := validateFilePath(d.FilePath); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func validateFilePath(path string) error {
+	if !strings.Contains(path, "{destinationID}") {
+		return errors.New("destinationID placeholder is missing in the upload filePath")
+	}
+
+	if !strings.Contains(path, "{jobRunID}") {
+		return errors.New("jobRunID placeholder is missing in the upload filePath")
+	}
 	return nil
 }
 
@@ -320,4 +340,10 @@ func isValidFileFormat(format string) error {
 		return fmt.Errorf("invalid file format: %s", format)
 	}
 	return nil
+}
+
+func appendFileNumberInFilePath(path string, partFileNumber int) string {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(path, ext)
+	return fmt.Sprintf("%s_%d%s", base, partFileNumber, ext)
 }
