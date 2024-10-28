@@ -21,6 +21,7 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
+	w.channel.preTransform = make(chan *preTransformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess.Load()/w.handle.config().subJobSize+1))
 	w.start()
@@ -70,7 +71,7 @@ func (w *worker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.transform)
+		defer close(w.channel.preTransform)
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 		for jobs := range w.channel.preprocess {
 			var val *preTransformationMessage
@@ -87,7 +88,7 @@ func (w *worker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.preTransform)
+		defer close(w.channel.transform)
 		for msg := range w.channel.preTransform {
 			w.channel.transform <- w.handle.generateTransformationMessage(msg)
 		}
