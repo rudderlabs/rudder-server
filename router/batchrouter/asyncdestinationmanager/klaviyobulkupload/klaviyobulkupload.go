@@ -308,6 +308,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	var failedJobs []int64
+	var abortedJobs []int64
+	var abortReason string
 	var successJobs []int64
 	filePath := asyncDestStruct.FileName
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
@@ -335,8 +337,10 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		profileStructure := kbu.ExtractProfile(input)
 		// if profileStructure length is more than 5 mb, throw an error
 		profileStructureJSON, _ := json.Marshal(profileStructure)
-		if float64(len(profileStructureJSON)) >= 5000000 {
-			return kbu.generateKlaviyoErrorOutput("Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 5 mb", err, importingJobIDs, destinationID)
+		if float64(len(profileStructureJSON)) >= MAXPAYLOADSIZE {
+			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 5 mb"
+			abortedJobs = append(abortedJobs, int64(input.Metadata.JobID))
+			continue
 		}
 		combinedProfiles = append(combinedProfiles, profileStructure)
 	}
@@ -405,6 +409,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	return common.AsyncUploadOutput{
 		ImportingParameters: importParameters,
 		FailedJobIDs:        failedJobs,
+		AbortJobIDs:         abortedJobs,
+		AbortReason:         abortReason,
 		FailedCount:         len(failedJobs),
 		ImportingJobIDs:     successJobs,
 		DestinationID:       destination.ID,
