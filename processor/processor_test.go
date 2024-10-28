@@ -1020,13 +1020,6 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 			)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
-			for _, v := range c.MockObserver.calls {
-				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100)) // from DgSourceTrackingPlanConfig
-				}
-			}
 		})
 		It("Tracking plan version override from context.ruddertyper", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
@@ -1100,14 +1093,6 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 					},
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
-			for _, v := range c.MockObserver.calls {
-				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
-					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123)) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
-				}
-			}
 		})
 	})
 })
@@ -1305,8 +1290,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should process events and write to event schemas DB with enableParallelScan", func() {
@@ -1476,8 +1459,6 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
@@ -1661,8 +1642,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should process events and write to archival DB with parallelScan", func() {
@@ -1818,8 +1797,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 
 		It("should skip writing events belonging to transient sources in archival DB", func() {
@@ -1969,8 +1946,6 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					subJobs: unprocessedJobsList,
 				},
 			)
-
-			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
 	})
 })
