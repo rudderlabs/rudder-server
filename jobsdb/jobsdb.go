@@ -25,6 +25,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
@@ -3271,7 +3273,73 @@ func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 		return nil, err
 	}
 
-	return v, nil
+	s, err := jsonToBytea(string(v))
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(s), nil
+}
+
+func jsonToBytea(jsonStr string) (string, error) {
+	// Remove any JSON string quotes if present
+	jsonStr = strings.Trim(jsonStr, "\"")
+
+	var builder strings.Builder
+	builder.WriteString("\\x") // PostgreSQL bytea hex format prefix
+
+	i := 0
+	for i < len(jsonStr) {
+		if jsonStr[i] == '\\' && i+1 < len(jsonStr) {
+			switch jsonStr[i+1] {
+			case 'u': // Unicode escape
+				if i+5 >= len(jsonStr) {
+					return "", fmt.Errorf("invalid unicode escape at position %d", i)
+				}
+				hexStr := jsonStr[i+2 : i+6]
+				decoded, err := hex.DecodeString(hexStr)
+				if err != nil {
+					return "", fmt.Errorf("invalid unicode hex sequence at position %d: %v", i, err)
+				}
+				builder.WriteString(hex.EncodeToString(decoded))
+				i += 6
+			case 'x': // Hex escape
+				if i+3 >= len(jsonStr) {
+					return "", fmt.Errorf("invalid hex escape at position %d", i)
+				}
+				hexStr := jsonStr[i+2 : i+4]
+				builder.WriteString(hexStr)
+				i += 4
+			case '\\', '"', '/': // Simple escapes
+				builder.WriteString(hex.EncodeToString([]byte{jsonStr[i+1]}))
+				i += 2
+			case 'b':
+				builder.WriteString("08") // Backspace
+				i += 2
+			case 'f':
+				builder.WriteString("0C") // Form feed
+				i += 2
+			case 'n':
+				builder.WriteString("0A") // Newline
+				i += 2
+			case 'r':
+				builder.WriteString("0D") // Carriage return
+				i += 2
+			case 't':
+				builder.WriteString("09") // Tab
+				i += 2
+			default:
+				return "", fmt.Errorf("invalid escape sequence '\\%c' at position %d", jsonStr[i+1], i)
+			}
+		} else if unicode.IsPrint(rune(jsonStr[i])) {
+			// Convert regular printable characters to hex
+			builder.WriteString(hex.EncodeToString([]byte{jsonStr[i]}))
+			i++
+		} else {
+			return "", fmt.Errorf("invalid character at position %d", i)
+		}
+	}
+
+	return builder.String(), nil
 }
 
 type smallDS struct {
