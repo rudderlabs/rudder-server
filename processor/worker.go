@@ -46,7 +46,7 @@ type worker struct {
 	}
 	channel struct { // worker channels
 		preprocess   chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		preTransform chan *preTransformationMessage // pre-transform step - deduplication, validation, store to arc, esch
+		preTransform chan *preTransformationMessage // pre-transform step - validation, store to arc, esch
 		transform    chan *transformationMessage    // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		store        chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
