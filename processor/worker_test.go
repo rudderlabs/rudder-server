@@ -203,7 +203,7 @@ type mockWorkerHandle struct {
 	shouldProcessMultipleSubJobs bool
 }
 
-func (m *mockWorkerHandle) processJobsForDestV2(partition string, subJobs subJob) (*transformationMessage, error) {
+func (m *mockWorkerHandle) processJobsForDestV2(partition string, subJobs subJob) *preTransformationMessage {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}
@@ -215,13 +215,20 @@ func (m *mockWorkerHandle) processJobsForDestV2(partition string, subJobs subJob
 	m.partitionStats[partition] = s
 	m.log.Infof("processJobsForDestV2 partition: %s stats: %+v", partition, s)
 
-	return &transformationMessage{
+	return &preTransformationMessage{
 		totalEvents: len(subJobs.subJobs),
-		hasMore:     subJobs.hasMore,
+		subJobs:     subJobs,
+	}
+}
+
+func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMessage) *transformationMessage {
+	return &transformationMessage{
+		totalEvents: in.totalEvents,
+		hasMore:     in.subJobs.hasMore,
 		trackedUsersReports: []*trackedusers.UsersReport{
 			{WorkspaceID: sampleWorkspaceID},
 		},
-	}, nil
+	}
 }
 
 func (m *mockWorkerHandle) tracer() stats.Tracer {
@@ -270,9 +277,9 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 		var dest *transformationMessage
 		var err error
 		if m.enableParallelScan {
-			dest, err = m.processJobsForDestV2(partition, subJob)
+			dest = m.generateTransformationMessage(m.processJobsForDestV2(partition, subJob))
 		} else {
-			dest, err = m.processJobsForDest(partition, subJob)
+			dest = m.generateTransformationMessage(m.processJobsForDest(partition, subJob))
 		}
 		if err != nil {
 			return false
@@ -363,7 +370,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *preTransformationMessage {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin(partition)()
 	}
@@ -375,13 +382,10 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 	m.partitionStats[partition] = s
 	m.log.Infof("processJobsForDest partition: %s stats: %+v", partition, s)
 
-	return &transformationMessage{
+	return &preTransformationMessage{
 		totalEvents: len(subJobs.subJobs),
-		hasMore:     subJobs.hasMore,
-		trackedUsersReports: []*trackedusers.UsersReport{
-			{WorkspaceID: sampleWorkspaceID},
-		},
-	}, nil
+		subJobs:     subJobs,
+	}
 }
 
 func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {

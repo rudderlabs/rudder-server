@@ -45,9 +45,10 @@ type worker struct {
 		wg     sync.WaitGroup     // worker wait group
 	}
 	channel struct { // worker channels
-		preprocess chan subJob                 // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		transform  chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
-		store      chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
+		preprocess   chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		preTransform chan *preTransformationMessage // pre-transform step - deduplication, validation, store to arc, esch
+		transform    chan *transformationMessage    // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
+		store        chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
 }
 
@@ -72,17 +73,23 @@ func (w *worker) start() {
 		defer close(w.channel.transform)
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 		for jobs := range w.channel.preprocess {
-			var val *transformationMessage
-			var err error
+			var val *preTransformationMessage
 			if w.handle.config().enableParallelScan {
-				val, err = w.handle.processJobsForDestV2(w.partition, jobs)
+				val = w.handle.processJobsForDestV2(w.partition, jobs)
 			} else {
-				val, err = w.handle.processJobsForDest(w.partition, jobs)
+				val = w.handle.processJobsForDest(w.partition, jobs)
 			}
-			if err != nil {
-				panic(err)
-			}
-			w.channel.transform <- val
+			w.channel.preTransform <- val
+		}
+	})
+
+	// pre-transformation step
+	w.lifecycle.wg.Add(1)
+	rruntime.Go(func() {
+		defer w.lifecycle.wg.Done()
+		defer close(w.channel.preTransform)
+		for msg := range w.channel.preTransform {
+			w.channel.transform <- w.handle.generateTransformationMessage(msg)
 		}
 	})
 

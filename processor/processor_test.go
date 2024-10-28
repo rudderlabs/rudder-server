@@ -971,7 +971,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1046,7 +1046,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1299,7 +1299,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1470,7 +1470,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1655,7 +1655,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1812,7 +1812,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -1963,7 +1963,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			_ = processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
@@ -3343,7 +3343,6 @@ var _ = Describe("Processor", Ordered, func() {
 						"2001-01-02T02:23:45.000Z",
 						[]mockEventData{
 							messages["message-some-id-2"],
-							messages["message-some-id-1"],
 						},
 						createMessagePayloadWithSameMessageId,
 					),
@@ -3375,7 +3374,6 @@ var _ = Describe("Processor", Ordered, func() {
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().GetBatch(gomock.Any()).Return(map[dedupTypes.KeyValue]bool{
 				{Key: "message-some-id", Value: 230, JobID: 1010, WorkspaceID: ""}: true,
-				{Key: "message-some-id", Value: 246, JobID: 1010, WorkspaceID: ""}: true,
 				{Key: "message-some-id", Value: 246, JobID: 2010, WorkspaceID: ""}: true,
 			}, nil, nil).After(callUnprocessed).AnyTimes()
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
@@ -3386,7 +3384,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
