@@ -278,7 +278,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 	start := time.Now()
 	limiter := w.rt.limiter.transform
 	limiterStats := w.rt.limiter.stats.transform
-	defer limiter.BeginWithPriority(w.partition, LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
+	defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
 	defer func() {
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
@@ -322,7 +322,7 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 	start := time.Now()
 	limiter := w.rt.limiter.batch
 	limiterStats := w.rt.limiter.stats.batch
-	defer limiter.BeginWithPriority(w.partition, LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
+	defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
 	defer func() {
 		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
 	}()
@@ -372,7 +372,7 @@ func (w *worker) processDestinationJobs() {
 	var successCount, errorCount int
 	limiter := w.rt.limiter.process
 	limiterStats := w.rt.limiter.stats.process
-	defer limiter.BeginWithPriority(w.partition, LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
+	defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
 	defer func() {
 		limiterStats.Update(w.partition, time.Since(start), successCount+errorCount, errorCount)
 	}()

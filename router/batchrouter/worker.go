@@ -63,7 +63,7 @@ func (w *worker) Work() bool {
 func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *DestinationJobs) {
 	brt := w.brt
 	rruntime.Go(func() {
-		defer brt.limiter.process.Begin(w.partition)()
+		defer brt.limiter.process.Begin("")()
 		defer jobsWg.Done()
 		destWithSources := destinationJobs.destWithSources
 		parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destWithSources.Destination.ID}}
@@ -207,7 +207,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				continue
 			}
 			rruntime.Go(func() {
-				defer brt.limiter.upload.Begin(w.partition)()
+				defer brt.limiter.upload.Begin("")()
 				switch {
 				case IsObjectStorageDestination(brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
