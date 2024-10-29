@@ -2024,14 +2024,31 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if _, err := tx.ExecContext(ctx, rollbackSql); err != nil {
 				return err
 			}
-			for i := range jobList {
-				err = jobList[i].sanitizeJSON()
-				if err != nil {
-					return fmt.Errorf("sanitizeJSON: %w", err)
+			valueStrings := make([]string, 0, len(jobList))
+			valueArgs := make([]interface{}, 0, len(jobList)*7)
+			for i, job := range jobList {
+				eventCount := 1
+				if job.EventCount > 1 {
+					eventCount = job.EventCount
 				}
+				valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, convert_to($%d::TEXT, 'UTF8')::bytea, $%d, $%d)", i*7+1, i*7+2, i*7+3, i*7+4, i*7+5, i*7+6, i*7+7))
+				valueArgs = append(valueArgs, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId)
 			}
-			return store()
+			sqlStatement := fmt.Sprintf(`INSERT INTO %[1]q (uuid, user_id, custom_val, parameters, event_payload, event_count, workspace_id) VALUES %[2]s`, ds.JobTable, strings.Join(valueStrings, ","))
+			_, err = tx.ExecContext(ctx, sqlStatement, valueArgs...)
+
+			if err != nil {
+				return fmt.Errorf("bulk insert failed: %w", err)
+			}
 		}
+		// 	for i := range jobList {
+		// 		err = jobList[i].sanitizeJSON()
+		// 		if err != nil {
+		// 			return fmt.Errorf("sanitizeJSON: %w", err)
+		// 		}
+		// 	}
+		// 	return store()
+		// }
 	}
 	return err
 }
