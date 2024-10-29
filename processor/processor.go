@@ -1816,7 +1816,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			return nil, err
 		}
 	}
-	proc.statsFactory.NewStat("processor.event_pickup_lag_seconds", stats.TimerType).Since(dedupStart)
+	proc.statsFactory.NewTaggedStat("processor.dedup_duration_seconds", stats.TimerType, stats.Tags{"process": "V2"}).Since(dedupStart)
 	for _, event := range jobsWithMetaData {
 		sourceId := event.eventParams.SourceId
 		if event.eventParams.DestinationID != "" {
