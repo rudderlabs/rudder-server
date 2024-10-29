@@ -19,6 +19,7 @@ type destInfoTestCase struct {
 	description    string
 	flow           common.RudderFlow
 	inputDefConfig map[string]interface{}
+	Config         map[string]interface{}
 	expected       isOAuthResult
 }
 
@@ -109,6 +110,34 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: false,
 		},
 	},
+	{
+		description: "should return 'true' for optionalOAuth destination when flow is delivery and rudderAccountId is present",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "optionalAuth",
+			},
+		},
+		Config: map[string]interface{}{
+			"rudderAccountId": "123",
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description: "should return 'false' for optionalOAuth destination when flow is delivery and rudderAccountId is empty",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "optionalAuth",
+			},
+		},
+		Config: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
@@ -119,6 +148,9 @@ var _ = Describe("DestinationInfo tests", func() {
 					DefinitionName: "dest_def_name",
 				}
 				d.DefinitionConfig = tc.inputDefConfig
+				if len(tc.Config) > 0 {
+					d.Config = tc.Config
+				}
 				isOAuth, err := d.IsOAuthDestination(tc.flow)
 
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))
