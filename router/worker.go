@@ -166,7 +166,8 @@ func (w *worker) workLoop() {
 				}
 			}
 
-			sentAt := gjson.GetBytes(job.EventPayload, "sentAt").Str
+			// FIXME: for pubsub specifically
+			sentAt := gjson.GetBytes(job.EventPayload, "message.sentAt").Str
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 			dontBatch := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "dontBatch").Bool()
