@@ -3,7 +3,6 @@ package batchrouter
 import (
 	"context"
 	stdjson "encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -180,7 +179,7 @@ func (brt *Handle) updatePollStatusToDB(
 
 			if uploadStatsResp.StatusCode != http.StatusOK {
 				brt.logger.Errorf("[Batch Router] Failed to fetch failed jobs for Dest Type %v with statusCode %v , error %v", brt.destType, uploadStatsResp.StatusCode, uploadStatsResp.Error)
-				return statusList, errors.New(fmt.Sprintf("failed to fetch failed jobs error %v", uploadStatsResp.Error))
+				return statusList, fmt.Errorf("failed to fetch failed jobs error %v", uploadStatsResp.Error)
 			}
 
 			var completedJobsList []*jobsdb.JobT
