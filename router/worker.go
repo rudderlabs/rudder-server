@@ -166,6 +166,8 @@ func (w *worker) workLoop() {
 				}
 			}
 
+			sentAt := gjson.GetBytes(job.EventPayload, "sentAt").Str
+
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 			dontBatch := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "dontBatch").Bool()
 			jobMetadata := types.JobMetadataT{
@@ -184,6 +186,7 @@ func (w *worker) workLoop() {
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
+				SentAt:             sentAt,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -1122,6 +1125,22 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
+			}
+		}
+		if destinationJobMetadata.SentAt != "" {
+			sentTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.SentAt)
+			if err == nil {
+				eventsDeliveryLatencyStat := stats.Default.NewTaggedStat(
+					"event_delivery_from_sent_time", stats.TimerType, map[string]string{
+						"module":         "router",
+						"destType":       w.rt.destType,
+						"destID":         destination.ID,
+						"destination":    destinationTag,
+						"workspaceId":    status.WorkspaceId,
+						"sourceId":       destinationJobMetadata.SourceID,
+						"sourceCategory": destinationJobMetadata.SourceCategory,
+					})
+				eventsDeliveryLatencyStat.SendTiming(time.Since(sentTime))
 			}
 		}
 	}

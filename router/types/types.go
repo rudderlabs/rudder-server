@@ -80,6 +80,7 @@ type JobMetadataT struct {
 	DestinationID      string          `json:"destinationId"`
 	AttemptNum         int             `json:"attemptNum"`
 	ReceivedAt         string          `json:"receivedAt"`
+	SentAt             string          `json:"sentAt"`
 	CreatedAt          string          `json:"createdAt"`
 	FirstAttemptedAt   string          `json:"firstAttemptedAt"`
 	TransformAt        string          `json:"transformAt"`
