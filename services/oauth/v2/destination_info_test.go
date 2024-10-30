@@ -115,7 +115,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		flow:        common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{
 			"auth": map[string]interface{}{
-				"type": "optionalAuth",
+				"type": "optionalOAuth",
 			},
 		},
 		Config: map[string]interface{}{
@@ -130,7 +130,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		flow:        common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{
 			"auth": map[string]interface{}{
-				"type": "optionalAuth",
+				"type": "optionalOAuth",
 			},
 		},
 		Config: map[string]interface{}{},

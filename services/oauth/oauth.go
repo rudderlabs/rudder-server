@@ -32,7 +32,7 @@ type (
 
 const (
 	OAuth           AuthType = "OAuth"
-	OptionalOAuth   AuthType = "optionalAuth"
+	OptionalOAuth   AuthType = "optionalOAuth"
 	InvalidAuthType AuthType = "InvalidAuthType"
 
 	RudderFlow_Delivery RudderFlow = "delivery"
