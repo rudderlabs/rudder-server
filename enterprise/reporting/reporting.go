@@ -74,6 +74,9 @@ type DefaultReporter struct {
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
+
+	eventSamplingEnabled config.ValueLoader[bool]
+	eventSampler         *EventSampler[string]
 }
 
 func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -88,6 +91,9 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
+	eventSamplingEnabled := config.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
+	eventSamplingDuration := config.GetReloadableDurationVar(5, time.Minute, "Reporting.eventSamplingDurationInMinutes")
+	eventSamplingCardinality := config.GetReloadableIntVar(100000000, 1, "Reporting.eventSamplingCardinality")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -115,6 +121,8 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
 		stats:                                stats,
+		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSampler:                         NewEventSampler[string](eventSamplingDuration, eventSamplingCardinality),
 	}
 }
 
@@ -615,6 +623,24 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
+func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) types.PUReportedMetric {
+	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
+	isValidSampleResponse := metric.StatusDetail.SampleResponse != ""
+	// TODO: Check if this is needed and if the validation is correct
+
+	if isValidSampleEvent && isValidSampleResponse {
+		hash := NewLabelSet(metric).generateHash()
+
+		if r.eventSampler.Get(hash) {
+			metric.StatusDetail.SampleEvent = []byte(`{}`)
+			metric.StatusDetail.SampleResponse = ""
+		} else {
+			r.eventSampler.Put(hash)
+		}
+	}
+	return metric
+}
+
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -660,6 +686,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
+
+		if r.eventSamplingEnabled.Load() {
+			metric = r.transformMetricWithEventSampling(metric)
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)

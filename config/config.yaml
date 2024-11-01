@@ -249,3 +249,7 @@ PgNotifier:
   retriggerCount: 500
   trackBatchInterval: 2s
   maxAttempt: 3
+Reporting:
+  eventSamplingEnabled: true
+  eventSamplingDurationInMinutes: 60
+  eventSamplingCardinality: 100000000 # 100M
