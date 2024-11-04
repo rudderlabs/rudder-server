@@ -144,7 +144,7 @@ func updateAutoExplainDurationThreshold(ctx context.Context, db *sql.DB, config 
 		threshold = -1
 	}
 	_, err := db.ExecContext(ctx, fmt.Sprintf("SET auto_explain.log_min_duration = %d;", threshold))
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		panic(fmt.Errorf("Error setting auto_explain.log_min_duration: %w", err))
 	}
 }
