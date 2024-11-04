@@ -22,8 +22,8 @@ func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
 }
 
-func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats OAuthStatsHandler) bool {
-	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, &stats) {
+func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, statsHandler OAuthStatsHandler) bool {
+	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, &statsHandler) {
 		return true
 	}
 	if !routerutils.IsNotEmptyString(string(oldSecret)) {
@@ -32,10 +32,10 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	return bytes.Equal(secret.Secret, oldSecret)
 }
 
-func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, measurement *OAuthStatsHandler) bool {
+func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, statsHandler *OAuthStatsHandler) bool {
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
-		measurement.Increment("proactive_token_refresh", stats.Tags{
+		statsHandler.Increment("proactive_token_refresh", stats.Tags{
 			"errorMessage": "parsing failed",
 		})
 		return false
