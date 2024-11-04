@@ -222,4 +222,32 @@ var _ = Describe("DestinationInfo tests", func() {
 			Expect(err).To(MatchError("rudderDeleteAccountId is not a string"))
 		})
 	})
+
+	Describe("IsOptionalOAuth tests", func() {
+		It("should return true when auth.type is optionalOAuth & rudderAccountId is present", func() {
+			d := &v2.DestinationInfo{
+				DefinitionConfig: map[string]interface{}{
+					"auth": map[string]interface{}{"type": "optionalOAuth"},
+				},
+				Config: map[string]interface{}{
+					"rudderAccountId": "123",
+				},
+			}
+			Expect(d.IsOptionalOAuth(common.RudderFlowDelivery)).To(BeTrue())
+		})
+
+		It("should return false when auth.type is not optionalOAuth", func() {
+			d := &v2.DestinationInfo{
+				DefinitionConfig: map[string]interface{}{"auth": map[string]interface{}{"type": "OAuth"}},
+			}
+			Expect(d.IsOptionalOAuth(common.RudderFlowDelivery)).To(BeFalse())
+		})
+
+		It("should return false when auth.type is not a string", func() {
+			d := &v2.DestinationInfo{
+				DefinitionConfig: map[string]interface{}{"auth": map[string]interface{}{"type": 2}},
+			}
+			Expect(d.IsOptionalOAuth(common.RudderFlowDelivery)).To(BeFalse())
+		})
+	})
 })

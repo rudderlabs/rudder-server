@@ -19,7 +19,7 @@ type DestinationInfo struct {
 	Config           map[string]interface{}
 }
 
-func (d *DestinationInfo) isOptionalOAuth(flow common.RudderFlow) bool {
+func (d *DestinationInfo) IsOptionalOAuth(flow common.RudderFlow) bool {
 	authTypeValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
 	if authTypeValue == nil {
 		return false
@@ -49,7 +49,7 @@ func (d *DestinationInfo) isOAuth(flow common.RudderFlow) (bool, error) {
 		// we should throw error here, as we expect authValue to be a string if present
 		return false, fmt.Errorf("auth type is not a string: %v", authValue)
 	}
-	isScopeSupported, err := d.IsOAuthSupportedForFlow(string(flow))
+	isScopeSupported, err := d.isOAuthSupportedForFlow(string(flow))
 	if err != nil {
 		return false, err
 	}
@@ -61,11 +61,11 @@ func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	isOptionalOAuth := d.isOptionalOAuth(flow)
+	isOptionalOAuth := d.IsOptionalOAuth(flow)
 	return isOAuth || isOptionalOAuth, nil
 }
 
-func (d *DestinationInfo) IsOAuthSupportedForFlow(flow string) (bool, error) {
+func (d *DestinationInfo) isOAuthSupportedForFlow(flow string) (bool, error) {
 	rudderScopesValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "rudderScopes")
 	if rudderScopesValue == nil {
 		// valid use-case for non-OAuth destinations
