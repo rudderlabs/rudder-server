@@ -54,6 +54,20 @@ func NewDatabaseConnectionPool(
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("Error pinging database: %w", err)
 	}
+	if _, err := db.ExecContext(ctx, "LOAD 'auto_explain';"); err != nil {
+		return nil, fmt.Errorf("Error loading auto_explain: %w", err)
+	}
+	autoExplainDurationThresholdVar := conf.GetReloadableDurationVar(10, time.Second, "db."+componentName+".autoExplainDurationThreshold", "db.autoExplainDurationThreshold")
+	autoExplainEnabledVar := conf.GetReloadableBoolVar(true, "db."+componentName+".autoExplainEnabled", "db.autoExplainEnabled")
+	autoExplainConfigValue := autoExplainConfig{
+		enabled:   autoExplainEnabledVar.Load(),
+		threshold: autoExplainDurationThresholdVar.Load(),
+	}
+	autoExplainConfigValueVar := &autoExplainConfigLoader{
+		enabled:   autoExplainEnabledVar,
+		threshold: autoExplainDurationThresholdVar,
+	}
+	updateAutoExplainDurationThreshold(ctx, db, autoExplainConfigValue)
 	if err := stat.RegisterCollector(
 		collectors.NewDatabaseSQLStats(
 			componentName,
@@ -98,10 +112,41 @@ func NewDatabaseConnectionPool(
 				updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, maxIdleTimeVar)
 				updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, maxIdleConnsVar)
 				updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, maxConnLifetimeVar)
+				updatePoolConfig(func(config autoExplainConfig) {
+					updateAutoExplainDurationThreshold(ctx, db, config)
+				}, &autoExplainConfigValue, autoExplainConfigValueVar)
 			}
 		}
 	})
 	return db, nil
+}
+
+type autoExplainConfig struct {
+	enabled   bool
+	threshold time.Duration
+}
+
+type autoExplainConfigLoader struct {
+	enabled   config.ValueLoader[bool]
+	threshold config.ValueLoader[time.Duration]
+}
+
+func (l autoExplainConfigLoader) Load() autoExplainConfig {
+	return autoExplainConfig{
+		enabled:   l.enabled.Load(),
+		threshold: l.threshold.Load(),
+	}
+}
+
+func updateAutoExplainDurationThreshold(ctx context.Context, db *sql.DB, config autoExplainConfig) {
+	threshold := config.threshold.Milliseconds()
+	if !config.enabled {
+		threshold = -1
+	}
+	_, err := db.ExecContext(ctx, fmt.Sprintf("SET auto_explain.log_min_duration = %d;", threshold))
+	if err != nil {
+		panic(fmt.Errorf("Error setting auto_explain.log_min_duration: %w", err))
+	}
 }
 
 func updatePoolConfig[T comparable](setter func(T), current *T, conf config.ValueLoader[T]) {
