@@ -138,6 +138,20 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: false,
 		},
 	},
+	{
+		description: "should return 'false' when auth.type is not a string",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": 2,
+			},
+		},
+		Config: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+			err:     fmt.Errorf("auth type is not a string: 2"),
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
@@ -161,5 +175,51 @@ var _ = Describe("DestinationInfo tests", func() {
 				}
 			})
 		}
+	})
+
+	Describe("GetAccountID tests", func() {
+		It("should return accountID for a valid OAuth destination for delivery flow", func() {
+			d := &v2.DestinationInfo{
+				DefinitionName: "dest_def_name",
+				Config: map[string]interface{}{
+					"rudderAccountId": "123",
+				},
+			}
+			accountID, err := d.GetAccountID(common.RudderFlowDelivery)
+			Expect(accountID).To(Equal("123"))
+			Expect(err).To(BeNil())
+		})
+
+		It("should return error when auth.type is not a string for delivery flow", func() {
+			d := &v2.DestinationInfo{
+				DefinitionName: "dest_def_name",
+			}
+			accountID, err := d.GetAccountID(common.RudderFlowDelivery)
+			Expect(accountID).To(Equal(""))
+			Expect(err).To(MatchError("destination is not an oauth destination or accountId not found"))
+		})
+
+		It("should return error when accountID is not a string for delivery flow", func() {
+			d := &v2.DestinationInfo{
+				DefinitionName: "dest_def_name",
+				Config: map[string]interface{}{
+					"rudderAccountId": 123,
+				},
+			}
+			accountID, err := d.GetAccountID(common.RudderFlowDelivery)
+			Expect(accountID).To(Equal(""))
+			Expect(err).To(MatchError("rudderAccountId is not a string"))
+		})
+		It("should return error when accountID is not found for delete flow", func() {
+			d := &v2.DestinationInfo{
+				DefinitionName: "dest_def_name",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": 123,
+				},
+			}
+			accountID, err := d.GetAccountID(common.RudderFlowDelete)
+			Expect(accountID).To(Equal(""))
+			Expect(err).To(MatchError("rudderDeleteAccountId is not a string"))
+		})
 	})
 })
