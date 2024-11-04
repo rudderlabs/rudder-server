@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.37.2](https://github.com/rudderlabs/rudder-server/compare/v1.37.1...v1.37.2) (2024-11-01)
+
+
+### Bug Fixes
+
+* parse error due incrorrect csv response from marketo-n ([#5252](https://github.com/rudderlabs/rudder-server/issues/5252)) ([76beb84](https://github.com/rudderlabs/rudder-server/commit/76beb846f3302365db891ad5a6ae3b6eea650b9a))
+
+## [1.37.1](https://github.com/rudderlabs/rudder-server/compare/v1.37.0...v1.37.1) (2024-10-30)
+
+
+### Bug Fixes
+
+* add error logs for handle async for visibility of error ([#5248](https://github.com/rudderlabs/rudder-server/issues/5248)) ([03d2472](https://github.com/rudderlabs/rudder-server/commit/03d2472d757c2faa3b84b9f88b97b5e4d9fa3c19))
+
 ## [1.37.0](https://github.com/rudderlabs/rudder-server/compare/v1.36.0...v1.37.0) (2024-10-28)
 
 
