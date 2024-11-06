@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	KlaviyoAPIURL       = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
-	BATCHSIZE           = 10000
-	MAXPAYLOADSIZE      = 4900000
-	IMPORT_ID_SEPARATOR = ":"
+	KlaviyoAPIURL         = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
+	BATCHSIZE             = 10000
+	MAXALLOWEDPROFILESIZE = 512000
+	MAXPAYLOADSIZE        = 4900000
+	IMPORT_ID_SEPARATOR   = ":"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -319,6 +320,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	statLabels := stats.Tags{
 		"module":   "batch_router",
 		"destType": destType,
+		"destID":   destinationID,
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -327,6 +329,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	defer file.Close()
 	var combinedProfiles []Profile
 	scanner := bufio.NewScanner(file)
+	profileSizeStat := kbu.statsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
 		var input Input
 		line := scanner.Text()
@@ -337,8 +340,10 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		profileStructure := kbu.ExtractProfile(input)
 		// if profileStructure length is more than 5 mb, throw an error
 		profileStructureJSON, _ := json.Marshal(profileStructure)
-		if float64(len(profileStructureJSON)) >= MAXPAYLOADSIZE {
-			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 5 mb"
+		profileSize := float64(len(profileStructureJSON))
+		profileSizeStat.Observe(float64(profileSize)) // Record the size in the histogram
+		if float64(len(profileStructureJSON)) >= MAXALLOWEDPROFILESIZE {
+			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
 			abortedJobs = append(abortedJobs, int64(input.Metadata.JobID))
 			continue
 		}
