@@ -3,7 +3,6 @@ package klaviyobulkupload
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/time/rate"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -34,24 +31,6 @@ const (
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
-
-func NewRateLimitedClient(burstLimit int, steadyRate float64) *RateLimitedClient {
-	// burstLimit defines the burst capacity (10 requests per second)
-	// steadyRate defines the steady state rate (2.5 requests per second, equivalent to 150 requests per minute)
-	limiter := rate.NewLimiter(rate.Limit(steadyRate), burstLimit)
-	return &RateLimitedClient{
-		client:  &http.Client{},
-		limiter: limiter,
-	}
-}
-
-func (rlc *RateLimitedClient) Do(req *http.Request) (*http.Response, error) {
-	// Wait for permission to proceed.
-	if err := rlc.limiter.Wait(context.Background()); err != nil {
-		return nil, err
-	}
-	return rlc.client.Do(req)
-}
 
 func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	payload := Payload{
@@ -381,8 +360,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			return kbu.generateKlaviyoErrorOutput("Error while marshaling combined JSON.", err, importingJobIDs, destinationID)
 		}
 		uploadURL := KlaviyoAPIURL
-		// client := &http.Client{}
-		client := NewRateLimitedClient(10, 2.5)
+		client := &http.Client{}
 		req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(outputJSON))
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while creating request.", err, importingJobIDs, destinationID)

@@ -9,13 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"golang.org/x/time/rate"
 )
-
-type RateLimitedClient struct {
-	client  *http.Client
-	limiter *rate.Limiter
-}
 
 type Uploader interface {
 	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
