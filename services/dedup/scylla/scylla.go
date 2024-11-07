@@ -34,26 +34,22 @@ func (d *ScyllaDB) Close() {
 	d.scylla.Close()
 }
 
-func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, error) {
 	defer d.stat.NewTaggedStat("dedup_get_batch_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
 	// Prepare a map to store results for each job (true = accept, false = reject)
 	results := make(map[types.KeyValue]bool)
-	sizes := make(map[types.KeyValue]int64)
-
 	d.stat.NewTaggedStat("dedup_get_batch_size", stats.GaugeType, stats.Tags{"mode": "scylla"}).Gauge(len(kvs))
 	// Group jobs by workspaceID for batch querying
 	workspaceJobsMap := make(map[string][]types.KeyValue)
 	d.cacheMu.Lock()
 
 	for _, kv := range kvs {
-		if previous, found := d.cache[kv.Key]; found {
+		if _, found := d.cache[kv.Key]; found {
 			results[kv] = false
-			sizes[kv] = previous.Value
 			continue
 		}
 		d.cache[kv.Key] = kv
 		results[kv] = true
-		sizes[kv] = kv.Value
 		workspaceJobsMap[kv.WorkspaceID] = append(workspaceJobsMap[kv.WorkspaceID], kv)
 	}
 	d.cacheMu.Unlock()
@@ -69,32 +65,30 @@ func (d *ScyllaDB) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[
 		for _, chunk := range messageIDChunks {
 			// Query to get all jobIDs for the given workspaceID and messageIDs
 			startTime := time.Now()
-			query := fmt.Sprintf("SELECT id, size FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
+			query := fmt.Sprintf("SELECT id FROM %s.%q WHERE workspaceID = ? AND id IN ?", d.keyspace, d.tableName)
 			iter := d.scylla.Query(query, workspaceID, chunk).Iter()
 
 			var dbMessageID string
-			var size int64
-			for iter.Scan(&dbMessageID, &size) {
+			for iter.Scan(&dbMessageID) {
 				d.cacheMu.Lock()
 				val, ok := d.cache[dbMessageID]
 				if ok {
 					results[val] = false
-					sizes[val] = size
 				}
 				delete(d.cache, dbMessageID)
 				d.cacheMu.Unlock()
 			}
 			if err := iter.Close(); err != nil {
-				return nil, nil, fmt.Errorf("error closing iterator: %v", err)
+				return nil, fmt.Errorf("error closing iterator: %v", err)
 			}
 			d.stat.NewTaggedStat("dedup_get_batch_query_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).Since(startTime)
 		}
 	}
 
-	return results, sizes, nil
+	return results, nil
 }
 
-func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
+func (d *ScyllaDB) Get(kv types.KeyValue) (bool, error) {
 	defer d.stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "scylla"}).RecordDuration()()
 
 	var err error
@@ -103,21 +97,21 @@ func (d *ScyllaDB) Get(kv types.KeyValue) (bool, int64, error) {
 	// Check if the key exists in the cache
 	// This is essential if we get the same key multiple times in the same batch
 	// Since we are not committing the keys immediately, we need to keep track of the keys in the cache
-	if previous, found := d.cache[kv.Key]; found {
-		return false, previous.Value, nil
+	if _, found := d.cache[kv.Key]; found {
+		return false, nil
 	}
 
 	// Check if the key exists in the DB
-	var value int64
-	err = d.scylla.Query(fmt.Sprintf("SELECT size FROM %s.%q WHERE id = ? and workspaceId = ?", d.keyspace, d.tableName), kv.Key, kv.WorkspaceID).Scan(&value)
+	var id string
+	err = d.scylla.Query(fmt.Sprintf("SELECT id FROM %s.%q WHERE id = ? and workspaceId = ?", d.keyspace, d.tableName), kv.Key, kv.WorkspaceID).Scan(&id)
 	if err != nil && !errors.Is(err, gocql.ErrNotFound) {
-		return false, 0, fmt.Errorf("error getting key %s: %v", kv.Key, err)
+		return false, fmt.Errorf("error getting key %s: %v", kv.Key, err)
 	}
 	exists := errors.Is(err, gocql.ErrNotFound)
 	if exists {
 		d.cache[kv.Key] = kv
 	}
-	return exists, kv.Value, nil
+	return exists, nil
 }
 
 func (d *ScyllaDB) Commit(keys []string) error {
@@ -131,7 +125,7 @@ func (d *ScyllaDB) Commit(keys []string) error {
 			d.cacheMu.Unlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
-		kvs[i] = types.KeyValue{Key: key, Value: value.Value, WorkspaceID: value.WorkspaceID}
+		kvs[i] = types.KeyValue{Key: key, WorkspaceID: value.WorkspaceID}
 	}
 	d.cacheMu.Unlock()
 	batches := lo.Chunk(kvs, d.writeBatchSize)
@@ -139,8 +133,8 @@ func (d *ScyllaDB) Commit(keys []string) error {
 		scyllaBatch := d.scylla.NewBatch(gocql.LoggedBatch)
 		for _, key := range batch {
 			scyllaBatch.Entries = append(scyllaBatch.Entries, gocql.BatchEntry{
-				Stmt: fmt.Sprintf("INSERT INTO %s.%q (id,size,workspaceId,ts) VALUES (?,?,?,?) USING TTL %d", d.keyspace, d.tableName, d.ttl),
-				Args: []interface{}{key.Key, key.Value, key.WorkspaceID, time.Now()},
+				Stmt: fmt.Sprintf("INSERT INTO %s.%q (id,workspaceId) VALUES (?,?) USING TTL %d", d.keyspace, d.tableName, d.ttl),
+				Args: []interface{}{key.Key, key.WorkspaceID},
 			})
 		}
 		if err := d.scylla.ExecuteBatch(scyllaBatch); err != nil {
@@ -173,7 +167,7 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 	keySpace := conf.GetString("Scylla.Keyspace", "rudder")
 	table := conf.GetString("Scylla.TableName", "dedup")
 
-	err = session.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%q ( id text,size bigint, workspaceId text, ts timestamp,PRIMARY KEY ((id, workspaceId), ts)) WITH bloom_filter_fp_chance = 0.005;", keySpace, table)).Exec()
+	err = session.Query(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%q ( id text, workspaceId text, PRIMARY KEY (id, workspaceId)) WITH bloom_filter_fp_chance = 0.005;", keySpace, table)).Exec()
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +177,7 @@ func New(conf *config.Config, stats stats.Stats) (*ScyllaDB, error) {
 		conf:           conf,
 		keyspace:       keySpace,
 		stat:           stats,
-		ttl:            conf.GetInt("Scylla.TTL", 1209600), // TTL is defaulted to seconds
+		ttl:            conf.GetInt("Scylla.TTL", 864000), // TTL is defaulted to seconds
 		readBatchSize:  conf.GetInt("Scylla.ReadBatchSize", 100),
 		writeBatchSize: conf.GetInt("Scylla.WriteBatchSize", 100),
 		tableName:      table,
