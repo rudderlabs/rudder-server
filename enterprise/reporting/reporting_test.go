@@ -159,81 +159,183 @@ var _ = Describe("Reporting", func() {
 				},
 			},
 		}
+		conf := config.New()
 
-		expectedResponse := []*types.Metric{
-			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-				},
-				StatusDetails: []*types.StatusDetail{
-					{
-						Status:         "some-status",
-						Count:          3,
-						ViolationCount: 5,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-						ErrorType:      "",
+		It("Should provide aggregated reports when batch size is 10", func() {
+			conf.Set("Reporting.maxReportsCountInARequest", 10)
+			expectedResponse := []*types.Metric{
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
 					},
-					{
-						Status:         "some-status",
-						Count:          2,
-						ViolationCount: 10,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-						ErrorType:      "some-error-type",
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
 					},
-				},
-			},
-			{
-				InstanceDetails: types.InstanceDetails{
-					WorkspaceID: "some-workspace-id",
-				},
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:         "some-source-id-2",
-					DestinationID:    "some-destination-id",
-					TransformationID: "some-transformation-id",
-					TrackingPlanID:   "some-tracking-plan-id",
-				},
-				PUDetails: types.PUDetails{
-					InPU: "some-in-pu",
-					PU:   "some-pu",
-				},
-				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-				},
-				StatusDetails: []*types.StatusDetail{
-					{
-						Status:         "some-status",
-						Count:          3,
-						ViolationCount: 10,
-						StatusCode:     200,
-						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
-						ErrorType:      "some-error-type",
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 5,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "",
+						},
+						{
+							Status:         "some-status",
+							Count:          2,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
 					},
 				},
-			},
-		}
-		configSubscriber := newConfigSubscriber(logger.NOP)
-		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id-2",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
+					},
+				},
+			}
+			configSubscriber := newConfigSubscriber(logger.NOP)
+			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 
-		aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
-		Expect(aggregatedMetrics).To(Equal(expectedResponse))
+			aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
+			Expect(aggregatedMetrics).To(Equal(expectedResponse))
+		})
+
+		It("Should provide aggregated reports when batch size is 1", func() {
+			conf.Set("Reporting.maxReportsCountInARequest", 1)
+			expectedResponse := []*types.Metric{
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 5,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "",
+						},
+					},
+				},
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          2,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
+					},
+				},
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id-2",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
+					},
+				},
+			}
+			configSubscriber := newConfigSubscriber(logger.NOP)
+			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
+
+			aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
+			Expect(aggregatedMetrics).To(Equal(expectedResponse))
+		})
 	})
 })
 
