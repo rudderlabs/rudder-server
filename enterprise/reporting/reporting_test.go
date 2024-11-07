@@ -76,6 +76,9 @@ var _ = Describe("Reporting", func() {
 	})
 
 	Context("getAggregatedReports Tests", func() {
+		conf := config.New()
+		configSubscriber := newConfigSubscriber(logger.NOP)
+		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 		inputReports := []*types.ReportByStatus{
 			{
 				InstanceDetails: types.InstanceDetails{
@@ -159,7 +162,6 @@ var _ = Describe("Reporting", func() {
 				},
 			},
 		}
-		conf := config.New()
 
 		It("Should provide aggregated reports when batch size is 10", func() {
 			conf.Set("Reporting.maxReportsCountInARequest", 10)
@@ -232,8 +234,6 @@ var _ = Describe("Reporting", func() {
 					},
 				},
 			}
-			configSubscriber := newConfigSubscriber(logger.NOP)
-			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 
 			aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 			Expect(aggregatedMetrics).To(Equal(expectedResponse))
@@ -244,7 +244,7 @@ var _ = Describe("Reporting", func() {
 			expectedResponse := []*types.Metric{
 				{
 					InstanceDetails: types.InstanceDetails{
-						WorkspaceID: "some-workspace-id",
+						WorkspaceID: "some-workspace-id1",
 					},
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         "some-source-id",
@@ -330,8 +330,6 @@ var _ = Describe("Reporting", func() {
 					},
 				},
 			}
-			configSubscriber := newConfigSubscriber(logger.NOP)
-			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 
 			aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
 			Expect(aggregatedMetrics).To(Equal(expectedResponse))
