@@ -1585,8 +1585,7 @@ func getDiffMetrics(
 }
 
 type dupStatKey struct {
-	sourceID  string
-	equalSize bool
+	sourceID string
 }
 
 func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
@@ -1771,7 +1770,6 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
-				Value:       int64(len(payloadFunc())),
 				WorkspaceID: batchEvent.WorkspaceId,
 				JobID:       batchEvent.JobID,
 			}
@@ -1798,10 +1796,9 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	}
 
 	var keyMap map[dedupTypes.KeyValue]bool
-	var sizeMap map[dedupTypes.KeyValue]int64
 	var err error
 	if proc.config.enableDedup {
-		keyMap, sizeMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
+		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -1813,13 +1810,11 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		}
 
 		if proc.config.enableDedup {
-			p := event.payloadFunc()
-			messageSize := int64(len(p))
 			dedupKey := event.dedupKey
-			ok, previousSize := keyMap[dedupKey], sizeMap[dedupKey]
+			ok := keyMap[dedupKey]
 			if !ok {
 				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
-				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId, equalSize: messageSize == previousSize}] += 1
+				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
 			dedupKeys[dedupKey.Key] = struct{}{}
@@ -2334,16 +2329,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			})
 
 			if proc.config.enableDedup {
-				p := payloadFunc()
-				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				ok, previousSize, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceID: batchEvent.WorkspaceId})
+				ok, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, WorkspaceID: batchEvent.WorkspaceId})
 				if err != nil {
 					return nil, err
 				}
 				if !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
-					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
+					sourceDupStats[dupStatKey{sourceID: source.ID}] += 1
 					continue
 				}
 				dedupKeys[dedupKey] = struct{}{}
@@ -3624,8 +3617,7 @@ func (proc *Handle) crashRecover() {
 func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
 	for dupStat, count := range sourceStats {
 		tags := map[string]string{
-			"source":    dupStat.sourceID,
-			"equalSize": strconv.FormatBool(dupStat.equalSize),
+			"source": dupStat.sourceID,
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)

@@ -24,34 +24,34 @@ func Test_Badger(t *testing.T) {
 	require.NotNil(t, badger)
 	defer badger.Close()
 	t.Run("Same messageID should be deduped from badger", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
-		key2 := types.KeyValue{Key: "a", Value: 1, WorkspaceID: "test"}
-		notAvailable, _, err := badger.Get(key1)
+		key1 := types.KeyValue{Key: "a", WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "a", WorkspaceID: "test"}
+		notAvailable, err := badger.Get(key1)
 		require.NoError(t, err)
 		require.True(t, notAvailable)
 		err = badger.Commit([]string{key1.Key})
 		require.NoError(t, err)
-		notAvailable, _, err = badger.Get(key2)
+		notAvailable, err = badger.Get(key2)
 		require.NoError(t, err)
 		require.False(t, notAvailable)
 	})
 	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
-		key1 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
-		key2 := types.KeyValue{Key: "b", Value: 1, WorkspaceID: "test"}
-		found, _, err := badger.Get(key1)
+		key1 := types.KeyValue{Key: "b", WorkspaceID: "test"}
+		key2 := types.KeyValue{Key: "b", WorkspaceID: "test"}
+		found, err := badger.Get(key1)
 		require.NoError(t, err)
 		require.True(t, found)
-		found, _, err = badger.Get(key2)
+		found, err = badger.Get(key2)
 		require.NoError(t, err)
 		require.False(t, found)
 	})
 	t.Run("different messageID should not be deduped for batch", func(t *testing.T) {
 		keys := []types.KeyValue{
-			{Key: "c", Value: 1, WorkspaceID: "test"},
-			{Key: "d", Value: 1, WorkspaceID: "test"},
-			{Key: "e", Value: 1, WorkspaceID: "test"},
+			{Key: "c", WorkspaceID: "test"},
+			{Key: "d", WorkspaceID: "test"},
+			{Key: "e", WorkspaceID: "test"},
 		}
-		found, _, err := badger.GetBatch(keys)
+		found, err := badger.GetBatch(keys)
 		require.NoError(t, err)
 		require.Len(t, found, 3)
 		for _, key := range keys {
@@ -60,16 +60,16 @@ func Test_Badger(t *testing.T) {
 	})
 	t.Run("same messageID should be deduped for batch", func(t *testing.T) {
 		keys := []types.KeyValue{
-			{Key: "f", Value: 1, WorkspaceID: "test", JobID: 3},
-			{Key: "f", Value: 1, WorkspaceID: "test", JobID: 4},
-			{Key: "g", Value: 1, WorkspaceID: "test", JobID: 5},
+			{Key: "f", WorkspaceID: "test", JobID: 3},
+			{Key: "f", WorkspaceID: "test", JobID: 4},
+			{Key: "g", WorkspaceID: "test", JobID: 5},
 		}
 		expected := map[types.KeyValue]bool{
 			keys[0]: true,
 			keys[1]: false,
 			keys[2]: true,
 		}
-		found, _, err := badger.GetBatch(keys)
+		found, err := badger.GetBatch(keys)
 		require.NoError(t, err)
 		require.Len(t, found, 3)
 		for _, key := range keys {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -73,30 +72,28 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 	}
 	return &Dedup{
 		badgerDB: db,
-		cache:    make(map[string]int64),
+		cache:    make(map[string]bool),
 	}
 }
 
-func (d *BadgerDB) Get(key string) (int64, bool, error) {
+func (d *BadgerDB) Get(key string) (bool, error) {
 	defer d.stats.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
 
-	var payloadSize int64
 	var found bool
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
 		}
-		if itemValue, err := item.ValueCopy(nil); err == nil {
-			payloadSize, _ = strconv.ParseInt(string(itemValue), 10, 64)
+		if _, err = item.ValueCopy(nil); err == nil {
 			found = true
 		}
 		return nil
 	})
 	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-		return 0, false, err
+		return false, err
 	}
-	return payloadSize, found, nil
+	return found, nil
 }
 
 func (d *BadgerDB) Set(kvs []types.KeyValue) error {
@@ -105,8 +102,7 @@ func (d *BadgerDB) Set(kvs []types.KeyValue) error {
 	defer wb.Cancel()
 	for i := range kvs {
 		message := kvs[i]
-		value := strconv.FormatInt(message.Value, 10)
-		e := badger.NewEntry([]byte(message.Key), []byte(value)).WithTTL(d.window.Load())
+		e := badger.NewEntry([]byte(message.Key), []byte("")).WithTTL(d.window.Load())
 		if err := wb.SetEntry(e); err != nil {
 			return err
 		}
@@ -173,53 +169,51 @@ func (d *BadgerDB) gcLoop() {
 type Dedup struct {
 	badgerDB *BadgerDB
 	cacheMu  sync.Mutex
-	cache    map[string]int64
+	cache    map[string]bool
 }
 
-func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, error) {
 	err := d.badgerDB.init()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	found := make(map[types.KeyValue]bool)
-	previous := make(map[types.KeyValue]int64)
 	for _, kv := range kvs {
-		foundKey, size, err := d.Get(kv)
+		foundKey, err := d.Get(kv)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		found[kv] = foundKey
-		previous[kv] = size
 	}
-	return found, previous, nil
+	return found, nil
 }
 
-func (d *Dedup) Get(kv types.KeyValue) (bool, int64, error) {
+func (d *Dedup) Get(kv types.KeyValue) (bool, error) {
 	err := d.badgerDB.init()
 	if err != nil {
-		return false, 0, err
+		return false, err
 	}
 
 	d.cacheMu.Lock()
-	previous, found := d.cache[kv.Key]
+	_, found := d.cache[kv.Key]
 	d.cacheMu.Unlock()
 	if found {
-		return false, previous, nil
+		return false, nil
 	}
 
-	previous, found, err = d.badgerDB.Get(kv.Key)
+	found, err = d.badgerDB.Get(kv.Key)
 	if err != nil {
-		return false, 0, err
+		return false, err
 	}
 
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
 	if !found { // still not in the cache, but it's in the DB so let's refresh the cache
-		d.cache[kv.Key] = kv.Value
+		d.cache[kv.Key] = true
 	}
 
-	return !found, previous, nil
+	return !found, nil
 }
 
 func (d *Dedup) Commit(keys []string) error {
@@ -230,12 +224,12 @@ func (d *Dedup) Commit(keys []string) error {
 	kvs := make([]types.KeyValue, len(keys))
 	d.cacheMu.Lock()
 	for i, key := range keys {
-		value, ok := d.cache[key]
+		_, ok := d.cache[key]
 		if !ok {
 			d.cacheMu.Unlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
-		kvs[i] = types.KeyValue{Key: key, Value: value}
+		kvs[i] = types.KeyValue{Key: key}
 	}
 	d.cacheMu.Unlock()
 
