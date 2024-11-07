@@ -208,9 +208,19 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 
 	reader := csv.NewReader(strings.NewReader(string(body)))
 
-	rows, err := reader.ReadAll()
-	if err != nil {
-		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing csv response"}
+	// read each row one by one
+	rows := make([][]string, 0)
+	for {
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			m.logger.Error("Error in parsing csv response", err.Error())
+			m.statsFactory.NewStat("async_destination_manager.marketo_bulk_upload.csv_parse_error", stats.CountType).Increment()
+			continue
+		}
+		rows = append(rows, row)
 	}
 
 	if len(rows) == 0 {

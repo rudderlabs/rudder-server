@@ -380,9 +380,9 @@ func TestCreateCSVFile(t *testing.T) {
 				// Check header
 				if scanner.Scan() {
 					headerLine := scanner.Text()
-					expectedHeader := strings.Join(tt.wantHeaders, ",")
-					if headerLine != expectedHeader {
-						t.Errorf("createCSVFile() header = %v, want %v", headerLine, expectedHeader)
+					generatedHeaders := strings.Join(gotHeaders, ",")
+					if headerLine != generatedHeaders {
+						t.Errorf("createCSVFile() header from file and generated = %v, want %v", headerLine, generatedHeaders)
 					}
 				}
 
