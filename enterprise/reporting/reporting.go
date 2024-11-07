@@ -89,7 +89,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
-	maxReportsCountInARequest := config.GetReloadableIntVar(1, 1, "Reporting.maxReportsCountInARequest")
+	maxReportsCountInARequest := config.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
