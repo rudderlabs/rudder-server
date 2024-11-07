@@ -76,9 +76,6 @@ var _ = Describe("Reporting", func() {
 	})
 
 	Context("getAggregatedReports Tests", func() {
-		conf := config.New()
-		configSubscriber := newConfigSubscriber(logger.NOP)
-		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 		inputReports := []*types.ReportByStatus{
 			{
 				InstanceDetails: types.InstanceDetails{
@@ -163,8 +160,11 @@ var _ = Describe("Reporting", func() {
 			},
 		}
 
-		It("Should provide aggregated reports when batch size is 10", func() {
-			conf.Set("Reporting.maxReportsCountInARequest", 10)
+		It("Should provide aggregated reports when batch size is 1", func() {
+			conf := config.New()
+			conf.Set("Reporting.maxReportsCountInARequest", 1)
+			configSubscriber := newConfigSubscriber(logger.NOP)
+			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 			expectedResponse := []*types.Metric{
 				{
 					InstanceDetails: types.InstanceDetails{
@@ -193,6 +193,26 @@ var _ = Describe("Reporting", func() {
 							SampleEvent:    []byte(`{}`),
 							ErrorType:      "",
 						},
+					},
+				},
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
 						{
 							Status:         "some-status",
 							Count:          2,
@@ -239,12 +259,15 @@ var _ = Describe("Reporting", func() {
 			Expect(aggregatedMetrics).To(Equal(expectedResponse))
 		})
 
-		It("Should provide aggregated reports when batch size is 1", func() {
-			conf.Set("Reporting.maxReportsCountInARequest", 1)
+		It("Should provide aggregated reports when batch size is 10", func() {
+			conf := config.New()
+			conf.Set("Reporting.maxReportsCountInARequest", 10)
+			configSubscriber := newConfigSubscriber(logger.NOP)
+			reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 			expectedResponse := []*types.Metric{
 				{
 					InstanceDetails: types.InstanceDetails{
-						WorkspaceID: "some-workspace-id1",
+						WorkspaceID: "some-workspace-id",
 					},
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:         "some-source-id",
@@ -269,26 +292,6 @@ var _ = Describe("Reporting", func() {
 							SampleEvent:    []byte(`{}`),
 							ErrorType:      "",
 						},
-					},
-				},
-				{
-					InstanceDetails: types.InstanceDetails{
-						WorkspaceID: "some-workspace-id",
-					},
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:         "some-source-id",
-						DestinationID:    "some-destination-id",
-						TransformationID: "some-transformation-id",
-						TrackingPlanID:   "some-tracking-plan-id",
-					},
-					PUDetails: types.PUDetails{
-						InPU: "some-in-pu",
-						PU:   "some-pu",
-					},
-					ReportMetadata: types.ReportMetadata{
-						ReportedAt: 28017690 * 60 * 1000,
-					},
-					StatusDetails: []*types.StatusDetail{
 						{
 							Status:         "some-status",
 							Count:          2,
