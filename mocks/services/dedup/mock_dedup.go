@@ -66,13 +66,12 @@ func (mr *MockDedupMockRecorder) Commit(arg0 any) *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockDedup) Get(arg0 types.KeyValue) (bool, int64, error) {
+func (m *MockDedup) Get(arg0 types.KeyValue) (bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0)
 	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
@@ -82,13 +81,12 @@ func (mr *MockDedupMockRecorder) Get(arg0 any) *gomock.Call {
 }
 
 // GetBatch mocks base method.
-func (m *MockDedup) GetBatch(arg0 []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+func (m *MockDedup) GetBatch(arg0 []types.KeyValue) (map[types.KeyValue]bool, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetBatch", arg0)
 	ret0, _ := ret[0].(map[types.KeyValue]bool)
-	ret1, _ := ret[1].(map[types.KeyValue]int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetBatch indicates an expected call of GetBatch.
