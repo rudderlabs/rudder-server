@@ -2,7 +2,6 @@ package v2
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -39,6 +39,8 @@ type OAuthHandler struct {
 	ExpirationTimeDiff        time.Duration
 	ConfigBEURL               string
 	cpConnectorTimeout        time.Duration
+	trackConfig               *TrackConfig
+	TrackCache                *cachettl.Cache[string, *RefreshTokenTracker]
 }
 
 func WithCache(cache Cache) func(*OAuthHandler) {
@@ -85,12 +87,19 @@ func WithCpConnector(cpConn controlplane.Connector) func(*OAuthHandler) {
 
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider TokenProvider, options ...func(*OAuthHandler)) *OAuthHandler {
+	trackCache := cachettl.New[string, *RefreshTokenTracker](cachettl.WithNoRefreshTTL)
 	h := &OAuthHandler{
 		TokenProvider: provider,
 		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
 		RudderFlowType:            common.RudderFlowDelivery,
 		AuthStatusUpdateActiveMap: make(map[string]bool),
 		ConfigBEURL:               backendconfig.GetConfigBackendURL(),
+		TrackCache:                trackCache,
+		// Make this configurable
+		trackConfig: &TrackConfig{
+			AllowedTokenRefreshInterval: 5 * time.Minute,
+			AllowedInvalidGrantInterval: 1 * time.Minute,
+		},
 	}
 	for _, opt := range options {
 		opt(h)
@@ -178,6 +187,8 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 		stats:           h.stats,
 	}
 	statsHandler := NewStatsHandlerFromOAuthStats(authStats)
+	// Track the last token refresh success time if (Token refresh success) till 5m don't try to refresh again && take the token from cache && fail event with 500
+	// Track the last token refresh failed with invalid_grant time if (token refresh failed with invalid_grant) till 1m don't try to refresh again && fail event with 400
 	return h.GetTokenInfo(refTokenParams, "Refresh token", statsHandler)
 }
 
@@ -199,28 +210,130 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 		})
 	}()
 	refTokenBody := RefreshTokenBodyParams{}
-	storedCache, ok := h.Cache.Load(refTokenParams.AccountID)
-	if ok {
-		cachedSecret, ok := storedCache.(*AuthResponse)
-		if !ok {
-			log.Debugn("[request] :: Failed to type assert the stored cache")
-			return http.StatusInternalServerError, nil, errors.New("failed to type assert the stored cache")
-		}
+	storedCache := h.getTokenFromCache(refTokenParams.AccountID)
+	if storedCache != nil {
 		// TODO: verify if the storedCache is nil at this point
-		if !checkIfTokenExpired(cachedSecret.Account, refTokenParams.Secret, h.ExpirationTimeDiff, statsHandler) {
-			return http.StatusOK, cachedSecret, nil
+		if !checkIfTokenExpired(storedCache.Account, refTokenParams.Secret, h.ExpirationTimeDiff, statsHandler) {
+			return http.StatusOK, storedCache, nil
 		}
-		// Refresh token preparation
 		refTokenBody = RefreshTokenBodyParams{
 			HasExpired:    true,
 			ExpiredSecret: refTokenParams.Secret,
 		}
 	}
+	return h.handleTokenFetch(refTokenParams, refTokenBody, statsHandler, logTypeName)
+}
+
+func (h *OAuthHandler) getTokenFromCache(accountID string) *AuthResponse {
+	storedCache, ok := h.Cache.Load(accountID)
+	if !ok {
+		return nil
+	}
+	authResponse, ok := storedCache.(*AuthResponse)
+	if !ok {
+		return nil
+	}
+	return authResponse
+}
+
+// trackTokenRefresh records the timing of token refresh attempts and their results for a given account.
+// It tracks both successful refreshes and invalid grant failures to help implement rate limiting and
+// backoff strategies.
+//
+// Parameters:
+//   - accountID: The unique identifier for the account being tracked
+//   - statusCode: The HTTP status code from the token refresh attempt
+//   - authResponse: The authentication response containing any error information
+//
+// The method maintains two timestamps in the cache:
+//   - LastSuccessTime: Updated when a refresh succeeds (statusCode == 200)
+//   - LastInvalidGrantTime: Updated when a refresh fails with an invalid grant error
+//
+// This tracking information is used by getActionForRefreshToken to implement:
+//   - A cooldown period after successful refreshes
+//   - A backoff period after invalid grant failures
+func (h *OAuthHandler) trackTokenRefresh(accountID string, statusCode int, authResponse *AuthResponse) {
+	tracker := h.TrackCache.Get(accountID)
+	if tracker == nil {
+		tracker = &RefreshTokenTracker{}
+	}
+
+	if authResponse.Err == common.RefTokenInvalidGrant {
+		// Invalid grant
+		tracker.LastInvalidGrantTime = time.Now()
+	} else if statusCode == http.StatusOK {
+		// Success
+		tracker.LastSuccessTime = time.Now()
+	}
+
+	h.TrackCache.Put(accountID, tracker, 0)
+}
+
+// getActionForRefreshToken determines what action should be taken for a token refresh request
+// based on the timing of previous refresh attempts and failures.
+//
+// Parameters:
+//   - accountID: The unique identifier for the account requesting a token refresh
+//
+// Returns:
+//   - string: An action string indicating how to handle the refresh request:
+//   - "": Proceed with normal token refresh
+//   - "existing_token": Use existing token (when successful refresh was too recent)
+//   - "invalid_grant": Fail with invalid grant error (when previous invalid grant error was too recent)
+//
+// The method implements a rate limiting strategy by tracking:
+// 1. Recent successful refreshes (within AllowedTokenRefreshInterval, default 5 minutes)
+// 2. Recent invalid grant failures (within AllowedInvalidGrantInterval, default 1 minute)
+//
+// This helps prevent:
+// - Unnecessary token refreshes when a valid token was recently obtained
+// - Repeated failed attempts when credentials are invalid
+func (h *OAuthHandler) getActionForRefreshToken(accountID string) string {
+	tracker := h.TrackCache.Get(accountID)
+	if tracker == nil {
+		// No tracker, so proceed with refresh
+		return ""
+	}
+	if tracker.LastSuccessTime.IsZero() || tracker.LastInvalidGrantTime.IsZero() {
+		// No success or invalid_grant failure time(s), so proceed with refresh
+		return ""
+	}
+	// Check if the last success time is greater than the allowed token refresh interval
+	if time.Since(tracker.LastSuccessTime) <= h.trackConfig.AllowedTokenRefreshInterval {
+		return "existing_token"
+	}
+	// Check if the last invalid_grant failure time is greater than the allowed invalid grant interval
+	if time.Since(tracker.LastInvalidGrantTime) <= h.trackConfig.AllowedInvalidGrantInterval {
+		return "invalid_grant"
+	}
+	// proceed with refresh
+	return ""
+}
+
+func (h *OAuthHandler) handleTokenFetch(refTokenParams *RefreshTokenParams, refTokenBody RefreshTokenBodyParams, statsHandler OAuthStatsHandler, logTypeName string) (int, *AuthResponse, error) {
+	// TODO: Better way to check if the action is refresh token
+	if logTypeName == "Refresh token" {
+		refreshAction := h.getActionForRefreshToken(refTokenParams.AccountID)
+		storedCache := h.getTokenFromCache(refTokenParams.AccountID)
+
+		switch refreshAction {
+		case "existing_token":
+			return SuccessResponse(storedCache.Account)
+		case "invalid_grant":
+			return InvalidGrantResponse(storedCache.Account)
+		}
+	}
 	statusCode, refSecret, refErr := h.fetchAccountInfoFromCp(refTokenParams, refTokenBody, statsHandler, logTypeName)
+
+	// TODO: Better way to check if the action is refresh token
+	if logTypeName == "Refresh token" {
+		h.trackTokenRefresh(refTokenParams.AccountID, statusCode, refSecret)
+	}
+
 	// handling of refresh token response
 	if statusCode == http.StatusOK {
 		// fetching/refreshing through control plane was successful
-		return statusCode, refSecret, nil
+		return SuccessResponse(refSecret.Account)
 	}
 	return statusCode, refSecret, refErr
 }
@@ -355,9 +468,9 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	res, err := json.Marshal(refTokenBody)
 	if err != nil {
 		statsHandler.Increment("request", stats.Tags{
-			"errorMessage": "error in marshalling refresh token body",
+			"errorMessage": "marshalError",
 		})
-		return http.StatusInternalServerError, nil, err
+		return MarshalError(err)
 	}
 	refreshCpReq := &controlplane.Request{
 		Method:        http.MethodPost,
@@ -398,25 +511,21 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 			logger.NewStringField("Call Type", logTypeName))
 
-		return http.StatusInternalServerError, nil, errors.New("empty secret")
+		return EmptySecretResponse()
 	}
 
 	if errType, refErrMsg := h.GetRefreshTokenErrResp(response, &accountSecret); routerutils.IsNotEmptyString(refErrMsg) {
 		// potential oauth secret alert as we are not setting anything in the cache as secret
-		authResponse := &AuthResponse{
-			Err:          errType,
-			ErrorMessage: refErrMsg,
-		}
 		statsHandler.Increment("request", stats.Tags{
 			"errorMessage":  errType,
 			"isCallToCpApi": "true",
 		})
-		if authResponse.Err == common.RefTokenInvalidGrant {
+		if errType == common.RefTokenInvalidGrant {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
-			return http.StatusBadRequest, authResponse, fmt.Errorf("invalid grant")
+			return InvalidGrantResponse(accountSecret)
 		}
-		return http.StatusInternalServerError, authResponse, fmt.Errorf("error occurred while fetching/refreshing account info from CP: %s", refErrMsg)
+		return CpErrorResponse(errType, refErrMsg, accountSecret)
 	}
 	statsHandler.Increment("request", stats.Tags{
 		"errorMessage":  "",
@@ -428,7 +537,5 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	h.Cache.Store(refTokenParams.AccountID, &AuthResponse{
 		Account: accountSecret,
 	})
-	return http.StatusOK, &AuthResponse{
-		Account: accountSecret,
-	}, nil
+	return SuccessResponse(accountSecret)
 }

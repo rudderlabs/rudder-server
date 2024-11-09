@@ -4,6 +4,7 @@ package v2
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
@@ -62,4 +63,14 @@ type OAuthInterceptorResponse struct {
 type TransportResponse struct {
 	OriginalResponse    string                   `json:"originalResponse"`
 	InterceptorResponse OAuthInterceptorResponse `json:"interceptorResponse"`
+}
+
+type RefreshTokenTracker struct {
+	LastSuccessTime      time.Time
+	LastInvalidGrantTime time.Time
+}
+
+type TrackConfig struct {
+	AllowedTokenRefreshInterval time.Duration
+	AllowedInvalidGrantInterval time.Duration
 }
