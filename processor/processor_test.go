@@ -3262,7 +3262,7 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, int64(0), nil).After(callUnprocessed).AnyTimes()
+			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, nil).After(callUnprocessed).AnyTimes()
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -3374,10 +3374,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().GetBatch(gomock.Any()).Return(map[dedupTypes.KeyValue]bool{
-				{Key: "message-some-id", Value: 230, JobID: 1010, WorkspaceID: ""}: true,
-				{Key: "message-some-id", Value: 246, JobID: 1010, WorkspaceID: ""}: true,
-				{Key: "message-some-id", Value: 246, JobID: 2010, WorkspaceID: ""}: true,
-			}, nil, nil).After(callUnprocessed).AnyTimes()
+				{Key: "message-some-id", JobID: 1010, WorkspaceID: ""}: true,
+				{Key: "message-some-id", JobID: 2010, WorkspaceID: ""}: true,
+			}, nil).After(callUnprocessed).AnyTimes()
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
