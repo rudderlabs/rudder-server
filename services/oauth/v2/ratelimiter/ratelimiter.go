@@ -8,8 +8,9 @@ import (
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 type RateLimiter interface {

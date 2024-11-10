@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-	mock_http_client "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	mock_http_client "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 )
 
 func TestRateLimiterTransport(t *testing.T) {
