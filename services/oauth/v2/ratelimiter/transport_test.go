@@ -33,7 +33,7 @@ func TestRateLimiterTransport(t *testing.T) {
 				}
 				mt.EXPECT().RoundTrip(gomock.Any()).Return(successResp, nil)
 			},
-			expectedStatus: http.StatusInternalServerError, // Note: successful refresh gets changed to 500
+			expectedStatus: http.StatusOK,
 			expectedErr:    nil,
 		},
 		{
@@ -42,12 +42,12 @@ func TestRateLimiterTransport(t *testing.T) {
 			body: `{"refresh_token": "invalid_token"}`,
 			setupMocks: func(mt *mock_http_client.MockRoundTripper, req *http.Request) {
 				invalidGrantResp := &http.Response{
-					StatusCode: http.StatusUnauthorized,
+					StatusCode: http.StatusForbidden,
 					Body:       io.NopCloser(bytes.NewReader([]byte(`{"body":{"code":"ref_token_invalid_grant"}}`))),
 				}
 				mt.EXPECT().RoundTrip(gomock.Any()).Return(invalidGrantResp, nil)
 			},
-			expectedStatus: http.StatusBadRequest, // Note: invalid_grant gets changed to 400
+			expectedStatus: http.StatusForbidden,
 			expectedErr:    nil,
 		},
 		{
@@ -133,7 +133,7 @@ func TestRateLimiterTransport_RateLimit(t *testing.T) {
 
 	resp, err := transport.RoundTrip(req)
 	assert.NoError(t, err)
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Immediate second request should be rate limited
 	body = bytes.NewReader([]byte(`{"refresh_token": "token123"}`))
@@ -141,7 +141,7 @@ func TestRateLimiterTransport_RateLimit(t *testing.T) {
 
 	resp, err = transport.RoundTrip(req)
 	assert.NoError(t, err)
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// After waiting, third request should succeed
 	time.Sleep(150 * time.Millisecond)
@@ -157,5 +157,5 @@ func TestRateLimiterTransport_RateLimit(t *testing.T) {
 
 	resp, err = transport.RoundTrip(req)
 	assert.NoError(t, err)
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }

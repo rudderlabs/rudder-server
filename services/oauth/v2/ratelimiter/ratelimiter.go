@@ -75,13 +75,11 @@ func (r *RefreshTokenRateLimiter) TrackResponse(res *http.Response, key string) 
 	statusCode, resp := common.ProcessResponse(res)
 	if statusCode == http.StatusOK {
 		r.LastSuccessTime = time.Now()
-		res.StatusCode = http.StatusInternalServerError // retry successful refresh token request
 		r.LastSuccessResponse = res
 		return
 	}
 	if gjson.Get(resp, "body.code").String() == common.RefTokenInvalidGrant {
 		r.LastInvalidGrantTime = time.Now()
-		res.StatusCode = http.StatusBadRequest // override the status code
 		r.LastInvalidGrantResponse = res
 	}
 	return
