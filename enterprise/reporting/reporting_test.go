@@ -161,7 +161,7 @@ var _ = Describe("Reporting", func() {
 		}
 		conf := config.New()
 		configSubscriber := newConfigSubscriber(logger.NOP)
-		reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
+		reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
 
 		It("Should provide aggregated reports when batch size is 1", func() {
 			conf.Set("Reporting.maxReportsCountInARequest", 1)
