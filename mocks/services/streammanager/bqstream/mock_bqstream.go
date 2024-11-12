@@ -21,6 +21,7 @@ import (
 type MockBQClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockBQClientMockRecorder
+	isgomock struct{}
 }
 
 // MockBQClientMockRecorder is the mock recorder for MockBQClient.
@@ -55,15 +56,15 @@ func (mr *MockBQClientMockRecorder) Close() *gomock.Call {
 }
 
 // Put mocks base method.
-func (m *MockBQClient) Put(arg0 context.Context, arg1, arg2 string, arg3 []*bqstream.GenericRecord) error {
+func (m *MockBQClient) Put(ctx context.Context, datasetID, tableID string, records []*bqstream.GenericRecord) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Put", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "Put", ctx, datasetID, tableID, records)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Put indicates an expected call of Put.
-func (mr *MockBQClientMockRecorder) Put(arg0, arg1, arg2, arg3 any) *gomock.Call {
+func (mr *MockBQClientMockRecorder) Put(ctx, datasetID, tableID, records any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Put", reflect.TypeOf((*MockBQClient)(nil).Put), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Put", reflect.TypeOf((*MockBQClient)(nil).Put), ctx, datasetID, tableID, records)
 }
