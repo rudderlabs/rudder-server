@@ -281,8 +281,8 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) ExtractProfile(data Data) Profile {
-	Attributes := data.Attributes
+func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
+	Attributes := Data.Attributes
 	if len(Attributes.Profiles.Data) == 0 {
 		return Profile{}
 	}
@@ -331,7 +331,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		var data Data
 		var metadata Metadata
 		line := scanner.Text()
-		
+
 		err := json.Unmarshal([]byte(gjson.Get(line, "message.body.JSON").String()), &data)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Data.", err, importingJobIDs, destinationID)
@@ -364,12 +364,15 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 		// Convert combined payload to JSON
 		outputJSON, err := json.Marshal(combinedPayload)
+
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while marshaling combined JSON.", err, importingJobIDs, destinationID)
 		}
 		uploadURL := KlaviyoAPIURL
 		client := &http.Client{}
 		req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(outputJSON))
+		// log the outputJSON
+		kbu.logger.Info("Output JSON", outputJSON)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while creating request.", err, importingJobIDs, destinationID)
 		}
