@@ -78,7 +78,7 @@ func TestProfileSizeExceedsLimit(t *testing.T) {
 			},
 		},
 	}
-	input, err := sjson.Set("{}", "message.body.JSON.data.attributes.profiles.data", []klaviyobulkupload.Profile{largeProfile})
+	input, _ := sjson.Set("{}", "message.body.JSON.data.attributes.profiles.data", []klaviyobulkupload.Profile{largeProfile})
 
 	// Create a temporary file to simulate the input file
 	file, err := os.CreateTemp("", "testfile")
