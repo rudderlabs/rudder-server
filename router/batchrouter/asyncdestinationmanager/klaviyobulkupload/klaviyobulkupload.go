@@ -372,7 +372,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		client := &http.Client{}
 		req, err := http.NewRequest("POST", uploadURL, bytes.NewBuffer(outputJSON))
 		// log the outputJSON
-		kbu.logger.Info("Output JSON", outputJSON)
+		kbu.logger.Info("Output JSON", string(outputJSON))
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while creating request.", err, importingJobIDs, destinationID)
 		}
