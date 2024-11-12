@@ -14,6 +14,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -37,7 +38,7 @@ func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	payload := Payload{
 		Data: Data{
 			Type: "profile-bulk-import-job",
-			Attributes: Attributes{
+			Attributes: PayloadAttributes{
 				Profiles: Profiles{
 					Data: combinedProfiles,
 				},
@@ -280,12 +281,8 @@ func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, e
 	}
 }
 
-func (kbu *KlaviyoBulkUploader) ExtractProfile(input Input) Profile {
-	Message := input.Message
-	Body := Message.Body
-	Json := Body.JSON
-	Data := Json.Data
-	Attributes := Data.Attributes
+func (kbu *KlaviyoBulkUploader) ExtractProfile(data Data) Profile {
+	Attributes := data.Attributes
 	if len(Attributes.Profiles.Data) == 0 {
 		return Profile{}
 	}
@@ -331,20 +328,26 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	scanner := bufio.NewScanner(file)
 	profileSizeStat := kbu.statsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
-		var input Input
+		var data Data
+		var metadata Metadata
 		line := scanner.Text()
-		err := json.Unmarshal([]byte(line), &input)
+		
+		err := json.Unmarshal([]byte(gjson.Get(line, "message.body.JSON").String()), &data)
 		if err != nil {
-			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON.", err, importingJobIDs, destinationID)
+			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Data.", err, importingJobIDs, destinationID)
 		}
-		profileStructure := kbu.ExtractProfile(input)
-		// if profileStructure length is more than 5 mb, throw an error
+		err = json.Unmarshal([]byte(gjson.Get(line, "metadata").String()), &metadata)
+		if err != nil {
+			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Metadata.", err, importingJobIDs, destinationID)
+		}
+		profileStructure := kbu.ExtractProfile(data)
+		// if profileStructure length is more than 500 kB, throw an error
 		profileStructureJSON, _ := json.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
 		profileSizeStat.Observe(float64(profileSize)) // Record the size in the histogram
 		if float64(len(profileStructureJSON)) >= MAXALLOWEDPROFILESIZE {
 			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
-			abortedJobs = append(abortedJobs, int64(input.Metadata.JobID))
+			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue
 		}
 		combinedProfiles = append(combinedProfiles, profileStructure)

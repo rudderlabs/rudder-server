@@ -2,10 +2,12 @@ package klaviyobulkupload_test
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -59,6 +61,55 @@ func TestUpload(t *testing.T) {
 	if !reflect.DeepEqual(output, expectedOutput) {
 		t.Errorf("Expected %v but got %v", expectedOutput, output)
 	}
+}
+
+func TestProfileSizeExceedsLimit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUploader := mocks.NewMockUploader(ctrl)
+
+	// Create a mock input with a profile that exceeds the size limit
+	largeProfile := klaviyobulkupload.Profile{
+		Attributes: klaviyobulkupload.ProfileAttributes{
+			// Add a large field to exceed the size limit
+			Properties: map[string]interface{}{
+				"large_field": make([]byte, klaviyobulkupload.MAXALLOWEDPROFILESIZE+1),
+			},
+		},
+	}
+	input, err := sjson.Set("{}", "message.body.JSON.data.attributes.profiles.data", []klaviyobulkupload.Profile{largeProfile})
+
+	// Create a temporary file to simulate the input file
+	file, err := os.CreateTemp("", "testfile")
+	assert.NoError(t, err)
+	defer os.Remove(file.Name())
+
+	// Write the mock input to the file
+	assert.NoError(t, err)
+	_, err = file.Write([]byte(input))
+	assert.NoError(t, err)
+	file.Close()
+
+	// Create a mock AsyncDestinationStruct
+	asyncDestStruct := &common.AsyncDestinationStruct{
+		FileName:        file.Name(),
+		ImportingJobIDs: []int64{12345},
+		Destination:     destination,
+	}
+
+	// Set up the mock expectation
+	mockUploader.EXPECT().Upload(asyncDestStruct).Return(common.AsyncUploadOutput{
+		AbortReason: "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB",
+		AbortJobIDs: []int64{12345},
+	}).Times(1)
+
+	// Call the Upload method
+	output := mockUploader.Upload(asyncDestStruct)
+
+	// Check if the job was aborted due to the profile size exceeding the limit
+	assert.Contains(t, output.AbortReason, "The profile size exceeds Klaviyo's limit of 500 kB")
+	assert.Contains(t, output.AbortJobIDs, int64(12345))
 }
 
 // File is successfully opened and read line by line
@@ -162,14 +213,49 @@ func TestGetUploadStats(t *testing.T) {
 func TestExtractProfileValidInput(t *testing.T) {
 	kbu := klaviyobulkupload.KlaviyoBulkUploader{}
 
-	inputPayloadJSON := `{"message":{"body":{"FORM":{},"JSON":{"data":{"attributes":{"profiles":{"data":[{"attributes":{"anonymous_id":111222334,"email":"qwe122@mail.com","first_name":"Testqwe0122","jobIdentifier":"111222334:1","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"},"phone_number":"+919912000123"},"id":"111222334","type":"profile"}]}},"relationships":{"lists":{"data":[{"id":"UKth4J","type":"list"}]}},"type":"profile-bulk-import-job"}},"JSON_ARRAY":{},"XML":{}},"endpoint":"","files":{},"headers":{},"method":"POST","params":{},"type":"REST","userId":"","version":"1"},"metadata":{"job_id":1}}`
-	var inputPayload klaviyobulkupload.Input
-	err := json.Unmarshal([]byte(inputPayloadJSON), &inputPayload)
+	dataPayloadJSON := `{
+		"attributes": {
+			"profiles": {
+				"data": [
+					{
+						"attributes": {
+							"anonymous_id": 111222334,
+							"email": "qwe122@mail.com",
+							"first_name": "Testqwe0122",
+							"jobIdentifier": "111222334:1",
+							"last_name": "user0122",
+							"location": {
+								"city": "delhi",
+								"country": "India",
+								"ip": "213.5.6.41"
+							},
+							"phone_number": "+919912000123"
+						},
+						"id": "111222334",
+						"type": "profile"
+					}
+				]
+			}
+		},
+		"relationships": {
+			"lists": {
+				"data": [
+					{
+						"id": "UKth4J",
+						"type": "list"
+					}
+				]
+			}
+		},
+		"type": "profile-bulk-import-job"
+	}`
+	var data klaviyobulkupload.Data
+	err := json.Unmarshal([]byte(dataPayloadJSON), &data)
 	if err != nil {
 		t.Errorf("json.Unmarshal failed: %v", err)
 	}
 	expectedProfile := `{"attributes":{"email":"qwe122@mail.com","phone_number":"+919912000123","first_name":"Testqwe0122","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"}},"id":"111222334","type":"profile"}`
-	result := kbu.ExtractProfile(inputPayload)
+	result := kbu.ExtractProfile(data)
 	profileJson, _ := json.Marshal(result)
 	assert.JSONEq(t, expectedProfile, string(profileJson))
 }

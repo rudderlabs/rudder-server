@@ -24,7 +24,7 @@ type Poller interface {
 }
 
 type ProfileExtractor interface {
-	ExtractProfiles(input Input) Profile
+	ExtractProfiles(data Data) Profile
 }
 
 type UploadStats interface {
@@ -92,13 +92,38 @@ type Payload struct {
 }
 
 type Data struct {
-	Type          string         `json:"type"`
-	Attributes    Attributes     `json:"attributes"`
-	Relationships *Relationships `json:"relationships,omitempty"`
+	Type          string            `json:"type"`
+	Attributes    PayloadAttributes `json:"attributes"`
+	Relationships *Relationships    `json:"relationships,omitempty"`
 }
 
-type Attributes struct {
+type PayloadAttributes struct {
 	Profiles Profiles `json:"profiles"`
+}
+
+type ProfileAttributes struct {
+	Email         string `json:"email,omitempty"`
+	Phone         string `json:"phone_number,omitempty"`
+	ExternalId    string `json:"external_id,omitempty"`
+	FirstName     string `json:"first_name,omitempty"`
+	JobIdentifier string `json:"jobIdentifier,omitempty"`
+	LastName      string `json:"last_name,omitempty"`
+	Organization  string `json:"organization,omitempty"`
+	Title         string `json:"title,omitempty"`
+	Image         string `json:"image,omitempty"`
+	Location      struct {
+		Address1  string `json:"address1,omitempty"`
+		Address2  string `json:"address2,omitempty"`
+		City      string `json:"city,omitempty"`
+		Country   string `json:"country,omitempty"`
+		Latitude  string `json:"latitude,omitempty"`
+		Longitude string `json:"longitude,omitempty"`
+		Region    string `json:"region,omitempty"`
+		Zip       string `json:"zip,omitempty"`
+		Timezone  string `json:"timezone,omitempty"`
+		IP        string `json:"ip,omitempty"`
+	} `json:"location,omitempty"`
+	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 type Profiles struct {
@@ -117,60 +142,12 @@ type List struct {
 	Type string `json:"type,omitempty"`
 	ID   string `json:"id,omitempty"`
 }
-
-type Input struct {
-	Message struct {
-		Body struct {
-			Form struct{} `json:"FORM,omitempty"`
-			JSON struct {
-				Data struct {
-					Attributes    Attributes    `json:"attributes"`
-					Relationships Relationships `json:"relationships,omitempty"`
-					Type          string        `json:"type,omitempty"`
-				} `json:"data,omitempty"`
-			} `json:"JSON,omitempty"`
-			JSONArray struct{} `json:"JSON_ARRAY,omitempty"`
-			XML       struct{} `json:"XML,omitempty"`
-		} `json:"body,omitempty"`
-		Endpoint string   `json:"endpoint,omitempty"`
-		Files    struct{} `json:"files,omitempty"`
-		Headers  struct{} `json:"headers,omitempty"`
-		Method   string   `json:"method,omitempty"`
-		Params   struct{} `json:"params,omitempty"`
-		Type     string   `json:"type,omitempty"`
-		UserID   string   `json:"userId,omitempty"`
-		Version  string   `json:"version,omitempty"`
-	} `json:"message,omitempty"`
-	Metadata struct {
-		JobID int `json:"job_id,omitempty"`
-	} `json:"metadata,omitempty"`
+type Metadata struct {
+	JobID int `json:"job_id,omitempty"`
 }
 
 type Profile struct {
-	Attributes struct {
-		Email         string `json:"email,omitempty"`
-		Phone         string `json:"phone_number,omitempty"`
-		ExternalId    string `json:"external_id,omitempty"`
-		FirstName     string `json:"first_name,omitempty"`
-		JobIdentifier string `json:"jobIdentifier,omitempty"`
-		LastName      string `json:"last_name,omitempty"`
-		Organization  string `json:"organization,omitempty"`
-		Title         string `json:"title,omitempty"`
-		Image         string `json:"image,omitempty"`
-		Location      struct {
-			Address1  string `json:"address1,omitempty"`
-			Address2  string `json:"address2,omitempty"`
-			City      string `json:"city,omitempty"`
-			Country   string `json:"country,omitempty"`
-			Latitude  string `json:"latitude,omitempty"`
-			Longitude string `json:"longitude,omitempty"`
-			Region    string `json:"region,omitempty"`
-			Zip       string `json:"zip,omitempty"`
-			Timezone  string `json:"timezone,omitempty"`
-			IP        string `json:"ip,omitempty"`
-		} `json:"location,omitempty"`
-		Properties map[string]interface{} `json:"properties,omitempty"`
-	} `json:"attributes,omitempty"`
-	ID   string `json:"id,omitempty"`
-	Type string `json:"type,omitempty"`
+	Attributes ProfileAttributes `json:"attributes,omitempty"`
+	ID         string            `json:"id,omitempty"`
+	Type       string            `json:"type,omitempty"`
 }

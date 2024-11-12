@@ -154,7 +154,7 @@ func (m *MockProfileExtractor) EXPECT() *MockProfileExtractorMockRecorder {
 }
 
 // ExtractProfiles mocks base method.
-func (m *MockProfileExtractor) ExtractProfiles(arg0 klaviyobulkupload.Input) klaviyobulkupload.Profile {
+func (m *MockProfileExtractor) ExtractProfiles(arg0 klaviyobulkupload.Data) klaviyobulkupload.Profile {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ExtractProfiles", arg0)
 	ret0, _ := ret[0].(klaviyobulkupload.Profile)
