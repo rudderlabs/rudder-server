@@ -22,6 +22,7 @@ import (
 type MockNetHandle struct {
 	ctrl     *gomock.Controller
 	recorder *MockNetHandleMockRecorder
+	isgomock struct{}
 }
 
 // MockNetHandleMockRecorder is the mock recorder for MockNetHandle.
@@ -42,15 +43,15 @@ func (m *MockNetHandle) EXPECT() *MockNetHandleMockRecorder {
 }
 
 // SendPost mocks base method.
-func (m *MockNetHandle) SendPost(arg0 context.Context, arg1 integrations.PostParametersT) *utils.SendPostResponse {
+func (m *MockNetHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SendPost", arg0, arg1)
+	ret := m.ctrl.Call(m, "SendPost", ctx, structData)
 	ret0, _ := ret[0].(*utils.SendPostResponse)
 	return ret0
 }
 
 // SendPost indicates an expected call of SendPost.
-func (mr *MockNetHandleMockRecorder) SendPost(arg0, arg1 any) *gomock.Call {
+func (mr *MockNetHandleMockRecorder) SendPost(ctx, structData any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPost", reflect.TypeOf((*MockNetHandle)(nil).SendPost), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPost", reflect.TypeOf((*MockNetHandle)(nil).SendPost), ctx, structData)
 }

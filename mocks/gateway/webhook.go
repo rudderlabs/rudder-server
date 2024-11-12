@@ -20,6 +20,7 @@ import (
 type MockWebhook struct {
 	ctrl     *gomock.Controller
 	recorder *MockWebhookMockRecorder
+	isgomock struct{}
 }
 
 // MockWebhookMockRecorder is the mock recorder for MockWebhook.
@@ -40,27 +41,27 @@ func (m *MockWebhook) EXPECT() *MockWebhookMockRecorder {
 }
 
 // Register mocks base method.
-func (m *MockWebhook) Register(arg0 string) {
+func (m *MockWebhook) Register(name string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Register", arg0)
+	m.ctrl.Call(m, "Register", name)
 }
 
 // Register indicates an expected call of Register.
-func (mr *MockWebhookMockRecorder) Register(arg0 any) *gomock.Call {
+func (mr *MockWebhookMockRecorder) Register(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockWebhook)(nil).Register), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockWebhook)(nil).Register), name)
 }
 
 // RequestHandler mocks base method.
-func (m *MockWebhook) RequestHandler(arg0 http.ResponseWriter, arg1 *http.Request) {
+func (m *MockWebhook) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "RequestHandler", arg0, arg1)
+	m.ctrl.Call(m, "RequestHandler", w, r)
 }
 
 // RequestHandler indicates an expected call of RequestHandler.
-func (mr *MockWebhookMockRecorder) RequestHandler(arg0, arg1 any) *gomock.Call {
+func (mr *MockWebhookMockRecorder) RequestHandler(w, r any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestHandler", reflect.TypeOf((*MockWebhook)(nil).RequestHandler), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RequestHandler", reflect.TypeOf((*MockWebhook)(nil).RequestHandler), w, r)
 }
 
 // Shutdown mocks base method.

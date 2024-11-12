@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.23.2
+go 1.23.3
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -40,7 +40,7 @@ require (
 	github.com/confluentinc/confluent-kafka-go/v2 v2.6.0
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/denisenkom/go-mssqldb v0.12.3
-	github.com/dgraph-io/badger/v4 v4.3.1
+	github.com/dgraph-io/badger/v4 v4.4.0
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-redis/redis v6.15.9+incompatible
@@ -61,7 +61,7 @@ require (
 	github.com/k3a/html2text v1.2.1
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.0
-	github.com/marcboeker/go-duckdb v1.8.2
+	github.com/marcboeker/go-duckdb v1.8.3
 	github.com/minio/minio-go/v7 v7.0.80
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
@@ -105,16 +105,18 @@ require (
 	go.uber.org/goleak v1.3.0
 	go.uber.org/mock v0.5.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
-	golang.org/x/oauth2 v0.23.0
-	golang.org/x/sync v0.8.0
+	golang.org/x/oauth2 v0.24.0
+	golang.org/x/sync v0.9.0
 	google.golang.org/api v0.204.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38
-	google.golang.org/grpc v1.67.1
+	google.golang.org/grpc v1.68.0
 	google.golang.org/protobuf v1.35.1
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.0 // indirect
+	github.com/apache/arrow-go/v18 v18.0.0 // indirect
+	github.com/dgraph-io/ristretto/v2 v2.0.0 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 )
 
@@ -144,12 +146,11 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/actgardner/gogen-avro/v10 v10.2.1 // indirect
-	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/arrow/go/v12 v12.0.1 // indirect
 	github.com/apache/arrow/go/v15 v15.0.2 // indirect
-	github.com/apache/arrow/go/v17 v17.0.0 // indirect
-	github.com/apache/thrift v0.20.0 // indirect
+	github.com/apache/thrift v0.21.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.32.3 // indirect
@@ -188,7 +189,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/dgraph-io/ristretto v1.0.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/dnephin/pflag v1.0.7 // indirect
@@ -237,7 +237,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
-	github.com/hamba/avro/v2 v2.25.2 // indirect
+	github.com/hamba/avro/v2 v2.26.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

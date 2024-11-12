@@ -19,6 +19,7 @@ import (
 type MockFeaturesService struct {
 	ctrl     *gomock.Controller
 	recorder *MockFeaturesServiceMockRecorder
+	isgomock struct{}
 }
 
 // MockFeaturesServiceMockRecorder is the mock recorder for MockFeaturesService.
@@ -53,17 +54,17 @@ func (mr *MockFeaturesServiceMockRecorder) Regulations() *gomock.Call {
 }
 
 // RouterTransform mocks base method.
-func (m *MockFeaturesService) RouterTransform(arg0 string) bool {
+func (m *MockFeaturesService) RouterTransform(destType string) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RouterTransform", arg0)
+	ret := m.ctrl.Call(m, "RouterTransform", destType)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // RouterTransform indicates an expected call of RouterTransform.
-func (mr *MockFeaturesServiceMockRecorder) RouterTransform(arg0 any) *gomock.Call {
+func (mr *MockFeaturesServiceMockRecorder) RouterTransform(destType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouterTransform", reflect.TypeOf((*MockFeaturesService)(nil).RouterTransform), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RouterTransform", reflect.TypeOf((*MockFeaturesService)(nil).RouterTransform), destType)
 }
 
 // SourceTransformerVersion mocks base method.
