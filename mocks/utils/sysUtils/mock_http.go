@@ -22,6 +22,7 @@ import (
 type MockHttpI struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpIMockRecorder
+	isgomock struct{}
 }
 
 // MockHttpIMockRecorder is the mock recorder for MockHttpI.
@@ -42,31 +43,31 @@ func (m *MockHttpI) EXPECT() *MockHttpIMockRecorder {
 }
 
 // NewRequest mocks base method.
-func (m *MockHttpI) NewRequest(arg0, arg1 string, arg2 io.Reader) (*http.Request, error) {
+func (m *MockHttpI) NewRequest(method, url string, body io.Reader) (*http.Request, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewRequest", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "NewRequest", method, url, body)
 	ret0, _ := ret[0].(*http.Request)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // NewRequest indicates an expected call of NewRequest.
-func (mr *MockHttpIMockRecorder) NewRequest(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockHttpIMockRecorder) NewRequest(method, url, body any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequest", reflect.TypeOf((*MockHttpI)(nil).NewRequest), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequest", reflect.TypeOf((*MockHttpI)(nil).NewRequest), method, url, body)
 }
 
 // NewRequestWithContext mocks base method.
-func (m *MockHttpI) NewRequestWithContext(arg0 context.Context, arg1, arg2 string, arg3 io.Reader) (*http.Request, error) {
+func (m *MockHttpI) NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewRequestWithContext", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "NewRequestWithContext", ctx, method, url, body)
 	ret0, _ := ret[0].(*http.Request)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // NewRequestWithContext indicates an expected call of NewRequestWithContext.
-func (mr *MockHttpIMockRecorder) NewRequestWithContext(arg0, arg1, arg2, arg3 any) *gomock.Call {
+func (mr *MockHttpIMockRecorder) NewRequestWithContext(ctx, method, url, body any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequestWithContext", reflect.TypeOf((*MockHttpI)(nil).NewRequestWithContext), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewRequestWithContext", reflect.TypeOf((*MockHttpI)(nil).NewRequestWithContext), ctx, method, url, body)
 }

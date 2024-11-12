@@ -14,8 +14,6 @@ import (
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

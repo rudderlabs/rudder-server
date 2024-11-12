@@ -185,7 +185,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		return
 	}
 
-	defer brt.limiter.read.Begin(partition)()
+	defer brt.limiter.read.Begin("")()
 
 	brt.configSubscriberMu.RLock()
 	destinationsMap := brt.destinationsMap

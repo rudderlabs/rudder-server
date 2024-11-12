@@ -21,6 +21,7 @@ import (
 type MockTransformer struct {
 	ctrl     *gomock.Controller
 	recorder *MockTransformerMockRecorder
+	isgomock struct{}
 }
 
 // MockTransformerMockRecorder is the mock recorder for MockTransformer.
@@ -41,43 +42,43 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
+func (m *MockTransformer) Transform(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Transform", ctx, clientEvents, batchSize)
 	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(ctx, clientEvents, batchSize any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), ctx, clientEvents, batchSize)
 }
 
 // UserTransform mocks base method.
-func (m *MockTransformer) UserTransform(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
+func (m *MockTransformer) UserTransform(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UserTransform", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "UserTransform", ctx, clientEvents, batchSize)
 	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
 // UserTransform indicates an expected call of UserTransform.
-func (mr *MockTransformerMockRecorder) UserTransform(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockTransformerMockRecorder) UserTransform(ctx, clientEvents, batchSize any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserTransform", reflect.TypeOf((*MockTransformer)(nil).UserTransform), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserTransform", reflect.TypeOf((*MockTransformer)(nil).UserTransform), ctx, clientEvents, batchSize)
 }
 
 // Validate mocks base method.
-func (m *MockTransformer) Validate(arg0 context.Context, arg1 []transformer.TransformerEvent, arg2 int) transformer.Response {
+func (m *MockTransformer) Validate(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Validate", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "Validate", ctx, clientEvents, batchSize)
 	ret0, _ := ret[0].(transformer.Response)
 	return ret0
 }
 
 // Validate indicates an expected call of Validate.
-func (mr *MockTransformerMockRecorder) Validate(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Validate(ctx, clientEvents, batchSize any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockTransformer)(nil).Validate), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockTransformer)(nil).Validate), ctx, clientEvents, batchSize)
 }

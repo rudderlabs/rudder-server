@@ -20,6 +20,7 @@ import (
 type MockEloquaService struct {
 	ctrl     *gomock.Controller
 	recorder *MockEloquaServiceMockRecorder
+	isgomock struct{}
 }
 
 // MockEloquaServiceMockRecorder is the mock recorder for MockEloquaService.

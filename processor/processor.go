@@ -1598,8 +1598,7 @@ func getDiffMetrics(
 }
 
 type dupStatKey struct {
-	sourceID  string
-	equalSize bool
+	sourceID string
 }
 
 func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
@@ -1780,7 +1779,6 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
-				Value:       int64(len(payloadFunc())),
 				WorkspaceID: batchEvent.WorkspaceId,
 				JobID:       batchEvent.JobID,
 			}
@@ -1807,11 +1805,10 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	}
 
 	var keyMap map[dedupTypes.KeyValue]bool
-	var sizeMap map[dedupTypes.KeyValue]int64
 	var err error
 	dedupStart := time.Now()
 	if proc.config.enableDedup {
-		keyMap, sizeMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
+		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -1824,13 +1821,11 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		}
 
 		if proc.config.enableDedup {
-			p := event.payloadFunc()
-			messageSize := int64(len(p))
 			dedupKey := event.dedupKey
-			ok, previousSize := keyMap[dedupKey], sizeMap[dedupKey]
+			ok := keyMap[dedupKey]
 			if !ok {
 				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
-				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId, equalSize: messageSize == previousSize}] += 1
+				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
 			dedupKeys[dedupKey.Key] = struct{}{}
@@ -2211,7 +2206,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
 	if proc.limiter.preprocess != nil {
-		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.preprocess.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	jobList := subJobs.subJobs
@@ -2341,16 +2336,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			})
 
 			if proc.config.enableDedup {
-				p := payloadFunc()
-				messageSize := int64(len(p))
 				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				ok, previousSize, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, Value: messageSize, WorkspaceID: batchEvent.WorkspaceId})
+				ok, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, WorkspaceID: batchEvent.WorkspaceId})
 				if err != nil {
 					return nil, err
 				}
 				if !ok {
 					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
-					sourceDupStats[dupStatKey{sourceID: source.ID, equalSize: messageSize == previousSize}] += 1
+					sourceDupStats[dupStatKey{sourceID: source.ID}] += 1
 					continue
 				}
 				dedupKeys[dedupKey] = struct{}{}
@@ -2540,7 +2533,7 @@ type transformationMessage struct {
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
 	if proc.limiter.transform != nil {
-		defer proc.limiter.transform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.transform.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2728,7 +2721,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	}
 
 	if proc.limiter.store != nil {
-		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.store.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
@@ -3535,7 +3528,7 @@ func ConvertToFilteredTransformerResponse(
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	if proc.limiter.read != nil {
-		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 
 	s := time.Now()
@@ -3699,8 +3692,7 @@ func (proc *Handle) crashRecover() {
 func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
 	for dupStat, count := range sourceStats {
 		tags := map[string]string{
-			"source":    dupStat.sourceID,
-			"equalSize": strconv.FormatBool(dupStat.equalSize),
+			"source": dupStat.sourceID,
 		}
 		sourceStatsD := proc.statsFactory.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
