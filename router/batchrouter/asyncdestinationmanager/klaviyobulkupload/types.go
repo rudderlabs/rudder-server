@@ -1,34 +1,16 @@
 package klaviyobulkupload
 
-//go:generate mockgen -destination=../../../../mocks/router/klaviyobulkupload/klaviyobulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload Uploader,HttpClient,Poller,ProfileExtractor,UploadStats
+//go:generate mockgen -destination=../../../../mocks/router/klaviyobulkupload/klaviyobulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload KlaviyoAPIService
 
 import (
-	"net/http"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-type Uploader interface {
-	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
-}
-
-type HttpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-type Poller interface {
-	Poll(input common.AsyncPoll) common.PollStatusResponse
-}
-
-type ProfileExtractor interface {
-	ExtractProfiles(data Data) Profile
-}
-
-type UploadStats interface {
-	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
+type KlaviyoAPIService interface {
+	UploadProfiles(profiles Payload) (*UploadResp, error)
+	GetUploadStatus(importId string) (*PollResp, error)
+	GetUploadErrors(importId string) (*UploadStatusResp, error)
 }
 
 type KlaviyoBulkUploader struct {
@@ -36,7 +18,7 @@ type KlaviyoBulkUploader struct {
 	destinationConfig    map[string]interface{}
 	logger               logger.Logger
 	statsFactory         stats.Stats
-	Client               *http.Client
+	klaviyoAPIService    KlaviyoAPIService
 	jobIdToIdentifierMap map[string]int64
 }
 
