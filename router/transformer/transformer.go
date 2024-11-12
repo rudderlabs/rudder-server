@@ -50,8 +50,8 @@ const (
 // handle is the handle for this class
 type handle struct {
 	tr *http.Transport
-	// http recycledClient for router transformation request
-	recycledClient *sysUtils.RecycledHTTPClient
+	// http httpClient for router transformation request
+	httpClient *sysUtils.RecycledHTTPClient
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
@@ -180,7 +180,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)
 		} else {
-			resp, err = trans.recycledClient.GetClient().Do(req)
+			resp, err = trans.httpClient.GetClient().Do(req)
 		}
 
 		if err == nil {
@@ -510,7 +510,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.recycledClient = sysUtils.NewRecycledHTTPClient(
+	trans.httpClient = sysUtils.NewRecycledHTTPClient(
 		func() *http.Client {
 			return &http.Client{Transport: trans.tr.Clone(), Timeout: trans.transformTimeout}
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"runtime/trace"
@@ -15,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bufbuild/httplb"
+	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -135,9 +138,9 @@ type Response struct {
 
 type Opt func(*handle)
 
-func WithClient(client *http.Client) Opt {
+func WithClient(client HTTPDoer) Opt {
 	return func(s *handle) {
-		s.recycledClient = sysUtils.NewRecycledHTTPClient(func() *http.Client { return client }, 0)
+		s.httpClient = client
 	}
 }
 
@@ -160,6 +163,10 @@ type Transformer interface {
 	TrackingPlanValidator
 }
 
+type HTTPDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // handle is the handle for this class
 type handle struct {
 	sentStat     stats.Measurement
@@ -170,7 +177,7 @@ type handle struct {
 	logger logger.Logger
 	stat   stats.Stats
 
-	recycledClient *sysUtils.RecycledHTTPClient
+	httpClient HTTPDoer
 
 	guardConcurrency chan struct{}
 
@@ -222,8 +229,13 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
-	if trans.recycledClient == nil {
-		trans.recycledClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
+	clientType := config.GetString("Transformer.Client.type", "bufbuild")
+
+	switch clientType {
+	case "stdlib":
+		trans.httpClient = &http.Client{}
+	case "recycled":
+		trans.httpClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
 			return &http.Client{
 				Transport: &http.Transport{
 					DisableKeepAlives:   trans.config.disableKeepAlives,
@@ -234,6 +246,18 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 				Timeout: trans.config.timeoutDuration,
 			}
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
+	case "bufbuild":
+		trans.httpClient = httplb.NewClient(
+			httplb.WithResolver(
+				resolver.NewDNSResolver(
+					net.DefaultResolver,
+					resolver.PreferIPv6,
+					config.GetDuration("Transformer.Client.ttl", 120, time.Second), // TTL value
+				),
+			),
+		)
+	default:
+		panic(fmt.Sprintf("unknown transformer client type: %s", clientType))
 	}
 
 	for _, opt := range opts {
@@ -487,7 +511,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				// Header to let transformer know that the client understands event filter code
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 
-				resp, reqErr = trans.recycledClient.GetClient().Do(req)
+				resp, reqErr = trans.httpClient.Do(req)
 			})
 			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {

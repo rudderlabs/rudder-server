@@ -114,7 +114,10 @@ require (
 	google.golang.org/protobuf v1.35.1
 )
 
-require github.com/spf13/viper v1.19.0 // indirect
+require (
+	github.com/bufbuild/httplb v0.3.0 // indirect
+	github.com/spf13/viper v1.19.0 // indirect
+)
 
 require (
 	cel.dev/expr v0.16.1 // indirect

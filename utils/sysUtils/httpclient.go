@@ -40,3 +40,7 @@ func (r *RecycledHTTPClient) GetClient() *http.Client {
 	}
 	return r.client
 }
+
+func (r *RecycledHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	return r.GetClient().Do(req)
+}
