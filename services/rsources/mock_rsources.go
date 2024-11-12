@@ -21,6 +21,7 @@ import (
 type MockStatsIncrementer struct {
 	ctrl     *gomock.Controller
 	recorder *MockStatsIncrementerMockRecorder
+	isgomock struct{}
 }
 
 // MockStatsIncrementerMockRecorder is the mock recorder for MockStatsIncrementer.
@@ -58,6 +59,7 @@ func (mr *MockStatsIncrementerMockRecorder) IncrementStats(ctx, tx, jobRunId, ke
 type MockJobService struct {
 	ctrl     *gomock.Controller
 	recorder *MockJobServiceMockRecorder
+	isgomock struct{}
 }
 
 // MockJobServiceMockRecorder is the mock recorder for MockJobService.
@@ -222,6 +224,7 @@ func (mr *MockJobServiceMockRecorder) Monitor(ctx, lagGauge, replicationSlotGaug
 type MockGauger struct {
 	ctrl     *gomock.Controller
 	recorder *MockGaugerMockRecorder
+	isgomock struct{}
 }
 
 // MockGaugerMockRecorder is the mock recorder for MockGauger.

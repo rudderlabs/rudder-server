@@ -20,6 +20,7 @@ import (
 type MockConnector struct {
 	ctrl     *gomock.Controller
 	recorder *MockConnectorMockRecorder
+	isgomock struct{}
 }
 
 // MockConnectorMockRecorder is the mock recorder for MockConnector.
@@ -40,16 +41,16 @@ func (m *MockConnector) EXPECT() *MockConnectorMockRecorder {
 }
 
 // CpApiCall mocks base method.
-func (m *MockConnector) CpApiCall(arg0 *controlplane.Request) (int, string) {
+func (m *MockConnector) CpApiCall(cpReq *controlplane.Request) (int, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CpApiCall", arg0)
+	ret := m.ctrl.Call(m, "CpApiCall", cpReq)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	return ret0, ret1
 }
 
 // CpApiCall indicates an expected call of CpApiCall.
-func (mr *MockConnectorMockRecorder) CpApiCall(arg0 any) *gomock.Call {
+func (mr *MockConnectorMockRecorder) CpApiCall(cpReq any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CpApiCall", reflect.TypeOf((*MockConnector)(nil).CpApiCall), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CpApiCall", reflect.TypeOf((*MockConnector)(nil).CpApiCall), cpReq)
 }

@@ -21,6 +21,7 @@ import (
 type MockGZipI struct {
 	ctrl     *gomock.Controller
 	recorder *MockGZipIMockRecorder
+	isgomock struct{}
 }
 
 // MockGZipIMockRecorder is the mock recorder for MockGZipI.
@@ -41,30 +42,30 @@ func (m *MockGZipI) EXPECT() *MockGZipIMockRecorder {
 }
 
 // NewReader mocks base method.
-func (m *MockGZipI) NewReader(arg0 io.Reader) (*gzip.Reader, error) {
+func (m *MockGZipI) NewReader(r io.Reader) (*gzip.Reader, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewReader", arg0)
+	ret := m.ctrl.Call(m, "NewReader", r)
 	ret0, _ := ret[0].(*gzip.Reader)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // NewReader indicates an expected call of NewReader.
-func (mr *MockGZipIMockRecorder) NewReader(arg0 any) *gomock.Call {
+func (mr *MockGZipIMockRecorder) NewReader(r any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewReader", reflect.TypeOf((*MockGZipI)(nil).NewReader), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewReader", reflect.TypeOf((*MockGZipI)(nil).NewReader), r)
 }
 
 // NewWriter mocks base method.
-func (m *MockGZipI) NewWriter(arg0 io.Writer) *gzip.Writer {
+func (m *MockGZipI) NewWriter(w io.Writer) *gzip.Writer {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewWriter", arg0)
+	ret := m.ctrl.Call(m, "NewWriter", w)
 	ret0, _ := ret[0].(*gzip.Writer)
 	return ret0
 }
 
 // NewWriter indicates an expected call of NewWriter.
-func (mr *MockGZipIMockRecorder) NewWriter(arg0 any) *gomock.Call {
+func (mr *MockGZipIMockRecorder) NewWriter(w any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockGZipI)(nil).NewWriter), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockGZipI)(nil).NewWriter), w)
 }

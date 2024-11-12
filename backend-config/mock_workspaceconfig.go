@@ -22,6 +22,7 @@ import (
 type MockworkspaceConfig struct {
 	ctrl     *gomock.Controller
 	recorder *MockworkspaceConfigMockRecorder
+	isgomock struct{}
 }
 
 // MockworkspaceConfigMockRecorder is the mock recorder for MockworkspaceConfig.
@@ -102,6 +103,7 @@ func (mr *MockworkspaceConfigMockRecorder) SetUp() *gomock.Call {
 type MockBackendConfig struct {
 	ctrl     *gomock.Controller
 	recorder *MockBackendConfigMockRecorder
+	isgomock struct{}
 }
 
 // MockBackendConfigMockRecorder is the mock recorder for MockBackendConfig.

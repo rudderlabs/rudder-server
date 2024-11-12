@@ -22,6 +22,7 @@ import (
 type MockAggregator struct {
 	ctrl     *gomock.Controller
 	recorder *MockAggregatorMockRecorder
+	isgomock struct{}
 }
 
 // MockAggregatorMockRecorder is the mock recorder for MockAggregator.
