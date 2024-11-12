@@ -21,6 +21,7 @@ import (
 type MockOsI struct {
 	ctrl     *gomock.Controller
 	recorder *MockOsIMockRecorder
+	isgomock struct{}
 }
 
 // MockOsIMockRecorder is the mock recorder for MockOsI.
@@ -41,134 +42,134 @@ func (m *MockOsI) EXPECT() *MockOsIMockRecorder {
 }
 
 // Create mocks base method.
-func (m *MockOsI) Create(arg0 string) (*os.File, error) {
+func (m *MockOsI) Create(name string) (*os.File, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Create", arg0)
+	ret := m.ctrl.Call(m, "Create", name)
 	ret0, _ := ret[0].(*os.File)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Create indicates an expected call of Create.
-func (mr *MockOsIMockRecorder) Create(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) Create(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockOsI)(nil).Create), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockOsI)(nil).Create), name)
 }
 
 // Getenv mocks base method.
-func (m *MockOsI) Getenv(arg0 string) string {
+func (m *MockOsI) Getenv(key string) string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Getenv", arg0)
+	ret := m.ctrl.Call(m, "Getenv", key)
 	ret0, _ := ret[0].(string)
 	return ret0
 }
 
 // Getenv indicates an expected call of Getenv.
-func (mr *MockOsIMockRecorder) Getenv(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) Getenv(key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Getenv", reflect.TypeOf((*MockOsI)(nil).Getenv), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Getenv", reflect.TypeOf((*MockOsI)(nil).Getenv), key)
 }
 
 // IsNotExist mocks base method.
-func (m *MockOsI) IsNotExist(arg0 error) bool {
+func (m *MockOsI) IsNotExist(err error) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsNotExist", arg0)
+	ret := m.ctrl.Call(m, "IsNotExist", err)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // IsNotExist indicates an expected call of IsNotExist.
-func (mr *MockOsIMockRecorder) IsNotExist(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) IsNotExist(err any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNotExist", reflect.TypeOf((*MockOsI)(nil).IsNotExist), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNotExist", reflect.TypeOf((*MockOsI)(nil).IsNotExist), err)
 }
 
 // LookupEnv mocks base method.
-func (m *MockOsI) LookupEnv(arg0 string) (string, bool) {
+func (m *MockOsI) LookupEnv(key string) (string, bool) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LookupEnv", arg0)
+	ret := m.ctrl.Call(m, "LookupEnv", key)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
 // LookupEnv indicates an expected call of LookupEnv.
-func (mr *MockOsIMockRecorder) LookupEnv(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) LookupEnv(key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupEnv", reflect.TypeOf((*MockOsI)(nil).LookupEnv), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupEnv", reflect.TypeOf((*MockOsI)(nil).LookupEnv), key)
 }
 
 // MkdirAll mocks base method.
-func (m *MockOsI) MkdirAll(arg0 string, arg1 fs.FileMode) error {
+func (m *MockOsI) MkdirAll(path string, perm fs.FileMode) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MkdirAll", arg0, arg1)
+	ret := m.ctrl.Call(m, "MkdirAll", path, perm)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // MkdirAll indicates an expected call of MkdirAll.
-func (mr *MockOsIMockRecorder) MkdirAll(arg0, arg1 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) MkdirAll(path, perm any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MkdirAll", reflect.TypeOf((*MockOsI)(nil).MkdirAll), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MkdirAll", reflect.TypeOf((*MockOsI)(nil).MkdirAll), path, perm)
 }
 
 // Open mocks base method.
-func (m *MockOsI) Open(arg0 string) (*os.File, error) {
+func (m *MockOsI) Open(name string) (*os.File, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Open", arg0)
+	ret := m.ctrl.Call(m, "Open", name)
 	ret0, _ := ret[0].(*os.File)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Open indicates an expected call of Open.
-func (mr *MockOsIMockRecorder) Open(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) Open(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Open", reflect.TypeOf((*MockOsI)(nil).Open), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Open", reflect.TypeOf((*MockOsI)(nil).Open), name)
 }
 
 // OpenFile mocks base method.
-func (m *MockOsI) OpenFile(arg0 string, arg1 int, arg2 fs.FileMode) (*os.File, error) {
+func (m *MockOsI) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "OpenFile", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "OpenFile", name, flag, perm)
 	ret0, _ := ret[0].(*os.File)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // OpenFile indicates an expected call of OpenFile.
-func (mr *MockOsIMockRecorder) OpenFile(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) OpenFile(name, flag, perm any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenFile", reflect.TypeOf((*MockOsI)(nil).OpenFile), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenFile", reflect.TypeOf((*MockOsI)(nil).OpenFile), name, flag, perm)
 }
 
 // Remove mocks base method.
-func (m *MockOsI) Remove(arg0 string) error {
+func (m *MockOsI) Remove(name string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Remove", arg0)
+	ret := m.ctrl.Call(m, "Remove", name)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Remove indicates an expected call of Remove.
-func (mr *MockOsIMockRecorder) Remove(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) Remove(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Remove", reflect.TypeOf((*MockOsI)(nil).Remove), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Remove", reflect.TypeOf((*MockOsI)(nil).Remove), name)
 }
 
 // Stat mocks base method.
-func (m *MockOsI) Stat(arg0 string) (fs.FileInfo, error) {
+func (m *MockOsI) Stat(name string) (fs.FileInfo, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Stat", arg0)
+	ret := m.ctrl.Call(m, "Stat", name)
 	ret0, _ := ret[0].(fs.FileInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Stat indicates an expected call of Stat.
-func (mr *MockOsIMockRecorder) Stat(arg0 any) *gomock.Call {
+func (mr *MockOsIMockRecorder) Stat(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stat", reflect.TypeOf((*MockOsI)(nil).Stat), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stat", reflect.TypeOf((*MockOsI)(nil).Stat), name)
 }
 
 // UserHomeDir mocks base method.

@@ -20,6 +20,7 @@ import (
 type MockHTTPClientI struct {
 	ctrl     *gomock.Controller
 	recorder *MockHTTPClientIMockRecorder
+	isgomock struct{}
 }
 
 // MockHTTPClientIMockRecorder is the mock recorder for MockHTTPClientI.
@@ -40,16 +41,16 @@ func (m *MockHTTPClientI) EXPECT() *MockHTTPClientIMockRecorder {
 }
 
 // Do mocks base method.
-func (m *MockHTTPClientI) Do(arg0 *http.Request) (*http.Response, error) {
+func (m *MockHTTPClientI) Do(req *http.Request) (*http.Response, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Do", arg0)
+	ret := m.ctrl.Call(m, "Do", req)
 	ret0, _ := ret[0].(*http.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Do indicates an expected call of Do.
-func (mr *MockHTTPClientIMockRecorder) Do(arg0 any) *gomock.Call {
+func (mr *MockHTTPClientIMockRecorder) Do(req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockHTTPClientI)(nil).Do), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockHTTPClientI)(nil).Do), req)
 }
