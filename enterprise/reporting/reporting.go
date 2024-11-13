@@ -625,10 +625,8 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 
 func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) types.PUReportedMetric {
 	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
-	isValidSampleResponse := metric.StatusDetail.SampleResponse != ""
-	// TODO: Check if this is needed and if the validation is correct
 
-	if isValidSampleEvent && isValidSampleResponse {
+	if isValidSampleEvent {
 		hash := NewLabelSet(metric).generateHash()
 
 		if r.eventSampler.Get(hash) {
