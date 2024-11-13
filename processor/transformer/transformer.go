@@ -223,7 +223,15 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	switch clientType {
 	case "stdlib":
-		trans.httpClient = &http.Client{}
+		trans.httpClient = &http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives:   trans.config.disableKeepAlives,
+				MaxConnsPerHost:     trans.config.maxHTTPConnections,
+				MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
+				IdleConnTimeout:     trans.config.maxIdleConnDuration,
+			},
+			Timeout: trans.config.timeoutDuration,
+		}
 	case "recycled":
 		trans.httpClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
 			return &http.Client{
