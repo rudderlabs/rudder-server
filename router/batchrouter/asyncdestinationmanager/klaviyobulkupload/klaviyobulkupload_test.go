@@ -2,6 +2,8 @@ package klaviyobulkupload_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,8 +13,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
 )
+
+var currentDir, _ = os.Getwd()
 
 var destination = &backendconfig.DestinationT{
 	ID:   "1",
@@ -82,4 +87,24 @@ func TestExtractProfileValidInput(t *testing.T) {
 	result := kbu.ExtractProfile(data)
 	profileJson, _ := json.Marshal(result)
 	assert.JSONEq(t, expectedProfile, string(profileJson))
+}
+
+func TestUploadIntegration(t *testing.T) {
+	kbu, err := klaviyobulkupload.NewManager(logger.NOP, stats.NOP, destination)
+	assert.NoError(t, err)
+	assert.NotNil(t, kbu)
+
+	asyncDestStruct := &common.AsyncDestinationStruct{
+		Destination:     destination,
+		FileName:        filepath.Join(currentDir, "testdata/uploadData.jsonl"),
+		ImportingJobIDs: []int64{1, 2, 3},
+	}
+
+	output := kbu.Upload(asyncDestStruct)
+	assert.NotNil(t, output)
+	assert.Equal(t, destination.ID, output.DestinationID)
+	assert.Empty(t, output.FailedJobIDs)
+	assert.Empty(t, output.AbortJobIDs)
+	assert.Empty(t, output.AbortReason)
+	assert.NotEmpty(t, output.ImportingJobIDs)
 }
