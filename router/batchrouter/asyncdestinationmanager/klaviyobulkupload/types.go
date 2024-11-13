@@ -141,7 +141,7 @@ type List struct {
 	ID   string `json:"id,omitempty"`
 }
 type Metadata struct {
-	JobID int `json:"job_id,omitempty"`
+	JobID int `json:"jobId,omitempty"`
 }
 
 type Profile struct {

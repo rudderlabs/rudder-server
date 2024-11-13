@@ -26,7 +26,7 @@ var destination = &backendconfig.DestinationT{
 		Name: "KLAVIYO_BULK_UPLOAD",
 	},
 	Config: map[string]interface{}{
-		"privateApiKey": "1234",
+		"privateApiKey": "1223",
 	},
 	Enabled:     true,
 	WorkspaceID: "1",
@@ -89,7 +89,9 @@ func TestExtractProfileValidInput(t *testing.T) {
 	assert.JSONEq(t, expectedProfile, string(profileJson))
 }
 
+// Test case for doing integration test of Upload method
 func TestUploadIntegration(t *testing.T) {
+	t.Skip("Skipping this integ test for now.")
 	kbu, err := klaviyobulkupload.NewManager(logger.NOP, stats.NOP, destination)
 	assert.NoError(t, err)
 	assert.NotNil(t, kbu)

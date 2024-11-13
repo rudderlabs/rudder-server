@@ -268,7 +268,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		var metadata Metadata
 		line := scanner.Text()
 
-		err := json.Unmarshal([]byte(gjson.Get(line, "message.body.JSON").String()), &data)
+		err := json.Unmarshal([]byte(gjson.Get(line, "message.body.JSON.data").String()), &data)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Data.", err, importingJobIDs, destinationID)
 		}
