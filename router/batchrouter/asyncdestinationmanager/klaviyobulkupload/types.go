@@ -22,10 +22,24 @@ type KlaviyoBulkUploader struct {
 	jobIdToIdentifierMap map[string]int64
 }
 
+type ErrorDetail struct {
+	ID     string      `json:"id"`
+	Code   string      `json:"code"`
+	Title  string      `json:"title"`
+	Detail string      `json:"detail"`
+	Source ErrorSource `json:"source"`
+}
+
+type ErrorSource struct {
+	Pointer   string `json:"pointer"`
+	Parameter string `json:"parameter"`
+}
+
 type UploadResp struct {
 	Data struct {
 		Id string `json:"id"`
 	} `json:"data"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type PollResp struct {
@@ -38,6 +52,7 @@ type PollResp struct {
 			Status          string `json:"status"`
 		} `json:"attributes"`
 	} `json:"data"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type UploadStatusResp struct {
@@ -67,6 +82,7 @@ type UploadStatusResp struct {
 		Prev  string `json:"prev"`
 		Next  string `json:"next"`
 	} `json:"links"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type Payload struct {

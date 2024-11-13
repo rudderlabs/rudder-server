@@ -48,12 +48,7 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("upload failed with status code %d", resp.StatusCode)
-	}
 
-	uploadTimeStat := k.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, k.statLabels)
-	uploadTimeStat.Since(startTime)
 	var uploadResp UploadResp
 	uploadBodyBytes, _ := io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
@@ -61,6 +56,12 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	if uploadRespErr != nil {
 		return nil, uploadRespErr
 	}
+	if len(uploadResp.Errors) > 0 {
+		return &uploadResp, fmt.Errorf("upload failed with errors: %+v", uploadResp.Errors)
+	}
+	uploadTimeStat := k.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, k.statLabels)
+	uploadTimeStat.Since(startTime)
+
 	return &uploadResp, uploadRespErr
 }
 
@@ -81,6 +82,12 @@ func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, err
 	defer func() { _ = resp.Body.Close() }()
 
 	pollRespErr := json.Unmarshal(pollBodyBytes, &pollresp)
+	if pollRespErr != nil {
+		return nil, pollRespErr
+	}
+	if len(pollresp.Errors) > 0 {
+		return &pollresp, fmt.Errorf("GetUploadStatus failed with errors: %+v", pollresp.Errors)
+	}
 	return &pollresp, pollRespErr
 }
 
@@ -100,6 +107,12 @@ func (k *KlaviyoAPIServiceImpl) GetUploadErrors(importId string) (*UploadStatusR
 	importErrorBodyBytes, _ = io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
 	importErrorRespErr := json.Unmarshal(importErrorBodyBytes, &importErrorResp)
+	if importErrorRespErr != nil {
+		return nil, importErrorRespErr
+	}
+	if len(importErrorResp.Errors) > 0 {
+		return &importErrorResp, fmt.Errorf("GetUploadErrors failed with errors: %+v", importErrorResp.Errors)
+	}
 	return &importErrorResp, importErrorRespErr
 }
 
