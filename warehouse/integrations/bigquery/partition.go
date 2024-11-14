@@ -17,9 +17,12 @@ var (
 )
 
 var supportedPartitionColumnMap = map[string]struct{}{
-	"_PARTITIONTIME": {},
-	"loaded_at":      {},
-	"received_at":    {},
+	"_PARTITIONTIME":     {},
+	"loaded_at":          {},
+	"received_at":        {},
+	"sent_at":            {},
+	"timestamp":          {},
+	"original_timestamp": {},
 }
 
 var supportedPartitionTypeMap = map[string]bigquery.TimePartitioningType{
