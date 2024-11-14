@@ -246,6 +246,15 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
 	case "bufbuild":
 		trans.httpClient = httplb.NewClient(
+			httplb.WithTransport("http",
+				httplb.NewTransport(
+					&http.Transport{
+						DisableKeepAlives:   trans.config.disableKeepAlives,
+						MaxConnsPerHost:     trans.config.maxHTTPConnections,
+						MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
+						IdleConnTimeout:     trans.config.maxIdleConnDuration,
+				},
+			),
 			httplb.WithResolver(
 				resolver.NewDNSResolver(
 					net.DefaultResolver,
