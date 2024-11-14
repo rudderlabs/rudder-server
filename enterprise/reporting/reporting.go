@@ -636,7 +636,6 @@ func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReport
 	if isValidSampleEvent {
 		hash := NewLabelSet(metric).generateHash()
 		found, err := r.eventSampler.Get([]byte(hash))
-
 		if err != nil {
 			panic(err)
 		}

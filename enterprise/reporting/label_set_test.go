@@ -3,8 +3,9 @@ package reporting
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func createMetricObject(eventName string) types.PUReportedMetric {

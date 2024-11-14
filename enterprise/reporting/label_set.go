@@ -4,8 +4,9 @@ import (
 	"encoding/hex"
 	"strconv"
 
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/spaolacci/murmur3"
+
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type LabelSet struct {
