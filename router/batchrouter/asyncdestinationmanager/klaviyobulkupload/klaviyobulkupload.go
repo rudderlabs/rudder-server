@@ -56,14 +56,14 @@ func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	return payload
 }
 
-func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
+func NewManager(logger logger.Logger, StatsFactory stats.Stats, destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
 	klaviyoLogger := logger.Child("KlaviyoBulkUpload").Child("KlaviyoBulkUploader")
 	return &KlaviyoBulkUploader{
-		destName:          destination.DestinationDefinition.Name,
-		destinationConfig: destination.Config,
-		logger:            klaviyoLogger,
-		statsFactory:      statsFactory,
-		klaviyoAPIService: NewKlaviyoAPIService(destination, klaviyoLogger, statsFactory),
+		DestName:          destination.DestinationDefinition.Name,
+		DestinationConfig: destination.Config,
+		Logger:            klaviyoLogger,
+		StatsFactory:      StatsFactory,
+		KlaviyoAPIService: NewKlaviyoAPIService(destination, klaviyoLogger, StatsFactory),
 	}, nil
 }
 
@@ -110,7 +110,7 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 		for importId, status := range importStatuses {
 			if status != "complete" {
 				allComplete = false
-				pollresp, err := kbu.klaviyoAPIService.GetUploadStatus(importId)
+				pollresp, err := kbu.KlaviyoAPIService.GetUploadStatus(importId)
 				if err != nil {
 					return common.PollStatusResponse{
 						Complete:  true,
@@ -164,12 +164,12 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 		jobIDs = append(jobIDs, job.JobID)
 	}
 
-	ErrorMap := kbu.jobIdToIdentifierMap
+	ErrorMap := kbu.JobIdToIdentifierMap
 	var successKeys []int64
 
 	var failedJobIds []int64
 	for _, pollResultImportId := range pollResultImportIds {
-		uploadStatsResp, err := kbu.klaviyoAPIService.GetUploadErrors(pollResultImportId)
+		uploadStatsResp, err := kbu.KlaviyoAPIService.GetUploadErrors(pollResultImportId)
 		if err != nil {
 			return common.GetUploadStatsResponse{
 				StatusCode: 400,
@@ -205,7 +205,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 }
 
 func (kbu *KlaviyoBulkUploader) generateKlaviyoErrorOutput(errorString string, err error, importingJobIds []int64, destinationID string) common.AsyncUploadOutput {
-	eventsAbortedStat := kbu.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
+	eventsAbortedStat := kbu.StatsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": "KLAVIYO_BULK_UPLOAD",
 	})
@@ -228,10 +228,10 @@ func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
 	jobIdentifier := profileObject.Attributes.JobIdentifier
 	jobIdentifierArray := strings.Split(jobIdentifier, ":")
 	jobIdentifierValue, _ := strconv.ParseInt(jobIdentifierArray[1], 10, 64)
-	if kbu.jobIdToIdentifierMap == nil {
-		kbu.jobIdToIdentifierMap = make(map[string]int64)
+	if kbu.JobIdToIdentifierMap == nil {
+		kbu.JobIdToIdentifierMap = make(map[string]int64)
 	}
-	kbu.jobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
+	kbu.JobIdToIdentifierMap[jobIdentifierArray[0]] = jobIdentifierValue
 
 	// delete jobIdentifier from the attributes map as it is not required in the final payload
 	profileObject.Attributes.JobIdentifier = ""
@@ -262,7 +262,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	defer file.Close()
 	var combinedProfiles []Profile
 	scanner := bufio.NewScanner(file)
-	profileSizeStat := kbu.statsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
+	profileSizeStat := kbu.StatsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
 		var data Data
 		var metadata Metadata
@@ -291,16 +291,16 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 	chunks, _ := chunkBySizeAndElements(combinedProfiles, MAXPAYLOADSIZE, BATCHSIZE)
 
-	eventsSuccessStat := kbu.statsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
+	eventsSuccessStat := kbu.StatsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	var importIds []string // DelimitedImportIds is : separated importIds
 
 	for idx, chunk := range chunks {
 		combinedPayload := createFinalPayload(chunk, listId)
-		uploadResp, err := kbu.klaviyoAPIService.UploadProfiles(combinedPayload)
+		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
-			kbu.logger.Error("Error while uploading profiles", err, uploadResp.Errors)
+			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors)
 			continue
 		}
 

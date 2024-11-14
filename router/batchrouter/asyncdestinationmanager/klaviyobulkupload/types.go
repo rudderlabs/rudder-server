@@ -14,12 +14,12 @@ type KlaviyoAPIService interface {
 }
 
 type KlaviyoBulkUploader struct {
-	destName             string
-	destinationConfig    map[string]interface{}
-	logger               logger.Logger
-	statsFactory         stats.Stats
-	klaviyoAPIService    KlaviyoAPIService
-	jobIdToIdentifierMap map[string]int64
+	DestName             string
+	DestinationConfig    map[string]interface{}
+	Logger               logger.Logger
+	StatsFactory         stats.Stats
+	KlaviyoAPIService    KlaviyoAPIService
+	JobIdToIdentifierMap map[string]int64
 }
 
 type ErrorDetail struct {
