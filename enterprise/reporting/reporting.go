@@ -75,6 +75,9 @@ type DefaultReporter struct {
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
 	maxReportsCountInARequest config.ValueLoader[int]
+
+	eventSamplingEnabled config.ValueLoader[bool]
+	eventSampler         *EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -90,10 +93,16 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
+	eventSamplingEnabled := config.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
+	eventSamplingDuration := config.GetReloadableDurationVar(5, time.Minute, "Reporting.eventSamplingDurationInMinutes")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+	}
+	eventSampler, err := NewEventSampler("/reporting-badger", eventSamplingDuration, conf, log)
+	if err != nil {
+		panic(err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -118,6 +127,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		dbQueryTimeout:                       dbQueryTimeout,
 		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                stats,
+		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSampler:                         eventSampler,
 	}
 }
 
@@ -615,6 +626,34 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
+func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) types.PUReportedMetric {
+	if r.eventSampler == nil {
+		return metric
+	}
+
+	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
+
+	if isValidSampleEvent {
+		hash := NewLabelSet(metric).generateHash()
+		found, err := r.eventSampler.Get([]byte(hash))
+
+		if err != nil {
+			panic(err)
+		}
+
+		if found {
+			metric.StatusDetail.SampleEvent = []byte(`{}`)
+			metric.StatusDetail.SampleResponse = ""
+		} else {
+			err := r.eventSampler.Put([]byte(hash))
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+	return metric
+}
+
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -660,6 +699,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
+
+		if r.eventSamplingEnabled.Load() {
+			metric = r.transformMetricWithEventSampling(metric)
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)
@@ -713,4 +756,8 @@ func (r *DefaultReporter) getTags(label string) stats.Tags {
 func (r *DefaultReporter) Stop() {
 	r.cancel()
 	_ = r.g.Wait()
+
+	if r.eventSampler != nil {
+		r.eventSampler.Close()
+	}
 }
