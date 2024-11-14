@@ -250,5 +250,5 @@ PgNotifier:
   trackBatchInterval: 2s
   maxAttempt: 3
 Reporting:
-  eventSamplingEnabled: true
+  eventSamplingEnabled: false
   eventSamplingDurationInMinutes: 60

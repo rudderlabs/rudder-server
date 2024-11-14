@@ -24,16 +24,20 @@ type EventSampler struct {
 	wg     sync.WaitGroup
 }
 
-func DefaultPath(pathName string) string {
+func DefaultPath(pathName string) (string, error) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return fmt.Sprintf(`%v%v`, tmpDirPath, pathName)
+	return fmt.Sprintf(`%v%v`, tmpDirPath, pathName), nil
 }
 
 func NewEventSampler(pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*EventSampler, error) {
-	dbPath := DefaultPath(pathName)
+	dbPath, err := DefaultPath(pathName)
+	if err != nil || dbPath == "" {
+		return nil, err
+	}
+
 	opts := badger.DefaultOptions(dbPath).
 		WithLogger(badgerLogger{log}).
 		WithCompression(options.None).

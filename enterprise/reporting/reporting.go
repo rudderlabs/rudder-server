@@ -82,6 +82,7 @@ type DefaultReporter struct {
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
+	var eventSampler *EventSampler
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -94,15 +95,19 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
 	eventSamplingEnabled := config.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
-	eventSamplingDuration := config.GetReloadableDurationVar(5, time.Minute, "Reporting.eventSamplingDurationInMinutes")
+	eventSamplingDuration := config.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSamplingDurationInMinutes")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
-	eventSampler, err := NewEventSampler("/reporting-badger", eventSamplingDuration, conf, log)
-	if err != nil {
-		panic(err)
+
+	if eventSamplingEnabled.Load() {
+		var err error
+		eventSampler, err = NewEventSampler("/reporting-badger", eventSamplingDuration, conf, log)
+		if err != nil {
+			panic(err)
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
