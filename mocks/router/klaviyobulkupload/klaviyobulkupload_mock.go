@@ -22,6 +22,7 @@ import (
 type MockUploader struct {
 	ctrl     *gomock.Controller
 	recorder *MockUploaderMockRecorder
+	isgomock struct{}
 }
 
 // MockUploaderMockRecorder is the mock recorder for MockUploader.
@@ -59,6 +60,7 @@ func (mr *MockUploaderMockRecorder) Upload(arg0 any) *gomock.Call {
 type MockHttpClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockHttpClientMockRecorder
+	isgomock struct{}
 }
 
 // MockHttpClientMockRecorder is the mock recorder for MockHttpClient.
@@ -79,24 +81,25 @@ func (m *MockHttpClient) EXPECT() *MockHttpClientMockRecorder {
 }
 
 // Do mocks base method.
-func (m *MockHttpClient) Do(arg0 *http.Request) (*http.Response, error) {
+func (m *MockHttpClient) Do(req *http.Request) (*http.Response, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Do", arg0)
+	ret := m.ctrl.Call(m, "Do", req)
 	ret0, _ := ret[0].(*http.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Do indicates an expected call of Do.
-func (mr *MockHttpClientMockRecorder) Do(arg0 any) *gomock.Call {
+func (mr *MockHttpClientMockRecorder) Do(req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockHttpClient)(nil).Do), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockHttpClient)(nil).Do), req)
 }
 
 // MockPoller is a mock of Poller interface.
 type MockPoller struct {
 	ctrl     *gomock.Controller
 	recorder *MockPollerMockRecorder
+	isgomock struct{}
 }
 
 // MockPollerMockRecorder is the mock recorder for MockPoller.
@@ -117,23 +120,24 @@ func (m *MockPoller) EXPECT() *MockPollerMockRecorder {
 }
 
 // Poll mocks base method.
-func (m *MockPoller) Poll(arg0 common.AsyncPoll) common.PollStatusResponse {
+func (m *MockPoller) Poll(input common.AsyncPoll) common.PollStatusResponse {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Poll", arg0)
+	ret := m.ctrl.Call(m, "Poll", input)
 	ret0, _ := ret[0].(common.PollStatusResponse)
 	return ret0
 }
 
 // Poll indicates an expected call of Poll.
-func (mr *MockPollerMockRecorder) Poll(arg0 any) *gomock.Call {
+func (mr *MockPollerMockRecorder) Poll(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Poll", reflect.TypeOf((*MockPoller)(nil).Poll), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Poll", reflect.TypeOf((*MockPoller)(nil).Poll), input)
 }
 
 // MockProfileExtractor is a mock of ProfileExtractor interface.
 type MockProfileExtractor struct {
 	ctrl     *gomock.Controller
 	recorder *MockProfileExtractorMockRecorder
+	isgomock struct{}
 }
 
 // MockProfileExtractorMockRecorder is the mock recorder for MockProfileExtractor.
@@ -154,23 +158,24 @@ func (m *MockProfileExtractor) EXPECT() *MockProfileExtractorMockRecorder {
 }
 
 // ExtractProfiles mocks base method.
-func (m *MockProfileExtractor) ExtractProfiles(arg0 klaviyobulkupload.Input) klaviyobulkupload.Profile {
+func (m *MockProfileExtractor) ExtractProfiles(input klaviyobulkupload.Input) klaviyobulkupload.Profile {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ExtractProfiles", arg0)
+	ret := m.ctrl.Call(m, "ExtractProfiles", input)
 	ret0, _ := ret[0].(klaviyobulkupload.Profile)
 	return ret0
 }
 
 // ExtractProfiles indicates an expected call of ExtractProfiles.
-func (mr *MockProfileExtractorMockRecorder) ExtractProfiles(arg0 any) *gomock.Call {
+func (mr *MockProfileExtractorMockRecorder) ExtractProfiles(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExtractProfiles", reflect.TypeOf((*MockProfileExtractor)(nil).ExtractProfiles), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExtractProfiles", reflect.TypeOf((*MockProfileExtractor)(nil).ExtractProfiles), input)
 }
 
 // MockUploadStats is a mock of UploadStats interface.
 type MockUploadStats struct {
 	ctrl     *gomock.Controller
 	recorder *MockUploadStatsMockRecorder
+	isgomock struct{}
 }
 
 // MockUploadStatsMockRecorder is the mock recorder for MockUploadStats.

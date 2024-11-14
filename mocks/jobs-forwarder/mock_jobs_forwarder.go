@@ -19,6 +19,7 @@ import (
 type MockForwarder struct {
 	ctrl     *gomock.Controller
 	recorder *MockForwarderMockRecorder
+	isgomock struct{}
 }
 
 // MockForwarderMockRecorder is the mock recorder for MockForwarder.
