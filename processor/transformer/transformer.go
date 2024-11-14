@@ -244,17 +244,16 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 				Timeout: trans.config.timeoutDuration,
 			}
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
-	case "bufbuild":
+	case "httplb":
 		trans.httpClient = httplb.NewClient(
-			httplb.WithTransport("http",
-				httplb.NewTransport(
-					&http.Transport{
-						DisableKeepAlives:   trans.config.disableKeepAlives,
-						MaxConnsPerHost:     trans.config.maxHTTPConnections,
-						MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-						IdleConnTimeout:     trans.config.maxIdleConnDuration,
+			httplb.WithTransport("http", &HTTPLBTransport{
+				Transport: &http.Transport{
+					DisableKeepAlives:   trans.config.disableKeepAlives,
+					MaxConnsPerHost:     trans.config.maxHTTPConnections,
+					MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
+					IdleConnTimeout:     trans.config.maxIdleConnDuration,
 				},
-			),
+			}),
 			httplb.WithResolver(
 				resolver.NewDNSResolver(
 					net.DefaultResolver,
@@ -287,6 +286,14 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
+}
+
+type HTTPLBTransport struct {
+	*http.Transport
+}
+
+func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
+	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
 }
 
 func (trans *handle) transform(
