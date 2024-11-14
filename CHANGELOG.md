@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.1](https://github.com/rudderlabs/rudder-server/compare/v1.38.0...v1.38.1) (2024-11-14)
+
+
+### Bug Fixes
+
+* bq partitioning for additional columns ([#5293](https://github.com/rudderlabs/rudder-server/issues/5293)) ([4da3bf1](https://github.com/rudderlabs/rudder-server/commit/4da3bf17e790cbc1876714c401b0895b2e9f8521))
+
 ## [1.38.0](https://github.com/rudderlabs/rudder-server/compare/v1.37.0...v1.38.0) (2024-11-11)
 
 
