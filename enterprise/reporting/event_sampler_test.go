@@ -17,9 +17,9 @@ func TestPutAndGet(t *testing.T) {
 
 	es, _ := NewEventSampler("/test-reporting-badger", ttl, conf, log)
 
-	es.Put([]byte("key1"))
-	es.Put([]byte("key2"))
-	es.Put([]byte("key3"))
+	_ = es.Put([]byte("key1"))
+	_ = es.Put([]byte("key2"))
+	_ = es.Put([]byte("key3"))
 	val1, _ := es.Get([]byte("key1"))
 	val2, _ := es.Get([]byte("key2"))
 	val3, _ := es.Get([]byte("key3"))
@@ -38,7 +38,7 @@ func TestEvictionOnTTLExpiry(t *testing.T) {
 
 	es, _ := NewEventSampler("/test-reporting-badger", ttl, conf, log)
 
-	es.Put([]byte("key1"))
+	_ = es.Put([]byte("key1"))
 
 	time.Sleep(600 * time.Millisecond)
 

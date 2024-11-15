@@ -94,8 +94,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
-	eventSamplingEnabled := config.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
-	eventSamplingDuration := config.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSamplingDurationInMinutes")
+	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
+	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSamplingDurationInMinutes")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -646,7 +646,7 @@ func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReport
 		}
 
 		if found {
-			metric.StatusDetail.SampleEvent = []byte(`{}`)
+			metric.StatusDetail.SampleEvent = json.RawMessage(`{}`)
 			metric.StatusDetail.SampleResponse = ""
 		} else {
 			err := r.eventSampler.Put([]byte(hash))
