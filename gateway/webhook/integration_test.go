@@ -82,10 +82,6 @@ func TestIntegrationWebhook(t *testing.T) {
 
 	g.Go(func() (err error) {
 		if webhookVersion == "v2" {
-			// To run this test locally with custom repository & image tage, refer the below example.
-			// Example:
-			// 			transformertest.WithRepository("hub.dev-rudder.rudderlabs.com/dockerhub-proxy/rudderstack/develop-rudder-transformer"),
-			// 			transformertest.WithDockerImageTag("feat.sources-v2-spec-controller"),
 			transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithEnv("UPGRADED_TO_SOURCE_TRANSFORM_V2=true"))
 		} else {
 			transformerContainer, err = transformertest.Setup(pool, t)
