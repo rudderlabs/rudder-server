@@ -51,7 +51,7 @@ func TestUpload(t *testing.T) {
 	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
-	uploader := klaviyobulkupload.KlaviyoBulkUploader(klaviyobulkupload.KlaviyoBulkUploader{
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
 		DestName:          "Klaviyo Bulk Upload",
 		DestinationConfig: destination.Config,
 		Logger:            testLogger,
@@ -61,7 +61,7 @@ func TestUpload(t *testing.T) {
 			"111222334": 1,
 			"222333445": 2,
 		},
-	})
+	}
 
 	// Create a temporary file with test data
 	tempFile, err := os.CreateTemp("", "test_upload_*.jsonl")
@@ -114,13 +114,13 @@ func TestUpload(t *testing.T) {
 			}, fmt.Errorf("upload failed with errors: %+v", []klaviyobulkupload.ErrorDetail{
 				{Detail: "upload failed"},
 			}))
-	
+
 		asyncDestStruct := &common.AsyncDestinationStruct{
 			Destination:     destination,
 			FileName:        tempFile.Name(),
 			ImportingJobIDs: []int64{1},
 		}
-	
+
 		output := uploader.Upload(asyncDestStruct)
 		assert.NotNil(t, output)
 		assert.Equal(t, destination.ID, output.DestinationID)
@@ -208,7 +208,7 @@ func TestPoll(t *testing.T) {
 	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
-	uploader := klaviyobulkupload.KlaviyoBulkUploader(klaviyobulkupload.KlaviyoBulkUploader{
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
 		DestName:          "Klaviyo Bulk Upload",
 		DestinationConfig: destination.Config,
 		Logger:            testLogger,
@@ -218,7 +218,7 @@ func TestPoll(t *testing.T) {
 			"111222334": 1,
 			"222333445": 2,
 		},
-	})
+	}
 
 	t.Run("Successful Poll", func(t *testing.T) {
 		pollStatusResp := &klaviyobulkupload.PollResp{
@@ -316,7 +316,7 @@ func TestGetUploadStats(t *testing.T) {
 	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
-	uploader := klaviyobulkupload.KlaviyoBulkUploader(klaviyobulkupload.KlaviyoBulkUploader{
+	uploader := klaviyobulkupload.KlaviyoBulkUploader{
 		DestName:          "Klaviyo Bulk Upload",
 		DestinationConfig: destination.Config,
 		Logger:            testLogger,
@@ -326,7 +326,7 @@ func TestGetUploadStats(t *testing.T) {
 			"111222334": 1,
 			"222333445": 2,
 		},
-	})
+	}
 
 	t.Run("Failure GetUploadStats: Import Job Failed", func(t *testing.T) {
 		uploadStatsResp := &klaviyobulkupload.UploadStatusResp{
