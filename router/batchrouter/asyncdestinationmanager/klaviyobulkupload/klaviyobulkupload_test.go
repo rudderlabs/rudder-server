@@ -70,8 +70,7 @@ func TestUpload(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 
-	testData := []byte(`[{"data":{"attributes":{"email":"testuser101@email.com","phone_number":"+1999888777","first_name":"test","last_name":"subject","location":{"city":"Quahog","country":"US","ip":"660066"}},"id":"111222334","type":"profile"}}]`)
-	// testData := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","first_name":"Testqwe0022","last_name":"user","phone_number":"+919902330123","location":{"address1":"dallas street","address2":"oppenheimer market","city":"delhi","country":"India","ip":"213.5.6.41"},"anonymous_id":"user1","jobIdentifier":"user1:1"}}]}},"relationships":{"lists":{"data":[{"type":"list","id":"list101"}]}}}}}},"metadata":{"jobId":1}}`)
+	testData := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","first_name":"Testqwe0022","last_name":"user","phone_number":"+919902330123","location":{"address1":"dallas street","address2":"oppenheimer market","city":"delhi","country":"India","ip":"213.5.6.41"},"anonymous_id":"user1","jobIdentifier":"user1:1"}}]}},"relationships":{"lists":{"data":[{"type":"list","id":"list101"}]}}}}}},"metadata":{"jobId":1}}`)
 	_, err = tempFile.Write(testData)
 	if err != nil {
 		t.Fatal(err)
@@ -80,13 +79,14 @@ func TestUpload(t *testing.T) {
 
 	t.Run("Successful Upload", func(t *testing.T) {
 		mockKlaviyoAPIService.EXPECT().
-			UploadProfiles(testData).
+			UploadProfiles(gomock.Any()).
 			Return(&klaviyobulkupload.UploadResp{
 				Data: struct {
 					Id string "json:\"id\""
 				}{
 					Id: "importId1",
 				},
+				Errors: nil,
 			}, nil)
 
 		asyncDestStruct := &common.AsyncDestinationStruct{
@@ -102,6 +102,30 @@ func TestUpload(t *testing.T) {
 		assert.Empty(t, output.AbortJobIDs)
 		assert.Empty(t, output.AbortReason)
 		assert.NotEmpty(t, output.ImportingJobIDs)
+	})
+
+	t.Run("Unsuccessful Upload", func(t *testing.T) {
+		mockKlaviyoAPIService.EXPECT().
+			UploadProfiles(gomock.Any()).
+			Return(&klaviyobulkupload.UploadResp{
+				Errors: []klaviyobulkupload.ErrorDetail{
+					{Detail: "upload failed"},
+				},
+			}, fmt.Errorf("upload failed with errors: %+v", []klaviyobulkupload.ErrorDetail{
+				{Detail: "upload failed"},
+			}))
+	
+		asyncDestStruct := &common.AsyncDestinationStruct{
+			Destination:     destination,
+			FileName:        tempFile.Name(),
+			ImportingJobIDs: []int64{1},
+		}
+	
+		output := uploader.Upload(asyncDestStruct)
+		assert.NotNil(t, output)
+		assert.Equal(t, destination.ID, output.DestinationID)
+		assert.NotEmpty(t, output.FailedJobIDs)
+		assert.Empty(t, output.ImportingJobIDs)
 	})
 }
 
