@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -56,7 +53,6 @@ type UploadJobFactory struct {
 	db                   *sqlquerywrapper.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
-	recovery             *service.Recovery
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -73,7 +69,6 @@ type UploadJob struct {
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
-	recovery             *service.Recovery
 	whManager            manager.Manager
 	schemaHandle         *schema.Schema
 	conf                 *config.Config
@@ -158,7 +153,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		reporting:            f.reporting,
 		db:                   f.db,
 		loadfile:             f.loadFile,
-		recovery:             f.recovery,
 		whManager:            whManager,
 		destinationValidator: f.destinationValidator,
 		conf:                 f.conf,
@@ -296,20 +290,6 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup(job.ctx)
-
-	if err = job.recovery.Recover(job.ctx, whManager, job.warehouse); err != nil {
-		job.logger.Warnn("Error during recovery (dangling staging table cleanup)",
-			obskit.DestinationID(job.warehouse.Destination.ID),
-			obskit.DestinationType(job.warehouse.Destination.DestinationDefinition.Name),
-			obskit.WorkspaceID(job.warehouse.WorkspaceID),
-			obskit.Namespace(job.warehouse.Namespace),
-			obskit.Error(err),
-			obskit.SourceID(job.warehouse.Source.ID),
-			obskit.SourceType(job.warehouse.Source.SourceDefinition.Name),
-		)
-		_, _ = job.setUploadError(err, InternalProcessingFailed)
-		return err
-	}
 
 	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
 	if err != nil {
