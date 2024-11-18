@@ -20,7 +20,6 @@ import (
 type MockKlaviyoAPIService struct {
 	ctrl     *gomock.Controller
 	recorder *MockKlaviyoAPIServiceMockRecorder
-	isgomock struct{}
 }
 
 // MockKlaviyoAPIServiceMockRecorder is the mock recorder for MockKlaviyoAPIService.
@@ -41,46 +40,46 @@ func (m *MockKlaviyoAPIService) EXPECT() *MockKlaviyoAPIServiceMockRecorder {
 }
 
 // GetUploadErrors mocks base method.
-func (m *MockKlaviyoAPIService) GetUploadErrors(importId string) (*klaviyobulkupload.UploadStatusResp, error) {
+func (m *MockKlaviyoAPIService) GetUploadErrors(arg0 string) (*klaviyobulkupload.UploadStatusResp, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUploadErrors", importId)
+	ret := m.ctrl.Call(m, "GetUploadErrors", arg0)
 	ret0, _ := ret[0].(*klaviyobulkupload.UploadStatusResp)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetUploadErrors indicates an expected call of GetUploadErrors.
-func (mr *MockKlaviyoAPIServiceMockRecorder) GetUploadErrors(importId any) *gomock.Call {
+func (mr *MockKlaviyoAPIServiceMockRecorder) GetUploadErrors(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUploadErrors", reflect.TypeOf((*MockKlaviyoAPIService)(nil).GetUploadErrors), importId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUploadErrors", reflect.TypeOf((*MockKlaviyoAPIService)(nil).GetUploadErrors), arg0)
 }
 
 // GetUploadStatus mocks base method.
-func (m *MockKlaviyoAPIService) GetUploadStatus(importId string) (*klaviyobulkupload.PollResp, error) {
+func (m *MockKlaviyoAPIService) GetUploadStatus(arg0 string) (*klaviyobulkupload.PollResp, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUploadStatus", importId)
+	ret := m.ctrl.Call(m, "GetUploadStatus", arg0)
 	ret0, _ := ret[0].(*klaviyobulkupload.PollResp)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetUploadStatus indicates an expected call of GetUploadStatus.
-func (mr *MockKlaviyoAPIServiceMockRecorder) GetUploadStatus(importId any) *gomock.Call {
+func (mr *MockKlaviyoAPIServiceMockRecorder) GetUploadStatus(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUploadStatus", reflect.TypeOf((*MockKlaviyoAPIService)(nil).GetUploadStatus), importId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUploadStatus", reflect.TypeOf((*MockKlaviyoAPIService)(nil).GetUploadStatus), arg0)
 }
 
 // UploadProfiles mocks base method.
-func (m *MockKlaviyoAPIService) UploadProfiles(profiles klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+func (m *MockKlaviyoAPIService) UploadProfiles(arg0 klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UploadProfiles", profiles)
+	ret := m.ctrl.Call(m, "UploadProfiles", arg0)
 	ret0, _ := ret[0].(*klaviyobulkupload.UploadResp)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UploadProfiles indicates an expected call of UploadProfiles.
-func (mr *MockKlaviyoAPIServiceMockRecorder) UploadProfiles(profiles any) *gomock.Call {
+func (mr *MockKlaviyoAPIServiceMockRecorder) UploadProfiles(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadProfiles", reflect.TypeOf((*MockKlaviyoAPIService)(nil).UploadProfiles), profiles)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadProfiles", reflect.TypeOf((*MockKlaviyoAPIService)(nil).UploadProfiles), arg0)
 }
