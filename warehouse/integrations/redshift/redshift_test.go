@@ -1403,49 +1403,6 @@ func TestIntegration(t *testing.T) {
 					)
 					require.Equal(t, records, whth.SampleTestRecords())
 				})
-				t.Run("crashRecover", func(t *testing.T) {
-					ctx := context.Background()
-					tableName := "crash_recovery_test_table"
-					stgTableName := whutils.StagingTableName(destType, tableName, 64)
-					mockUploader := newMockUploader(t, nil, tableName, schemaInUpload, schemaInUpload, whutils.LoadFileTypeParquet)
-
-					rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-					err := rs.Setup(ctx, warehouse, mockUploader)
-					require.NoError(t, err)
-
-					err = rs.CreateSchema(ctx)
-					require.NoError(t, err)
-
-					err = rs.CreateTable(ctx, stgTableName, schemaInWarehouse)
-					require.NoError(t, err)
-
-					tableExists := func(t *testing.T) bool {
-						t.Helper()
-
-						var count int
-						err = rs.DB.DB.QueryRow(`
-							SELECT
-							  count(*)
-							FROM
-							  information_schema.tables
-							WHERE
-							  table_schema = $1
-							  AND table_name = $2;
-						`,
-							tc.warehouse.Namespace,
-							stgTableName,
-						).Scan(&count)
-						require.NoError(t, err)
-
-						return count == 1
-					}
-					require.True(t, tableExists(t))
-
-					err = rs.CrashRecover(ctx)
-					require.NoError(t, err)
-
-					require.False(t, tableExists(t))
-				})
 			})
 		}
 	})

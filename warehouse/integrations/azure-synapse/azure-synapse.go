@@ -829,10 +829,6 @@ func (as *AzureSynapse) Setup(_ context.Context, warehouse model.Warehouse, uplo
 	return err
 }
 
-func (as *AzureSynapse) CrashRecover(ctx context.Context) error {
-	return as.dropDanglingStagingTables(ctx)
-}
-
 func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		select

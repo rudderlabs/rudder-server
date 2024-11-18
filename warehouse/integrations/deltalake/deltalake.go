@@ -247,11 +247,6 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-// CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(ctx context.Context) error {
-	return d.dropDanglingStagingTables(ctx)
-}
-
 // dropDanglingStagingTables drops dangling staging tables
 func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
