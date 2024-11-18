@@ -20,6 +20,7 @@ import (
 type MockThrottler struct {
 	ctrl     *gomock.Controller
 	recorder *MockThrottlerMockRecorder
+	isgomock struct{}
 }
 
 // MockThrottlerMockRecorder is the mock recorder for MockThrottler.
@@ -40,16 +41,16 @@ func (m *MockThrottler) EXPECT() *MockThrottlerMockRecorder {
 }
 
 // CheckLimitReached mocks base method.
-func (m *MockThrottler) CheckLimitReached(arg0 context.Context, arg1 string, arg2 int64) (bool, error) {
+func (m *MockThrottler) CheckLimitReached(context context.Context, workspaceId string, eventCount int64) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CheckLimitReached", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "CheckLimitReached", context, workspaceId, eventCount)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CheckLimitReached indicates an expected call of CheckLimitReached.
-func (mr *MockThrottlerMockRecorder) CheckLimitReached(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockThrottlerMockRecorder) CheckLimitReached(context, workspaceId, eventCount any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckLimitReached", reflect.TypeOf((*MockThrottler)(nil).CheckLimitReached), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CheckLimitReached", reflect.TypeOf((*MockThrottler)(nil).CheckLimitReached), context, workspaceId, eventCount)
 }

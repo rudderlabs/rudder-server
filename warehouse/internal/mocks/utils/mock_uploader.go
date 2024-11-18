@@ -22,6 +22,7 @@ import (
 type MockUploader struct {
 	ctrl     *gomock.Controller
 	recorder *MockUploaderMockRecorder
+	isgomock struct{}
 }
 
 // MockUploaderMockRecorder is the mock recorder for MockUploader.
@@ -70,91 +71,91 @@ func (mr *MockUploaderMockRecorder) GetLoadFileType() *gomock.Call {
 }
 
 // GetLoadFilesMetadata mocks base method.
-func (m *MockUploader) GetLoadFilesMetadata(arg0 context.Context, arg1 warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
+func (m *MockUploader) GetLoadFilesMetadata(ctx context.Context, options warehouseutils.GetLoadFilesOptions) ([]warehouseutils.LoadFile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLoadFilesMetadata", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetLoadFilesMetadata", ctx, options)
 	ret0, _ := ret[0].([]warehouseutils.LoadFile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetLoadFilesMetadata indicates an expected call of GetLoadFilesMetadata.
-func (mr *MockUploaderMockRecorder) GetLoadFilesMetadata(arg0, arg1 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetLoadFilesMetadata(ctx, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadFilesMetadata", reflect.TypeOf((*MockUploader)(nil).GetLoadFilesMetadata), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadFilesMetadata", reflect.TypeOf((*MockUploader)(nil).GetLoadFilesMetadata), ctx, options)
 }
 
 // GetLocalSchema mocks base method.
-func (m *MockUploader) GetLocalSchema(arg0 context.Context) (model.Schema, error) {
+func (m *MockUploader) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLocalSchema", arg0)
+	ret := m.ctrl.Call(m, "GetLocalSchema", ctx)
 	ret0, _ := ret[0].(model.Schema)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetLocalSchema indicates an expected call of GetLocalSchema.
-func (mr *MockUploaderMockRecorder) GetLocalSchema(arg0 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetLocalSchema(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalSchema", reflect.TypeOf((*MockUploader)(nil).GetLocalSchema), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLocalSchema", reflect.TypeOf((*MockUploader)(nil).GetLocalSchema), ctx)
 }
 
 // GetSampleLoadFileLocation mocks base method.
-func (m *MockUploader) GetSampleLoadFileLocation(arg0 context.Context, arg1 string) (string, error) {
+func (m *MockUploader) GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSampleLoadFileLocation", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetSampleLoadFileLocation", ctx, tableName)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetSampleLoadFileLocation indicates an expected call of GetSampleLoadFileLocation.
-func (mr *MockUploaderMockRecorder) GetSampleLoadFileLocation(arg0, arg1 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetSampleLoadFileLocation(ctx, tableName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSampleLoadFileLocation", reflect.TypeOf((*MockUploader)(nil).GetSampleLoadFileLocation), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSampleLoadFileLocation", reflect.TypeOf((*MockUploader)(nil).GetSampleLoadFileLocation), ctx, tableName)
 }
 
 // GetSingleLoadFile mocks base method.
-func (m *MockUploader) GetSingleLoadFile(arg0 context.Context, arg1 string) (warehouseutils.LoadFile, error) {
+func (m *MockUploader) GetSingleLoadFile(ctx context.Context, tableName string) (warehouseutils.LoadFile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSingleLoadFile", arg0, arg1)
+	ret := m.ctrl.Call(m, "GetSingleLoadFile", ctx, tableName)
 	ret0, _ := ret[0].(warehouseutils.LoadFile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetSingleLoadFile indicates an expected call of GetSingleLoadFile.
-func (mr *MockUploaderMockRecorder) GetSingleLoadFile(arg0, arg1 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetSingleLoadFile(ctx, tableName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSingleLoadFile", reflect.TypeOf((*MockUploader)(nil).GetSingleLoadFile), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSingleLoadFile", reflect.TypeOf((*MockUploader)(nil).GetSingleLoadFile), ctx, tableName)
 }
 
 // GetTableSchemaInUpload mocks base method.
-func (m *MockUploader) GetTableSchemaInUpload(arg0 string) model.TableSchema {
+func (m *MockUploader) GetTableSchemaInUpload(tableName string) model.TableSchema {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTableSchemaInUpload", arg0)
+	ret := m.ctrl.Call(m, "GetTableSchemaInUpload", tableName)
 	ret0, _ := ret[0].(model.TableSchema)
 	return ret0
 }
 
 // GetTableSchemaInUpload indicates an expected call of GetTableSchemaInUpload.
-func (mr *MockUploaderMockRecorder) GetTableSchemaInUpload(arg0 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetTableSchemaInUpload(tableName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInUpload", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInUpload), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInUpload", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInUpload), tableName)
 }
 
 // GetTableSchemaInWarehouse mocks base method.
-func (m *MockUploader) GetTableSchemaInWarehouse(arg0 string) model.TableSchema {
+func (m *MockUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTableSchemaInWarehouse", arg0)
+	ret := m.ctrl.Call(m, "GetTableSchemaInWarehouse", tableName)
 	ret0, _ := ret[0].(model.TableSchema)
 	return ret0
 }
 
 // GetTableSchemaInWarehouse indicates an expected call of GetTableSchemaInWarehouse.
-func (mr *MockUploaderMockRecorder) GetTableSchemaInWarehouse(arg0 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) GetTableSchemaInWarehouse(tableName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInWarehouse", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInWarehouse), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInWarehouse", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInWarehouse), tableName)
 }
 
 // IsWarehouseSchemaEmpty mocks base method.
@@ -186,17 +187,17 @@ func (mr *MockUploaderMockRecorder) ShouldOnDedupUseNewRecord() *gomock.Call {
 }
 
 // UpdateLocalSchema mocks base method.
-func (m *MockUploader) UpdateLocalSchema(arg0 context.Context, arg1 model.Schema) error {
+func (m *MockUploader) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateLocalSchema", arg0, arg1)
+	ret := m.ctrl.Call(m, "UpdateLocalSchema", ctx, schema)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateLocalSchema indicates an expected call of UpdateLocalSchema.
-func (mr *MockUploaderMockRecorder) UpdateLocalSchema(arg0, arg1 any) *gomock.Call {
+func (mr *MockUploaderMockRecorder) UpdateLocalSchema(ctx, schema any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLocalSchema", reflect.TypeOf((*MockUploader)(nil).UpdateLocalSchema), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLocalSchema", reflect.TypeOf((*MockUploader)(nil).UpdateLocalSchema), ctx, schema)
 }
 
 // UseRudderStorage mocks base method.

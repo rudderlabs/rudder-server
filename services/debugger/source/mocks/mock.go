@@ -19,6 +19,7 @@ import (
 type MockSourceDebugger struct {
 	ctrl     *gomock.Controller
 	recorder *MockSourceDebuggerMockRecorder
+	isgomock struct{}
 }
 
 // MockSourceDebuggerMockRecorder is the mock recorder for MockSourceDebugger.
@@ -39,17 +40,17 @@ func (m *MockSourceDebugger) EXPECT() *MockSourceDebuggerMockRecorder {
 }
 
 // RecordEvent mocks base method.
-func (m *MockSourceDebugger) RecordEvent(arg0 string, arg1 []byte) bool {
+func (m *MockSourceDebugger) RecordEvent(writeKey string, eventBatch []byte) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordEvent", arg0, arg1)
+	ret := m.ctrl.Call(m, "RecordEvent", writeKey, eventBatch)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // RecordEvent indicates an expected call of RecordEvent.
-func (mr *MockSourceDebuggerMockRecorder) RecordEvent(arg0, arg1 any) *gomock.Call {
+func (mr *MockSourceDebuggerMockRecorder) RecordEvent(writeKey, eventBatch any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordEvent", reflect.TypeOf((*MockSourceDebugger)(nil).RecordEvent), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordEvent", reflect.TypeOf((*MockSourceDebugger)(nil).RecordEvent), writeKey, eventBatch)
 }
 
 // Stop mocks base method.

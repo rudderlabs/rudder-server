@@ -583,11 +583,7 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 }
 
 func isMetricPosted(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
+	return status >= 200 && status < 300
 }
 
 func getPIIColumnsToExclude() []string {

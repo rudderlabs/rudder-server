@@ -20,6 +20,7 @@ import (
 type MockDedup struct {
 	ctrl     *gomock.Controller
 	recorder *MockDedupMockRecorder
+	isgomock struct{}
 }
 
 // MockDedupMockRecorder is the mock recorder for MockDedup.
@@ -52,47 +53,45 @@ func (mr *MockDedupMockRecorder) Close() *gomock.Call {
 }
 
 // Commit mocks base method.
-func (m *MockDedup) Commit(arg0 []string) error {
+func (m *MockDedup) Commit(keys []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Commit", arg0)
+	ret := m.ctrl.Call(m, "Commit", keys)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Commit indicates an expected call of Commit.
-func (mr *MockDedupMockRecorder) Commit(arg0 any) *gomock.Call {
+func (mr *MockDedupMockRecorder) Commit(keys any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockDedup)(nil).Commit), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockDedup)(nil).Commit), keys)
 }
 
 // Get mocks base method.
-func (m *MockDedup) Get(arg0 types.KeyValue) (bool, int64, error) {
+func (m *MockDedup) Get(kv types.KeyValue) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", arg0)
+	ret := m.ctrl.Call(m, "Get", kv)
 	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockDedupMockRecorder) Get(arg0 any) *gomock.Call {
+func (mr *MockDedupMockRecorder) Get(kv any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), kv)
 }
 
 // GetBatch mocks base method.
-func (m *MockDedup) GetBatch(arg0 []types.KeyValue) (map[types.KeyValue]bool, map[types.KeyValue]int64, error) {
+func (m *MockDedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBatch", arg0)
+	ret := m.ctrl.Call(m, "GetBatch", kvs)
 	ret0, _ := ret[0].(map[types.KeyValue]bool)
-	ret1, _ := ret[1].(map[types.KeyValue]int64)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetBatch indicates an expected call of GetBatch.
-func (mr *MockDedupMockRecorder) GetBatch(arg0 any) *gomock.Call {
+func (mr *MockDedupMockRecorder) GetBatch(kvs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatch", reflect.TypeOf((*MockDedup)(nil).GetBatch), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatch", reflect.TypeOf((*MockDedup)(nil).GetBatch), kvs)
 }
