@@ -22,6 +22,7 @@ import (
 type MockGoogleCloudFunctionClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockGoogleCloudFunctionClientMockRecorder
+	isgomock struct{}
 }
 
 // MockGoogleCloudFunctionClientMockRecorder is the mock recorder for MockGoogleCloudFunctionClient.
@@ -42,10 +43,10 @@ func (m *MockGoogleCloudFunctionClient) EXPECT() *MockGoogleCloudFunctionClientM
 }
 
 // GetToken mocks base method.
-func (m *MockGoogleCloudFunctionClient) GetToken(arg0 context.Context, arg1 string, arg2 ...option.ClientOption) (*oauth2.Token, error) {
+func (m *MockGoogleCloudFunctionClient) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0, arg1}
-	for _, a := range arg2 {
+	varargs := []any{ctx, functionUrl}
+	for _, a := range opts {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "GetToken", varargs...)
@@ -55,8 +56,8 @@ func (m *MockGoogleCloudFunctionClient) GetToken(arg0 context.Context, arg1 stri
 }
 
 // GetToken indicates an expected call of GetToken.
-func (mr *MockGoogleCloudFunctionClientMockRecorder) GetToken(arg0, arg1 any, arg2 ...any) *gomock.Call {
+func (mr *MockGoogleCloudFunctionClientMockRecorder) GetToken(ctx, functionUrl any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0, arg1}, arg2...)
+	varargs := append([]any{ctx, functionUrl}, opts...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetToken", reflect.TypeOf((*MockGoogleCloudFunctionClient)(nil).GetToken), varargs...)
 }

@@ -9,22 +9,18 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/lib/pq"
-
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
-	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-
-	"golang.org/x/sync/errgroup"
-
+	"github.com/allisson/go-pglock/v3"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-
-	"github.com/allisson/go-pglock/v2"
+	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -564,6 +560,10 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
 				n.logger.Warnf("unlocking maintenance worker lock: %v", err)
 			}
+		}
+		err := maintenanceWorkerLock.Close()
+		if err != nil {
+			n.logger.Warnf("closing maintenance worker lock: %v", err)
 		}
 	}()
 

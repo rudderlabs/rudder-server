@@ -6,16 +6,16 @@ TESTFILE=_testok
 MOUNT_PATH=/local
 
 # go tools versions
-GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.3
+GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.0
 gofumpt=mvdan.cc/gofumpt@latest
 govulncheck=golang.org/x/vuln/cmd/govulncheck@latest
 goimports=golang.org/x/tools/cmd/goimports@latest
-mockgen=go.uber.org/mock/mockgen@v0.4.0
-gotestsum=gotest.tools/gotestsum@v1.11.0
+mockgen=go.uber.org/mock/mockgen@v0.5.0
+gotestsum=gotest.tools/gotestsum@v1.12.0
 protoc-gen-go=google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
 protoc-gen-go-grpc=google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
 actionlint=github.com/rhysd/actionlint/cmd/actionlint@latest
-gitleaks=github.com/zricethezav/gitleaks/v8@v8.18.4
+gitleaks=github.com/zricethezav/gitleaks/v8@v8.21.2
 
 default: build
 

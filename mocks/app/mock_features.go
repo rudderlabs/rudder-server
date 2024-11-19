@@ -22,6 +22,7 @@ import (
 type MockSuppressUserFeature struct {
 	ctrl     *gomock.Controller
 	recorder *MockSuppressUserFeatureMockRecorder
+	isgomock struct{}
 }
 
 // MockSuppressUserFeatureMockRecorder is the mock recorder for MockSuppressUserFeature.
@@ -42,16 +43,16 @@ func (m *MockSuppressUserFeature) EXPECT() *MockSuppressUserFeatureMockRecorder 
 }
 
 // Setup mocks base method.
-func (m *MockSuppressUserFeature) Setup(arg0 context.Context, arg1 backendconfig.BackendConfig) (types.UserSuppression, error) {
+func (m *MockSuppressUserFeature) Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) (types.UserSuppression, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Setup", arg0, arg1)
+	ret := m.ctrl.Call(m, "Setup", ctx, backendConfig)
 	ret0, _ := ret[0].(types.UserSuppression)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockSuppressUserFeatureMockRecorder) Setup(arg0, arg1 any) *gomock.Call {
+func (mr *MockSuppressUserFeatureMockRecorder) Setup(ctx, backendConfig any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockSuppressUserFeature)(nil).Setup), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockSuppressUserFeature)(nil).Setup), ctx, backendConfig)
 }

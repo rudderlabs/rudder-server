@@ -840,10 +840,6 @@ func (ms *MSSQL) Setup(_ context.Context, warehouse model.Warehouse, uploader wa
 	return err
 }
 
-func (ms *MSSQL) CrashRecover(ctx context.Context) error {
-	return ms.dropDanglingStagingTables(ctx)
-}
-
 func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		select

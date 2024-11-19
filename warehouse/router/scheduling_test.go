@@ -144,6 +144,12 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				expectedValue: true,
 			},
 			{
+				currentTime:   time.Date(2009, time.November, 10, 5, 0o5, 0, 0, time.UTC),
+				windowStart:   "05:00",
+				windowEnd:     "06:00",
+				expectedValue: true,
+			},
+			{
 				currentTime:   time.Date(2009, time.November, 10, 5, 30, 0, 0, time.UTC),
 				windowStart:   "22:00",
 				windowEnd:     "06:00",
