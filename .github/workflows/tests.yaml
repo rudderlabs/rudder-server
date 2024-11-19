@@ -216,7 +216,7 @@ jobs:
         run: |
           go install github.com/wadey/gocovmerge@latest
           gocovmerge */coverage.txt > coverage.txt
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: true
           files: ./coverage.txt
