@@ -32,12 +32,12 @@ func setRequestHeaders(req *http.Request, apiKey string) {
 
 func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, error) {
 	payloadJSON, err := json.Marshal(profiles)
-	payloadSizeStat := k.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, k.statLabels)
-	payloadSizeStat.Observe(float64(len(payloadJSON)))
-
 	if err != nil {
 		return nil, err
 	}
+	payloadSizeStat := k.statsFactory.NewTaggedStat("payload_size", stats.HistogramType, k.statLabels)
+	payloadSizeStat.Observe(float64(len(payloadJSON)))
+
 	startTime := time.Now()
 	req, err := http.NewRequest("POST", KlaviyoAPIURL, bytes.NewBuffer(payloadJSON))
 	if err != nil {
