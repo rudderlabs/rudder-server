@@ -2755,6 +2755,11 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		)
 	}
 
+	destJobsFile, err := jobsdb.WriteToFile(destJobs)
+	if err != nil {
+		panic(err)
+	}
+	proc.logger.Infon("router jobs file", logger.NewStringField("file", destJobsFile))
 	if len(destJobs) > 0 {
 		func() {
 			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
@@ -2776,6 +2781,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 						}),
 					))
 			}
+
 			err := misc.RetryWithNotify(
 				context.Background(),
 				proc.jobsDBCommandTimeout.Load(),
@@ -2830,7 +2836,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 
 	txnStart := time.Now()
 	in.rsourcesStats.CollectStats(statusList)
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	err = misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
 			if err != nil {

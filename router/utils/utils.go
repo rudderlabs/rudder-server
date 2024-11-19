@@ -73,6 +73,10 @@ type JobParameters struct {
 	RudderAccountID         string      `json:"rudderAccountId"`
 	DontBatch               bool        `json:"dontBatch"`
 	TraceParent             string      `json:"traceparent"`
+
+	FileName string `json:"payload_file"`
+	Offset   int    `json:"offset"`
+	Length   int    `json:"length"`
 }
 
 // ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails

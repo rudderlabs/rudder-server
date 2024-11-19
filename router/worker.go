@@ -92,6 +92,11 @@ func (w *worker) workLoop() {
 			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
+			jobPayload, err := jobsdb.ConcurrentReadFromFile(parameters.FileName, parameters.Offset, parameters.Length)
+			if err != nil {
+				panic(fmt.Errorf("reading event payload from file failed for job %d (%s): %w", job.JobID, parameters.FileName, err))
+			}
+			job.EventPayload = jobPayload
 			abortReason := message.drainReason
 			abort := abortReason != ""
 			abortTag := abortReason
