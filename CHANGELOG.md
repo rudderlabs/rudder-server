@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.2](https://github.com/rudderlabs/rudder-server/compare/v1.38.1...v1.38.2) (2024-11-19)
+
+
+### Bug Fixes
+
+* klaviyo bulk upload and BingAds OC  ([#5305](https://github.com/rudderlabs/rudder-server/issues/5305)) ([9c9ef73](https://github.com/rudderlabs/rudder-server/commit/9c9ef73d16326e4a12a69cebe0f71656b4928d42))
+
 ## [1.38.1](https://github.com/rudderlabs/rudder-server/compare/v1.38.0...v1.38.1) (2024-11-14)
 
 
