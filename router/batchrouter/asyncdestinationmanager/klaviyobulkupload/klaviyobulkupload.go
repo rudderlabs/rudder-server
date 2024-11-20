@@ -58,12 +58,16 @@ func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 
 func NewManager(logger logger.Logger, StatsFactory stats.Stats, destination *backendconfig.DestinationT) (*KlaviyoBulkUploader, error) {
 	klaviyoLogger := logger.Child("KlaviyoBulkUpload").Child("KlaviyoBulkUploader")
+	apiService, err := NewKlaviyoAPIService(destination, klaviyoLogger, StatsFactory)
+	if err != nil {
+		return nil, err
+	}
 	return &KlaviyoBulkUploader{
 		DestName:          destination.DestinationDefinition.Name,
 		DestinationConfig: destination.Config,
 		Logger:            klaviyoLogger,
 		StatsFactory:      StatsFactory,
-		KlaviyoAPIService: NewKlaviyoAPIService(destination, klaviyoLogger, StatsFactory),
+		KlaviyoAPIService: apiService,
 	}, nil
 }
 
