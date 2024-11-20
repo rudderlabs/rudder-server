@@ -1402,11 +1402,14 @@ func (proc *Handle) getTransformationMetrics(
 				return eventsByMessageID[msgID].PayloadFunc
 			},
 		)
-		payload, err := jsonfast.Marshal(messages)
-		if err != nil {
-			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
-			continue
+		payload := []byte(`[`)
+		for i := range messages {
+			payload = append(payload, messages[i]()...)
+			if i != len(messages)-1 {
+				payload = append(payload, []byte(`,`)...)
+			}
 		}
+		payload = append(payload, []byte(`]`)...)
 
 		for _, message := range messages {
 			proc.updateMetricMaps(
@@ -3036,12 +3039,17 @@ func (proc *Handle) transformSrcDest(
 					UserTransformedEvents: eventsToTransform,
 					EventsByMessageID: lo.MapEntries(
 						eventsByMessageID,
-						func(k string, v types.SingularEventWithReceivedAtWithPayloadFunc) (string, types.SingularEventWithReceivedAt) {
+						func(
+							k string, v types.SingularEventWithReceivedAtWithPayloadFunc,
+						) (
+							string, types.SingularEventWithReceivedAt,
+						) {
 							return k, v.SingularEventWithReceivedAt
 						},
 					),
 					FailedEvents:     response.FailedEvents,
-					UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]},
+					UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey],
+				},
 			)
 
 			// REPORTING - START

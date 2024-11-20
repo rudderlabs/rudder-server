@@ -3898,7 +3898,7 @@ var _ = Describe("Processor", Ordered, func() {
 				"message-1": {
 					id:                        "1",
 					jobid:                     1010,
-					originalTimestamp:         "2000-01-02T01:23:45",
+					originalTimestamp:         "2000-01-02T01:23:45.000Z",
 					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
 					sentAt:                    "2000-01-02 01:23",
 					expectedSentAt:            "2000-01-02T01:23:00.000Z",
@@ -3908,7 +3908,7 @@ var _ = Describe("Processor", Ordered, func() {
 				"message-2": {
 					id:                        "2",
 					jobid:                     1011,
-					originalTimestamp:         "2000-01-02T01:23:45",
+					originalTimestamp:         "2000-01-02T01:23:45.000Z",
 					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
 					sentAt:                    "2000-01-02 01:23",
 					expectedSentAt:            "2000-01-02T01:23:00.000Z",
@@ -3928,6 +3928,21 @@ var _ = Describe("Processor", Ordered, func() {
 						WriteKeyEnabled, "2001-01-02T02:23:45.000Z",
 						[]mockEventData{
 							messages["message-1"],
+						},
+						createMessagePayload,
+					),
+					LastJobStatus: jobsdb.JobStatusT{},
+					Parameters:    createBatchParameters(SourceIDEnabled),
+				},
+				{
+					UUID:      uuid.New(),
+					JobID:     1011,
+					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+					CustomVal: gatewayCustomVal[0],
+					EventPayload: createBatchPayload(
+						WriteKeyEnabled, "2001-01-02T02:23:45.000Z",
+						[]mockEventData{
 							messages["message-2"],
 						},
 						createMessagePayload,
