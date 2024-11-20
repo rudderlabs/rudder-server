@@ -4908,10 +4908,10 @@ var _ = Describe("Processor", Ordered, func() {
 				SingularEvent: event3,
 				ReceivedAt:    time.Now(),
 			}
-			eventsByMessageID := map[string]types.SingularEventWithReceivedAt{
-				"msg1": singularEventWithReceivedAt1,
-				"msg2": singularEventWithReceivedAt2,
-				"msg3": singularEventWithReceivedAt3,
+			eventsByMessageID := map[string]types.SingularEventWithReceivedAtWithPayloadFunc{
+				"msg1": {SingularEventWithReceivedAt: singularEventWithReceivedAt1, PayloadFunc: nil},
+				"msg2": {SingularEventWithReceivedAt: singularEventWithReceivedAt2, PayloadFunc: nil},
+				"msg3": {SingularEventWithReceivedAt: singularEventWithReceivedAt3, PayloadFunc: nil},
 			}
 			metadata1 := commonMetadata
 			metadata1.MessageID = "msg1"
@@ -6964,4 +6964,55 @@ func TestStoreMessageMerge(t *testing.T) {
 		totalEvents:    3,
 		start:          time.UnixMicro(99999999),
 	})
+}
+
+/*
+2024/11/19 17:35:53 maxprocs: Leaving GOMAXPROCS=10: CPU quota undefined
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/processor
+cpu: Apple M1 Pro
+=== RUN   BenchmarkGetPayloadOld
+BenchmarkGetPayloadOld
+=== RUN   BenchmarkGetPayloadOld/GetPayloadOld
+BenchmarkGetPayloadOld/GetPayloadOld
+BenchmarkGetPayloadOld/GetPayloadOld-10                   131354              8946 ns/op            7122 B/op        121 allocs/op
+=== RUN   BenchmarkGetPayloadOld/GetPayload
+BenchmarkGetPayloadOld/GetPayload
+BenchmarkGetPayloadOld/GetPayload-10                    22439343                53.94 ns/op            0 B/op          0 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/processor   3.795s
+*/
+func BenchmarkGetPayloadOld(b *testing.B) {
+	payload := []byte(`{"batch":[{"_order":{"from":"wrk-deployment-js-6546f8cf66-g7hgz","item":"1","req":"301527","size":"3","thread":"3"},"anonymousId":"36BJBqlido81qfiHe9ju","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"50e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"event_2","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","label":"Demo Label","value":5},"responseTime":"0s","sentAt":"2024-10-25T14:24:02.000+0000","successProbability":1,"type":"track","messageId":"2eae1263-921d-43c2-aeea-8193faf6f616","rudderId":"f20501a9-e741-43b7-82e9-f64f07564d68","receivedAt":"2024-10-25T14:24:03.306Z","request_ip":"10.9.196.79"}],"receivedAt":"2024-10-25T14:24:03.306Z","requestIP":"10.9.196.79","writeKey":"2nVv1Uge9ebQK7pGD2qP9XNY70k"}`)
+
+	var gatewayBatchEvent types.GatewayBatchRequest
+	err := json.Unmarshal(payload, &gatewayBatchEvent)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	b.Run("GetPayloadOld", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			getPayloadOld(gatewayBatchEvent.Batch[0])
+		}
+	})
+
+	b.ResetTimer()
+	b.Run("GetPayload", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			getEventFromBatch(payload, nil)
+		}
+	})
+}
+
+func TestGetEventFromBatch(t *testing.T) {
+	payload := []byte(`{"batch": [{"_order":{"from":"wrk-deployment-js-6546f8cf66-g7hgz","item":"1","req":"301527","size":"3","thread":"3"},"anonymousId":"36BJBqlido81qfiHe9ju","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"50e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"event_2","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","label":"Demo Label","value":5},"responseTime":"0s","sentAt":"2024-10-25T14:24:02.000+0000","successProbability":1,"type":"track","messageId":"2eae1263-921d-43c2-aeea-8193faf6f616","rudderId":"f20501a9-e741-43b7-82e9-f64f07564d68","receivedAt":"2024-10-25T14:24:03.306Z","request_ip":"10.9.196.79"}],"receivedAt":"2024-10-25T14:24:03.306Z","requestIP":"10.9.196.79","writeKey":"2nVv1Uge9ebQK7pGD2qP9XNY70k"}`)
+	event := getEventFromBatch(payload, nil)
+	require.Equal(t, `{"_order":{"from":"wrk-deployment-js-6546f8cf66-g7hgz","item":"1","req":"301527","size":"3","thread":"3"},"anonymousId":"36BJBqlido81qfiHe9ju","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"50e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"event_2","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","label":"Demo Label","value":5},"responseTime":"0s","sentAt":"2024-10-25T14:24:02.000+0000","successProbability":1,"type":"track","messageId":"2eae1263-921d-43c2-aeea-8193faf6f616","rudderId":"f20501a9-e741-43b7-82e9-f64f07564d68","receivedAt":"2024-10-25T14:24:03.306Z","request_ip":"10.9.196.79"}`, string(event))
+
+	payload = []byte(`{"writeKey":"2nVv1Uge9ebQK7pGD2qP9XNY70k", "batch": [{"_order":{"from":"wrk-deployment-js-6546f8cf66-g7hgz","item":"1","req":"301527","size":"3","thread":"3"},"anonymousId":"36BJBqlido81qfiHe9ju","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"50e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"event_2","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","label":"Demo Label","value":5},"responseTime":"0s","sentAt":"2024-10-25T14:24:02.000+0000","successProbability":1,"type":"track","messageId":"2eae1263-921d-43c2-aeea-8193faf6f616","rudderId":"f20501a9-e741-43b7-82e9-f64f07564d68","receivedAt":"2024-10-25T14:24:03.306Z","request_ip":"10.9.196.79"}],"receivedAt":"2024-10-25T14:24:03.306Z","requestIP":"10.9.196.79"}`)
+	event = getEventFromBatch(payload, nil)
+	require.Equal(t, `{"_order":{"from":"wrk-deployment-js-6546f8cf66-g7hgz","item":"1","req":"301527","size":"3","thread":"3"},"anonymousId":"36BJBqlido81qfiHe9ju","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"50e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"event_2","integrations":{"All":true},"originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","label":"Demo Label","value":5},"responseTime":"0s","sentAt":"2024-10-25T14:24:02.000+0000","successProbability":1,"type":"track","messageId":"2eae1263-921d-43c2-aeea-8193faf6f616","rudderId":"f20501a9-e741-43b7-82e9-f64f07564d68","receivedAt":"2024-10-25T14:24:03.306Z","request_ip":"10.9.196.79"}`, string(event))
 }

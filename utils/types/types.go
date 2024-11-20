@@ -4,6 +4,7 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
@@ -22,6 +23,11 @@ type SingularEventT map[string]interface{}
 type SingularEventWithReceivedAt struct {
 	SingularEvent SingularEventT
 	ReceivedAt    time.Time
+}
+
+type SingularEventWithReceivedAtWithPayloadFunc struct {
+	SingularEventWithReceivedAt
+	PayloadFunc func() json.RawMessage
 }
 
 // GatewayBatchRequest batch request structure

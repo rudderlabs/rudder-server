@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -1109,7 +1109,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 func (proc *Handle) getTransformerEvents(
 	response transformer.Response,
 	commonMetaData *transformer.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAtWithPayloadFunc,
 	destination *backendconfig.DestinationT,
 	connection backendconfig.Connection,
 	inPU, pu string,
@@ -1130,8 +1130,8 @@ func (proc *Handle) getTransformerEvents(
 		userTransformedEvent := &response.Events[i]
 		messages := lo.Map(
 			userTransformedEvent.Metadata.GetMessagesIDs(),
-			func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
+			func(msgID string, _ int) func() json.RawMessage {
+				return eventsByMessageID[msgID].PayloadFunc
 			},
 		)
 
@@ -1144,12 +1144,7 @@ func (proc *Handle) getTransformerEvents(
 					return []byte(`{}`)
 				}
 
-				sampleEvent, err := jsonfast.Marshal(message)
-				if err != nil {
-					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-					sampleEvent = []byte(`{}`)
-				}
-				return sampleEvent
+				return message()
 			},
 				nil)
 		}
@@ -1208,7 +1203,7 @@ func (proc *Handle) updateMetricMaps(
 	event *transformer.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAtWithPayloadFunc,
 ) {
 	if !proc.isReportingEnabled() {
 		return
@@ -1325,7 +1320,7 @@ func (proc *Handle) updateMetricMaps(
 func (proc *Handle) getNonSuccessfulMetrics(
 	response transformer.Response,
 	commonMetaData *transformer.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAtWithPayloadFunc,
 	inPU, pu string,
 ) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
@@ -1387,7 +1382,7 @@ func (proc *Handle) getTransformationMetrics(
 	transformerResponses []transformer.TransformerResponse,
 	state string,
 	commonMetaData *transformer.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAtWithPayloadFunc,
 	inPU, pu string,
 ) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
 	metrics := make([]*types.PUReportedMetric, 0)
@@ -1403,8 +1398,8 @@ func (proc *Handle) getTransformationMetrics(
 		failedEvent := &transformerResponses[i]
 		messages := lo.Map(
 			failedEvent.Metadata.GetMessagesIDs(),
-			func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
+			func(msgID string, _ int) func() json.RawMessage {
+				return eventsByMessageID[msgID].PayloadFunc
 			},
 		)
 		payload, err := jsonfast.Marshal(messages)
@@ -1426,12 +1421,7 @@ func (proc *Handle) getTransformationMetrics(
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
 						return []byte(`{}`)
 					}
-					sampleEvent, err := jsonfast.Marshal(message)
-					if err != nil {
-						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
-					}
-					return sampleEvent
+					return message()
 				},
 				eventsByMessageID)
 		}
@@ -1609,7 +1599,7 @@ type preTransformationMessage struct {
 	totalEvents                  int
 	marshalStart                 time.Time
 	groupedEventsBySourceId      map[SourceIDT][]transformer.TransformerEvent
-	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
+	eventsByMessageID            map[string]types.SingularEventWithReceivedAtWithPayloadFunc
 	procErrorJobs                []*jobsdb.JobT
 	jobIDToSpecificDestMapOnly   map[int64]string
 	groupedEvents                map[string][]transformer.TransformerEvent
@@ -1634,7 +1624,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	var statusList []*jobsdb.JobStatusT
 	groupedEvents := make(map[string][]transformer.TransformerEvent)
 	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
-	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
+	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAtWithPayloadFunc)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 	archivalJobs := make([]*jobsdb.JobT, 0)
@@ -1761,12 +1751,8 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
-			payloadFunc := ro.Memoize(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+			payloadFunc := sync.OnceValue(func() json.RawMessage {
+				return getEventFromBatch(batchEvent.EventPayload, singularEvent)
 			})
 			dedupKey := dedupTypes.KeyValue{
 				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
@@ -1797,11 +1783,15 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 
 	var keyMap map[dedupTypes.KeyValue]bool
 	var err error
+	dedupStart := time.Now()
 	if proc.config.enableDedup {
 		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
 			return nil, err
 		}
+		proc.statsFactory.NewTaggedStat("processor.dedup_get_batch", stats.TimerType, stats.Tags{
+			"method": "v2",
+		}).Since(dedupStart)
 	}
 	for _, event := range jobsWithMetaData {
 		sourceId := event.eventParams.SourceId
@@ -1822,10 +1812,6 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
 		totalEvents++
-		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
-			SingularEvent: event.singularEvent,
-			ReceivedAt:    event.recievedAt,
-		}
 
 		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
 			event.singularEvent,
@@ -1907,6 +1893,13 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		// else only passed destinationID will be validated
 		if !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
 			continue
+		}
+		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAtWithPayloadFunc{
+			SingularEventWithReceivedAt: types.SingularEventWithReceivedAt{
+				SingularEvent: event.singularEvent,
+				ReceivedAt:    event.recievedAt,
+			},
+			PayloadFunc: event.payloadFunc,
 		}
 
 		if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
@@ -2206,7 +2199,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 	var statusList []*jobsdb.JobStatusT
 	groupedEvents := make(map[string][]transformer.TransformerEvent)
 	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
-	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
+	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAtWithPayloadFunc)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 	archivalJobs := make([]*jobsdb.JobT, 0)
@@ -2320,12 +2313,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
 
-			payloadFunc := ro.Memoize(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
+			payloadFunc := sync.OnceValue(func() json.RawMessage {
+				return getEventFromBatch(batchEvent.EventPayload, singularEvent)
 			})
 
 			if proc.config.enableDedup {
@@ -2346,10 +2335,6 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 
 			// We count this as one, not destination specific ones
 			totalEvents++
-			eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
-				SingularEvent: singularEvent,
-				ReceivedAt:    receivedAt,
-			}
 
 			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
 				singularEvent,
@@ -2435,6 +2420,13 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			if !proc.isDestinationAvailable(singularEvent, sourceID, destinationID) {
 				continue
 			}
+			eventsByMessageID[messageId] = types.SingularEventWithReceivedAtWithPayloadFunc{
+				SingularEventWithReceivedAt: types.SingularEventWithReceivedAt{
+					SingularEvent: singularEvent,
+					ReceivedAt:    receivedAt,
+				},
+				PayloadFunc: payloadFunc,
+			}
 
 			if _, ok := groupedEventsBySourceId[SourceIDT(sourceID)]; !ok {
 				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]transformer.TransformerEvent, 0)
@@ -2508,7 +2500,7 @@ type transformationMessage struct {
 	groupedEvents map[string][]transformer.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
-	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
+	eventsByMessageID            map[string]types.SingularEventWithReceivedAtWithPayloadFunc
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*types.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
@@ -2921,7 +2913,7 @@ func (proc *Handle) transformSrcDest(
 
 	// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAtWithPayloadFunc,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
@@ -3036,7 +3028,21 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
-			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
+			proc.transDebugger.UploadTransformationStatus(
+				&transformationdebugger.TransformationStatusT{
+					SourceID:              sourceID,
+					DestID:                destID,
+					Destination:           destination,
+					UserTransformedEvents: eventsToTransform,
+					EventsByMessageID: lo.MapEntries(
+						eventsByMessageID,
+						func(k string, v types.SingularEventWithReceivedAtWithPayloadFunc) (string, types.SingularEventWithReceivedAt) {
+							return k, v.SingularEventWithReceivedAt
+						},
+					),
+					FailedEvents:     response.FailedEvents,
+					UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]},
+			)
 
 			// REPORTING - START
 			if proc.isReportingEnabled() {
@@ -3734,4 +3740,22 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
+}
+
+func getEventFromBatch(batch []byte, singularEvent types.SingularEventT) json.RawMessage {
+	end := bytes.LastIndex(batch, []byte(`}]`))
+	start := bytes.Index(batch, []byte(`[{`))
+	if end == -1 || start == -1 {
+		return getPayloadOld(singularEvent)
+	}
+	res := batch[start+1 : end+1]
+	return res
+}
+
+func getPayloadOld(event types.SingularEventT) []byte {
+	payloadBytes, err := jsonfast.Marshal(event)
+	if err != nil {
+		return nil
+	}
+	return payloadBytes
 }
