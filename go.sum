@@ -394,8 +394,8 @@ github.com/cockroachdb/apd v1.1.0/go.mod h1:8Sl8LxpKi29FqWXR16WEFZRNSz3SoPzUzeMe
 github.com/colinmarc/hdfs/v2 v2.1.1/go.mod h1:M3x+k8UKKmxtFu++uAZ0OtDU8jR3jnaZIAc6yK4Ue0c=
 github.com/compose-spec/compose-go/v2 v2.1.3 h1:bD67uqLuL/XgkAK6ir3xZvNLFPxPScEi1KW7R5esrLE=
 github.com/compose-spec/compose-go/v2 v2.1.3/go.mod h1:lFN0DrMxIncJGYAXTfWuajfwj5haBJqrBkarHcnjJKc=
-github.com/confluentinc/confluent-kafka-go/v2 v2.6.0 h1:VKnMT71Tl0dCp3lfGBp2D8eqQwc+amoDY5EeUgFHDDE=
-github.com/confluentinc/confluent-kafka-go/v2 v2.6.0/go.mod h1:hScqtFIGUI1wqHIgM3mjoqEou4VweGGGX7dMpcUKves=
+github.com/confluentinc/confluent-kafka-go/v2 v2.6.1 h1:XFkytnGvk/ZcY2qU0ql4E4h+ftBaGqkLO7tlZ4kRbr4=
+github.com/confluentinc/confluent-kafka-go/v2 v2.6.1/go.mod h1:hScqtFIGUI1wqHIgM3mjoqEou4VweGGGX7dMpcUKves=
 github.com/containerd/console v1.0.4 h1:F2g4+oChYvBTsASRTz8NP6iIAi97J3TtSAsLbIFn4ro=
 github.com/containerd/console v1.0.4/go.mod h1:YynlIjWYF8myEu6sdkwKIvGQq+cOckRm6So2avqoYAk=
 github.com/containerd/containerd v1.6.32 h1:zc3RN2fLrPZPH4mZziyaRVIqCN6zoFpeN0SOVDEgCTA=
