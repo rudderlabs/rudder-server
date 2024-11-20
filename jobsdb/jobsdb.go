@@ -37,6 +37,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -441,6 +442,11 @@ type dataSetRangeT struct {
 	ds       dataSetT
 }
 
+type dsRangeMinMax struct {
+	minJobID sql.NullInt64
+	maxJobID sql.NullInt64
+}
+
 /*
 Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
@@ -453,11 +459,13 @@ type Handle struct {
 	logger               logger.Logger
 	stats                stats.Stats
 
-	datasetList      []dataSetT
-	datasetRangeList []dataSetRangeT
-	dsListLock       *lock.Locker
-	dsMigrationLock  *lock.Locker
-	noResultsCache   *cache.NoResultsCache[ParameterFilterT]
+	datasetList                   []dataSetT
+	datasetRangeList              []dataSetRangeT
+	dsRangeFuncMap                map[string]func() (dsRangeMinMax, error)
+	distinctParameterSingleFlight *singleflight.Group
+	dsListLock                    *lock.Locker
+	dsMigrationLock               *lock.Locker
+	noResultsCache                *cache.NoResultsCache[ParameterFilterT]
 
 	// table count stats
 	statTableCount        stats.Measurement
@@ -755,6 +763,8 @@ func (jd *Handle) init() {
 	if jd.logger == nil {
 		jd.logger = logger.NewLogger().Child("jobsdb").Child(jd.tablePrefix)
 	}
+	jd.dsRangeFuncMap = make(map[string]func() (dsRangeMinMax, error))
+	jd.distinctParameterSingleFlight = new(singleflight.Group)
 
 	if jd.config == nil {
 		jd.config = config.Default
@@ -1155,23 +1165,37 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	}
 	var datasetRangeList []dataSetRangeT
 
-	for idx, ds := range dsList {
+	for idx := 0; idx < len(dsList)-1; idx++ {
+		ds := dsList[idx]
 		jd.assert(ds.Index != "", "ds.Index is empty")
 
-		getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
-			var minID, maxID sql.NullInt64
-			sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
-			row := jd.dbHandle.QueryRow(sqlStatement)
-			if err := row.Scan(&minID, &maxID); err != nil {
-				return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
+		if _, ok := jd.dsRangeFuncMap[ds.Index]; !ok {
+			getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
+				var minID, maxID sql.NullInt64
+				sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
+				row := jd.dbHandle.QueryRow(sqlStatement)
+				if err := row.Scan(&minID, &maxID); err != nil {
+					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
+				}
+				jd.logger.Debug(sqlStatement, minID, maxID)
+				return minID, maxID, nil
 			}
-			jd.logger.Debug(sqlStatement, minID, maxID)
-			return minID, maxID, nil
+			jd.dsRangeFuncMap[ds.Index] = sync.OnceValues(func() (dsRangeMinMax, error) {
+				minID, maxID, err := getIndex()
+				if err != nil {
+					return dsRangeMinMax{}, fmt.Errorf("getIndex %w", err)
+				}
+				return dsRangeMinMax{
+					minJobID: minID,
+					maxJobID: maxID,
+				}, nil
+			})
 		}
-		minID, maxID, err := getIndex()
+		minMax, err := jd.dsRangeFuncMap[ds.Index]()
 		if err != nil {
 			return err
 		}
+		minID, maxID := minMax.minJobID, minMax.maxJobID
 
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
@@ -1185,68 +1209,70 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 			continue
 		}
 
-		if idx < len(dsList)-1 {
-			// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
-			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
-			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
-			datasetRangeList = append(datasetRangeList,
-				dataSetRangeT{
-					minJobID: minID.Int64,
-					maxJobID: maxID.Int64,
-					ds:       ds,
-				})
-			prevMax = maxID.Int64
-		}
+		// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
+		jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
+		jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
+		datasetRangeList = append(datasetRangeList,
+			dataSetRangeT{
+				minJobID: minID.Int64,
+				maxJobID: maxID.Int64,
+				ds:       ds,
+			})
+		prevMax = maxID.Int64
 	}
 	jd.datasetRangeList = datasetRangeList
 	return nil
 }
 
-func (jd *Handle) getTableRowCount(tx *Tx, jobTable string) int {
-	var count int
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, jobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&count)
-	jd.assertError(err)
-	return count
-}
-
-func (jd *Handle) getTableSize(tx *Tx, jobTable string) int64 {
-	var tableSize int64
-
-	sqlStatement := fmt.Sprintf(`SELECT PG_TOTAL_RELATION_SIZE('%s')`, jobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&tableSize)
-	jd.assertError(err)
-	return tableSize
-}
-
 func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
+	var (
+		minJobCreatedAt sql.NullTime
+		tableSize       int64
+		rowCount        int
+	)
+
+	sqlStatement := fmt.Sprintf(
+		`with combinedResult as (
+			SELECT
+			(SELECT created_at FROM %[1]q ORDER BY job_id ASC LIMIT 1) AS minJobCreatedAt,
+			(SELECT PG_TOTAL_RELATION_SIZE('%[1]s')) AS tableSize,
+			(SELECT COUNT(*) FROM %[1]q) AS rowCount
+		)
+		SELECT minJobCreatedAt, tableSize, rowCount FROM combinedResult`,
+		ds.JobTable,
+	)
+	row := tx.QueryRow(sqlStatement)
+	err := row.Scan(&minJobCreatedAt, &tableSize, &rowCount)
+	if err != nil {
+		return false, err
+	}
+	if !minJobCreatedAt.Valid {
+		return false, nil
+	}
+
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		var minJobCreatedAt sql.NullTime
-		sqlStatement := fmt.Sprintf(`SELECT created_at FROM %q ORDER BY job_id ASC LIMIT 1`, ds.JobTable)
-		row := tx.QueryRow(sqlStatement)
-		err := row.Scan(&minJobCreatedAt)
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		} else if err != nil {
-			return false, err
-		}
-		if minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
+		if time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
 		}
 	}
 
-	tableSize := jd.getTableSize(tx, ds.JobTable)
-	totalCount := jd.getTableRowCount(tx, ds.JobTable)
 	if tableSize > jd.conf.maxTableSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
+		jd.logger.Infon(
+			"[JobsDB] DS full in size",
+			logger.NewField("ds", ds),
+			logger.NewField("rowCount", rowCount),
+			logger.NewField("tableSize", tableSize),
+		)
 		return true, nil
 	}
 
-	if totalCount > jd.conf.MaxDSSize.Load() {
-		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, tableSize)
+	if rowCount > jd.conf.MaxDSSize.Load() {
+		jd.logger.Infon(
+			"[JobsDB] DS full by rows",
+			logger.NewField("ds", ds),
+			logger.NewField("rowCount", rowCount),
+			logger.NewField("tableSize", tableSize),
+		)
 		return true, nil
 	}
 
@@ -1913,47 +1939,63 @@ func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-	}
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
+	res, err, shared := jd.distinctParameterSingleFlight.Do(parameterName, func() (interface{}, error) {
+		if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+		}
+		defer jd.dsMigrationLock.RUnlock()
+		if !jd.dsListLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		}
+		dsList := jd.getDSList()
+		jd.dsListLock.RUnlock()
 
-	var values []string
-	var queries []string
-	for _, ds := range dsList {
-		queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+		var values []string
+		var queries []string
+		for _, ds := range dsList {
+			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
 				(SELECT parameters->>'%[1]s' as parameter FROM %[2]q ORDER BY parameters->>'%[1]s' LIMIT 1)
 				UNION ALL
 				(SELECT s.* FROM t, LATERAL(
-				  SELECT parameters->>'%[1]s' as parameter FROM %[2]q f
-				  WHERE f.parameters->>'%[1]s' > t.parameter
-				  ORDER BY parameters->>'%[1]s' LIMIT 1) s)
-			  )
-			  SELECT * FROM t) a`, parameterName, ds.JobTable))
+					SELECT parameters->>'%[1]s' as parameter FROM %[2]q f
+					WHERE f.parameters->>'%[1]s' > t.parameter
+					ORDER BY parameters->>'%[1]s' LIMIT 1) s)
+					)
+					SELECT * FROM t) a`, parameterName, ds.JobTable))
+		}
+		query := strings.Join(queries, " UNION ")
+		rows, err := jd.dbHandle.QueryContext(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", parameterName, err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var value string
+			err := rows.Scan(&value)
+			if err != nil {
+				return nil, fmt.Errorf("couldn't scan distinct parameter-%s: %w", parameterName, err)
+			}
+			values = append(values, value)
+		}
+		if err = rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows.Err() on distinct parameter-%s: %w", parameterName, err)
+		}
+		return values, nil
+	})
+	if shared {
+		jd.stats.NewTaggedStat("jobsdb_get_distinct_parameter_values_shared", stats.CountType, stats.Tags{
+			"parameter":   parameterName,
+			"tablePrefix": jd.tablePrefix,
+		}).Increment()
 	}
-	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		var value string
-		err := rows.Scan(&value)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
+	val, ok := res.([]string)
+	if !ok {
+		return nil, fmt.Errorf("type assertion failed")
 	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-	return values, nil
+	return val, nil
 }
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
@@ -3250,11 +3292,6 @@ func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 	}
 
 	return v, nil
-}
-
-type smallDS struct {
-	ds          dataSetT
-	recordsLeft int
 }
 
 func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {

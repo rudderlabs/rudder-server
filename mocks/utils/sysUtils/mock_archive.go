@@ -22,6 +22,7 @@ import (
 type MockZipI struct {
 	ctrl     *gomock.Controller
 	recorder *MockZipIMockRecorder
+	isgomock struct{}
 }
 
 // MockZipIMockRecorder is the mock recorder for MockZipI.
@@ -42,45 +43,45 @@ func (m *MockZipI) EXPECT() *MockZipIMockRecorder {
 }
 
 // FileInfoHeader mocks base method.
-func (m *MockZipI) FileInfoHeader(arg0 fs.FileInfo) (*zip.FileHeader, error) {
+func (m *MockZipI) FileInfoHeader(fi fs.FileInfo) (*zip.FileHeader, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FileInfoHeader", arg0)
+	ret := m.ctrl.Call(m, "FileInfoHeader", fi)
 	ret0, _ := ret[0].(*zip.FileHeader)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // FileInfoHeader indicates an expected call of FileInfoHeader.
-func (mr *MockZipIMockRecorder) FileInfoHeader(arg0 any) *gomock.Call {
+func (mr *MockZipIMockRecorder) FileInfoHeader(fi any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FileInfoHeader", reflect.TypeOf((*MockZipI)(nil).FileInfoHeader), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FileInfoHeader", reflect.TypeOf((*MockZipI)(nil).FileInfoHeader), fi)
 }
 
 // NewWriter mocks base method.
-func (m *MockZipI) NewWriter(arg0 io.Writer) *zip.Writer {
+func (m *MockZipI) NewWriter(w io.Writer) *zip.Writer {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewWriter", arg0)
+	ret := m.ctrl.Call(m, "NewWriter", w)
 	ret0, _ := ret[0].(*zip.Writer)
 	return ret0
 }
 
 // NewWriter indicates an expected call of NewWriter.
-func (mr *MockZipIMockRecorder) NewWriter(arg0 any) *gomock.Call {
+func (mr *MockZipIMockRecorder) NewWriter(w any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockZipI)(nil).NewWriter), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewWriter", reflect.TypeOf((*MockZipI)(nil).NewWriter), w)
 }
 
 // OpenReader mocks base method.
-func (m *MockZipI) OpenReader(arg0 string) (*zip.ReadCloser, error) {
+func (m *MockZipI) OpenReader(name string) (*zip.ReadCloser, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "OpenReader", arg0)
+	ret := m.ctrl.Call(m, "OpenReader", name)
 	ret0, _ := ret[0].(*zip.ReadCloser)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // OpenReader indicates an expected call of OpenReader.
-func (mr *MockZipIMockRecorder) OpenReader(arg0 any) *gomock.Call {
+func (mr *MockZipIMockRecorder) OpenReader(name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenReader", reflect.TypeOf((*MockZipI)(nil).OpenReader), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenReader", reflect.TypeOf((*MockZipI)(nil).OpenReader), name)
 }

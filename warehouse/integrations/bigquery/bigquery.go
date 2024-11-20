@@ -767,10 +767,6 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 	return middlewareClient, nil
 }
 
-func (bq *BigQuery) CrashRecover(ctx context.Context) error {
-	return bq.dropDanglingStagingTables(ctx)
-}
-
 func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`
 		SELECT

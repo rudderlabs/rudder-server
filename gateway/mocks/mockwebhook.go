@@ -23,6 +23,7 @@ import (
 type MockGateway struct {
 	ctrl     *gomock.Controller
 	recorder *MockGatewayMockRecorder
+	isgomock struct{}
 }
 
 // MockGatewayMockRecorder is the mock recorder for MockGateway.
@@ -43,31 +44,31 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 }
 
 // NewSourceStat mocks base method.
-func (m *MockGateway) NewSourceStat(arg0 *types.AuthRequestContext, arg1 string) *stats.SourceStat {
+func (m *MockGateway) NewSourceStat(arctx *types.AuthRequestContext, reqType string) *stats.SourceStat {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewSourceStat", arg0, arg1)
+	ret := m.ctrl.Call(m, "NewSourceStat", arctx, reqType)
 	ret0, _ := ret[0].(*stats.SourceStat)
 	return ret0
 }
 
 // NewSourceStat indicates an expected call of NewSourceStat.
-func (mr *MockGatewayMockRecorder) NewSourceStat(arg0, arg1 any) *gomock.Call {
+func (mr *MockGatewayMockRecorder) NewSourceStat(arctx, reqType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStat", reflect.TypeOf((*MockGateway)(nil).NewSourceStat), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStat", reflect.TypeOf((*MockGateway)(nil).NewSourceStat), arctx, reqType)
 }
 
 // ProcessWebRequest mocks base method.
-func (m *MockGateway) ProcessWebRequest(arg0 *http.ResponseWriter, arg1 *http.Request, arg2 string, arg3 []byte, arg4 *types.AuthRequestContext) string {
+func (m *MockGateway) ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *types.AuthRequestContext) string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ProcessWebRequest", arg0, arg1, arg2, arg3, arg4)
+	ret := m.ctrl.Call(m, "ProcessWebRequest", writer, req, reqType, requestPayload, arctx)
 	ret0, _ := ret[0].(string)
 	return ret0
 }
 
 // ProcessWebRequest indicates an expected call of ProcessWebRequest.
-func (mr *MockGatewayMockRecorder) ProcessWebRequest(arg0, arg1, arg2, arg3, arg4 any) *gomock.Call {
+func (mr *MockGatewayMockRecorder) ProcessWebRequest(writer, req, reqType, requestPayload, arctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessWebRequest", reflect.TypeOf((*MockGateway)(nil).ProcessWebRequest), arg0, arg1, arg2, arg3, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessWebRequest", reflect.TypeOf((*MockGateway)(nil).ProcessWebRequest), writer, req, reqType, requestPayload, arctx)
 }
 
 // SaveWebhookFailures mocks base method.
@@ -85,13 +86,13 @@ func (mr *MockGatewayMockRecorder) SaveWebhookFailures(arg0 any) *gomock.Call {
 }
 
 // TrackRequestMetrics mocks base method.
-func (m *MockGateway) TrackRequestMetrics(arg0 string) {
+func (m *MockGateway) TrackRequestMetrics(errorMessage string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "TrackRequestMetrics", arg0)
+	m.ctrl.Call(m, "TrackRequestMetrics", errorMessage)
 }
 
 // TrackRequestMetrics indicates an expected call of TrackRequestMetrics.
-func (mr *MockGatewayMockRecorder) TrackRequestMetrics(arg0 any) *gomock.Call {
+func (mr *MockGatewayMockRecorder) TrackRequestMetrics(errorMessage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TrackRequestMetrics", reflect.TypeOf((*MockGateway)(nil).TrackRequestMetrics), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TrackRequestMetrics", reflect.TypeOf((*MockGateway)(nil).TrackRequestMetrics), errorMessage)
 }
