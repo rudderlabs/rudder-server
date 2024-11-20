@@ -116,10 +116,14 @@ func (k *KlaviyoAPIServiceImpl) GetUploadErrors(importId string) (*UploadStatusR
 	return &importErrorResp, importErrorRespErr
 }
 
-func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger.Logger, statsFactory stats.Stats) KlaviyoAPIService {
+func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger.Logger, statsFactory stats.Stats) (KlaviyoAPIService, error) {
+	privateApiKey, ok := destination.Config["privateApiKey"].(string)
+	if !ok {
+		return nil, fmt.Errorf("privateApiKey not found or not a string")
+	}
 	return &KlaviyoAPIServiceImpl{
 		client:        http.DefaultClient,
-		PrivateAPIKey: destination.Config["privateApiKey"].(string),
+		PrivateAPIKey: privateApiKey,
 		logger:        logger,
 		statsFactory:  statsFactory,
 		statLabels: stats.Tags{
@@ -127,5 +131,5 @@ func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger
 			"destType": destination.Name,
 			"destID":   destination.ID,
 		},
-	}
+	}, nil
 }
