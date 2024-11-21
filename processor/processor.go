@@ -2719,6 +2719,11 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
+	batchDestJobsFile, err := jobsdb.WriteToFile(batchDestJobs)
+	if err != nil {
+		panic(err)
+	}
+	proc.logger.Infon("batch router jobs file", logger.NewStringField("file", batchDestJobsFile))
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		err := misc.RetryWithNotify(

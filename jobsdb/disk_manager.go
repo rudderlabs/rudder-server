@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/segmentio/ksuid"
@@ -19,16 +20,66 @@ type diskManager struct {
 	fileReaderMap map[string]fileReaderChan
 	maxReadSem    chan struct{}
 	maxWriteSem   chan struct{}
+	closeTime     time.Duration
 	log           logger.Logger
 }
 
-func NewDiskManager() *diskManager {
-	return &diskManager{
+func NewDiskManager(conf *config.Config) *diskManager {
+	d := &diskManager{
 		fileReaderMu:  &sync.Mutex{},
 		fileReaderMap: make(map[string]fileReaderChan),
-		maxReadSem:    make(chan struct{}, 50),
-		maxWriteSem:   make(chan struct{}, 50),
+		maxReadSem:    make(chan struct{}, config.GetInt("maxReadSem", 50)),
+		maxWriteSem:   make(chan struct{}, config.GetInt("maxWriteSem", 50)),
+		closeTime:     config.GetDuration("closeTime", 5, time.Second),
 	}
+	go d.readRoutine()
+	return d
+}
+
+func (d *diskManager) readRoutine() {
+	ticker := time.NewTicker(10 * d.closeTime)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			d.fileReaderMu.Lock()
+			newMap := make(map[string]fileReaderChan)
+			for fileName, fileReadChan := range d.fileReaderMap {
+				if fileReadChan.closed.Load() {
+					close(fileReadChan.readerChan)
+					delete(d.fileReaderMap, fileName)
+					continue
+				}
+				newMap[fileName] = fileReadChan
+			}
+			d.fileReaderMap = newMap
+			d.fileReaderMu.Unlock()
+		}
+	}
+}
+
+func (d *diskManager) Read(fileName string, length, offset int) ([]byte, error) {
+	d.fileReaderMu.Lock()
+	if _, ok := fileReaderMap[fileName]; !ok {
+		fileReadChan := fileReaderChan{readerChan: make(chan readRequest), closed: &atomic.Bool{}}
+		fileReaderMap[fileName] = fileReadChan
+		go readFromFile(fileName, fileReadChan, d.closeTime)
+	} else {
+		if fileReaderMap[fileName].closed.Load() {
+			fileReaderMap[fileName].closed.Store(false)
+			go readFromFile(fileName, fileReaderMap[fileName], d.closeTime)
+		}
+	}
+	readRequestChan := fileReaderMap[fileName].readerChan
+	d.fileReaderMu.Unlock()
+	responseChan := make(chan payloadOrError)
+	defer close(responseChan)
+	readRequestChan <- readRequest{offset: offset, length: length, response: responseChan}
+	response := <-responseChan
+	if response.err != nil {
+		return nil, response.err
+	}
+	return response.payload, nil
 }
 
 func (d *diskManager) WriteToFile(jobs []*JobT) (string, error) {
@@ -177,12 +228,12 @@ func ConcurrentReadFromFile(fileName string, offset, length int) ([]byte, error)
 	if _, ok := fileReaderMap[fileName]; !ok {
 		fileReadChan := fileReaderChan{readerChan: make(chan readRequest), closed: &atomic.Bool{}}
 		fileReaderMap[fileName] = fileReadChan
-		go readFromFile(fileName, fileReadChan)
+		go readFromFile(fileName, fileReadChan, 5*time.Second)
 	} else {
 		if fileReaderMap[fileName].closed.Load() {
 			fileReadChan := fileReaderChan{readerChan: make(chan readRequest), closed: &atomic.Bool{}}
 			fileReaderMap[fileName] = fileReadChan
-			go readFromFile(fileName, fileReadChan)
+			go readFromFile(fileName, fileReadChan, 5*time.Second)
 		}
 	}
 	readRequestChan := fileReaderMap[fileName].readerChan
@@ -197,8 +248,9 @@ func ConcurrentReadFromFile(fileName string, offset, length int) ([]byte, error)
 	return response.payload, nil
 }
 
-func readFromFile(fileName string, fileReadChan fileReaderChan) {
-	closeTimer := time.NewTicker(5 * time.Second)
+func readFromFile(fileName string, fileReadChan fileReaderChan, closeTime time.Duration) {
+	defer fileReadChan.closed.Store(true)
+	closeTimer := time.NewTicker(closeTime)
 	defer closeTimer.Stop()
 	file, err := os.Open(fileName)
 	if err != nil {
@@ -215,7 +267,7 @@ func readFromFile(fileName string, fileReadChan fileReaderChan) {
 				return
 			}
 			request.response <- payloadOrError{payload: payload, err: err}
-			closeTimer.Reset(5 * time.Second)
+			closeTimer.Reset(closeTime)
 		case <-closeTimer.C:
 			return
 		}

@@ -213,6 +213,21 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		panic(err)
 	}
 	jobs = toProcess.Jobs
+	for i := range jobs {
+		var params routerutils.JobParameters
+		err := json.Unmarshal(jobs[i].Parameters, &params)
+		if err != nil {
+			panic(fmt.Errorf("BRT: %s: Error unmarshalling job parameters: %v", brt.destType, err))
+		}
+		fileName := params.FileName
+		offset := params.Offset
+		length := params.Length
+		payload, err := jobsdb.ConcurrentReadFromFile(fileName, offset, length)
+		if err != nil {
+			panic(fmt.Errorf("BRT: %s: Error reading job payload from file: %v", brt.destType, err))
+		}
+		jobs[i].EventPayload = payload
+	}
 	limitsReached = toProcess.LimitsReached
 
 	brtQueryStat.Since(queryStart)
