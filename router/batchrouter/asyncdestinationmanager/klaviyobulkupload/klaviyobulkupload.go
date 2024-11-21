@@ -22,7 +22,7 @@ import (
 const (
 	BATCHSIZE             = 10000
 	MAXALLOWEDPROFILESIZE = 512000
-	MAXPAYLOADSIZE        = 4900000
+	MAXPAYLOADSIZE        = 4600000
 	IMPORT_ID_SEPARATOR   = ":"
 )
 
@@ -286,8 +286,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		// if profileStructure length is more than 500 kB, throw an error
 		profileStructureJSON, _ := json.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
-		profileSizeStat.Observe(float64(profileSize)) // Record the size in the histogram
-		if float64(len(profileStructureJSON)) >= MAXALLOWEDPROFILESIZE {
+		profileSizeStat.Observe(profileSize) // Record the size in the histogram
+		if len(profileStructureJSON) >= MAXALLOWEDPROFILESIZE {
 			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
 			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue

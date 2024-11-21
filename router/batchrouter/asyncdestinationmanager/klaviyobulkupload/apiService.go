@@ -135,7 +135,7 @@ func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger
 		statsFactory:  statsFactory,
 		statLabels: stats.Tags{
 			"module":   "batch_router",
-			"destType": destination.Name,
+			"destType": destination.DestinationDefinition.Name,
 			"destID":   destination.ID,
 		},
 	}, nil
