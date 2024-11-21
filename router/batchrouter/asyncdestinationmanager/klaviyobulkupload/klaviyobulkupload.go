@@ -106,7 +106,9 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 	importStatuses := make(map[string]string)
 	failedImports := make([]string, 0)
 	for _, importId := range importIds {
-		importStatuses[importId] = "queued"
+		if importId != "" {
+			importStatuses[importId] = "queued"
+		}
 	}
 
 	for {
@@ -304,7 +306,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
-			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors)
+			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors, destinationID)
 			continue
 		}
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -31,7 +32,7 @@ var destination = &backendconfig.DestinationT{
 		Name: "KLAVIYO_BULK_UPLOAD",
 	},
 	Config: map[string]interface{}{
-		"privateApiKey": "1223",
+		"privateApiKey": "1234",
 	},
 	Enabled:     true,
 	WorkspaceID: "1",
@@ -192,13 +193,22 @@ func TestUploadIntegration(t *testing.T) {
 		ImportingJobIDs: []int64{1, 2, 3},
 	}
 
-	output := kbu.Upload(asyncDestStruct)
-	assert.NotNil(t, output)
-	assert.Equal(t, destination.ID, output.DestinationID)
-	assert.Empty(t, output.FailedJobIDs)
-	assert.Empty(t, output.AbortJobIDs)
-	assert.Empty(t, output.AbortReason)
-	assert.NotEmpty(t, output.ImportingJobIDs)
+	uploadResp := kbu.Upload(asyncDestStruct)
+	assert.NotNil(t, uploadResp)
+	assert.Equal(t, destination.ID, uploadResp.DestinationID)
+	assert.Empty(t, uploadResp.FailedJobIDs)
+	assert.Empty(t, uploadResp.AbortJobIDs)
+	assert.Empty(t, uploadResp.AbortReason)
+	assert.NotEmpty(t, uploadResp.ImportingJobIDs)
+	assert.NotNil(t, uploadResp.ImportingParameters)
+
+	importId := gjson.GetBytes(uploadResp.ImportingParameters, "importId").String()
+	pollResp := kbu.Poll(common.AsyncPoll{ImportId: importId})
+	assert.NotNil(t, pollResp)
+	assert.Equal(t, http.StatusOK, pollResp.StatusCode)
+	assert.True(t, pollResp.Complete)
+	assert.False(t, pollResp.HasFailed)
+	assert.False(t, pollResp.HasWarning)
 }
 
 func TestPoll(t *testing.T) {
