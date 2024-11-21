@@ -177,15 +177,19 @@ func WriteToFile(jobs []*JobT) (string, error) {
 			}
 		}
 	}()
+	buffer := bufio.NewWriter(file)
 	deferredFuncs = append(deferredFuncs, func() bool {
+		if err := buffer.Flush(); err != nil {
+			panic(err)
+		}
 		if err := file.Close(); err != nil {
-			return false
+			panic(err)
 		}
 		return true
 	})
 	offset := 0
 	for i := range jobs {
-		length, err := file.Write(jobs[i].EventPayload)
+		length, err := buffer.Write(jobs[i].EventPayload)
 		if err != nil {
 			return "", fmt.Errorf("write job payload to file - %s: %w", fileName, err)
 		}

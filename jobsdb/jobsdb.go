@@ -319,6 +319,8 @@ type JobsDB interface {
 	JournalMarkDone(opID int64) error
 
 	IsMasterBackupEnabled() bool
+
+	CommitFileName(tx StoreSafeTx, fileName string) error
 }
 
 /*
@@ -824,6 +826,24 @@ func (jd *Handle) init() {
 	}
 
 	jd.workersAndAuxSetup()
+
+	err = jd.WithTx(func(tx *Tx) error {
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS dataset_files (
+			file_name TEXT NOT NULL,
+			jobs_table TEXT NOT NULL)
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to create dataset_files table: %w", err)
+		}
+		_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS dataset_files_index ON dataset_files (jobs_table)`)
+		if err != nil {
+			return fmt.Errorf("failed to create dataset_files_index index: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(fmt.Errorf("failed to setup dataset_files table: %w", err))
+	}
 
 	err = jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
@@ -2002,6 +2022,16 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName 
 		return nil, fmt.Errorf("type assertion failed")
 	}
 	return val, nil
+}
+
+func (jd *Handle) CommitFileName(tx StoreSafeTx, fileName string) error {
+	dsList := jd.getDSList()
+	ds := dsList[len(dsList)-1]
+	_, err := tx.SqlTx().Exec(fmt.Sprintf(`INSERT INTO dataset_files (file_name, jobs_table) VALUES ('%s', '%s')`, fileName, ds.JobTable))
+	if err != nil {
+		return fmt.Errorf("error commiting file name: %w", err)
+	}
+	return nil
 }
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {

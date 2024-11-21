@@ -64,11 +64,11 @@ Archiver:
 JobsDB:
   jobDoneMigrateThres: 0.8
   jobStatusMigrateThres: 5
-  maxDSSize: 100000
+  maxDSSize: 1
   maxMigrateOnce: 10
   maxMigrateDSProbe: 10
   maxTableSizeInMB: 300
-  migrateDSLoopSleepDuration: 30s
+  migrateDSLoopSleepDuration: 3s
   addNewDSLoopSleepDuration: 5s
   refreshDSListLoopSleepDuration: 5s
   backupCheckSleepDuration: 5s

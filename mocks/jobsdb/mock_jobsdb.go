@@ -44,6 +44,20 @@ func (m *MockJobsDB) EXPECT() *MockJobsDBMockRecorder {
 	return m.recorder
 }
 
+// CommitFileName mocks base method.
+func (m *MockJobsDB) CommitFileName(tx jobsdb.StoreSafeTx, fileName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CommitFileName", tx, fileName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CommitFileName indicates an expected call of CommitFileName.
+func (mr *MockJobsDBMockRecorder) CommitFileName(tx, fileName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CommitFileName", reflect.TypeOf((*MockJobsDB)(nil).CommitFileName), tx, fileName)
+}
+
 // DeleteExecuting mocks base method.
 func (m *MockJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()

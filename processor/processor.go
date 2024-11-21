@@ -2719,14 +2719,14 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
-	batchDestJobsFile, err := jobsdb.WriteToFile(batchDestJobs)
-	if err != nil {
-		panic(err)
-	}
-	proc.logger.Infon("batch router jobs file", logger.NewStringField("file", batchDestJobsFile))
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
-		err := misc.RetryWithNotify(
+		batchDestJobsFile, err := jobsdb.WriteToFile(batchDestJobs)
+		if err != nil {
+			panic(err)
+		}
+		proc.logger.Infon("batch router jobs file", logger.NewStringField("file", batchDestJobsFile))
+		err = misc.RetryWithNotify(
 			context.Background(),
 			proc.jobsDBCommandTimeout.Load(),
 			proc.jobdDBMaxRetries.Load(),
@@ -2737,6 +2737,9 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 						err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 						if err != nil {
 							return fmt.Errorf("storing batch router jobs: %w", err)
+						}
+						if err := proc.batchRouterDB.CommitFileName(tx, batchDestJobsFile); err != nil {
+							return fmt.Errorf("committing batch router jobs file: %w", err)
 						}
 
 						// rsources stats
@@ -2760,13 +2763,13 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		)
 	}
 
-	destJobsFile, err := jobsdb.WriteToFile(destJobs)
-	if err != nil {
-		panic(err)
-	}
-	proc.logger.Infon("router jobs file", logger.NewStringField("file", destJobsFile))
 	if len(destJobs) > 0 {
 		func() {
+			destJobsFile, err := jobsdb.WriteToFile(destJobs)
+			if err != nil {
+				panic(err)
+			}
+			proc.logger.Infon("router jobs file", logger.NewStringField("file", destJobsFile))
 			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
 			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
 			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
@@ -2787,7 +2790,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 					))
 			}
 
-			err := misc.RetryWithNotify(
+			err = misc.RetryWithNotify(
 				context.Background(),
 				proc.jobsDBCommandTimeout.Load(),
 				proc.jobdDBMaxRetries.Load(),
@@ -2798,6 +2801,9 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 							err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 							if err != nil {
 								return fmt.Errorf("storing router jobs: %w", err)
+							}
+							if err := proc.routerDB.CommitFileName(tx, destJobsFile); err != nil {
+								return fmt.Errorf("committing router jobs file: %w", err)
 							}
 
 							// rsources stats
@@ -2841,7 +2847,7 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 
 	txnStart := time.Now()
 	in.rsourcesStats.CollectStats(statusList)
-	err = misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
 			if err != nil {

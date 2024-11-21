@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -156,13 +157,17 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 							),
 						)
 						totalJobsMigrated += noJobsMigrated
-					} else {
-						jd.logger.Infon(
-							"[[ migrateDSLoop ]]: No jobs to migrate",
-							logger.NewStringField("from", source.ds.Index),
-							logger.NewStringField("to", destination.Index),
-						)
+						_, err = tx.Exec(`UPDATE dataset_files SET jobs_table = $1 WHERE jobs_table = $2`, destination.JobTable, source.ds.JobTable)
+						if err != nil {
+							return fmt.Errorf("failed to update dataset files: %w", err)
+						}
+						continue
 					}
+					jd.logger.Infon(
+						"[[ migrateDSLoop ]]: No jobs to migrate",
+						logger.NewStringField("from", source.ds.Index),
+						logger.NewStringField("to", destination.Index),
+					)
 				}
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
@@ -171,6 +176,31 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return fmt.Errorf("failed to mark journal done: %w", err)
 				}
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
+			}
+			for i := range migrateFrom {
+				source := migrateFrom[i].ds
+				if migrateFrom[i].numJobsPending == 0 {
+					rows, err := tx.QueryContext(ctx, `DELETE FROM dataset_files WHERE jobs_table = $1 returning file_name`, source.JobTable)
+					if err != nil {
+						return fmt.Errorf("failed to delete dataset files: %w", err)
+					}
+					for rows.Next() {
+						var fileName string
+						if err = rows.Scan(&fileName); err != nil {
+							return fmt.Errorf("failed to scan dataset files: %w", err)
+						}
+						jd.logger.Infon("[[ migrateDSLoop ]]: Deleting file", logger.NewStringField("file", fileName))
+						defer func(fileName string) {
+							_ = os.Remove(fileName)
+						}(fileName)
+					}
+					if rows.Err() != nil {
+						return fmt.Errorf("rows.Err - delete dataset files: %w", rows.Err())
+					}
+					if err := rows.Close(); err != nil {
+						return fmt.Errorf("failed to close rows: %w", err)
+					}
+				}
 			}
 
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
