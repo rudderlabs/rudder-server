@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -100,33 +99,10 @@ func (w *worker) start() {
 	// store jobs
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
-		var mergedJob *storeMessage
-		firstSubJob := true
 		defer w.lifecycle.wg.Done()
 		defer w.logger.Debugf("store routine stopped for worker: %s", w.partition)
 		for subJob := range w.channel.store {
-
-			if firstSubJob && !subJob.hasMore {
-				w.handle.Store(w.partition, subJob)
-				continue
-			}
-
-			if firstSubJob {
-				mergedJob = &storeMessage{
-					rsourcesStats:         subJob.rsourcesStats,
-					dedupKeys:             make(map[string]struct{}),
-					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),
-					sourceDupStats:        make(map[dupStatKey]int),
-					start:                 subJob.start,
-				}
-				firstSubJob = false
-			}
-			mergedJob.merge(subJob)
-
-			if !subJob.hasMore {
-				w.handle.Store(w.partition, mergedJob)
-				firstSubJob = true
-			}
+			w.handle.Store(w.partition, subJob)
 		}
 	})
 }
