@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -232,12 +233,12 @@ func ConcurrentReadFromFile(fileName string, offset, length int) ([]byte, error)
 	if _, ok := fileReaderMap[fileName]; !ok {
 		fileReadChan := fileReaderChan{readerChan: make(chan readRequest), closed: &atomic.Bool{}}
 		fileReaderMap[fileName] = fileReadChan
-		go readFromFile(fileName, fileReadChan, 5*time.Second)
+		go readFromFullFile(fileName, fileReadChan, 5*time.Second)
 	} else {
 		if fileReaderMap[fileName].closed.Load() {
 			fileReadChan := fileReaderChan{readerChan: make(chan readRequest), closed: &atomic.Bool{}}
 			fileReaderMap[fileName] = fileReadChan
-			go readFromFile(fileName, fileReadChan, 5*time.Second)
+			go readFromFullFile(fileName, fileReadChan, 5*time.Second)
 		}
 	}
 	readRequestChan := fileReaderMap[fileName].readerChan
@@ -276,4 +277,82 @@ func readFromFile(fileName string, fileReadChan fileReaderChan, closeTime time.D
 			return
 		}
 	}
+}
+
+func readFromFullFile(fileName string, fileReadChan fileReaderChan, closeTime time.Duration) {
+	defer fileReadChan.closed.Store(true)
+	closeTimer := time.NewTicker(closeTime)
+	defer closeTimer.Stop()
+	buf, _, err := ReadFileIntoMemory(fileName)
+	if err != nil {
+		panic(fmt.Errorf("read file - %s: %w", fileName, err))
+	}
+	for {
+		select {
+		case request := <-fileReadChan.readerChan:
+			payload := buf[request.offset : request.offset+request.length]
+			request.response <- payloadOrError{payload: payload, err: err}
+			closeTimer.Reset(closeTime)
+		case <-closeTimer.C:
+			return
+		}
+	}
+}
+
+func ReadFileIntoMemory(fileName string) ([]byte, int64, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		panic(fmt.Errorf("open file - %s: %w", fileName, err))
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		panic(fmt.Errorf("stat file - %s: %w", fileName, err))
+	}
+	size := stat.Size()
+	buf := make([]byte, size)
+	_, err = file.Read(buf)
+	if err != nil {
+		panic(fmt.Errorf("read file - %s: %w", fileName, err))
+	}
+	return buf, size, nil
+}
+
+func ReadFileIntoMemoryBuffered(fileName string) ([]byte, int64, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		panic(fmt.Errorf("open file - %s: %w", fileName, err))
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		panic(fmt.Errorf("stat file - %s: %w", fileName, err))
+	}
+	size := stat.Size()
+	payloads := make([]byte, size)
+	buf := bufio.NewReader(file)
+	_, err = buf.Read(payloads)
+	if err != nil {
+		panic(fmt.Errorf("read file - %s: %w", fileName, err))
+	}
+	return payloads, size, nil
+}
+
+func IOReadFileIntoMemory(fileName string) ([]byte, int64, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		panic(fmt.Errorf("open file - %s: %w", fileName, err))
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil {
+		panic(fmt.Errorf("stat file - %s: %w", fileName, err))
+	}
+	size := stat.Size()
+	buf := make([]byte, size)
+	_, err = io.ReadAll(file)
+	if err != nil {
+		panic(fmt.Errorf("read file - %s: %w", fileName, err))
+	}
+	return buf, size, nil
 }

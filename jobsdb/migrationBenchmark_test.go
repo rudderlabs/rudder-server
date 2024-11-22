@@ -111,16 +111,48 @@ func genJobsWithJobID(workspaceId, customVal string, jobCount, eventsPerJob int,
 	return js
 }
 
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkReadFile
+BenchmarkReadFile
+BenchmarkReadFile-10              597486              1769 ns/op            1136 B/op          2 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      1.690s
+
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkReadFile	- full file into memory and return slice from it
+BenchmarkReadFile
+BenchmarkReadFile-10             1731102               692.4 ns/op           112 B/op          1 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      2.531s
+
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkReadFile	- full file into memory and send copy of slice
+BenchmarkReadFile
+BenchmarkReadFile-10              825984              1266 ns/op            4208 B/op          3 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      1.842s
+*/
 func BenchmarkReadFile(b *testing.B) {
-	fileName := "/tmp/jobs_2oyzX5Am1ch5fV817GpUSzNFXuD"
+	fileName := "/tmp/jobs_2pBzepHkOGsK3s6YDaZf5rUorw2"
 	for i := 0; i < b.N; i++ {
 		_, err := ConcurrentReadFromFile(fileName, i%1300, 1024)
 		require.NoError(b, err)
 	}
+	b.ReportAllocs()
 }
 
 func TestReadFile(t *testing.T) {
-	payload, err := ConcurrentReadFromFile("/tmp/jobs_2oyzX5Am1ch5fV817GpUSzNFXuD", 0, 1127)
+	payload, err := ConcurrentReadFromFile("/tmp/jobs_2pBzepHkOGsK3s6YDaZf5rUorw2", 0, 1127)
 	require.NoError(t, err)
 	require.Equal(t, `{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b31d9e47-c65f-4187-b605-c8cebc4e3037","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"receivedAt":"2024-11-17T20:47:18.580+05:30","request_ip":"[::1]","rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","timestamp":"2024-11-17T20:47:18.580+05:30","type":"track"}`, string(payload))
 }
@@ -150,4 +182,83 @@ func BenchmarkWriteToFile(b *testing.B) {
 		_, err := WriteToFile(jobs)
 		require.NoError(b, err)
 	}
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkReadFileIntoMemory
+BenchmarkReadFileIntoMemory
+
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:194: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:194: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:194: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:194: size: 1358448
+
+BenchmarkReadFileIntoMemory-10              6764            171078 ns/op         1360232 B/op          5 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      2.908s
+*/
+func BenchmarkReadFileIntoMemory(b *testing.B) {
+	var size int64
+	var err error
+	for i := 0; i < b.N; i++ {
+		_, size, err = ReadFileIntoMemory("/tmp/jobs_2pBzepHkOGsK3s6YDaZf5rUorw2")
+		require.NoError(b, err)
+	}
+	b.Logf("size: %d", size)
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkReadFileIntoMemoryBuffered
+BenchmarkReadFileIntoMemoryBuffered
+
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:221: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:221: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:221: size: 1358448
+
+BenchmarkReadFileIntoMemoryBuffered-10              4820            247018 ns/op         1364329 B/op          6 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      1.832s
+*/
+func BenchmarkReadFileIntoMemoryBuffered(b *testing.B) {
+	var size int64
+	var err error
+	for i := 0; i < b.N; i++ {
+		_, size, err = ReadFileIntoMemoryBuffered("/tmp/jobs_2pBzepHkOGsK3s6YDaZf5rUorw2")
+		require.NoError(b, err)
+	}
+	b.Logf("size: %d", size)
+}
+
+/*
+goos: darwin
+goarch: arm64
+pkg: github.com/rudderlabs/rudder-server/jobsdb
+cpu: Apple M1 Pro
+=== RUN   BenchmarkIOReadFileIntoMemory
+BenchmarkIOReadFileIntoMemory
+
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:247: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:247: size: 1358448
+	/Users/sid/rudder/rudder-server/jobsdb/migrationBenchmark_test.go:247: size: 1358448
+
+BenchmarkIOReadFileIntoMemory-10            1560            753601 ns/op         8002155 B/op         33 allocs/op
+PASS
+ok      github.com/rudderlabs/rudder-server/jobsdb      1.852s
+*/
+func BenchmarkIOReadFileIntoMemory(b *testing.B) {
+	var size int64
+	var err error
+	for i := 0; i < b.N; i++ {
+		_, size, err = IOReadFileIntoMemory("/tmp/jobs_2pBzepHkOGsK3s6YDaZf5rUorw2")
+		require.NoError(b, err)
+	}
+	b.Logf("size: %d", size)
 }
