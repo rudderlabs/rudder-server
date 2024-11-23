@@ -192,9 +192,9 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.receivedStat = stat.NewStat("processor.transformer_received", stats.CountType)
 	trans.cpDownGauge = stat.NewStat("processor.control_plane_down", stats.GaugeType)
 
-	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnections", 100)
-	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
+	trans.config.maxConcurrency = conf.GetInt("Processor.maxConcurrencyTODO", 2000)
+	trans.config.maxHTTPConnections = conf.GetInt("Transformer.Client.maxHTTPConnectionsTODO", 2000)
+	trans.config.maxHTTPIdleConnections = conf.GetInt("Transformer.Client.maxHTTPIdleConnectionsTODO", 100)
 	trans.config.maxIdleConnDuration = conf.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second)
 	trans.config.disableKeepAlives = conf.GetBool("Transformer.Client.disableKeepAlives", true)
 	trans.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
