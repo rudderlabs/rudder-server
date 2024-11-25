@@ -182,7 +182,28 @@ func TestBigQuery_AvoidPartitionDecorator(t *testing.T) {
 			avoidPartitionDecorator: true,
 		},
 		{
-			name: "ingenstion partition",
+			name: "sent_at partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "sent_at",
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name: "timestamp partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "timestamp",
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name: "original_timestamp partition",
+			destConfig: map[string]interface{}{
+				"partitionColumn": "received_at",
+			},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name: "ingestion partition",
 			destConfig: map[string]interface{}{
 				"partitionColumn": "_PARTITIONTIME",
 			},

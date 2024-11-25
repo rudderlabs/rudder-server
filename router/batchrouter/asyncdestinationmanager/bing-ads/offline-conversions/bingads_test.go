@@ -539,14 +539,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("Transform() Test -> conversionAdjustedTime not available", func() {
+		It("Transform() Test -> adjustedConversionTime not available", func() {
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
 			}
 			uploader := &BingAdsBulkUploader{}
 			// Execute
 			_, err := uploader.Transform(job)
-			expectedResult := fmt.Errorf(" conversionAdjustedTime field not defined")
+			expectedResult := fmt.Errorf(" adjustedConversionTime field not defined")
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
 	})

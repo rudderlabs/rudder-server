@@ -21,6 +21,7 @@ import (
 type MockdeleteManager struct {
 	ctrl     *gomock.Controller
 	recorder *MockdeleteManagerMockRecorder
+	isgomock struct{}
 }
 
 // MockdeleteManagerMockRecorder is the mock recorder for MockdeleteManager.

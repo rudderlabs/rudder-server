@@ -20,6 +20,7 @@ import (
 type MockEventBridgeClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockEventBridgeClientMockRecorder
+	isgomock struct{}
 }
 
 // MockEventBridgeClientMockRecorder is the mock recorder for MockEventBridgeClient.
@@ -40,16 +41,16 @@ func (m *MockEventBridgeClient) EXPECT() *MockEventBridgeClientMockRecorder {
 }
 
 // PutEvents mocks base method.
-func (m *MockEventBridgeClient) PutEvents(arg0 *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error) {
+func (m *MockEventBridgeClient) PutEvents(input *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutEvents", arg0)
+	ret := m.ctrl.Call(m, "PutEvents", input)
 	ret0, _ := ret[0].(*eventbridge.PutEventsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutEvents indicates an expected call of PutEvents.
-func (mr *MockEventBridgeClientMockRecorder) PutEvents(arg0 any) *gomock.Call {
+func (mr *MockEventBridgeClientMockRecorder) PutEvents(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockEventBridgeClient)(nil).PutEvents), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockEventBridgeClient)(nil).PutEvents), input)
 }

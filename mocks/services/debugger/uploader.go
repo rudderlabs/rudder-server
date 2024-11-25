@@ -19,6 +19,7 @@ import (
 type MockTransformerAny struct {
 	ctrl     *gomock.Controller
 	recorder *MockTransformerAnyMockRecorder
+	isgomock struct{}
 }
 
 // MockTransformerAnyMockRecorder is the mock recorder for MockTransformerAny.
@@ -39,16 +40,16 @@ func (m *MockTransformerAny) EXPECT() *MockTransformerAnyMockRecorder {
 }
 
 // Transform mocks base method.
-func (m *MockTransformerAny) Transform(arg0 []any) ([]byte, error) {
+func (m *MockTransformerAny) Transform(data []any) ([]byte, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0)
+	ret := m.ctrl.Call(m, "Transform", data)
 	ret0, _ := ret[0].([]byte)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerAnyMockRecorder) Transform(arg0 any) *gomock.Call {
+func (mr *MockTransformerAnyMockRecorder) Transform(data any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformerAny)(nil).Transform), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformerAny)(nil).Transform), data)
 }

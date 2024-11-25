@@ -69,7 +69,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	}
 	if event.Action != "insert" {
 		// validate for adjusted time
-		err := validateField(fields, "conversionAdjustedTime")
+		err := validateField(fields, "adjustedConversionTime")
 		if err != nil {
 			return payload, err
 		}

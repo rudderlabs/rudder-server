@@ -20,6 +20,7 @@ import (
 type MockPersonalizeClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockPersonalizeClientMockRecorder
+	isgomock struct{}
 }
 
 // MockPersonalizeClientMockRecorder is the mock recorder for MockPersonalizeClient.
@@ -40,46 +41,46 @@ func (m *MockPersonalizeClient) EXPECT() *MockPersonalizeClientMockRecorder {
 }
 
 // PutEvents mocks base method.
-func (m *MockPersonalizeClient) PutEvents(arg0 *personalizeevents.PutEventsInput) (*personalizeevents.PutEventsOutput, error) {
+func (m *MockPersonalizeClient) PutEvents(input *personalizeevents.PutEventsInput) (*personalizeevents.PutEventsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutEvents", arg0)
+	ret := m.ctrl.Call(m, "PutEvents", input)
 	ret0, _ := ret[0].(*personalizeevents.PutEventsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutEvents indicates an expected call of PutEvents.
-func (mr *MockPersonalizeClientMockRecorder) PutEvents(arg0 any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutEvents(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockPersonalizeClient)(nil).PutEvents), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockPersonalizeClient)(nil).PutEvents), input)
 }
 
 // PutItems mocks base method.
-func (m *MockPersonalizeClient) PutItems(arg0 *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error) {
+func (m *MockPersonalizeClient) PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutItems", arg0)
+	ret := m.ctrl.Call(m, "PutItems", input)
 	ret0, _ := ret[0].(*personalizeevents.PutItemsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutItems indicates an expected call of PutItems.
-func (mr *MockPersonalizeClientMockRecorder) PutItems(arg0 any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutItems(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutItems", reflect.TypeOf((*MockPersonalizeClient)(nil).PutItems), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutItems", reflect.TypeOf((*MockPersonalizeClient)(nil).PutItems), input)
 }
 
 // PutUsers mocks base method.
-func (m *MockPersonalizeClient) PutUsers(arg0 *personalizeevents.PutUsersInput) (*personalizeevents.PutUsersOutput, error) {
+func (m *MockPersonalizeClient) PutUsers(input *personalizeevents.PutUsersInput) (*personalizeevents.PutUsersOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutUsers", arg0)
+	ret := m.ctrl.Call(m, "PutUsers", input)
 	ret0, _ := ret[0].(*personalizeevents.PutUsersOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutUsers indicates an expected call of PutUsers.
-func (mr *MockPersonalizeClientMockRecorder) PutUsers(arg0 any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutUsers(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutUsers", reflect.TypeOf((*MockPersonalizeClient)(nil).PutUsers), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutUsers", reflect.TypeOf((*MockPersonalizeClient)(nil).PutUsers), input)
 }
