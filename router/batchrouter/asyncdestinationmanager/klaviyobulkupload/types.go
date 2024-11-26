@@ -1,49 +1,45 @@
 package klaviyobulkupload
 
-//go:generate mockgen -destination=../../../../mocks/router/klaviyobulkupload/klaviyobulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload Uploader,HttpClient,Poller,ProfileExtractor,UploadStats
+//go:generate mockgen -destination=../../../../mocks/router/klaviyobulkupload/klaviyobulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload KlaviyoAPIService
 
 import (
-	"net/http"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-type Uploader interface {
-	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
-}
-
-type HttpClient interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-type Poller interface {
-	Poll(input common.AsyncPoll) common.PollStatusResponse
-}
-
-type ProfileExtractor interface {
-	ExtractProfiles(input Input) Profile
-}
-
-type UploadStats interface {
-	GetUploadStats(common.GetUploadStatsInput) common.GetUploadStatsResponse
+type KlaviyoAPIService interface {
+	UploadProfiles(profiles Payload) (*UploadResp, error)
+	GetUploadStatus(importId string) (*PollResp, error)
+	GetUploadErrors(importId string) (*UploadStatusResp, error)
 }
 
 type KlaviyoBulkUploader struct {
-	destName             string
-	destinationConfig    map[string]interface{}
-	logger               logger.Logger
-	statsFactory         stats.Stats
-	Client               *http.Client
-	jobIdToIdentifierMap map[string]int64
+	DestName             string
+	DestinationConfig    map[string]interface{}
+	Logger               logger.Logger
+	StatsFactory         stats.Stats
+	KlaviyoAPIService    KlaviyoAPIService
+	JobIdToIdentifierMap map[string]int64
+}
+
+type ErrorDetail struct {
+	ID     string      `json:"id"`
+	Code   string      `json:"code"`
+	Title  string      `json:"title"`
+	Detail string      `json:"detail"`
+	Source ErrorSource `json:"source"`
+}
+
+type ErrorSource struct {
+	Pointer   string `json:"pointer"`
+	Parameter string `json:"parameter"`
 }
 
 type UploadResp struct {
 	Data struct {
 		Id string `json:"id"`
 	} `json:"data"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type PollResp struct {
@@ -56,6 +52,7 @@ type PollResp struct {
 			Status          string `json:"status"`
 		} `json:"attributes"`
 	} `json:"data"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type UploadStatusResp struct {
@@ -85,6 +82,7 @@ type UploadStatusResp struct {
 		Prev  string `json:"prev"`
 		Next  string `json:"next"`
 	} `json:"links"`
+	Errors []ErrorDetail `json:"errors"`
 }
 
 type Payload struct {
@@ -92,13 +90,38 @@ type Payload struct {
 }
 
 type Data struct {
-	Type          string         `json:"type"`
-	Attributes    Attributes     `json:"attributes"`
-	Relationships *Relationships `json:"relationships,omitempty"`
+	Type          string            `json:"type"`
+	Attributes    PayloadAttributes `json:"attributes"`
+	Relationships *Relationships    `json:"relationships,omitempty"`
 }
 
-type Attributes struct {
+type PayloadAttributes struct {
 	Profiles Profiles `json:"profiles"`
+}
+
+type ProfileAttributes struct {
+	Email         string `json:"email,omitempty"`
+	Phone         string `json:"phone_number,omitempty"`
+	ExternalId    string `json:"external_id,omitempty"`
+	FirstName     string `json:"first_name,omitempty"`
+	JobIdentifier string `json:"jobIdentifier,omitempty"`
+	LastName      string `json:"last_name,omitempty"`
+	Organization  string `json:"organization,omitempty"`
+	Title         string `json:"title,omitempty"`
+	Image         string `json:"image,omitempty"`
+	Location      struct {
+		Address1  string `json:"address1,omitempty"`
+		Address2  string `json:"address2,omitempty"`
+		City      string `json:"city,omitempty"`
+		Country   string `json:"country,omitempty"`
+		Latitude  string `json:"latitude,omitempty"`
+		Longitude string `json:"longitude,omitempty"`
+		Region    string `json:"region,omitempty"`
+		Zip       string `json:"zip,omitempty"`
+		Timezone  string `json:"timezone,omitempty"`
+		IP        string `json:"ip,omitempty"`
+	} `json:"location,omitempty"`
+	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 type Profiles struct {
@@ -117,60 +140,12 @@ type List struct {
 	Type string `json:"type,omitempty"`
 	ID   string `json:"id,omitempty"`
 }
-
-type Input struct {
-	Message struct {
-		Body struct {
-			Form struct{} `json:"FORM,omitempty"`
-			JSON struct {
-				Data struct {
-					Attributes    Attributes    `json:"attributes"`
-					Relationships Relationships `json:"relationships,omitempty"`
-					Type          string        `json:"type,omitempty"`
-				} `json:"data,omitempty"`
-			} `json:"JSON,omitempty"`
-			JSONArray struct{} `json:"JSON_ARRAY,omitempty"`
-			XML       struct{} `json:"XML,omitempty"`
-		} `json:"body,omitempty"`
-		Endpoint string   `json:"endpoint,omitempty"`
-		Files    struct{} `json:"files,omitempty"`
-		Headers  struct{} `json:"headers,omitempty"`
-		Method   string   `json:"method,omitempty"`
-		Params   struct{} `json:"params,omitempty"`
-		Type     string   `json:"type,omitempty"`
-		UserID   string   `json:"userId,omitempty"`
-		Version  string   `json:"version,omitempty"`
-	} `json:"message,omitempty"`
-	Metadata struct {
-		JobID int `json:"job_id,omitempty"`
-	} `json:"metadata,omitempty"`
+type Metadata struct {
+	JobID int `json:"jobId,omitempty"`
 }
 
 type Profile struct {
-	Attributes struct {
-		Email         string `json:"email,omitempty"`
-		Phone         string `json:"phone_number,omitempty"`
-		ExternalId    string `json:"external_id,omitempty"`
-		FirstName     string `json:"first_name,omitempty"`
-		JobIdentifier string `json:"jobIdentifier,omitempty"`
-		LastName      string `json:"last_name,omitempty"`
-		Organization  string `json:"organization,omitempty"`
-		Title         string `json:"title,omitempty"`
-		Image         string `json:"image,omitempty"`
-		Location      struct {
-			Address1  string `json:"address1,omitempty"`
-			Address2  string `json:"address2,omitempty"`
-			City      string `json:"city,omitempty"`
-			Country   string `json:"country,omitempty"`
-			Latitude  string `json:"latitude,omitempty"`
-			Longitude string `json:"longitude,omitempty"`
-			Region    string `json:"region,omitempty"`
-			Zip       string `json:"zip,omitempty"`
-			Timezone  string `json:"timezone,omitempty"`
-			IP        string `json:"ip,omitempty"`
-		} `json:"location,omitempty"`
-		Properties map[string]interface{} `json:"properties,omitempty"`
-	} `json:"attributes,omitempty"`
-	ID   string `json:"id,omitempty"`
-	Type string `json:"type,omitempty"`
+	Attributes ProfileAttributes `json:"attributes,omitempty"`
+	ID         string            `json:"id,omitempty"`
+	Type       string            `json:"type,omitempty"`
 }
