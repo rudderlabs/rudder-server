@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -711,4 +712,128 @@ func TestAggregationLogic(t *testing.T) {
 	}
 
 	require.Equal(t, reportResults, reportingMetrics)
+}
+
+func TestGetAggregationBucket(t *testing.T) {
+	configSubscriber := newConfigSubscriber(logger.NOP)
+	reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
+	t.Run("should return the correct aggregation bucket with default interval of 1 mintue", func(t *testing.T) {
+		var cases = []struct {
+			now    time.Time
+			bucket int64
+		}{
+			{
+				now:    time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC),
+				bucket: time.Date(2022, 1, 1, 10, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 2, 4, 11, 5, 59, 10, time.UTC),
+				bucket: time.Date(2022, 2, 4, 11, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 3, 5, 12, 59, 59, 59, time.UTC),
+				bucket: time.Date(2022, 3, 5, 12, 59, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			reportHandle.now = func() time.Time {
+				return c.now
+			}
+			aggregationBucket := reportHandle.getAggregationBucketMin()
+			require.Equal(t, c.bucket, aggregationBucket)
+		}
+	})
+
+	t.Run("should return the correct aggregation bucket with aggregation interval of 5 mintue", func(t *testing.T) {
+		config.Set("reporting.aggregationInterval", 5)
+		var cases = []struct {
+			now    time.Time
+			bucket int64
+		}{
+			{
+				now:    time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC),
+				bucket: time.Date(2022, 1, 1, 10, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 2, 4, 11, 5, 59, 10, time.UTC),
+				bucket: time.Date(2022, 2, 4, 11, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 7, 30, 11, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 8, 50, 30, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 9, 5, 15, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 3, 5, 12, 55, 53, 1, time.UTC),
+				bucket: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 3, 5, 12, 57, 53, 1, time.UTC),
+				bucket: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 3, 5, 12, 59, 59, 59, time.UTC),
+				bucket: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			reportHandle.now = func() time.Time {
+				return c.now
+			}
+			aggregationBucket := reportHandle.getAggregationBucketMin()
+			require.Equal(t, c.bucket, aggregationBucket)
+		}
+	})
+
+	t.Run("should return the correct aggregation bucket with aggregation interval of 15 mintue", func(t *testing.T) {
+		config.Set("reporting.aggregationInterval", 15)
+		var cases = []struct {
+			now    time.Time
+			bucket int64
+		}{
+			{
+				now:    time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC),
+				bucket: time.Date(2022, 1, 1, 10, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 2, 4, 11, 17, 59, 10, time.UTC),
+				bucket: time.Date(2022, 2, 4, 11, 15, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 39, 10, 59, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 30, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				now:    time.Date(2022, 4, 6, 13, 59, 50, 30, time.UTC),
+				bucket: time.Date(2022, 4, 6, 13, 45, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			reportHandle.now = func() time.Time {
+				return c.now
+			}
+			aggregationBucket := reportHandle.getAggregationBucketMin()
+			require.Equal(t, c.bucket, aggregationBucket)
+		}
+
+	})
+
 }

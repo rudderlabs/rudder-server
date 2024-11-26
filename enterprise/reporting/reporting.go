@@ -29,6 +29,7 @@ import (
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -51,6 +52,7 @@ const (
 type DefaultReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
+	now                 func() time.Time
 	g                   *errgroup.Group
 	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
@@ -69,6 +71,7 @@ type DefaultReporter struct {
 	maxOpenConnections                   int
 	maxConcurrentRequests                config.ValueLoader[int]
 	vacuumFull                           config.ValueLoader[bool]
+	aggregationInterval                  config.ValueLoader[time.Duration]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -88,6 +91,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
+	aggregationInterval := config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationInterval")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -98,6 +102,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	return &DefaultReporter{
 		ctx:                                  ctx,
 		cancel:                               cancel,
+		now:                                  timeutil.Now,
 		g:                                    g,
 		log:                                  log,
 		configSubscriber:                     configSubscriber,
@@ -109,6 +114,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
 		vacuumFull:                           config.GetReloadableBoolVar(false, "Reporting.vacuumFull"),
+		aggregationInterval:                  aggregationInterval,
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
@@ -341,6 +347,11 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 	return values
 }
 
+func (r *DefaultReporter) getAggregationBucketMin() int64 {
+	currentMin := r.now().Unix() / 60
+	return currentMin - (currentMin % int64(r.aggregationInterval.Load().Minutes()))
+}
+
 func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
 	// for monitoring reports pileups
 	reportingLag := r.stats.NewTaggedStat(
@@ -397,10 +408,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
-			currentMin := time.Now().UTC().Unix() / 60
+			aggregationBucketMin := r.getAggregationBucketMin()
 
 			getReportsStart := time.Now()
-			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
+			reports, reportedAt, err := r.getReports(aggregationBucketMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
 				select {
@@ -645,7 +656,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	}
 	defer func() { _ = stmt.Close() }()
 
-	reportedAt := time.Now().UTC().Unix() / 60
+	reportedAt := r.getAggregationBucketMin()
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
