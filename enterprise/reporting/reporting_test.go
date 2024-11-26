@@ -750,7 +750,7 @@ func TestGetAggregationBucket(t *testing.T) {
 	})
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 5 mintue", func(t *testing.T) {
-		config.Set("reporting.aggregationInterval", 5)
+		config.Set("reporting.aggregationIntervalMinutes", 5)
 		var cases = []struct {
 			now    time.Time
 			bucket int64
@@ -803,7 +803,7 @@ func TestGetAggregationBucket(t *testing.T) {
 	})
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 15 mintue", func(t *testing.T) {
-		config.Set("reporting.aggregationInterval", 15)
+		config.Set("reporting.aggregationIntervalMinutes", 15)
 		var cases = []struct {
 			now    time.Time
 			bucket int64
