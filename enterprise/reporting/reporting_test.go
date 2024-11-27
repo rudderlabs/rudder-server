@@ -718,7 +718,7 @@ func TestGetAggregationBucket(t *testing.T) {
 	configSubscriber := newConfigSubscriber(logger.NOP)
 	reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
 	t.Run("should return the correct aggregation bucket with default interval of 1 mintue", func(t *testing.T) {
-		var cases = []struct {
+		cases := []struct {
 			reportedAt  int64
 			bucketStart int64
 			bucketEnd   int64
@@ -754,7 +754,7 @@ func TestGetAggregationBucket(t *testing.T) {
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 5 mintue", func(t *testing.T) {
 		config.Set("reporting.aggregationIntervalMinutes", 5)
-		var cases = []struct {
+		cases := []struct {
 			reportedAt  int64
 			bucketStart int64
 			bucketEnd   int64
@@ -815,7 +815,7 @@ func TestGetAggregationBucket(t *testing.T) {
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 15 mintue", func(t *testing.T) {
 		config.Set("reporting.aggregationIntervalMinutes", 15)
-		var cases = []struct {
+		cases := []struct {
 			reportedAt  int64
 			bucketStart int64
 			bucketEnd   int64
@@ -848,5 +848,4 @@ func TestGetAggregationBucket(t *testing.T) {
 			require.Equal(t, c.bucketEnd, be)
 		}
 	})
-
 }
