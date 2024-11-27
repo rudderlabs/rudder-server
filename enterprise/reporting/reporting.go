@@ -29,7 +29,6 @@ import (
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -52,7 +51,6 @@ const (
 type DefaultReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	now                 func() time.Time
 	g                   *errgroup.Group
 	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
@@ -102,7 +100,6 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	return &DefaultReporter{
 		ctx:                                  ctx,
 		cancel:                               cancel,
-		now:                                  timeutil.Now,
 		g:                                    g,
 		log:                                  log,
 		configSubscriber:                     configSubscriber,
@@ -219,11 +216,16 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		return nil, 0, nil
 	}
 
-	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
+	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64)
+	if bucketEnd > currentMs {
+		return nil, 0, nil
+	}
+
+	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
+	sqlStatement = fmt.Sprintf(`SELECT %s, MAX(reported_at), (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at >= $1 and reported_at < $2 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)
+	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -249,12 +251,12 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			&metricReport.ConnectionDetails.TrackingPlanID,
 			&metricReport.ConnectionDetails.TrackingPlanVersion,
 			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
-			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.Status,
 			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
 			&metricReport.StatusDetail.StatusCode,
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
+			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
 			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 		)
@@ -347,9 +349,11 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 	return values
 }
 
-func (r *DefaultReporter) getAggregationBucketMin() int64 {
-	currentMin := r.now().Unix() / 60
-	return currentMin - (currentMin % int64(r.aggregationInterval.Load().Minutes()))
+func (r *DefaultReporter) getAggregationBucketMinute(timeMin int64) (int64, int64) {
+	bucketStart := timeMin - (timeMin % int64(r.aggregationInterval.Load().Minutes()))
+	bucketEnd := bucketStart + int64(r.aggregationInterval.Load().Minutes())
+
+	return bucketStart, bucketEnd
 }
 
 func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
@@ -408,10 +412,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
 			loopStart := time.Now()
-			aggregationBucketMin := r.getAggregationBucketMin()
+			currentMin := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
-			reports, reportedAt, err := r.getReports(aggregationBucketMin, c.ConnInfo)
+			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
 				select {
@@ -470,7 +474,8 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				if err != nil {
 					return err
 				}
-				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
+				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt)
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 				} else {
@@ -656,7 +661,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	}
 	defer func() { _ = stmt.Close() }()
 
-	reportedAt := r.getAggregationBucketMin()
+	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
 		metric := *metric
