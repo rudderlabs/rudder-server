@@ -556,7 +556,16 @@ func (brt *Handle) getReportMetrics(statusList []*jobsdb.JobStatusT, parametersM
 		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, status.JobState, status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory, "", "", "", 0)
+			cd := &utilTypes.ConnectionDetails{
+				SourceID:                parameters.SourceID,
+				DestinationID:           parameters.DestinationID,
+				SourceTaskRunID:         parameters.SourceTaskRunID,
+				SourceJobID:             parameters.SourceJobID,
+				SourceJobRunID:          parameters.SourceJobRunID,
+				SourceDefinitionID:      parameters.SourceDefinitionID,
+				DestinationDefinitionID: parameters.DestinationDefinitionID,
+				SourceCategory:          parameters.SourceCategory,
+			}
 			connectionDetailsMap[key] = cd
 			transformedAtMap[key] = parameters.TransformAt
 		}
@@ -567,7 +576,14 @@ func (brt *Handle) getReportMetrics(statusList []*jobsdb.JobStatusT, parametersM
 				errorCode = 0
 			}
 			sampleEvent := routerutils.EmptyPayload
-			sd = utilTypes.CreateStatusDetail(status.JobState, 0, 0, errorCode, string(status.ErrorResponse), sampleEvent, eventName, eventType, "")
+			sd = &utilTypes.StatusDetail{
+				Status:         status.JobState,
+				StatusCode:     errorCode,
+				SampleResponse: string(status.ErrorResponse),
+				SampleEvent:    sampleEvent,
+				EventName:      eventName,
+				EventType:      eventType,
+			}
 			statusDetailsMap[key] = sd
 		}
 
