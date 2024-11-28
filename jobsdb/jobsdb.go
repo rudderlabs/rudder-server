@@ -531,6 +531,8 @@ type Handle struct {
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
+
+		payloadBinary config.ValueLoader[bool]
 	}
 }
 
@@ -711,6 +713,12 @@ func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.jobMaxAge = maxAgeFunc
+	}
+}
+
+func WithBinaryPayload(enabled config.ValueLoader[bool]) OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.payloadBinary = enabled
 	}
 }
 
@@ -984,6 +992,10 @@ func (jd *Handle) loadConfig() {
 		jd.conf.jobMaxAge = func() time.Duration {
 			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
 		}
+	}
+
+	if jd.conf.payloadBinary == nil {
+		jd.conf.payloadBinary = jd.config.GetReloadableBoolVar(false, "JobsDB.payloadBinary")
 	}
 }
 
@@ -1429,6 +1441,11 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	payloadType := "JSONB"
+	if jd.conf.payloadBinary.Load() {
+		payloadType = "BYTEA"
+	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
@@ -1436,7 +1453,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		user_id TEXT NOT NULL,
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
-		event_payload JSONB NOT NULL,
+		event_payload `+payloadType+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
@@ -2222,6 +2239,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorCode sql.NullString
 		var jsErrorResponse []byte
 		var jsParameters []byte
+
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
