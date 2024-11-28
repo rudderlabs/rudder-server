@@ -61,7 +61,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 	defer func() { httputil.CloseResponse(resp) }()
-	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
+	pkgLogger.Debugf("obtained response code: %v with resp body %v", resp.StatusCode, resp.Body)
 
 	// if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
