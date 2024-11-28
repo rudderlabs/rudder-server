@@ -1062,7 +1062,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			var params map[string]interface{}
 			err := jsonfast.Unmarshal(job.Parameters, &params)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event parameters: %w", err)
+				proc.logger.Errorf("Error while UnMarshaling live event parameters: %v", err)
 				continue
 			}
 
@@ -1075,14 +1075,14 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			events := make([]map[string]interface{}, 0)
 			err = jsonfast.Unmarshal(job.EventPayload, &events)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event payload: %w", err)
+				proc.logger.Errorf("Error while UnMarshaling live event payload: %v", err)
 				continue
 			}
 			for i := range events {
 				event := &events[i]
 				eventPayload, err := jsonfast.Marshal(*event)
 				if err != nil {
-					proc.logger.Errorf("Error while Marshaling live event payload: %w", err)
+					proc.logger.Errorf("Error while Marshaling live event payload: %v", err)
 					continue
 				}
 
@@ -1813,7 +1813,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 			dedupKey := event.dedupKey
 			ok := keyMap[dedupKey]
 			if !ok {
-				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
+				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey.Key)
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
