@@ -33,7 +33,7 @@ func (m *Manager) sendDiscardEventsToSnowpipe(
 	)
 
 	insertReq := &model.InsertRequest{
-		Rows:   discardedInfosToRows(discardInfos),
+		Rows:   convertDiscardedInfosToRows(discardInfos),
 		Offset: offset,
 	}
 	insertRes, err := m.api.Insert(ctx, discardsChannelID, insertReq)
@@ -75,11 +75,11 @@ func discardsSchema() whutils.ModelTableSchema {
 	})
 }
 
-// discardedRecords returns the records that were discarded due to schema mismatch
+// getDiscardedRecordsFromEvent returns the records that were discarded due to schema mismatch
 // It also updates the event data with the converted values
 // If the conversion fails, the value is discarded
 // If the value is a slice, it is marshalled to a string
-func discardedRecords(
+func getDiscardedRecordsFromEvent(
 	event *event,
 	snowPipeSchema whutils.ModelTableSchema,
 	tableName string,
@@ -116,8 +116,8 @@ func discardedRecords(
 	return discardedRecords
 }
 
-// discardedInfosToRows converts discardInfo to model.Row
-func discardedInfosToRows(discardInfos []discardInfo) []model.Row {
+// convertDiscardedInfosToRows converts discardInfo to model.Row
+func convertDiscardedInfosToRows(discardInfos []discardInfo) []model.Row {
 	return lo.FilterMap(discardInfos, func(info discardInfo, _ int) (model.Row, bool) {
 		id, idExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")]
 		receivedAt, receivedAtExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "received_at")]

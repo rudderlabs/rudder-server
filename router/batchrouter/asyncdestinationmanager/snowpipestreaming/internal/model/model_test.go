@@ -83,6 +83,7 @@ func TestChannelResponse_UnmarshalJSON(t *testing.T) {
 		name             string
 		response         []byte
 		expectedResponse ChannelResponse
+		wantError        bool
 	}{
 		{
 			name:     "Valid success response",
@@ -113,11 +114,20 @@ func TestChannelResponse_UnmarshalJSON(t *testing.T) {
 				SnowflakeAPIMessage:    "The supplied table does not exist or is not authorized.",
 			},
 		},
+		{
+			name:      "Malformed JSON",
+			response:  []byte(`{"success":true,"channelId`),
+			wantError: true,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var response ChannelResponse
 			err := json.Unmarshal(tc.response, &response)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedResponse, response)
 		})

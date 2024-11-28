@@ -2,7 +2,6 @@ package model
 
 import (
 	"strings"
-	"sync"
 
 	jsoniter "github.com/json-iterator/go"
 
@@ -77,10 +76,7 @@ type (
 	}
 )
 
-var (
-	dataTypeCache = sync.Map{}
-	json          = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func (c *ChannelResponse) UnmarshalJSON(data []byte) error {
 	type Alias ChannelResponse // Prevent recursion
@@ -113,7 +109,7 @@ func generateSnowPipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTabl
 			numericScale = int64(*info.Scale)
 		}
 
-		dataType := extractDataType(*info.Type)
+		dataType := cleanDataType(*info.Type)
 		snowflakeDataType, ok := snowflake.CalculateDataType(dataType, numericScale)
 		if !ok {
 			continue
@@ -121,16 +117,6 @@ func generateSnowPipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTabl
 		warehouseSchema[column] = snowflakeDataType
 	}
 	return warehouseSchema
-}
-
-func extractDataType(input string) string {
-	if cachedResult, found := dataTypeCache.Load(input); found {
-		return cachedResult.(string)
-	}
-
-	cleanedType := cleanDataType(input)
-	dataTypeCache.Store(input, cleanedType)
-	return cleanedType
 }
 
 func cleanDataType(input string) string {

@@ -114,10 +114,10 @@ func TestFindNewColumns(t *testing.T) {
 
 func TestDestConfig_Decode(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       map[string]interface{}
-		expected    destConfig
-		expectedErr bool
+		name      string
+		input     map[string]interface{}
+		expected  destConfig
+		wantError bool
 	}{
 		{
 			name: "Valid Input",
@@ -141,15 +141,15 @@ func TestDestConfig_Decode(t *testing.T) {
 				PrivateKeyPassphrase: "test-passphrase",
 				Namespace:            "TEST_NAMESPACE",
 			},
-			expectedErr: false,
+			wantError: false,
 		},
 		{
 			name: "Invalid Input",
 			input: map[string]interface{}{
 				"account": 123, // Invalid type
 			},
-			expected:    destConfig{},
-			expectedErr: true,
+			expected:  destConfig{},
+			wantError: true,
 		},
 		{
 			name:  "Empty Map",
@@ -157,7 +157,7 @@ func TestDestConfig_Decode(t *testing.T) {
 			expected: destConfig{
 				Namespace: "STRINGEMPTY",
 			},
-			expectedErr: false,
+			wantError: false,
 		},
 	}
 
@@ -166,7 +166,7 @@ func TestDestConfig_Decode(t *testing.T) {
 			var config destConfig
 			err := config.Decode(tt.input)
 
-			if tt.expectedErr {
+			if tt.wantError {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)

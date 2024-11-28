@@ -20,7 +20,7 @@ import (
 
 type (
 	Manager struct {
-		conf         *config.Config
+		appConfig    *config.Config
 		logger       logger.Logger
 		statsFactory stats.Stats
 		destination  *backendconfig.DestinationT
@@ -114,7 +114,7 @@ type (
 		CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error)
 		DeleteChannel(ctx context.Context, channelID string, sync bool) error
 		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error)
-		Status(ctx context.Context, channelID string) (*model.StatusResponse, error)
+		GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error)
 	}
 
 	apiAdapter struct {
@@ -137,6 +137,9 @@ func (d *destConfig) Decode(m map[string]interface{}) error {
 }
 
 func (e *event) setUUIDTimestamp(formattedTimestamp string) {
+	if e.Message.Metadata.Columns == nil {
+		return
+	}
 	uuidTimestampColumn := whutils.ToProviderCase(whutils.SnowpipeStreaming, "uuid_ts")
 	if _, columnExists := e.Message.Metadata.Columns[uuidTimestampColumn]; columnExists {
 		e.Message.Data[uuidTimestampColumn] = formattedTimestamp

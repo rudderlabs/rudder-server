@@ -2,7 +2,6 @@ package warehouseutils
 
 import (
 	"context"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
@@ -38,7 +37,6 @@ func (n *noopUploader) GetTableSchemaInWarehouse(tableName string) model.TableSc
 func (n *noopUploader) GetTableSchemaInUpload(tableName string) model.TableSchema        { return nil }
 func (n *noopUploader) ShouldOnDedupUseNewRecord() bool                                  { return false }
 func (n *noopUploader) UseRudderStorage() bool                                           { return false }
-func (n *noopUploader) GetLoadFileGenStartTIme() time.Time                               { return time.Time{} }
 func (n *noopUploader) GetLoadFileType() string                                          { return "" }
 func (n *noopUploader) CanAppend() bool                                                  { return false }
 func (n *noopUploader) GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) ([]LoadFile, error) {
@@ -52,4 +50,3 @@ func (n *noopUploader) GetSampleLoadFileLocation(ctx context.Context, tableName 
 func (n *noopUploader) GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error) {
 	return LoadFile{}, nil
 }
-func (n *noopUploader) GetFirstLastEvent() (time.Time, time.Time) { return time.Time{}, time.Time{} }

@@ -102,7 +102,7 @@ func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest
 	return resp, nil
 }
 
-func (a *apiAdapter) Status(ctx context.Context, channelID string) (*model.StatusResponse, error) {
+func (a *apiAdapter) GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error) {
 	a.logger.Debugn("Getting status",
 		logger.NewStringField("channelId", channelID),
 	)
@@ -110,7 +110,7 @@ func (a *apiAdapter) Status(ctx context.Context, channelID string) (*model.Statu
 	tags := a.defaultTags(statusAPI)
 	defer a.recordDuration(tags)()
 
-	resp, err := a.api.Status(ctx, channelID)
+	resp, err := a.api.GetStatus(ctx, channelID)
 	if err != nil {
 		tags["success"] = "false"
 		return nil, err

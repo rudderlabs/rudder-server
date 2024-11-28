@@ -2,14 +2,15 @@ package api_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
@@ -27,24 +28,15 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type mockRequestDoer struct {
-	response *http.Response
-	err      error
+type integrationTestConfig struct {
+	credentials *testhelper.TestCredentials
+	db          *sql.DB
+	namespace   string
+	tableName   string
+	snowpipeAPI *api.API
 }
 
-func (c *mockRequestDoer) Do(*http.Request) (*http.Response, error) {
-	return c.response, c.err
-}
-
-type nopReadCloser struct {
-	io.Reader
-}
-
-func (nopReadCloser) Close() error {
-	return nil
-}
-
-func TestAPI(t *testing.T) {
+func TestAPIIntegration(t *testing.T) {
 	for _, key := range []string{
 		testhelper.TestKeyPairUnencrypted,
 	} {
@@ -57,62 +49,24 @@ func TestAPI(t *testing.T) {
 	}
 
 	t.Run("Create channel + Get channel + Insert data + Status", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"../../testdata/docker-compose.rudder-snowpipe-clients.yml"}))
-		c.Start(context.Background())
-
-		credentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairUnencrypted)
-		require.NoError(t, err)
-
 		ctx := context.Background()
-
-		namespace := testhelper.RandSchema()
-		table := "TEST_TABLE"
-		tableSchema := whutils.ModelTableSchema{
-			"ID": "string", "NAME": "string", "EMAIL": "string", "AGE": "int", "ACTIVE": "boolean", "DOB": "datetime",
-		}
-
-		destination := backendconfigtest.
-			NewDestinationBuilder("SNOWPIPE_STREAMING").
-			WithConfigOption("account", credentials.Account).
-			WithConfigOption("warehouse", credentials.Warehouse).
-			WithConfigOption("database", credentials.Database).
-			WithConfigOption("role", credentials.Role).
-			WithConfigOption("user", credentials.User).
-			WithConfigOption("useKeyPairAuth", true).
-			WithConfigOption("privateKey", credentials.PrivateKey).
-			WithConfigOption("privateKeyPassphrase", credentials.PrivateKeyPassphrase).
-			Build()
-		warehouse := whutils.ModelWarehouse{
-			Namespace:   namespace,
-			Destination: destination,
-		}
-
-		t.Log("Creating namespace and table")
-		sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
-		require.NoError(t, sm.Setup(ctx, warehouse, whutils.NewNoOpUploader()))
-		t.Cleanup(func() { sm.Cleanup(ctx) })
-		require.NoError(t, sm.CreateSchema(ctx))
-		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
-		require.NoError(t, sm.CreateTable(ctx, table, tableSchema))
-
-		snowPipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
-		a := api.New(snowPipeClientsURL, http.DefaultClient)
+		testConfig := setupIntegrationTestConfig(t, ctx)
 
 		t.Log("Creating channel")
-		createChannelRes, err := a.CreateChannel(ctx, &model.CreateChannelRequest{
+		createChannelRes, err := testConfig.snowpipeAPI.CreateChannel(ctx, &model.CreateChannelRequest{
 			RudderIdentifier: "1",
 			Partition:        "1",
 			AccountConfig: model.AccountConfig{
-				Account:              credentials.Account,
-				User:                 credentials.User,
-				Role:                 credentials.Role,
-				PrivateKey:           strings.ReplaceAll(credentials.PrivateKey, "\n", "\\\\\n"),
-				PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+				Account:              testConfig.credentials.Account,
+				User:                 testConfig.credentials.User,
+				Role:                 testConfig.credentials.Role,
+				PrivateKey:           strings.ReplaceAll(testConfig.credentials.PrivateKey, "\n", "\\\\\n"),
+				PrivateKeyPassphrase: testConfig.credentials.PrivateKeyPassphrase,
 			},
 			TableConfig: model.TableConfig{
-				Database: credentials.Database,
-				Schema:   namespace,
-				Table:    table,
+				Database: testConfig.credentials.Database,
+				Schema:   testConfig.namespace,
+				Table:    testConfig.tableName,
 			},
 		})
 		require.NoError(t, err)
@@ -124,21 +78,23 @@ func TestAPI(t *testing.T) {
 		)
 
 		t.Log("Getting channel")
-		getChannelRes, err := a.GetChannel(ctx, createChannelRes.ChannelID)
+		getChannelRes, err := testConfig.snowpipeAPI.GetChannel(ctx, createChannelRes.ChannelID)
 		require.NoError(t, err)
 		require.Equal(t, createChannelRes, getChannelRes)
 
+		rows := []model.Row{
+			{"ID": "ID1", "NAME": "Alice Johnson", "EMAIL": "alice.johnson@example.com", "AGE": 28, "ACTIVE": true, "DOB": "1995-06-15T12:30:00Z"},
+			{"ID": "ID2", "NAME": "Bob Smith", "EMAIL": "bob.smith@example.com", "AGE": 35, "ACTIVE": true, "DOB": "1988-01-20T09:30:00Z"},
+			{"ID": "ID3", "NAME": "Charlie Brown", "EMAIL": "charlie.brown@example.com", "AGE": 22, "ACTIVE": false, "DOB": "2001-11-05T14:45:00Z"},
+			{"ID": "ID4", "NAME": "Diana Prince", "EMAIL": "diana.prince@example.com", "AGE": 30, "ACTIVE": true, "DOB": "1993-08-18T08:15:00Z"},
+			{"ID": "ID5", "NAME": "Eve Adams", "AGE": 45, "ACTIVE": true, "DOB": "1978-03-22T16:50:00Z"}, // -- No email
+			{"ID": "ID6", "NAME": "Frank Castle", "EMAIL": "frank.castle@example.com", "AGE": 38, "ACTIVE": false, "DOB": "1985-09-14T10:10:00Z"},
+			{"ID": "ID7", "NAME": "Grace Hopper", "EMAIL": "grace.hopper@example.com", "AGE": 85, "ACTIVE": true, "DOB": "1936-12-09T11:30:00Z"},
+		}
+
 		t.Log("Inserting records")
-		insertRes, err := a.Insert(ctx, createChannelRes.ChannelID, &model.InsertRequest{
-			Rows: []model.Row{
-				{"ID": "ID1", "NAME": "Alice Johnson", "EMAIL": "alice.johnson@example.com", "AGE": 28, "ACTIVE": true, "DOB": "1995-06-15T12:30:00Z"},
-				{"ID": "ID2", "NAME": "Bob Smith", "EMAIL": "bob.smith@example.com", "AGE": 35, "ACTIVE": true, "DOB": "1988-01-20T09:30:00Z"},
-				{"ID": "ID3", "NAME": "Charlie Brown", "EMAIL": "charlie.brown@example.com", "AGE": 22, "ACTIVE": false, "DOB": "2001-11-05T14:45:00Z"},
-				{"ID": "ID4", "NAME": "Diana Prince", "EMAIL": "diana.prince@example.com", "AGE": 30, "ACTIVE": true, "DOB": "1993-08-18T08:15:00Z"},
-				{"ID": "ID5", "NAME": "Eve Adams", "AGE": 45, "ACTIVE": true, "DOB": "1978-03-22T16:50:00Z"}, // -- No email
-				{"ID": "ID6", "NAME": "Frank Castle", "EMAIL": "frank.castle@example.com", "AGE": 38, "ACTIVE": false, "DOB": "1985-09-14T10:10:00Z"},
-				{"ID": "ID7", "NAME": "Grace Hopper", "EMAIL": "grace.hopper@example.com", "AGE": 85, "ACTIVE": true, "DOB": "1936-12-09T11:30:00Z"},
-			},
+		insertRes, err := testConfig.snowpipeAPI.Insert(ctx, createChannelRes.ChannelID, &model.InsertRequest{
+			Rows:   rows,
 			Offset: "8",
 		})
 		require.NoError(t, err)
@@ -146,7 +102,7 @@ func TestAPI(t *testing.T) {
 
 		t.Log("Checking status")
 		require.Eventually(t, func() bool {
-			statusRes, err := a.Status(ctx, createChannelRes.ChannelID)
+			statusRes, err := testConfig.snowpipeAPI.GetStatus(ctx, createChannelRes.ChannelID)
 			if err != nil {
 				t.Log("Error getting status:", err)
 				return false
@@ -158,34 +114,70 @@ func TestAPI(t *testing.T) {
 		)
 
 		t.Log("Checking records in warehouse")
-		records := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT ID, NAME, EMAIL, AGE, ACTIVE, DOB FROM %q.%q ORDER BY ID;`, namespace, table))
-		require.ElementsMatch(t, [][]string{
-			{"ID1", "Alice Johnson", "alice.johnson@example.com", "28", "true", "1995-06-15T12:30:00Z"},
-			{"ID2", "Bob Smith", "bob.smith@example.com", "35", "true", "1988-01-20T09:30:00Z"},
-			{"ID3", "Charlie Brown", "charlie.brown@example.com", "22", "false", "2001-11-05T14:45:00Z"},
-			{"ID4", "Diana Prince", "diana.prince@example.com", "30", "true", "1993-08-18T08:15:00Z"},
-			{"ID5", "Eve Adams", "", "45", "true", "1978-03-22T16:50:00Z"},
-			{"ID6", "Frank Castle", "frank.castle@example.com", "38", "false", "1985-09-14T10:10:00Z"},
-			{"ID7", "Grace Hopper", "grace.hopper@example.com", "85", "true", "1936-12-09T11:30:00Z"},
-		}, records)
+		records := whth.RetrieveRecordsFromWarehouse(t, testConfig.db, fmt.Sprintf(`SELECT ID, NAME, EMAIL, AGE, ACTIVE, DOB FROM %q.%q ORDER BY ID;`, testConfig.namespace, testConfig.tableName))
+		require.ElementsMatch(t, convertRowsToRecord(rows, []string{"ID", "NAME", "EMAIL", "AGE", "ACTIVE", "DOB"}), records)
 	})
 
 	t.Run("Create + Delete channel", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"../../testdata/docker-compose.rudder-snowpipe-clients.yml"}))
-		c.Start(context.Background())
+		ctx := context.Background()
+		testConfig := setupIntegrationTestConfig(t, ctx)
 
-		credentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairUnencrypted)
+		t.Log("Creating channel")
+		createChannelReq := &model.CreateChannelRequest{
+			RudderIdentifier: "1",
+			Partition:        "1",
+			AccountConfig: model.AccountConfig{
+				Account:              testConfig.credentials.Account,
+				User:                 testConfig.credentials.User,
+				Role:                 testConfig.credentials.Role,
+				PrivateKey:           strings.ReplaceAll(testConfig.credentials.PrivateKey, "\n", "\\\\\n"),
+				PrivateKeyPassphrase: testConfig.credentials.PrivateKeyPassphrase,
+			},
+			TableConfig: model.TableConfig{
+				Database: testConfig.credentials.Database,
+				Schema:   testConfig.namespace,
+				Table:    testConfig.tableName,
+			},
+		}
+		createChannelRes1, err := testConfig.snowpipeAPI.CreateChannel(ctx, createChannelReq)
+		require.NoError(t, err)
+		require.True(t, createChannelRes1.Valid)
+
+		t.Log("Creating channel again, should return the same channel id")
+		createChannelRes2, err := testConfig.snowpipeAPI.CreateChannel(ctx, createChannelReq)
+		require.NoError(t, err)
+		require.True(t, createChannelRes2.Valid)
+		require.Equal(t, createChannelRes1, createChannelRes2)
+
+		t.Log("Deleting channel")
+		err = testConfig.snowpipeAPI.DeleteChannel(ctx, createChannelRes1.ChannelID, true)
 		require.NoError(t, err)
 
-		ctx := context.Background()
+		t.Log("Creating channel again, should return a new channel id")
+		createChannelRes3, err := testConfig.snowpipeAPI.CreateChannel(ctx, createChannelReq)
+		require.NoError(t, err)
+		require.NotEqual(t, createChannelRes1.ChannelID, createChannelRes3.ChannelID)
+	})
+}
 
-		namespace := testhelper.RandSchema()
-		table := "TEST_TABLE"
-		tableSchema := whutils.ModelTableSchema{
-			"ID": "string", "NAME": "string", "EMAIL": "string", "AGE": "int", "ACTIVE": "boolean", "DOB": "datetime",
-		}
+func setupIntegrationTestConfig(t *testing.T, ctx context.Context) *integrationTestConfig {
+	t.Helper()
 
-		destination := backendconfigtest.
+	c := testcompose.New(t, compose.FilePaths([]string{"../../testdata/docker-compose.rudder-snowpipe-clients.yml"}))
+	c.Start(context.Background())
+
+	credentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairUnencrypted)
+	require.NoError(t, err)
+
+	namespace := testhelper.RandSchema()
+	table := "TEST_TABLE"
+	tableSchema := whutils.ModelTableSchema{
+		"ID": "string", "NAME": "string", "EMAIL": "string", "AGE": "int", "ACTIVE": "boolean", "DOB": "datetime",
+	}
+
+	warehouse := whutils.ModelWarehouse{
+		Namespace: namespace,
+		Destination: backendconfigtest.
 			NewDestinationBuilder("SNOWPIPE_STREAMING").
 			WithConfigOption("account", credentials.Account).
 			WithConfigOption("warehouse", credentials.Warehouse).
@@ -195,57 +187,36 @@ func TestAPI(t *testing.T) {
 			WithConfigOption("useKeyPairAuth", true).
 			WithConfigOption("privateKey", credentials.PrivateKey).
 			WithConfigOption("privateKeyPassphrase", credentials.PrivateKeyPassphrase).
-			Build()
-		warehouse := whutils.ModelWarehouse{
-			Namespace:   namespace,
-			Destination: destination,
-		}
+			Build(),
+	}
 
-		t.Log("Creating namespace and table")
-		sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
-		require.NoError(t, sm.Setup(ctx, warehouse, whutils.NewNoOpUploader()))
-		t.Cleanup(func() { sm.Cleanup(ctx) })
-		require.NoError(t, sm.CreateSchema(ctx))
-		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
-		require.NoError(t, sm.CreateTable(ctx, table, tableSchema))
+	t.Log("Creating namespace and table")
+	sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
+	require.NoError(t, sm.Setup(ctx, warehouse, whutils.NewNoOpUploader()))
+	t.Cleanup(func() { sm.Cleanup(ctx) })
+	require.NoError(t, sm.CreateSchema(ctx))
+	t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
+	require.NoError(t, sm.CreateTable(ctx, table, tableSchema))
 
-		snowPipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
-		a := api.New(snowPipeClientsURL, http.DefaultClient)
+	snowPipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
+	a := api.New(snowPipeClientsURL, http.DefaultClient)
 
-		t.Log("Creating channel")
-		createChannelReq := &model.CreateChannelRequest{
-			RudderIdentifier: "1",
-			Partition:        "1",
-			AccountConfig: model.AccountConfig{
-				Account:              credentials.Account,
-				User:                 credentials.User,
-				Role:                 credentials.Role,
-				PrivateKey:           strings.ReplaceAll(credentials.PrivateKey, "\n", "\\\\\n"),
-				PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
-			},
-			TableConfig: model.TableConfig{
-				Database: credentials.Database,
-				Schema:   namespace,
-				Table:    table,
-			},
-		}
-		createChannelRes1, err := a.CreateChannel(ctx, createChannelReq)
-		require.NoError(t, err)
-		require.True(t, createChannelRes1.Valid)
+	return &integrationTestConfig{
+		credentials: credentials,
+		db:          sm.DB.DB,
+		namespace:   namespace,
+		tableName:   table,
+		snowpipeAPI: a,
+	}
+}
 
-		t.Log("Creating channel again, should return the same channel id")
-		createChannelRes2, err := a.CreateChannel(ctx, createChannelReq)
-		require.NoError(t, err)
-		require.True(t, createChannelRes2.Valid)
-		require.Equal(t, createChannelRes1, createChannelRes2)
-
-		t.Log("Deleting channel")
-		err = a.DeleteChannel(ctx, createChannelRes1.ChannelID, true)
-		require.NoError(t, err)
-
-		t.Log("Creating channel again, should return a new channel id")
-		createChannelRes3, err := a.CreateChannel(ctx, createChannelReq)
-		require.NoError(t, err)
-		require.NotEqual(t, createChannelRes1.ChannelID, createChannelRes3.ChannelID)
+func convertRowsToRecord(rows []model.Row, columns []string) [][]string {
+	return lo.Map(rows, func(row model.Row, _ int) []string {
+		return lo.Map(columns, func(col string, index int) string {
+			if v, ok := row[col]; ok {
+				return fmt.Sprintf("%v", v)
+			}
+			return ""
+		})
 	})
 }
