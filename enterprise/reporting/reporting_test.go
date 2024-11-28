@@ -817,8 +817,9 @@ func TestAggregationLogic(t *testing.T) {
 }
 
 func TestGetAggregationBucket(t *testing.T) {
+	conf := config.New()
 	configSubscriber := newConfigSubscriber(logger.NOP)
-	reportHandle := NewDefaultReporter(context.Background(), logger.NOP, configSubscriber, stats.NOP)
+	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
 	t.Run("should return the correct aggregation bucket with default interval of 1 mintue", func(t *testing.T) {
 		cases := []struct {
 			reportedAt  int64

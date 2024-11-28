@@ -293,6 +293,8 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 			report.ConnectionDetails.TrackingPlanID,
 			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
 			report.PUDetails.InPU, report.PUDetails.PU,
+			strconv.FormatBool(report.TerminalPU), strconv.FormatBool(report.InitialPU),
+			strconv.FormatInt(report.ReportedAt, 10),
 		}
 		return strings.Join(groupingIdentifiers, `::`)
 	}
