@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,6 +47,17 @@ import (
 	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
 
+var webhookVersion string
+
+func init() {
+	flag.StringVar(&webhookVersion, "webhookversion", "v1", "webhook version: v1 or v2 (v0 is deprecated)")
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	os.Exit(m.Run())
+}
+
 func TestIntegrationWebhook(t *testing.T) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -67,8 +79,13 @@ func TestIntegrationWebhook(t *testing.T) {
 		}
 		return nil
 	})
+
 	g.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
+		if webhookVersion == "v2" {
+			transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithEnv("UPGRADED_TO_SOURCE_TRANSFORM_V2=true"))
+		} else {
+			transformerContainer, err = transformertest.Setup(pool, t)
+		}
 		if err != nil {
 			return fmt.Errorf("starting transformer: %w", err)
 		}

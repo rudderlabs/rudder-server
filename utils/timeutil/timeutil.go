@@ -36,5 +36,5 @@ func Now() time.Time {
 func GetElapsedMinsInThisDay(currentTime time.Time) int {
 	hour := currentTime.Hour()
 	minute := currentTime.Minute()
-	return MinsOfDay(fmt.Sprintf("%d:%d", hour, minute))
+	return MinsOfDay(fmt.Sprintf("%02d:%02d", hour, minute))
 }
