@@ -6,8 +6,6 @@ import (
 )
 
 var (
-	ErrDestTypeNotFound   = errors.New("destination type not found for the destination ID")
-	ErrDestDetail         = errors.New("error while getting destination details")
 	ErrNoRunnableJob      = errors.New("no runnable job found")
 	ErrInvalidDestination = errors.New("invalid destination")
 	ErrRequestTimeout     = errors.New("request timeout")
@@ -22,12 +20,11 @@ type JobStatus struct {
 }
 
 const (
-	JobStatusUndefined Status = ""
-	JobStatusPending   Status = "pending"
-	JobStatusRunning   Status = "running"
-	JobStatusComplete  Status = "complete"
-	JobStatusFailed    Status = "failed"
-	JobStatusAborted   Status = "aborted"
+	JobStatusPending  Status = "pending"
+	JobStatusRunning  Status = "running"
+	JobStatusComplete Status = "complete"
+	JobStatusFailed   Status = "failed"
+	JobStatusAborted  Status = "aborted"
 )
 
 type Job struct {
