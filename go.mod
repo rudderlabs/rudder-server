@@ -50,7 +50,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.23.0
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.24.0
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/yamux v0.1.2
@@ -62,11 +62,11 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/marcboeker/go-duckdb v1.8.3
-	github.com/minio/minio-go/v7 v7.0.80
+	github.com/minio/minio-go/v7 v7.0.81
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/onsi/ginkgo/v2 v2.21.0
-	github.com/onsi/gomega v1.35.1
+	github.com/onsi/ginkgo/v2 v2.22.0
+	github.com/onsi/gomega v1.36.0
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -90,7 +90,7 @@ require (
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.7.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/trinodb/trino-go-client v0.320.0
@@ -107,8 +107,8 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sync v0.9.0
-	google.golang.org/api v0.207.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241113202542-65e8d215514f
+	google.golang.org/api v0.209.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241118233622-e639e219e697
 	google.golang.org/grpc v1.68.0
 	google.golang.org/protobuf v1.35.2
 )
@@ -347,7 +347,7 @@ require (
 	golang.org/x/tools v0.26.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/grpc/stats/opentelemetry v0.0.0-20240907200651-3ffb98b2c93a // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
