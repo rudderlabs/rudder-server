@@ -121,9 +121,10 @@ type TransformerResponse struct {
 }
 
 type ValidationError struct {
-	Type    string            `json:"type"`
-	Message string            `json:"message"`
-	Meta    map[string]string `json:"meta"`
+	Type     string            `json:"type"`
+	Message  string            `json:"message"`
+	Meta     map[string]string `json:"meta"`
+	Property string            `json:"property"`
 }
 
 // Response represents a Transformer response
@@ -240,6 +241,7 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
+	trans.logger.Warnn(trans.trackingPlanValidationURL())
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
 }
 
