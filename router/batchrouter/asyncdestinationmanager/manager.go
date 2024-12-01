@@ -8,8 +8,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	bingads_audience "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/audience"
-	bingads_offline_conversions "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions"
+	bingadsaudience "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/audience"
+	bingadsofflineconversions "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
@@ -28,9 +28,9 @@ func newRegularManager(
 ) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
-		return bingads_audience.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return bingadsaudience.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	case "BINGADS_OFFLINE_CONVERSIONS":
-		return bingads_offline_conversions.NewManager(conf, logger, statsFactory, destination, backendConfig)
+		return bingadsofflineconversions.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	case "MARKETO_BULK_UPLOAD":
 		return marketobulkupload.NewManager(logger, statsFactory, destination)
 	case "ELOQUA":
