@@ -409,9 +409,8 @@ func (pg *Postgres) Setup(_ context.Context, warehouse model.Warehouse, uploader
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -431,10 +430,10 @@ func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return schema, unrecognizedSchema, nil
+		return schema, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -442,7 +441,7 @@ func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		var tableName, columnName, columnType string
 
 		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
-			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+			return nil, fmt.Errorf("scanning schema: %w", err)
 		}
 
 		if _, ok := schema[tableName]; !ok {
@@ -451,19 +450,14 @@ func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		if datatype, ok := postgresDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
-
 			warehouseutils.WHCounterStat(pg.stats, warehouseutils.RudderMissingDatatype, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (pg *Postgres) Cleanup(context.Context) {

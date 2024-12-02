@@ -18,27 +18,20 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
+	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	mssql "github.com/denisenkom/go-mssqldb"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -208,7 +201,7 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 	return strings.Join(formattedColumns, ",")
 }
 
-func (*AzureSynapse) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
+func (*AzureSynapse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -800,7 +793,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 	return
 }
 
-func (*AzureSynapse) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
+func (*AzureSynapse) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -871,9 +864,8 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 }
 
 // FetchSchema returns the schema of the warehouse
-func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -893,10 +885,10 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Sc
 		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
 	)
 	if errors.Is(err, io.EOF) {
-		return schema, unrecognizedSchema, nil
+		return schema, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -904,7 +896,7 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Sc
 		var tableName, columnName, columnType string
 
 		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
-			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+			return nil, fmt.Errorf("scanning schema: %w", err)
 		}
 
 		if _, ok := schema[tableName]; !ok {
@@ -913,19 +905,14 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, model.Sc
 		if datatype, ok := azureSynapseDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
-
 			warehouseutils.WHCounterStat(as.stats, warehouseutils.RudderMissingDatatype, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (as *AzureSynapse) LoadUserTables(ctx context.Context) map[string]error {
@@ -964,11 +951,11 @@ func (as *AzureSynapse) Cleanup(ctx context.Context) {
 	}
 }
 
-func (*AzureSynapse) LoadIdentityMergeRulesTable(context.Context) (err error) {
+func (*AzureSynapse) LoadIdentityMergeRulesTable(_ context.Context) (err error) {
 	return
 }
 
-func (*AzureSynapse) LoadIdentityMappingsTable(context.Context) (err error) {
+func (*AzureSynapse) LoadIdentityMappingsTable(_ context.Context) (err error) {
 	return
 }
 
