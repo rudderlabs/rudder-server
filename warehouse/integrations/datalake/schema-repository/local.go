@@ -23,13 +23,13 @@ func NewLocalSchemaRepository(wh model.Warehouse, uploader warehouseutils.Upload
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(ctx context.Context, _ model.Warehouse) (model.Schema, model.Schema, error) {
+func (ls *LocalSchemaRepository) FetchSchema(ctx context.Context, _ model.Warehouse) (model.Schema, error) {
 	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
-		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
+		return model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
 	}
 
-	return schema, model.Schema{}, nil
+	return schema, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema(context.Context) (err error) {

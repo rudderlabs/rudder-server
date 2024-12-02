@@ -860,7 +860,7 @@ func (bq *BigQuery) Setup(ctx context.Context, warehouse model.Warehouse, upload
 	return err
 }
 
-func (*BigQuery) TestConnection(context.Context, model.Warehouse) (err error) {
+func (*BigQuery) TestConnection(_ context.Context, _ model.Warehouse) (err error) {
 	return nil
 }
 
@@ -912,14 +912,13 @@ func (bq *BigQuery) AddColumns(ctx context.Context, tableName string, columnsInf
 	return err
 }
 
-func (*BigQuery) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
+func (*BigQuery) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -948,9 +947,9 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		var e *googleapi.Error
 		if errors.As(err, &e) && e.Code == 404 {
 			// if dataset resource is not found, return empty schema
-			return schema, unrecognizedSchema, nil
+			return schema, nil
 		}
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
 	for {
@@ -961,7 +960,7 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			return nil, nil, fmt.Errorf("iterating schema: %w", err)
+			return nil, fmt.Errorf("iterating schema: %w", err)
 		}
 
 		var tableName, columnName, columnType string
@@ -980,16 +979,11 @@ func (bq *BigQuery) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 		if datatype, ok := dataTypesMapToRudder[bigquery.FieldType(columnType)]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
-
 			warehouseutils.WHCounterStat(stats.Default, warehouseutils.RudderMissingDatatype, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (bq *BigQuery) Cleanup(ctx context.Context) {
