@@ -6,18 +6,15 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/stretchr/testify/require"
-
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -67,12 +64,12 @@ type mockFetchSchemaRepo struct {
 	err                           error
 }
 
-func (m *mockFetchSchemaRepo) FetchSchema(context.Context) (model.Schema, model.Schema, error) {
+func (m *mockFetchSchemaRepo) FetchSchema(context.Context) (model.Schema, error) {
 	if m.err != nil {
-		return nil, nil, m.err
+		return nil, m.err
 	}
 
-	return m.schemaInWarehouse, m.unrecognizedSchemaInWarehouse, nil
+	return m.schemaInWarehouse, nil
 }
 
 func TestSchema_UpdateLocalSchema(t *testing.T) {
@@ -223,8 +220,6 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 	destType := warehouseutils.RS
 	workspaceID := "test-workspace-id"
 	tableName := "test-table"
-	column := "test_date"
-	unknownColumn := "test_unknown_column"
 	updatedTable := "updated_test_table"
 	updatedSchema := model.TableSchema{
 		"updated_test_int":       "int",
@@ -387,19 +382,13 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
 			}
 			require.Equal(t, tc.expectedSchema, s.schemaInWarehouse)
-			require.Equal(t, tc.expectedSchema, s.unrecognizedSchemaInWarehouse)
 			require.Equal(t, tc.expectedSchema[tableName], s.GetTableSchemaInWarehouse(tableName))
 			require.Equal(t, len(tc.expectedSchema[tableName]), s.GetColumnsCountInWarehouseSchema(tableName))
-			if len(tc.expectedSchema) == 0 {
-				require.True(t, s.IsWarehouseSchemaEmpty())
-				require.False(t, s.IsColumnInUnrecognizedSchema(tableName, column))
-				require.False(t, s.IsColumnInUnrecognizedSchema(tableName, unknownColumn))
-			} else {
+			if len(tc.expectedSchema) > 0 {
 				require.False(t, s.IsWarehouseSchemaEmpty())
-				require.True(t, s.IsColumnInUnrecognizedSchema(tableName, column))
-				require.False(t, s.IsColumnInUnrecognizedSchema(tableName, unknownColumn))
+			} else {
+				require.True(t, s.IsWarehouseSchemaEmpty())
 			}
-
 			s.UpdateWarehouseTableSchema(updatedTable, updatedSchema)
 			require.Equal(t, updatedSchema, s.GetTableSchemaInWarehouse(updatedTable))
 			require.False(t, s.IsWarehouseSchemaEmpty())
@@ -537,78 +526,12 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 		name              string
 		localSchema       model.Schema
 		schemaInWarehouse model.Schema
-		skipDeepEquals    bool
 		expected          bool
 	}{
-		{
-			name:              "When both schemas are empty and skipDeepEquals is true",
-			localSchema:       model.Schema{},
-			schemaInWarehouse: model.Schema{},
-			skipDeepEquals:    true,
-			expected:          false,
-		},
-		{
-			name:        "When local schema is empty and skipDeepEquals is true",
-			localSchema: model.Schema{},
-			schemaInWarehouse: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value",
-				},
-			},
-			skipDeepEquals: true,
-			expected:       false,
-		},
-		{
-			name: "same table, same column, different datatype and skipDeepEquals is true",
-			localSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-1",
-				},
-			},
-			schemaInWarehouse: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
-			},
-			skipDeepEquals: true,
-			expected:       true,
-		},
-		{
-			name: "same table, different columns and skipDeepEquals is true",
-			localSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column-1": "test-value-1",
-					"test-column-2": "test-value-2",
-				},
-			},
-			schemaInWarehouse: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "test-value-2",
-				},
-			},
-			skipDeepEquals: true,
-			expected:       true,
-		},
-		{
-			name: "different table and skipDeepEquals is true",
-			localSchema: model.Schema{
-				"test-table": model.TableSchema{
-					"test-column": "string",
-				},
-			},
-			schemaInWarehouse: model.Schema{
-				"test-table-1": model.TableSchema{
-					"test-column": "text",
-				},
-			},
-			skipDeepEquals: true,
-			expected:       true,
-		},
 		{
 			name:              "When both schemas are empty and skipDeepEquals is false",
 			localSchema:       model.Schema{},
 			schemaInWarehouse: model.Schema{},
-			skipDeepEquals:    false,
 			expected:          false,
 		},
 		{
@@ -619,8 +542,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 					"test-column": "test-value",
 				},
 			},
-			skipDeepEquals: false,
-			expected:       true,
+			expected: true,
 		},
 		{
 			name: "same table, same column, different datatype and skipDeepEquals is false",
@@ -634,8 +556,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 					"test-column": "test-value-2",
 				},
 			},
-			skipDeepEquals: false,
-			expected:       true,
+			expected: true,
 		},
 		{
 			name: "same table, different columns and skipDeepEquals is false",
@@ -650,8 +571,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 					"test-column": "test-value-2",
 				},
 			},
-			skipDeepEquals: false,
-			expected:       true,
+			expected: true,
 		},
 		{
 			name: "different table and skipDeepEquals is false",
@@ -665,14 +585,11 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 					"test-column": "text",
 				},
 			},
-			skipDeepEquals: false,
-			expected:       true,
+			expected: true,
 		},
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -680,8 +597,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 				warehouse: model.Warehouse{
 					Type: warehouseutils.SNOWFLAKE,
 				},
-				skipDeepEqualSchemas: tc.skipDeepEquals,
-				schemaInWarehouse:    tc.schemaInWarehouse,
+				schemaInWarehouse: tc.schemaInWarehouse,
 			}
 			require.Equal(t, tc.expected, s.hasSchemaChanged(tc.localSchema))
 		})
@@ -1892,7 +1808,6 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.Equal(t, schemaInWarehouse, s.localSchema)
 		require.Equal(t, schemaInWarehouse, mockSchemaRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 		require.Equal(t, schemaInWarehouse, s.schemaInWarehouse)
-		require.Equal(t, schemaInWarehouse, s.unrecognizedSchemaInWarehouse)
 
 		marshalledSchema, err := json.Marshal(s.localSchema)
 		require.NoError(t, err)
@@ -1953,6 +1868,5 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.False(t, schemaChanged)
 		require.Equal(t, testSchema, s.localSchema)
 		require.Equal(t, testSchema, s.schemaInWarehouse)
-		require.Equal(t, testSchema, s.unrecognizedSchemaInWarehouse)
 	})
 }

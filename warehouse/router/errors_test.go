@@ -4,19 +4,16 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-server/warehouse/router"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/router"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestErrorHandler_MatchUploadJobErrorType(t *testing.T) {

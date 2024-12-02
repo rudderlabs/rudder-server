@@ -398,11 +398,6 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 
 	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
-		// columns present in unrecognized schema should be skipped
-		if job.schemaHandle.IsColumnInUnrecognizedSchema(tName, columnName) {
-			continue
-		}
-
 		columnsToAdd = append(columnsToAdd, whutils.ColumnInfo{Name: columnName, Type: columnType})
 	}
 
