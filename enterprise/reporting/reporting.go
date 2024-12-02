@@ -191,7 +191,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *DefaultReporter) getReports(currentMs, aggregationInterval int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
+func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
@@ -216,7 +216,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationInterval int64, synce
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationInterval)
+	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	if bucketEnd > currentMs {
 		return nil, 0, nil
 	}
