@@ -96,38 +96,38 @@ func checkForGoMapOrList(value interface{}) bool {
 	return false
 }
 
-func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
-	if !IsJSON(jsonStr) {
-		return jsonStr
+func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
+	if !IsJSON(sampleResponse) {
+		return sampleResponse
 	}
 
 	var jsonMap map[string]interface{}
-	er := json.Unmarshal([]byte(jsonStr), &jsonMap)
+	er := json.Unmarshal([]byte(sampleResponse), &jsonMap)
 	if er != nil {
-		ext.log.Debugf("%v is not a unmarshallable into interface{}", jsonStr)
-		return jsonStr
+		ext.log.Debugn("sampleResponse is not a unmarshallable into interface{}", logger.NewStringField("sampleResponse", sampleResponse))
+		return sampleResponse
 	}
 
 	for key, erRes := range jsonMap {
-		if result := ext.handleKey(key, erRes); result != nil {
-			return *result
+		if result := ext.handleKey(key, erRes); result != "" {
+			return result
 		}
 	}
 	return ""
 }
 
-func (ext *ExtractorHandle) handleKey(key string, value interface{}) *string {
-	valueStr, isString := value.(string)
+func (ext *ExtractorHandle) handleKey(key string, value interface{}) string {
 	switch key {
 	case "reason", "Error", responseKey, errorKey:
-		if !isString {
-			ext.log.Debugf("Expected string value for key: %v, but got: %T", key, value)
-			return nil
+		valueStr, ok := value.(string)
+		if !ok {
+			ext.log.Debugn("Handling key", logger.NewStringField("key", key), logger.NewField("value", value))
+			return ""
 		}
 
 		switch key {
 		case "reason":
-			return &valueStr
+			return valueStr
 		case "Error":
 			return handleError(valueStr)
 		case responseKey, errorKey:
@@ -139,47 +139,43 @@ func (ext *ExtractorHandle) handleKey(key string, value interface{}) *string {
 		return ext.handleWarehouseError(value, key)
 	}
 
-	return nil
+	return ""
 }
 
-func handleError(valueStr string) *string {
+func handleError(valueStr string) string {
 	if !IsJSON(valueStr) {
 		firstLine := strings.Split(valueStr, "\n")[0]
-		return &firstLine
+		return firstLine
 	}
-	return nil
+	return ""
 }
 
-func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) *string {
+func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 	if IsJSON(valueStr) {
 		var unmarshalledJSON interface{}
 		if err := json.Unmarshal([]byte(valueStr), &unmarshalledJSON); err != nil {
-			return &valueStr
+			return valueStr
 		}
 		result := getErrorMessageFromResponse(unmarshalledJSON, ext.ErrorMessageKeys)
-		return &result
+		return result
 	}
 
 	lowerStr := strings.ToLower(valueStr)
 	if strings.Contains(lowerStr, "<body") && strings.Contains(lowerStr, "</body>") {
 		result := getHTMLErrorMessage(valueStr)
-		return &result
+		return result
 	}
 
-	if len(valueStr) == 0 {
-		return nil
-	}
-	return &valueStr
+	return valueStr
 }
 
-func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) *string {
+func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
 	valAsMap, isMap := value.(map[string]interface{})
 	if !isMap {
-		ext.log.Debugf("Failed type assertion to map[string]interface{} for warehouse error key: %s", key)
-		return nil
+		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key", logger.NewStringField("key", key), logger.NewField("value", value))
+		return ""
 	}
-	result := getErrorFromWarehouse(valAsMap)
-	return &result
+	return getErrorFromWarehouse(valAsMap)
 }
 
 func getHTMLErrorMessage(erResStr string) string {
