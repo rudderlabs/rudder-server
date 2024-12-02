@@ -121,9 +121,10 @@ type TransformerResponse struct {
 }
 
 type ValidationError struct {
-	Type    string            `json:"type"`
-	Message string            `json:"message"`
-	Meta    map[string]string `json:"meta"`
+	Type     string            `json:"type"`
+	Message  string            `json:"message"`
+	Meta     map[string]string `json:"meta"`
+	Property string            `json:"property"`
 }
 
 // Response represents a Transformer response
