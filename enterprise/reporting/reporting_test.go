@@ -849,14 +849,13 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt)
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 1)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
 	})
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 5 mintue", func(t *testing.T) {
-		config.Set("reporting.aggregationIntervalMinutes", 5)
 		cases := []struct {
 			reportedAt  int64
 			bucketStart int64
@@ -910,14 +909,13 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt)
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 5)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
 	})
 
 	t.Run("should return the correct aggregation bucket with aggregation interval of 15 mintue", func(t *testing.T) {
-		config.Set("reporting.aggregationIntervalMinutes", 15)
 		cases := []struct {
 			reportedAt  int64
 			bucketStart int64
@@ -946,7 +944,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt)
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 15)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}

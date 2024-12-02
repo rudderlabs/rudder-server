@@ -69,7 +69,6 @@ type DefaultReporter struct {
 	maxOpenConnections                   int
 	maxConcurrentRequests                config.ValueLoader[int]
 	vacuumFull                           config.ValueLoader[bool]
-	aggregationInterval                  config.ValueLoader[time.Duration]
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -90,7 +89,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
-	aggregationInterval := config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationIntervalMinutes")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
@@ -113,7 +111,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
 		vacuumFull:                           config.GetReloadableBoolVar(false, "Reporting.vacuumFull"),
-		aggregationInterval:                  aggregationInterval,
 		region:                               config.GetString("region", ""),
 		sourcesWithEventNameTrackingDisabled: sourcesWithEventNameTrackingDisabled,
 		maxOpenConnections:                   maxOpenConnections,
@@ -194,7 +191,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
+func (r *DefaultReporter) getReports(currentMs, aggregationInterval int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
@@ -219,7 +216,7 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64)
+	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationInterval)
 	if bucketEnd > currentMs {
 		return nil, 0, nil
 	}
@@ -355,9 +352,9 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 	return values
 }
 
-func (r *DefaultReporter) getAggregationBucketMinute(timeMin int64) (int64, int64) {
-	bucketStart := timeMin - (timeMin % int64(r.aggregationInterval.Load().Minutes()))
-	bucketEnd := bucketStart + int64(r.aggregationInterval.Load().Minutes())
+func (*DefaultReporter) getAggregationBucketMinute(timeMin, aggregationIntervalMin int64) (int64, int64) {
+	bucketStart := timeMin - (timeMin % aggregationIntervalMin)
+	bucketEnd := bucketStart + aggregationIntervalMin
 
 	return bucketStart, bucketEnd
 }
@@ -410,6 +407,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			lastVacuum                 time.Time
 			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
 			vacuumThresholdBytes       = config.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.vacuumThresholdBytes")
+			aggregationInterval        = config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationIntervalMinutes")
 		)
 		for {
 			if ctx.Err() != nil {
@@ -421,7 +419,8 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			currentMin := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
-			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
+			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
+			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
 				select {
@@ -480,7 +479,8 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				if err != nil {
 					return err
 				}
-				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt)
+				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
+				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
