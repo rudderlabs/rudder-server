@@ -291,7 +291,7 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 
 	for _, report := range reports {
 		identifier := reportIdentifier(report)
-		if _, ok := metricsByGroup[identifier]; !ok {
+		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= r.maxReportsCountInARequest.Load() {
 			metricsByGroup[identifier] = &types.Metric{
 				InstanceDetails: types.InstanceDetails{
 					WorkspaceID: report.WorkspaceID,
@@ -336,10 +336,6 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 			EventType:      report.StatusDetail.EventType,
 			ErrorType:      report.StatusDetail.ErrorType,
 		})
-
-		if len(metricsByGroup[identifier].StatusDetails) >= r.maxReportsCountInARequest.Load() {
-			delete(metricsByGroup, identifier)
-		}
 	}
 
 	return values
