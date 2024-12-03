@@ -128,7 +128,7 @@ func convertDiscardedInfosToRows(discardInfos []discardInfo) []model.Row {
 
 		return model.Row{
 			"column_name":  info.colName,
-			"column_value": info.eventData[info.colName],
+			"column_value": fmt.Sprintf("%v", info.eventData[info.colName]),
 			"reason":       info.reason,
 			"received_at":  receivedAt,
 			"row_id":       id,
