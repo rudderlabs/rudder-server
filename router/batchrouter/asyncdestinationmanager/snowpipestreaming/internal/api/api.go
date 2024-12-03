@@ -42,6 +42,7 @@ func mustRead(r io.Reader) []byte {
 	return data
 }
 
+// CreateChannel creates a new channel with the given request.
 func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error) {
 	reqJSON, err := json.Marshal(channelReq)
 	if err != nil {
@@ -72,6 +73,9 @@ func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannel
 	return &res, nil
 }
 
+// DeleteChannel deletes the channel with the given ID.
+// If sync is true, the server waits for the flushing of all records in the channel, then do the soft delete.
+// If sync is false, the server do the soft delete immediately and we need to wait for the flushing of all records.
 func (a *API) DeleteChannel(ctx context.Context, channelID string, sync bool) error {
 	deleteChannelURL := a.clientURL + "/channels/" + channelID
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteChannelURL, nil)
@@ -98,6 +102,7 @@ func (a *API) DeleteChannel(ctx context.Context, channelID string, sync bool) er
 	}
 }
 
+// GetChannel retrieves the channel with the given ID.
 func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelResponse, error) {
 	getChannelURL := a.clientURL + "/channels/" + channelID
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, getChannelURL, nil)
@@ -123,6 +128,7 @@ func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelR
 	return &res, nil
 }
 
+// Insert inserts the given rows into the channel with the given ID.
 func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error) {
 	reqJSON, err := json.Marshal(insertRequest)
 	if err != nil {
@@ -153,6 +159,7 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 	return &res, nil
 }
 
+// GetStatus retrieves the status of the channel with the given ID.
 func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error) {
 	statusURL := a.clientURL + "/channels/" + channelID + "/status"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)

@@ -714,11 +714,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "aborted", 10)
-
-		t.Log("Sending 5 events again, should succeeded")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 10)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -789,13 +785,8 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "aborted", 5)
-
-		t.Log("Sending 5 events again, should succeeded")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 25)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
 		require.Equal(t, map[string]map[string]string{
@@ -866,13 +857,8 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "aborted", 5)
-
-		t.Log("Sending 5 events again, should succeeded")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 25)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
 		require.Equal(t, map[string]map[string]string{
@@ -962,11 +948,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "aborted", 10)
-
-		t.Log("Sending 5 events again, should succeeded")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 10)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -1045,13 +1027,8 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "aborted", 5)
-
-		t.Log("Sending 5 events again, should succeeded")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 15)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 25)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
 		require.Equal(t, map[string]map[string]string{

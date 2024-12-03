@@ -437,7 +437,7 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	}
 	if len(failedInfos) > 0 {
 		statusResponse.HasFailed = true
-		statusResponse.FailedJobURLs = stringify.Any(infos)
+		statusResponse.FailedJobParameters = stringify.Any(infos)
 	} else {
 		statusResponse.HasFailed = false
 		statusResponse.HasWarning = false
@@ -476,7 +476,7 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 	m.logger.Infon("Getting import stats for snowpipe streaming destination")
 
 	var infos []*importInfo
-	err := json.Unmarshal([]byte(input.FailedJobURLs), &infos)
+	err := json.Unmarshal([]byte(input.FailedJobParameters), &infos)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: http.StatusBadRequest,
