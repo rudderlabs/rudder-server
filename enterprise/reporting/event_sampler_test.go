@@ -12,7 +12,7 @@ import (
 
 func TestPutAndGet(t *testing.T) {
 	conf := config.New()
-	ttl := conf.GetReloadableDurationVar(1, time.Second, "Reporting.eventSamplingDurationInMinutes")
+	ttl := conf.GetReloadableDurationVar(1, time.Second, "Reporting.eventSampling.durationInMinutes")
 	log := logger.NewLogger()
 
 	es, _ := NewEventSampler("/test-reporting-badger", ttl, conf, log)
@@ -33,7 +33,7 @@ func TestPutAndGet(t *testing.T) {
 
 func TestEvictionOnTTLExpiry(t *testing.T) {
 	conf := config.New()
-	ttl := conf.GetReloadableDurationVar(500, time.Millisecond, "Reporting.eventSamplingDurationInMinutes")
+	ttl := conf.GetReloadableDurationVar(500, time.Millisecond, "Reporting.eventSampling.durationInMinutes")
 	log := logger.NewLogger()
 
 	es, _ := NewEventSampler("/test-reporting-badger", ttl, conf, log)
