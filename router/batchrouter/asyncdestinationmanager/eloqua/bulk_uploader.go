@@ -182,21 +182,21 @@ func (b *EloquaBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusR
 		}
 	case "error":
 		return common.PollStatusResponse{
-			Complete:      true,
-			InProgress:    false,
-			StatusCode:    200,
-			HasFailed:     true,
-			HasWarning:    false,
-			FailedJobURLs: importIds[0],
+			Complete:            true,
+			InProgress:          false,
+			StatusCode:          200,
+			HasFailed:           true,
+			HasWarning:          false,
+			FailedJobParameters: importIds[0],
 		}
 	case "warning":
 		return common.PollStatusResponse{
-			Complete:       true,
-			InProgress:     false,
-			StatusCode:     200,
-			HasFailed:      true,
-			HasWarning:     true,
-			WarningJobURLs: importIds[0],
+			Complete:             true,
+			InProgress:           false,
+			StatusCode:           200,
+			HasFailed:            true,
+			HasWarning:           true,
+			WarningJobParameters: importIds[0],
 		}
 	case "pending", "active":
 		return common.PollStatusResponse{
@@ -221,7 +221,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 			"module":   "batch_router",
 			"destType": b.destName,
 		})
-		eventsAbortedStat.Count(len(uploadStatusResponse.Metadata.FailedKeys))
+		eventsAbortedStat.Count(len(uploadStatusResponse.Metadata.AbortedKeys))
 
 		eventsSuccessStat := b.statsFactory.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",
@@ -230,10 +230,10 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		eventsSuccessStat.Count(len(uploadStatusResponse.Metadata.SucceededKeys))
 	}()
 
-	if UploadStatsInput.WarningJobURLs != "" {
+	if UploadStatsInput.WarningJobParameters != "" {
 		checkRejectedData := HttpRequestData{
 			BaseEndpoint:  b.baseEndpoint,
-			DynamicPart:   UploadStatsInput.WarningJobURLs,
+			DynamicPart:   UploadStatsInput.WarningJobParameters,
 			Authorization: b.authorization,
 		}
 		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b)
@@ -248,7 +248,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		return uploadStatusResponse
 	}
 
-	eventStatMetaWithFailedJobs := parseFailedData(UploadStatsInput.FailedJobURLs, UploadStatsInput.ImportingList)
+	eventStatMetaWithFailedJobs := parseFailedData(UploadStatsInput.FailedJobParameters, UploadStatsInput.ImportingList)
 	uploadStatusResponse.StatusCode = 200
 	uploadStatusResponse.Metadata = *eventStatMetaWithFailedJobs
 	return uploadStatusResponse
