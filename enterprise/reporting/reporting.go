@@ -94,8 +94,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
-	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSamplingEnabled")
-	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSamplingDurationInMinutes")
+	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
+	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -233,7 +233,25 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at = $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
+	sqlStatement = fmt.Sprintf(`
+    SELECT 
+        %s,
+        COALESCE(
+            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            ''
+        ) AS sample_response,
+        COALESCE(
+            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            '{}'::jsonb
+        ) AS sample_event,
+        SUM(count),
+        SUM(violation_count)
+    FROM 
+        %s
+    WHERE 
+        reported_at = $1
+    GROUP BY 
+        %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)

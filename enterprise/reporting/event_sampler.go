@@ -43,14 +43,14 @@ func NewEventSampler(pathName string, ttl config.ValueLoader[time.Duration], con
 		WithCompression(options.None).
 		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(conf.GetInt("BadgerDB.numMemtable", 5)).
-		WithValueThreshold(conf.GetInt64("BadgerDB.valueThreshold", 1048576)).
 		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
-		WithNumLevelZeroTables(conf.GetInt("BadgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(conf.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(conf.GetBool("BadgerDB.syncWrites", false)).
-		WithDetectConflicts(conf.GetBool("BadgerDB.detectConflicts", false))
+		WithNumMemtables(conf.GetInt("Reporting.eventSampling.badgerDB.numMemtable", 5)).
+		WithValueThreshold(conf.GetInt64("Reporting.eventSampling.badgerDB.valueThreshold", 1048576)).
+		WithNumLevelZeroTables(conf.GetInt("Reporting.eventSampling.badgerDB.numLevelZeroTables", 5)).
+		WithNumLevelZeroTablesStall(conf.GetInt("Reporting.eventSampling.badgerDB.numLevelZeroTablesStall", 15)).
+		WithSyncWrites(conf.GetBool("Reporting.eventSampling.badgerDB.syncWrites", false)).
+		WithDetectConflicts(conf.GetBool("Reporting.eventSampling.badgerDB.detectConflicts", false))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
