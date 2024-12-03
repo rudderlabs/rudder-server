@@ -36,7 +36,7 @@ type (
 		ClientName             string                   `json:"clientName"`
 		Valid                  bool                     `json:"valid"`
 		Deleted                bool                     `json:"deleted"`
-		SnowPipeSchema         whutils.ModelTableSchema `json:"-"`
+		SnowpipeSchema         whutils.ModelTableSchema `json:"-"`
 		Error                  string                   `json:"error"`
 		Code                   string                   `json:"code"`
 		SnowflakeSDKCode       string                   `json:"snowflakeSDKCode"`
@@ -89,11 +89,11 @@ func (c *ChannelResponse) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
-	c.SnowPipeSchema = generateSnowPipeSchema(temp.TableSchema)
+	c.SnowpipeSchema = generateSnowpipeSchema(temp.TableSchema)
 	return nil
 }
 
-func generateSnowPipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTableSchema {
+func generateSnowpipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTableSchema {
 	if len(tableSchema) == 0 {
 		return nil
 	}

@@ -9,7 +9,7 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestChannelResponse_GenerateSnowPipeSchema(t *testing.T) {
+func TestChannelResponse_GenerateSnowpipeSchema(t *testing.T) {
 	testCases := []struct {
 		name        string
 		tableSchema map[string]ColumnInfo
@@ -73,7 +73,7 @@ func TestChannelResponse_GenerateSnowPipeSchema(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, generateSnowPipeSchema(tc.tableSchema))
+			require.Equal(t, tc.expected, generateSnowpipeSchema(tc.tableSchema))
 		})
 	}
 }
@@ -95,7 +95,7 @@ func TestChannelResponse_UnmarshalJSON(t *testing.T) {
 				ClientName:  "clientName",
 				Valid:       true,
 				Deleted:     false,
-				SnowPipeSchema: whutils.ModelTableSchema{
+				SnowpipeSchema: whutils.ModelTableSchema{
 					"EVENT":     "string",
 					"ID":        "string",
 					"TIMESTAMP": "datetime",

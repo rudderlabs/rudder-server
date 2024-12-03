@@ -13,7 +13,7 @@ func TestFindNewColumns(t *testing.T) {
 	tests := []struct {
 		name           string
 		eventSchema    whutils.ModelTableSchema
-		snowPipeSchema whutils.ModelTableSchema
+		snowpipeSchema whutils.ModelTableSchema
 		expected       []whutils.ColumnInfo
 	}{
 		{
@@ -22,7 +22,7 @@ func TestFindNewColumns(t *testing.T) {
 				"new_column":      "STRING",
 				"existing_column": "FLOAT",
 			},
-			snowPipeSchema: whutils.ModelTableSchema{
+			snowpipeSchema: whutils.ModelTableSchema{
 				"existing_column": "INT",
 			},
 			expected: []whutils.ColumnInfo{
@@ -36,7 +36,7 @@ func TestFindNewColumns(t *testing.T) {
 				"new_column2":     "BOOLEAN",
 				"existing_column": "INT",
 			},
-			snowPipeSchema: whutils.ModelTableSchema{
+			snowpipeSchema: whutils.ModelTableSchema{
 				"existing_column":         "INT",
 				"another_existing_column": "FLOAT",
 			},
@@ -52,7 +52,7 @@ func TestFindNewColumns(t *testing.T) {
 				"new_column2": "BOOLEAN",
 				"new_column3": "FLOAT",
 			},
-			snowPipeSchema: whutils.ModelTableSchema{},
+			snowpipeSchema: whutils.ModelTableSchema{},
 			expected: []whutils.ColumnInfo{
 				{Name: "new_column1", Type: "STRING"},
 				{Name: "new_column2", Type: "BOOLEAN"},
@@ -65,7 +65,7 @@ func TestFindNewColumns(t *testing.T) {
 				"ColumnA": "STRING",
 				"columna": "BOOLEAN",
 			},
-			snowPipeSchema: whutils.ModelTableSchema{
+			snowpipeSchema: whutils.ModelTableSchema{
 				"columna": "BOOLEAN",
 			},
 			expected: []whutils.ColumnInfo{
@@ -78,26 +78,26 @@ func TestFindNewColumns(t *testing.T) {
 				"existing_column1": "STRING",
 				"existing_column2": "FLOAT",
 			},
-			snowPipeSchema: whutils.ModelTableSchema{
+			snowpipeSchema: whutils.ModelTableSchema{
 				"existing_column1": "STRING",
 				"existing_column2": "FLOAT",
 			},
 			expected: []whutils.ColumnInfo{},
 		},
 		{
-			name:        "event schema is empty, SnowPipe schema has columns",
+			name:        "event schema is empty, Snowpipe schema has columns",
 			eventSchema: whutils.ModelTableSchema{},
-			snowPipeSchema: whutils.ModelTableSchema{
+			snowpipeSchema: whutils.ModelTableSchema{
 				"existing_column": "STRING",
 			},
 			expected: []whutils.ColumnInfo{},
 		},
 		{
-			name: "SnowPipe schema is nil",
+			name: "Snowpipe schema is nil",
 			eventSchema: whutils.ModelTableSchema{
 				"new_column": "STRING",
 			},
-			snowPipeSchema: nil,
+			snowpipeSchema: nil,
 			expected: []whutils.ColumnInfo{
 				{Name: "new_column", Type: "STRING"},
 			},
@@ -106,7 +106,7 @@ func TestFindNewColumns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := findNewColumns(tt.eventSchema, tt.snowPipeSchema)
+			result := findNewColumns(tt.eventSchema, tt.snowpipeSchema)
 			assert.ElementsMatch(t, tt.expected, result)
 		})
 	}

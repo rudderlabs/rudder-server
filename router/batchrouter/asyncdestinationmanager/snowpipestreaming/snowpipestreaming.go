@@ -38,7 +38,10 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-var errInvalidStatusResponse = errors.New("invalid status response")
+var (
+	errInvalidStatusResponse = errors.New("invalid status response")
+	errDestinationConfigNil  = errors.New("destination config is nil")
+)
 
 func New(
 	conf *config.Config,
@@ -294,7 +297,7 @@ func (m *Manager) sendEventsToSnowpipe(
 
 	formattedTS := m.now().Format(misc.RFC3339Milli)
 	discardInfos := lo.FlatMap(info.events, func(tableEvent *event, _ int) []discardInfo {
-		return getDiscardedRecordsFromEvent(tableEvent, channelResponse.SnowPipeSchema, info.tableName, formattedTS)
+		return getDiscardedRecordsFromEvent(tableEvent, channelResponse.SnowpipeSchema, info.tableName, formattedTS)
 	})
 
 	insertReq := &model.InsertRequest{
@@ -512,8 +515,8 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 		StatusCode: http.StatusOK,
 		Metadata: common.EventStatMeta{
 			FailedKeys:    failedJobIDs,
-			SucceededKeys: succeededJobIDs,
 			FailedReasons: failedJobReasons,
+			SucceededKeys: succeededJobIDs,
 		},
 	}
 }

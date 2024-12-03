@@ -27,7 +27,7 @@ func (m *Manager) initializeChannelWithSchema(
 		return nil, fmt.Errorf("creating channel for table %s: %w", tableName, err)
 	}
 
-	columnInfos := findNewColumns(eventSchema, channelResponse.SnowPipeSchema)
+	columnInfos := findNewColumns(eventSchema, channelResponse.SnowpipeSchema)
 	if len(columnInfos) > 0 {
 		if err := m.addColumns(ctx, destConf.Namespace, tableName, columnInfos); err != nil {
 			return nil, fmt.Errorf("adding columns for table %s: %w", tableName, err)
@@ -41,10 +41,10 @@ func (m *Manager) initializeChannelWithSchema(
 	return channelResponse, nil
 }
 
-func findNewColumns(eventSchema, snowPipeSchema whutils.ModelTableSchema) []whutils.ColumnInfo {
+func findNewColumns(eventSchema, snowpipeSchema whutils.ModelTableSchema) []whutils.ColumnInfo {
 	var newColumns []whutils.ColumnInfo
 	for column, dataType := range eventSchema {
-		if _, exists := snowPipeSchema[column]; !exists {
+		if _, exists := snowpipeSchema[column]; !exists {
 			newColumns = append(newColumns, whutils.ColumnInfo{
 				Name: column,
 				Type: dataType,

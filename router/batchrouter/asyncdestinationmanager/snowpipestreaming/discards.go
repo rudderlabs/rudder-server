@@ -70,8 +70,8 @@ func discardsTable() string {
 }
 
 func discardsSchema() whutils.ModelTableSchema {
-	return lo.MapEntries(whutils.DiscardsSchema, func(colName, colType string) (string, string) {
-		return whutils.ToProviderCase(whutils.SnowpipeStreaming, colName), colType
+	return lo.MapEntries(whutils.DiscardsSchema, func(columnName, columnType string) (string, string) {
+		return whutils.ToProviderCase(whutils.SnowpipeStreaming, columnName), columnType
 	})
 }
 
@@ -81,35 +81,46 @@ func discardsSchema() whutils.ModelTableSchema {
 // If the value is a slice, it is marshalled to a string
 func getDiscardedRecordsFromEvent(
 	event *event,
-	snowPipeSchema whutils.ModelTableSchema,
+	snowpipeSchema whutils.ModelTableSchema,
 	tableName string,
 	formattedTS string,
 ) (discardedRecords []discardInfo) {
 	sliceType := reflect.TypeOf([]interface{}{})
-	for colName, actualType := range event.Message.Metadata.Columns {
-		if expectedType, exists := snowPipeSchema[colName]; exists && actualType != expectedType {
-			if convertedVal, err := slave.HandleSchemaChange(expectedType, actualType, event.Message.Data[colName]); err != nil {
-				// Discard value if conversion fails
-				event.Message.Data[colName] = nil
+	for columnName, actualType := range event.Message.Metadata.Columns {
+		if expectedType, exists := snowpipeSchema[columnName]; exists && actualType != expectedType {
+			currentValue := event.Message.Data[columnName]
+			convertedVal, err := slave.HandleSchemaChange(expectedType, actualType, currentValue)
+			if err != nil {
+				event.Message.Data[columnName] = nil // Discard value if conversion fails
+
+				rowID, idExists := event.Message.Data[whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")]
+				receivedAt, receivedAtExists := event.Message.Data[whutils.ToProviderCase(whutils.SnowpipeStreaming, "received_at")]
+
+				if !idExists || !receivedAtExists {
+					continue
+				}
+
 				discardedRecords = append(discardedRecords, discardInfo{
-					table:     tableName,
-					colName:   colName,
-					eventData: event.Message.Data,
-					reason:    err.Error(),
-					uuidTS:    formattedTS,
+					tableName:   tableName,
+					columnName:  columnName,
+					columnValue: currentValue,
+					reason:      err.Error(),
+					uuidTS:      formattedTS,
+					rowID:       rowID,
+					receivedAt:  receivedAt,
 				})
 			} else {
 				// Update value if conversion succeeds
-				event.Message.Data[colName] = convertedVal
+				event.Message.Data[columnName] = convertedVal
 			}
 		}
-		if reflect.TypeOf(event.Message.Data[colName]) == sliceType {
-			marshalledVal, err := json.Marshal(event.Message.Data[colName])
+		if reflect.TypeOf(event.Message.Data[columnName]) == sliceType {
+			marshalledVal, err := json.Marshal(event.Message.Data[columnName])
 			if err != nil {
 				// Discard value if marshalling fails
-				event.Message.Data[colName] = nil
+				event.Message.Data[columnName] = nil
 			} else {
-				event.Message.Data[colName] = string(marshalledVal)
+				event.Message.Data[columnName] = string(marshalledVal)
 			}
 		}
 	}
@@ -119,20 +130,13 @@ func getDiscardedRecordsFromEvent(
 // convertDiscardedInfosToRows converts discardInfo to model.Row
 func convertDiscardedInfosToRows(discardInfos []discardInfo) []model.Row {
 	return lo.FilterMap(discardInfos, func(info discardInfo, _ int) (model.Row, bool) {
-		id, idExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")]
-		receivedAt, receivedAtExists := info.eventData[whutils.ToProviderCase(whutils.SnowpipeStreaming, "received_at")]
-
-		if !idExists || !receivedAtExists {
-			return nil, false
-		}
-
 		return model.Row{
-			"column_name":  info.colName,
-			"column_value": fmt.Sprintf("%v", info.eventData[info.colName]),
+			"column_name":  info.columnName,
+			"column_value": fmt.Sprintf("%v", info.columnValue),
 			"reason":       info.reason,
-			"received_at":  receivedAt,
-			"row_id":       id,
-			"table_name":   info.table,
+			"received_at":  info.receivedAt,
+			"row_id":       info.rowID,
+			"table_name":   info.tableName,
 			"uuid_ts":      info.uuidTS,
 		}, true
 	})

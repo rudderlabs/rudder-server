@@ -94,11 +94,13 @@ type (
 	}
 
 	discardInfo struct {
-		table     string
-		colName   string
-		eventData map[string]any
-		reason    string
-		uuidTS    string
+		tableName   string
+		columnName  string
+		columnValue any
+		reason      string
+		uuidTS      string
+		rowID       any
+		receivedAt  any
 	}
 
 	uploadInfo struct {

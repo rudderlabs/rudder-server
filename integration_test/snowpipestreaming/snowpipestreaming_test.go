@@ -41,7 +41,7 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestSnowPipeStreaming(t *testing.T) {
+func TestSnowpipeStreaming(t *testing.T) {
 	for _, key := range []string{
 		testhelper.TestKeyPairEncrypted,
 		testhelper.TestKeyPairUnencrypted,
@@ -58,9 +58,9 @@ func TestSnowPipeStreaming(t *testing.T) {
 	c.Start(context.Background())
 
 	transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
-	snowPipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
+	snowpipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
 
-	credentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairUnencrypted)
+	credentials, err := testhelper.GetSnowpipeTestCredentials(testhelper.TestKeyPairUnencrypted)
 	require.NoError(t, err)
 
 	t.Run("namespace and table already exists", func(t *testing.T) {
@@ -74,7 +74,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -135,7 +135,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -189,7 +189,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -245,7 +245,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -316,7 +316,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -337,13 +337,14 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
 		require.NoError(t, sm.CreateTable(ctx, "PRODUCT_REVIEWED", whutils.ModelTableSchema{
 			"CONTEXT_DESTINATION_ID": "string", "CONTEXT_DESTINATION_TYPE": "string", "CONTEXT_IP": "int", "CONTEXT_REQUEST_IP": "string", "CONTEXT_PASSED_IP": "int", "CONTEXT_SOURCE_ID": "string", "CONTEXT_SOURCE_TYPE": "string", "EVENT": "string", "EVENT_TEXT": "string", "ID": "string", "ORIGINAL_TIMESTAMP": "datetime", "PRODUCT_ID": "string", "RATING": "int", "RECEIVED_AT": "datetime", "REVIEW_BODY": "string", "REVIEW_ID": "string", "SENT_AT": "datetime", "TIMESTAMP": "datetime", "USER_ID": "string", "UUID_TS": "datetime",
+			"ARRAY_EXAMPLE": "datetime", "ARRAY_OF_BOOLEANS_EXAMPLE": "datetime", "ARRAY_OF_FLOATS_EXAMPLE": "datetime", "ARRAY_OF_INTEGERS_EXAMPLE": "datetime", "BINARY_EXAMPLE": "datetime", "BOOLEAN_EXAMPLE": "datetime", "DATE_EXAMPLE": "datetime", "DATE_TIME_EXAMPLE": "datetime", "DIMENSIONS_DEPTH": "datetime", "DIMENSIONS_HEIGHT": "datetime", "DIMENSIONS_UNIT": "datetime", "DIMENSIONS_WIDTH": "datetime", "DURATION_EXAMPLE": "datetime", "FLOAT_EXAMPLE": "datetime", "GEO_POINT_EXAMPLE_LATITUDE": "datetime", "GEO_POINT_EXAMPLE_LONGITUDE": "datetime", "NESTED_ARRAY_EXAMPLE": "datetime", "NESTED_ARRAY_OF_OBJECTS_EXAMPLE": "datetime", "OBJECT_EXAMPLE_NESTED_BOOLEAN": "datetime", "OBJECT_EXAMPLE_NESTED_INTEGER": "datetime", "OBJECT_EXAMPLE_NESTED_STRING": "datetime", "STRING_EXAMPLE": "datetime", "URL_EXAMPLE": "datetime",
 		}))
 		require.NoError(t, sm.CreateTable(ctx, "TRACKS", whutils.ModelTableSchema{
 			"CONTEXT_DESTINATION_ID": "string", "CONTEXT_DESTINATION_TYPE": "string", "CONTEXT_IP": "int", "CONTEXT_REQUEST_IP": "string", "CONTEXT_PASSED_IP": "int", "CONTEXT_SOURCE_ID": "string", "CONTEXT_SOURCE_TYPE": "string", "EVENT": "string", "EVENT_TEXT": "string", "ID": "string", "ORIGINAL_TIMESTAMP": "datetime", "RECEIVED_AT": "datetime", "SENT_AT": "datetime", "TIMESTAMP": "datetime", "USER_ID": "string", "UUID_TS": "datetime",
 		}))
 
 		eventFormat := func(index int) string {
-			return fmt.Sprintf(`{"batch":[{"type":"track","messageId":"%[1]s","userId":"%[1]s","event":"Product Reviewed","properties":{"review_id":"86ac1cd43","product_id":"9578257311","rating":3,"review_body":"OK for the price. It works but the material feels flimsy."}, "timestamp":"2020-02-02T00:23:09.544Z","sentAt":"2020-02-02T00:23:09.544Z","originalTimestamp":"2020-02-02T00:23:09.544Z","receivedAt":"2020-02-02T00:23:09.544Z", "context":{"ip":"14.5.67.21"}}]}`,
+			return fmt.Sprintf(`{"batch":[{"type":"track","messageId":"%[1]s","userId":"%[1]s","event":"Product Reviewed","properties":{"review_id":"86ac1cd43","product_id":"9578257311","rating":3,"review_body":"OK for the price. It works but the material feels flimsy.","stringExample":"Wireless Headphones","integerExample":12345,"floatExample":299.99,"booleanExample":true,"nullExample":null,"arrayExample":["electronics","audio","wireless"],"arrayOfIntegersExample":[1,2,3,4],"arrayOfFloatsExample":[10.5,20.3,30.7],"arrayOfBooleansExample":[true,false,true],"nestedArrayExample":[[1,2],[3,4]],"objectExample":{"nestedString":"Inner Text","nestedInteger":789,"nestedBoolean":false},"nestedArrayOfObjectsExample":[{"id":1,"name":"Accessory 1"},{"id":2,"name":"Accessory 2"}],"dateExample":"2024-11-12","dateTimeExample":"2024-11-12T15:30:00Z","durationExample":"PT1H30M","dimensions":{"height":10.5,"width":5,"depth":3,"unit":"cm"},"binaryExample":"SGVsbG8sIFdvcmxkIQ==","geoPointExample":{"latitude":37.7749,"longitude":-122.4194},"urlExample":"https://example.com/product/12345"},"timestamp":"2020-02-02T00:23:09.544Z","sentAt":"2020-02-02T00:23:09.544Z","originalTimestamp":"2020-02-02T00:23:09.544Z","receivedAt":"2020-02-02T00:23:09.544Z","context":{"ip":"14.5.67.21"}}]}`,
 				strconv.Itoa(index+1),
 			)
 		}
@@ -353,19 +354,154 @@ func TestSnowPipeStreaming(t *testing.T) {
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
 		require.Equal(t, map[string]map[string]string{
-			"PRODUCT_REVIEWED": {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "NUMBER", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "NUMBER", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
-			"TRACKS":           {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "NUMBER", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "NUMBER", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"PRODUCT_REVIEWED": {"ARRAY_EXAMPLE": "TIMESTAMP_TZ", "ARRAY_OF_BOOLEANS_EXAMPLE": "TIMESTAMP_TZ", "ARRAY_OF_FLOATS_EXAMPLE": "TIMESTAMP_TZ", "ARRAY_OF_INTEGERS_EXAMPLE": "TIMESTAMP_TZ", "BINARY_EXAMPLE": "TIMESTAMP_TZ", "BOOLEAN_EXAMPLE": "TIMESTAMP_TZ", "CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "NUMBER", "CONTEXT_PASSED_IP": "NUMBER", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "DATE_EXAMPLE": "TIMESTAMP_TZ", "DATE_TIME_EXAMPLE": "TIMESTAMP_TZ", "DIMENSIONS_DEPTH": "TIMESTAMP_TZ", "DIMENSIONS_HEIGHT": "TIMESTAMP_TZ", "DIMENSIONS_UNIT": "TIMESTAMP_TZ", "DIMENSIONS_WIDTH": "TIMESTAMP_TZ", "DURATION_EXAMPLE": "TIMESTAMP_TZ", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "FLOAT_EXAMPLE": "TIMESTAMP_TZ", "GEO_POINT_EXAMPLE_LATITUDE": "TIMESTAMP_TZ", "GEO_POINT_EXAMPLE_LONGITUDE": "TIMESTAMP_TZ", "ID": "TEXT", "INTEGER_EXAMPLE": "NUMBER", "NESTED_ARRAY_EXAMPLE": "TIMESTAMP_TZ", "NESTED_ARRAY_OF_OBJECTS_EXAMPLE": "TIMESTAMP_TZ", "OBJECT_EXAMPLE_NESTED_BOOLEAN": "TIMESTAMP_TZ", "OBJECT_EXAMPLE_NESTED_INTEGER": "TIMESTAMP_TZ", "OBJECT_EXAMPLE_NESTED_STRING": "TIMESTAMP_TZ", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "STRING_EXAMPLE": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "URL_EXAMPLE": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"TRACKS":           {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "NUMBER", "CONTEXT_PASSED_IP": "NUMBER", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
 			"RUDDER_DISCARDS":  {"COLUMN_NAME": "TEXT", "COLUMN_VALUE": "TEXT", "REASON": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "ROW_ID": "TEXT", "TABLE_NAME": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
 		},
 			convertRecordsToSchema(schema),
 		)
 
-		produceReviewedRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED"))
-		require.ElementsMatch(t, productReviewedRecordsForDiscards(source, destination), produceReviewedRecordsFromDB)
+		ts := timeutil.Now().Format("2006-01-02")
+		eventName := "Product Reviewed"
+		tableName := strcase.ToSnake(eventName)
+		produceReviewedRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT ARRAY_EXAMPLE, ARRAY_OF_BOOLEANS_EXAMPLE, ARRAY_OF_FLOATS_EXAMPLE, ARRAY_OF_INTEGERS_EXAMPLE, BINARY_EXAMPLE, BOOLEAN_EXAMPLE, DATE_EXAMPLE, DATE_TIME_EXAMPLE, DIMENSIONS_DEPTH, DIMENSIONS_HEIGHT, DIMENSIONS_UNIT, DIMENSIONS_WIDTH, DURATION_EXAMPLE, FLOAT_EXAMPLE, GEO_POINT_EXAMPLE_LATITUDE, GEO_POINT_EXAMPLE_LONGITUDE, INTEGER_EXAMPLE, NESTED_ARRAY_EXAMPLE, NESTED_ARRAY_OF_OBJECTS_EXAMPLE, OBJECT_EXAMPLE_NESTED_BOOLEAN, OBJECT_EXAMPLE_NESTED_INTEGER, OBJECT_EXAMPLE_NESTED_STRING, STRING_EXAMPLE, URL_EXAMPLE, CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED"))
+		require.ElementsMatch(t, [][]string{
+			{"", "", "", "", "", "", "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "", "", "", "", "", "", "", "", "12345", "", "", "", "", "", "", "", destination.ID, "SNOWPIPE_STREAMING", "", "", source.ID, source.SourceDefinition.Name, tableName, eventName, "1", "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", "1", ts},
+			{"", "", "", "", "", "", "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "", "", "", "", "", "", "", "", "12345", "", "", "", "", "", "", "", destination.ID, "SNOWPIPE_STREAMING", "", "", source.ID, source.SourceDefinition.Name, tableName, eventName, "2", "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", "2", ts},
+			{"", "", "", "", "", "", "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "", "", "", "", "", "", "", "", "12345", "", "", "", "", "", "", "", destination.ID, "SNOWPIPE_STREAMING", "", "", source.ID, source.SourceDefinition.Name, tableName, eventName, "3", "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", "3", ts},
+			{"", "", "", "", "", "", "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "", "", "", "", "", "", "", "", "12345", "", "", "", "", "", "", "", destination.ID, "SNOWPIPE_STREAMING", "", "", source.ID, source.SourceDefinition.Name, tableName, eventName, "4", "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", "4", ts},
+			{"", "", "", "", "", "", "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "", "", "", "", "", "", "", "", "12345", "", "", "", "", "", "", "", destination.ID, "SNOWPIPE_STREAMING", "", "", source.ID, source.SourceDefinition.Name, tableName, eventName, "5", "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", "5", ts},
+		}, produceReviewedRecordsFromDB)
 		tracksRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
 		require.ElementsMatch(t, tracksRecordsForDiscards(source, destination), tracksRecordsFromDB)
 		discardsRecordsInDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_VALUE, REASON, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), ROW_ID, TABLE_NAME, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "RUDDER_DISCARDS"))
-		require.ElementsMatch(t, discardsRecords(), discardsRecordsInDB)
+		require.ElementsMatch(t, [][]string{
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "1", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "1", "TRACKS", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "2", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "2", "TRACKS", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "3", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "3", "TRACKS", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "4", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "4", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "5", "TRACKS", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "5", "TRACKS", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_EXAMPLE", "[[1 2] [3 4]]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_OF_OBJECTS_EXAMPLE", "[map[id:1 name:Accessory 1] map[id:2 name:Accessory 2]]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BINARY_EXAMPLE", "SGVsbG8sIFdvcmxkIQ==", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_UNIT", "cm", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LATITUDE", "37.7749", "incompatible schema conversion from datetime to float", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"URL_EXAMPLE", "https://example.com/product/12345", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_FLOATS_EXAMPLE", "[10.5 20.3 30.7]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_WIDTH", "5", "incompatible schema conversion from datetime to int", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_BOOLEANS_EXAMPLE", "[true false true]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BOOLEAN_EXAMPLE", "true", "incompatible schema conversion from datetime to boolean", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_HEIGHT", "10.5", "incompatible schema conversion from datetime to float", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_INTEGER", "789", "incompatible schema conversion from datetime to int", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_EXAMPLE", "[electronics audio wireless]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LONGITUDE", "-122.4194", "incompatible schema conversion from datetime to float", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_INTEGERS_EXAMPLE", "[1 2 3 4]", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"FLOAT_EXAMPLE", "299.99", "incompatible schema conversion from datetime to float", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_STRING", "Inner Text", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"STRING_EXAMPLE", "Wireless Headphones", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_DEPTH", "3", "incompatible schema conversion from datetime to int", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DURATION_EXAMPLE", "PT1H30M", "incompatible schema conversion from datetime to string", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_BOOLEAN", "false", "incompatible schema conversion from datetime to boolean", "2024-12-03", "1", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"URL_EXAMPLE", "https://example.com/product/12345", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_EXAMPLE", "[electronics audio wireless]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_HEIGHT", "10.5", "incompatible schema conversion from datetime to float", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_EXAMPLE", "[[1 2] [3 4]]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_BOOLEAN", "false", "incompatible schema conversion from datetime to boolean", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_INTEGERS_EXAMPLE", "[1 2 3 4]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BINARY_EXAMPLE", "SGVsbG8sIFdvcmxkIQ==", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LONGITUDE", "-122.4194", "incompatible schema conversion from datetime to float", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"STRING_EXAMPLE", "Wireless Headphones", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_FLOATS_EXAMPLE", "[10.5 20.3 30.7]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_INTEGER", "789", "incompatible schema conversion from datetime to int", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_UNIT", "cm", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_OF_OBJECTS_EXAMPLE", "[map[id:1 name:Accessory 1] map[id:2 name:Accessory 2]]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_WIDTH", "5", "incompatible schema conversion from datetime to int", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BOOLEAN_EXAMPLE", "true", "incompatible schema conversion from datetime to boolean", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LATITUDE", "37.7749", "incompatible schema conversion from datetime to float", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_STRING", "Inner Text", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DURATION_EXAMPLE", "PT1H30M", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_DEPTH", "3", "incompatible schema conversion from datetime to int", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_BOOLEANS_EXAMPLE", "[true false true]", "incompatible schema conversion from datetime to string", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"FLOAT_EXAMPLE", "299.99", "incompatible schema conversion from datetime to float", "2024-12-03", "2", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_INTEGER", "789", "incompatible schema conversion from datetime to int", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_HEIGHT", "10.5", "incompatible schema conversion from datetime to float", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_UNIT", "cm", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_WIDTH", "5", "incompatible schema conversion from datetime to int", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"FLOAT_EXAMPLE", "299.99", "incompatible schema conversion from datetime to float", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_BOOLEANS_EXAMPLE", "[true false true]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_FLOATS_EXAMPLE", "[10.5 20.3 30.7]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_OF_OBJECTS_EXAMPLE", "[map[id:1 name:Accessory 1] map[id:2 name:Accessory 2]]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_BOOLEAN", "false", "incompatible schema conversion from datetime to boolean", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_STRING", "Inner Text", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"STRING_EXAMPLE", "Wireless Headphones", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LONGITUDE", "-122.4194", "incompatible schema conversion from datetime to float", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_EXAMPLE", "[[1 2] [3 4]]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LATITUDE", "37.7749", "incompatible schema conversion from datetime to float", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"URL_EXAMPLE", "https://example.com/product/12345", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_INTEGERS_EXAMPLE", "[1 2 3 4]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BINARY_EXAMPLE", "SGVsbG8sIFdvcmxkIQ==", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DURATION_EXAMPLE", "PT1H30M", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BOOLEAN_EXAMPLE", "true", "incompatible schema conversion from datetime to boolean", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_DEPTH", "3", "incompatible schema conversion from datetime to int", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_EXAMPLE", "[electronics audio wireless]", "incompatible schema conversion from datetime to string", "2024-12-03", "3", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_INTEGERS_EXAMPLE", "[1 2 3 4]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_UNIT", "cm", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DURATION_EXAMPLE", "PT1H30M", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_BOOLEAN", "false", "incompatible schema conversion from datetime to boolean", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_WIDTH", "5", "incompatible schema conversion from datetime to int", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_INTEGER", "789", "incompatible schema conversion from datetime to int", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_BOOLEANS_EXAMPLE", "[true false true]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BINARY_EXAMPLE", "SGVsbG8sIFdvcmxkIQ==", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_OF_OBJECTS_EXAMPLE", "[map[id:1 name:Accessory 1] map[id:2 name:Accessory 2]]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_FLOATS_EXAMPLE", "[10.5 20.3 30.7]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_DEPTH", "3", "incompatible schema conversion from datetime to int", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"FLOAT_EXAMPLE", "299.99", "incompatible schema conversion from datetime to float", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LATITUDE", "37.7749", "incompatible schema conversion from datetime to float", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_HEIGHT", "10.5", "incompatible schema conversion from datetime to float", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LONGITUDE", "-122.4194", "incompatible schema conversion from datetime to float", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_STRING", "Inner Text", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"STRING_EXAMPLE", "Wireless Headphones", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"URL_EXAMPLE", "https://example.com/product/12345", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_EXAMPLE", "[electronics audio wireless]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BOOLEAN_EXAMPLE", "true", "incompatible schema conversion from datetime to boolean", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_EXAMPLE", "[[1 2] [3 4]]", "incompatible schema conversion from datetime to string", "2024-12-03", "4", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_FLOATS_EXAMPLE", "[10.5 20.3 30.7]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_INTEGERS_EXAMPLE", "[1 2 3 4]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BINARY_EXAMPLE", "SGVsbG8sIFdvcmxkIQ==", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DURATION_EXAMPLE", "PT1H30M", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_STRING", "Inner Text", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"STRING_EXAMPLE", "Wireless Headphones", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"BOOLEAN_EXAMPLE", "true", "incompatible schema conversion from datetime to boolean", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_UNIT", "cm", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_OF_BOOLEANS_EXAMPLE", "[true false true]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_HEIGHT", "10.5", "incompatible schema conversion from datetime to float", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"FLOAT_EXAMPLE", "299.99", "incompatible schema conversion from datetime to float", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_EXAMPLE", "[[1 2] [3 4]]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"URL_EXAMPLE", "https://example.com/product/12345", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_BOOLEAN", "false", "incompatible schema conversion from datetime to boolean", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_DEPTH", "3", "incompatible schema conversion from datetime to int", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"DIMENSIONS_WIDTH", "5", "incompatible schema conversion from datetime to int", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LONGITUDE", "-122.4194", "incompatible schema conversion from datetime to float", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"NESTED_ARRAY_OF_OBJECTS_EXAMPLE", "[map[id:1 name:Accessory 1] map[id:2 name:Accessory 2]]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"ARRAY_EXAMPLE", "[electronics audio wireless]", "incompatible schema conversion from datetime to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"GEO_POINT_EXAMPLE_LATITUDE", "37.7749", "incompatible schema conversion from datetime to float", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"OBJECT_EXAMPLE_NESTED_INTEGER", "789", "incompatible schema conversion from datetime to int", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+			{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", "2024-12-03", "5", "PRODUCT_REVIEWED", "2024-12-03"},
+		}, discardsRecordsInDB)
 
 		cancel()
 		require.NoError(t, <-done)
@@ -381,7 +517,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -449,7 +585,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -517,7 +653,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -585,7 +721,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -674,7 +810,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -714,7 +850,6 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 10)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -744,7 +879,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -785,7 +920,6 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -798,7 +932,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		)
 
 		produceReviewedRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED"))
-		require.ElementsMatch(t, append(productReviewedRecords(source, destination), append(productReviewedRecords(source, destination), productReviewedRecords(source, destination)...)...), produceReviewedRecordsFromDB)
+		require.ElementsMatch(t, append(productReviewedRecords(source, destination), productReviewedRecords(source, destination)...), produceReviewedRecordsFromDB)
 		tracksRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
 		require.ElementsMatch(t, tracksRecords(source, destination), tracksRecordsFromDB)
 
@@ -816,7 +950,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -857,7 +991,6 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -882,7 +1015,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		tracksRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
 		require.ElementsMatch(t, append(tracksRecords(source, destination), recordsBeforeDeletion...), tracksRecordsFromDB)
 		produceReviewedRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED"))
-		require.ElementsMatch(t, append(productReviewedRecords(source, destination), append(productReviewedRecords(source, destination), productReviewedRecords(source, destination)...)...), produceReviewedRecordsFromDB)
+		require.ElementsMatch(t, append(productReviewedRecords(source, destination), productReviewedRecords(source, destination)...), produceReviewedRecordsFromDB)
 
 		cancel()
 		require.NoError(t, <-done)
@@ -898,7 +1031,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -948,7 +1081,6 @@ func TestSnowPipeStreaming(t *testing.T) {
 		t.Log("Sending 5 events again")
 		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
 		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 10)
 		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
 
 		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -970,85 +1102,6 @@ func TestSnowPipeStreaming(t *testing.T) {
 		cancel()
 		require.NoError(t, <-done)
 	})
-	t.Run("schema modified after channel creation (datatype changed for partial tables)", func(t *testing.T) {
-		postgresContainer, gatewayPort := initializeTestEnvironment(t)
-		namespace := testhelper.RandSchema()
-		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		done := make(chan error)
-		go func() {
-			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
-		}()
-
-		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
-		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-
-		warehouse := whutils.ModelWarehouse{
-			Namespace:   namespace,
-			Destination: destination,
-		}
-
-		sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
-		require.NoError(t, err)
-		require.NoError(t, sm.Setup(ctx, warehouse, whutils.NewNoOpUploader()))
-		t.Cleanup(func() { sm.Cleanup(ctx) })
-		require.NoError(t, sm.CreateSchema(ctx))
-		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
-		require.NoError(t, sm.CreateTable(ctx, "PRODUCT_REVIEWED", whutils.ModelTableSchema{
-			"CONTEXT_DESTINATION_ID": "string", "CONTEXT_DESTINATION_TYPE": "string", "CONTEXT_IP": "string", "CONTEXT_REQUEST_IP": "string", "CONTEXT_PASSED_IP": "string", "CONTEXT_SOURCE_ID": "string", "CONTEXT_SOURCE_TYPE": "string", "EVENT": "string", "EVENT_TEXT": "string", "ID": "string", "ORIGINAL_TIMESTAMP": "datetime", "PRODUCT_ID": "string", "RATING": "int", "RECEIVED_AT": "datetime", "REVIEW_BODY": "string", "REVIEW_ID": "string", "SENT_AT": "datetime", "TIMESTAMP": "datetime", "USER_ID": "string", "UUID_TS": "datetime",
-		}))
-		require.NoError(t, sm.CreateTable(ctx, "TRACKS", whutils.ModelTableSchema{
-			"CONTEXT_DESTINATION_ID": "string", "CONTEXT_DESTINATION_TYPE": "string", "CONTEXT_IP": "string", "CONTEXT_REQUEST_IP": "string", "CONTEXT_PASSED_IP": "string", "CONTEXT_SOURCE_ID": "string", "CONTEXT_SOURCE_TYPE": "string", "EVENT": "string", "EVENT_TEXT": "string", "ID": "string", "ORIGINAL_TIMESTAMP": "datetime", "RECEIVED_AT": "datetime", "SENT_AT": "datetime", "TIMESTAMP": "datetime", "USER_ID": "string", "UUID_TS": "datetime",
-		}))
-		require.NoError(t, sm.CreateTable(ctx, "RUDDER_DISCARDS", whutils.ModelTableSchema{
-			"COLUMN_NAME": "string", "COLUMN_VALUE": "string", "RECEIVED_AT": "datetime", "ROW_ID": "string", "TABLE_NAME": "string", "UUID_TS": "datetime", "REASON": "string",
-		}))
-
-		t.Log("Sending 5 events")
-		eventFormat := func(index int) string {
-			return fmt.Sprintf(`{"batch":[{"type":"track","messageId":"%[1]s","userId":"%[1]s","event":"Product Reviewed","properties":{"review_id":"86ac1cd43","product_id":"9578257311","rating":3,"review_body":"OK for the price. It works but the material feels flimsy."}, "timestamp":"2020-02-02T00:23:09.544Z","sentAt":"2020-02-02T00:23:09.544Z","originalTimestamp":"2020-02-02T00:23:09.544Z","receivedAt":"2020-02-02T00:23:09.544Z", "context":{"ip":"14.5.67.21"}}]}`,
-				strconv.Itoa(index+1),
-			)
-		}
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 5)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-
-		t.Log("Schema modified, CONTEXT_IP, CONTEXT_REQUEST_IP are of type int")
-		_, err = sm.DB.DB.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s.TRACKS DROP COLUMN CONTEXT_IP, CONTEXT_PASSED_IP;", namespace))
-		require.NoError(t, err)
-		_, err = sm.DB.DB.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s.TRACKS ADD COLUMN CONTEXT_IP NUMBER, CONTEXT_PASSED_IP NUMBER;", namespace))
-		require.NoError(t, err)
-
-		t.Log("Sending 5 events again")
-		require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
-		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 10)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "failed", 5)
-		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 20)
-
-		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-		require.Equal(t, map[string]map[string]string{
-			"PRODUCT_REVIEWED": {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
-			"TRACKS":           {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "NUMBER", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "NUMBER", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
-			"RUDDER_DISCARDS":  {"COLUMN_NAME": "TEXT", "COLUMN_VALUE": "TEXT", "REASON": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "ROW_ID": "TEXT", "TABLE_NAME": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
-		},
-			convertRecordsToSchema(schema),
-		)
-
-		produceReviewedRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED"))
-		require.ElementsMatch(t, append(productReviewedRecords(source, destination), append(productReviewedRecords(source, destination), productReviewedRecords(source, destination)...)...), produceReviewedRecordsFromDB)
-		tracksRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
-		require.ElementsMatch(t, append(tracksRecordsForDiscards(source, destination), tracksRecordsForDiscards(source, destination)...), tracksRecordsFromDB)
-		discardsRecordsInDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT COLUMN_NAME, COLUMN_VALUE, REASON, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), ROW_ID, TABLE_NAME, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "RUDDER_DISCARDS"))
-		require.ElementsMatch(t, discardTracksRecords(), discardsRecordsInDB)
-
-		cancel()
-		require.NoError(t, <-done)
-	})
 	t.Run("JSON columns", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := testhelper.RandSchema()
@@ -1061,7 +1114,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1124,7 +1177,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1186,7 +1239,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1232,7 +1285,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		require.NoError(t, <-done)
 	})
 	t.Run("encrypted credentials", func(t *testing.T) {
-		encryptedCredentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairEncrypted)
+		encryptedCredentials, err := testhelper.GetSnowpipeTestCredentials(testhelper.TestKeyPairEncrypted)
 		require.NoError(t, err)
 
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
@@ -1245,7 +1298,7 @@ func TestSnowPipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowPipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1580,31 +1633,31 @@ func discardsRecords() [][]string {
 func discardProductReviewedRecords() [][]string {
 	ts := timeutil.Now().Format("2006-01-02")
 	return [][]string{
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "1", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "1", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "2", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "2", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "3", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "3", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "4", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "4", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "5", "PRODUCT_REVIEWED", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "5", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "1", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "1", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "2", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "2", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "3", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "3", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "4", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "4", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "5", "PRODUCT_REVIEWED", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "5", "PRODUCT_REVIEWED", ts},
 	}
 }
 
 func discardTracksRecords() [][]string {
 	ts := timeutil.Now().Format("2006-01-02")
 	return [][]string{
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "3", "TRACKS", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "3", "TRACKS", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "4", "TRACKS", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "4", "TRACKS", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "5", "TRACKS", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "5", "TRACKS", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "1", "TRACKS", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "1", "TRACKS", ts},
-		{"CONTEXT_PASSED_IP", "", "incompatible schema conversion from int to string", ts, "2", "TRACKS", ts},
-		{"CONTEXT_IP", "", "incompatible schema conversion from int to string", ts, "2", "TRACKS", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "3", "TRACKS", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "3", "TRACKS", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "4", "TRACKS", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "4", "TRACKS", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "5", "TRACKS", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "5", "TRACKS", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "1", "TRACKS", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "1", "TRACKS", ts},
+		{"CONTEXT_PASSED_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "2", "TRACKS", ts},
+		{"CONTEXT_IP", "14.5.67.21", "incompatible schema conversion from int to string", ts, "2", "TRACKS", ts},
 	}
 }

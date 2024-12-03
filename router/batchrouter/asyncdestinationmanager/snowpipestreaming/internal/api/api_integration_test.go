@@ -74,7 +74,7 @@ func TestAPIIntegration(t *testing.T) {
 		require.True(t, createChannelRes.Valid)
 		require.False(t, createChannelRes.Deleted)
 		require.EqualValues(t, whutils.ModelTableSchema{"ACTIVE": "boolean", "AGE": "int", "DOB": "datetime", "EMAIL": "string", "ID": "string", "NAME": "string"},
-			createChannelRes.SnowPipeSchema,
+			createChannelRes.SnowpipeSchema,
 		)
 
 		t.Log("Getting channel")
@@ -166,7 +166,7 @@ func setupIntegrationTestConfig(t *testing.T, ctx context.Context) *integrationT
 	c := testcompose.New(t, compose.FilePaths([]string{"../../testdata/docker-compose.rudder-snowpipe-clients.yml"}))
 	c.Start(context.Background())
 
-	credentials, err := testhelper.GetSnowPipeTestCredentials(testhelper.TestKeyPairUnencrypted)
+	credentials, err := testhelper.GetSnowpipeTestCredentials(testhelper.TestKeyPairUnencrypted)
 	require.NoError(t, err)
 
 	namespace := testhelper.RandSchema()
@@ -198,8 +198,8 @@ func setupIntegrationTestConfig(t *testing.T, ctx context.Context) *integrationT
 	t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
 	require.NoError(t, sm.CreateTable(ctx, table, tableSchema))
 
-	snowPipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
-	a := api.New(snowPipeClientsURL, http.DefaultClient)
+	snowpipeClientsURL := fmt.Sprintf("http://localhost:%d", c.Port("rudder-snowpipe-clients", 9078))
+	a := api.New(snowpipeClientsURL, http.DefaultClient)
 
 	return &integrationTestConfig{
 		credentials: credentials,

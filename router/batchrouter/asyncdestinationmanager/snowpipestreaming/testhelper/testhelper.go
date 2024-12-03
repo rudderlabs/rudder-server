@@ -31,7 +31,7 @@ type TestCredentials struct {
 	PrivateKeyPassphrase string `json:"privateKeyPassphrase"`
 }
 
-func GetSnowPipeTestCredentials(key string) (*TestCredentials, error) {
+func GetSnowpipeTestCredentials(key string) (*TestCredentials, error) {
 	cred, exists := os.LookupEnv(key)
 	if !exists {
 		return nil, errors.New("snowpipe test credentials not found")
