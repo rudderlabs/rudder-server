@@ -404,6 +404,7 @@ func TestExtractErrorDetails(t *testing.T) {
 		caseDescription string
 		inputErrMsg     string
 		output          depTcOutput
+		statTags        map[string]string
 	}
 	testCases := []depTc{
 		{
@@ -422,12 +423,24 @@ func TestExtractErrorDetails(t *testing.T) {
 				errorCode: "deprecation",
 			},
 		},
+		{
+			caseDescription: "should use statTags to compute errorCode",
+			statTags: map[string]string{
+				"errorCategory": "dataValidation",
+				"errorType":     "configuration",
+			},
+			inputErrMsg: "Some error",
+			output: depTcOutput{
+				errorMsg:  "Some error",
+				errorCode: "dataValidation:configuration",
+			},
+		},
 	}
 
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
-			errorDetails := edr.extractErrorDetails(tc.inputErrMsg)
+			errorDetails := edr.extractErrorDetails(tc.inputErrMsg, tc.statTags)
 
 			require.Equal(t, tc.output.errorMsg, errorDetails.ErrorMessage)
 			require.Equal(t, tc.output.errorCode, errorDetails.ErrorCode)

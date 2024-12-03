@@ -1023,7 +1023,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
+					Expect(e.Metadata.TrackingPlanID).To(BeEquivalentTo("tracking-plan-id"))
 					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(100)) // from DgSourceTrackingPlanConfig
 				}
 			}
@@ -1104,7 +1104,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
 				for _, e := range v.events {
-					Expect(e.Metadata.TrackingPlanId).To(BeEquivalentTo("tracking-plan-id"))
+					Expect(e.Metadata.TrackingPlanID).To(BeEquivalentTo("tracking-plan-id"))
 					Expect(e.Metadata.TrackingPlanVersion).To(BeEquivalentTo(123)) // Overridden happens when tracking plan id is same in context.ruddertyper and DgSourceTrackingPlanConfig
 				}
 			}
@@ -5151,7 +5151,7 @@ var _ = Describe("Static Function Tests", func() {
 					SourceID:         "source-id-1",
 					DestinationID:    "destination-id-1",
 					TransformationID: "transformation-id-1",
-					TrackingPlanId:   "tracking-plan-id-1",
+					TrackingPlanID:   "tracking-plan-id-1",
 					EventName:        "event-name-1",
 					EventType:        "event-type-1",
 				},
@@ -5183,7 +5183,7 @@ var _ = Describe("Static Function Tests", func() {
 				sourceCategory:          inputEvent.Metadata.SourceCategory,
 				transformationID:        inputEvent.Metadata.TransformationID,
 				transformationVersionID: inputEvent.Metadata.TransformationVersionID,
-				trackingPlanID:          inputEvent.Metadata.TrackingPlanId,
+				trackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
 			expectedConnectionDetails := &types.ConnectionDetails{
@@ -5192,12 +5192,12 @@ var _ = Describe("Static Function Tests", func() {
 				SourceJobRunID:          inputEvent.Metadata.SourceJobRunID,
 				SourceJobID:             inputEvent.Metadata.SourceJobID,
 				SourceTaskRunID:         inputEvent.Metadata.SourceTaskRunID,
-				SourceDefinitionId:      inputEvent.Metadata.SourceDefinitionID,
-				DestinationDefinitionId: inputEvent.Metadata.DestinationDefinitionID,
+				SourceDefinitionID:      inputEvent.Metadata.SourceDefinitionID,
+				DestinationDefinitionID: inputEvent.Metadata.DestinationDefinitionID,
 				SourceCategory:          inputEvent.Metadata.SourceCategory,
 				TransformationID:        inputEvent.Metadata.TransformationID,
 				TransformationVersionID: inputEvent.Metadata.TransformationVersionID,
-				TrackingPlanID:          inputEvent.Metadata.TrackingPlanId,
+				TrackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
 			connectionDetailsMap := make(map[string]*types.ConnectionDetails)

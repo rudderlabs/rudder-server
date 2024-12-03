@@ -54,6 +54,7 @@ type DestinationJobT struct {
 	StatusCode        int                        `json:"statusCode"`
 	Error             string                     `json:"error"`
 	AuthErrorCategory string                     `json:"authErrorCategory"`
+	StatTags          map[string]string          `json:"statTags"`
 }
 
 func (dj *DestinationJobT) MinJobID() int64 {
