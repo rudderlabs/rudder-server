@@ -17,6 +17,7 @@ func (h *workerHandleAdapter) logger() logger.Logger {
 
 func (h *workerHandleAdapter) config() workerHandleConfig {
 	return workerHandleConfig{
+		disableStoreMerge:     h.Handle.config.disableStoreMerge,
 		enablePipelining:      h.Handle.config.enablePipelining,
 		pipelineBufferedItems: h.Handle.config.pipelineBufferedItems,
 		maxEventsToProcess:    h.Handle.config.maxEventsToProcess,
