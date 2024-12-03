@@ -927,7 +927,7 @@ func (ch *Clickhouse) clusterClause() string {
 	return ""
 }
 
-func (*Clickhouse) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
+func (*Clickhouse) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
 	return model.AlterTableResponse{}, nil
 }
 
@@ -958,9 +958,8 @@ func (ch *Clickhouse) Setup(_ context.Context, warehouse model.Warehouse, upload
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -975,14 +974,14 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 
 	rows, err := ch.DB.QueryContext(ctx, sqlStatement, ch.Namespace)
 	if errors.Is(err, sql.ErrNoRows) {
-		return schema, unrecognizedSchema, nil
+		return schema, nil
 	}
 	if err != nil {
 		var clickhouseErr *clickhouse.Exception
 		if errors.As(err, &clickhouseErr) && clickhouseErr.Code == 81 {
-			return schema, unrecognizedSchema, nil
+			return schema, nil
 		}
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -990,7 +989,7 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 		var tableName, columnName, columnType string
 
 		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
-			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+			return nil, fmt.Errorf("scanning schema: %w", err)
 		}
 
 		if _, ok := schema[tableName]; !ok {
@@ -999,19 +998,14 @@ func (ch *Clickhouse) FetchSchema(ctx context.Context) (model.Schema, model.Sche
 		if datatype, ok := clickhouseDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
-
 			warehouseutils.WHCounterStat(ch.stats, warehouseutils.RudderMissingDatatype, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]error) {
@@ -1055,17 +1049,17 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 	}, nil
 }
 
-func (ch *Clickhouse) Cleanup(context.Context) {
+func (ch *Clickhouse) Cleanup(_ context.Context) {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}
 }
 
-func (*Clickhouse) LoadIdentityMergeRulesTable(context.Context) (err error) {
+func (*Clickhouse) LoadIdentityMergeRulesTable(_ context.Context) (err error) {
 	return
 }
 
-func (*Clickhouse) LoadIdentityMappingsTable(context.Context) (err error) {
+func (*Clickhouse) LoadIdentityMappingsTable(_ context.Context) (err error) {
 	return
 }
 
@@ -1073,7 +1067,7 @@ func (*Clickhouse) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err
 	return
 }
 
-func (*Clickhouse) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
+func (*Clickhouse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, err error) {
 	return
 }
 

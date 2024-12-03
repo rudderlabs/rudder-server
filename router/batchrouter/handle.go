@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -76,6 +77,7 @@ type Handle struct {
 	maxFailedCountForJob         config.ValueLoader[int]
 	maxFailedCountForSourcesJob  config.ValueLoader[int]
 	asyncUploadTimeout           config.ValueLoader[time.Duration]
+	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
 	reportingEnabled             bool
@@ -689,7 +691,16 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			workspaceID := job.WorkspaceId
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory, "", "", "", 0)
+				cd = &types.ConnectionDetails{
+					SourceID:                parameters.SourceID,
+					DestinationID:           parameters.DestinationID,
+					SourceTaskRunID:         parameters.SourceTaskRunID,
+					SourceJobID:             parameters.SourceJobID,
+					SourceJobRunID:          parameters.SourceJobRunID,
+					SourceDefinitionID:      parameters.SourceDefinitionID,
+					DestinationDefinitionID: parameters.DestinationDefinitionID,
+					SourceCategory:          parameters.SourceCategory,
+				}
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}
@@ -699,7 +710,14 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				if brt.transientSources.Apply(parameters.SourceID) {
 					sampleEvent = []byte(`{}`)
 				}
-				sd = types.CreateStatusDetail(jobState, 0, 0, errorCode, string(errorResp), sampleEvent, parameters.EventName, parameters.EventType, "")
+				sd = &types.StatusDetail{
+					Status:         jobState,
+					StatusCode:     errorCode,
+					SampleResponse: string(errorResp),
+					SampleEvent:    sampleEvent,
+					EventName:      parameters.EventName,
+					EventType:      parameters.EventType,
+				}
 				statusDetailsMap[key] = sd
 			}
 			if status.JobState == jobsdb.Failed.State && status.AttemptNum == 1 {

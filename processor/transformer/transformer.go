@@ -53,7 +53,7 @@ type Metadata struct {
 	InstanceID          string                            `json:"instanceId"`
 	SourceType          string                            `json:"sourceType"`
 	SourceCategory      string                            `json:"sourceCategory"`
-	TrackingPlanId      string                            `json:"trackingPlanId"`
+	TrackingPlanID      string                            `json:"trackingPlanId"`
 	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
 	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
 	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
@@ -118,12 +118,14 @@ type TransformerResponse struct {
 	StatusCode       int                    `json:"statusCode"`
 	Error            string                 `json:"error"`
 	ValidationErrors []ValidationError      `json:"validationErrors"`
+	StatTags         map[string]string      `json:"statTags"`
 }
 
 type ValidationError struct {
-	Type    string            `json:"type"`
-	Message string            `json:"message"`
-	Meta    map[string]string `json:"meta"`
+	Type     string            `json:"type"`
+	Message  string            `json:"message"`
+	Meta     map[string]string `json:"meta"`
+	Property string            `json:"property"`
 }
 
 // Response represents a Transformer response
