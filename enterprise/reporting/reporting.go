@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -77,12 +78,12 @@ type DefaultReporter struct {
 	maxReportsCountInARequest config.ValueLoader[int]
 
 	eventSamplingEnabled config.ValueLoader[bool]
-	eventSampler         *EventSampler
+	eventSampler         event_sampler.EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
-	var eventSampler *EventSampler
+	var eventSampler event_sampler.EventSampler
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -96,6 +97,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
 	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
+	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
+	eventSamplingCardinality := conf.GetReloadableIntVar(1000000, 1, "Reporting.eventSampling.cardinality")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -104,7 +107,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = NewEventSampler("/reporting-badger", eventSamplingDuration, conf, log)
+		eventSampler, err = event_sampler.NewEventSampler(eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
 		if err != nil {
 			panic(err)
 		}
@@ -649,31 +652,31 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) types.PUReportedMetric {
+func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) (types.PUReportedMetric, error) {
 	if r.eventSampler == nil {
-		return metric
+		return metric, nil
 	}
 
 	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
 
 	if isValidSampleEvent {
 		hash := NewLabelSet(metric).generateHash()
-		found, err := r.eventSampler.Get([]byte(hash))
+		found, err := r.eventSampler.Get(hash)
 		if err != nil {
-			panic(err)
+			return metric, err
 		}
 
 		if found {
 			metric.StatusDetail.SampleEvent = json.RawMessage(`{}`)
 			metric.StatusDetail.SampleResponse = ""
 		} else {
-			err := r.eventSampler.Put([]byte(hash))
+			err := r.eventSampler.Put(hash)
 			if err != nil {
-				panic(err)
+				return metric, err
 			}
 		}
 	}
-	return metric
+	return metric, nil
 }
 
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
@@ -724,7 +727,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		}
 
 		if r.eventSamplingEnabled.Load() {
-			metric = r.transformMetricWithEventSampling(metric)
+			metric, err = r.transformMetricWithEventSampling(metric)
+			if err != nil {
+				return err
+			}
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)

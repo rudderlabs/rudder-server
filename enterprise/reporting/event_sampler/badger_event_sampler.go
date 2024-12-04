@@ -1,4 +1,4 @@
-package reporting
+package event_sampler
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type EventSampler struct {
+type BadgerEventSampler struct {
 	db     *badger.DB
 	mu     sync.Mutex
 	ttl    config.ValueLoader[time.Duration]
@@ -32,7 +32,7 @@ func DefaultPath(pathName string) (string, error) {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, pathName), nil
 }
 
-func NewEventSampler(pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*EventSampler, error) {
+func NewBadgerEventSampler(pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*BadgerEventSampler, error) {
 	dbPath, err := DefaultPath(pathName)
 	if err != nil || dbPath == "" {
 		return nil, err
@@ -56,7 +56,7 @@ func NewEventSampler(pathName string, ttl config.ValueLoader[time.Duration], con
 
 	db, err := badger.Open(opts)
 
-	es := &EventSampler{
+	es := &BadgerEventSampler{
 		db:     db,
 		ttl:    ttl,
 		ctx:    ctx,
@@ -73,14 +73,14 @@ func NewEventSampler(pathName string, ttl config.ValueLoader[time.Duration], con
 	return es, nil
 }
 
-func (es *EventSampler) Get(key []byte) (bool, error) {
+func (es *BadgerEventSampler) Get(key string) (bool, error) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
 	var found bool
 
 	err := es.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(key)
+		item, err := txn.Get([]byte(key))
 		if err != nil {
 			return err
 		}
@@ -98,39 +98,43 @@ func (es *EventSampler) Get(key []byte) (bool, error) {
 	return found, nil
 }
 
-func (es *EventSampler) Put(key []byte) error {
+func (es *BadgerEventSampler) Put(key string) error {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
 	return es.db.Update(func(txn *badger.Txn) error {
-		entry := badger.NewEntry(key, []byte{1}).WithTTL(es.ttl.Load())
+		entry := badger.NewEntry([]byte(key), []byte{1}).WithTTL(es.ttl.Load())
 		return txn.SetEntry(entry)
 	})
 }
 
-func (es *EventSampler) gcLoop() {
+func (es *BadgerEventSampler) performGC() {
+	es.wg.Add(1)
+	defer es.wg.Done()
+
+	// One call would only result in removal of at max one log file.
+	// As an optimization, we can call it in a loop until it returns an error.
 	for {
-		select {
-		case <-es.ctx.Done():
-			_ = es.db.RunValueLogGC(0.5)
-			return
-		case <-time.After(5 * time.Minute):
-		}
-	again:
-		if es.ctx.Err() != nil {
-			return
-		}
-		// One call would only result in removal of at max one log file.
-		// As an optimization, you could also immediately re-run it whenever it returns nil error
-		// (this is why `goto again` is used).
-		err := es.db.RunValueLogGC(0.5)
-		if err == nil {
-			goto again
+		if err := es.db.RunValueLogGC(0.5); err != nil {
+			break
 		}
 	}
 }
 
-func (es *EventSampler) Close() {
+func (es *BadgerEventSampler) gcLoop() {
+	for {
+		select {
+		case <-es.ctx.Done():
+			es.performGC()
+			return
+
+		case <-time.After(5 * time.Minute):
+			es.performGC()
+		}
+	}
+}
+
+func (es *BadgerEventSampler) Close() {
 	es.cancel()
 	es.wg.Wait()
 	if es.db != nil {
