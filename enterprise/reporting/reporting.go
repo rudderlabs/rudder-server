@@ -416,7 +416,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 			getReportsStart := time.Now()
 			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
-			if aggregationIntervalMin == 0 || 60%aggregationIntervalMin != 0 {
+			if aggregationIntervalMin <= 0 || 60%aggregationIntervalMin != 0 {
 				panic(fmt.Errorf("[ Reporting ]: Error aggregationIntervalMinutes should be a factor of 60, got %d", aggregationIntervalMin))
 			}
 
