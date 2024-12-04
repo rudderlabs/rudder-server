@@ -407,7 +407,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			lastVacuum                 time.Time
 			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
 			vacuumThresholdBytes       = config.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.vacuumThresholdBytes")
-			aggregationInterval        = config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationIntervalMinutes")
+			aggregationInterval        = config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationIntervalMinutes") // Values should be a factor of 60 or else we will panic, for example 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60
 		)
 		for {
 			if ctx.Err() != nil {
@@ -420,6 +420,10 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 			getReportsStart := time.Now()
 			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
+			if aggregationIntervalMin == 0 || 60%aggregationIntervalMin != 0 {
+				panic(fmt.Errorf("[ Reporting ]: Error aggregationIntervalMinutes should be a factor of 60, got %d", aggregationIntervalMin))
+			}
+
 			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
