@@ -865,7 +865,7 @@ func (brt *Handle) splitBatchJobsOnTimeWindow(batchJobs BatchedJobs) map[time.Ti
 	for _, job := range batchJobs.Jobs {
 		// ignore error as receivedAt will always be in the expected format
 		receivedAtStr := gjson.Get(string(job.Parameters), "received_at").String()
-		receivedAt, err := time.Parse(time.RFC3339, receivedAtStr)
+		receivedAt, err := time.Parse(misc.RFC3339Milli, receivedAtStr)
 		if err != nil {
 			brt.logger.Errorf("Invalid value '%s' for receivedAt : %v ", receivedAtStr, err)
 			panic(err)
