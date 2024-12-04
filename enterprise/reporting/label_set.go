@@ -39,10 +39,10 @@ type LabelSet struct {
 func NewLabelSet(metric types.PUReportedMetric) LabelSet {
 	return LabelSet{
 		WorkspaceID:             metric.ConnectionDetails.SourceID,
-		SourceDefinitionID:      metric.ConnectionDetails.SourceDefinitionId,
+		SourceDefinitionID:      metric.ConnectionDetails.SourceDefinitionID,
 		SourceCategory:          metric.ConnectionDetails.SourceCategory,
 		SourceID:                metric.ConnectionDetails.SourceID,
-		DestinationDefinitionID: metric.ConnectionDetails.DestinationDefinitionId,
+		DestinationDefinitionID: metric.ConnectionDetails.DestinationDefinitionID,
 		DestinationID:           metric.ConnectionDetails.DestinationID,
 		SourceTaskRunID:         metric.ConnectionDetails.SourceTaskRunID,
 		SourceJobID:             metric.ConnectionDetails.SourceJobID,
