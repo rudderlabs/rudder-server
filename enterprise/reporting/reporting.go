@@ -270,10 +270,10 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		metricReport := types.ReportByStatus{StatusDetail: &types.StatusDetail{}}
 		err = rows.Scan(
 			&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID,
-			&metricReport.ConnectionDetails.SourceDefinitionId,
+			&metricReport.ConnectionDetails.SourceDefinitionID,
 			&metricReport.ConnectionDetails.SourceCategory,
 			&metricReport.ConnectionDetails.SourceID,
-			&metricReport.ConnectionDetails.DestinationDefinitionId,
+			&metricReport.ConnectionDetails.DestinationDefinitionID,
 			&metricReport.ConnectionDetails.DestinationID,
 			&metricReport.ConnectionDetails.SourceTaskRunID,
 			&metricReport.ConnectionDetails.SourceJobID,
@@ -328,7 +328,7 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 
 	for _, report := range reports {
 		identifier := reportIdentifier(report)
-		if _, ok := metricsByGroup[identifier]; !ok {
+		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= r.maxReportsCountInARequest.Load() {
 			metricsByGroup[identifier] = &types.Metric{
 				InstanceDetails: types.InstanceDetails{
 					WorkspaceID: report.WorkspaceID,
@@ -336,10 +336,10 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 					InstanceID:  report.InstanceID,
 				},
 				ConnectionDetails: types.ConnectionDetails{
-					SourceDefinitionId:      report.SourceDefinitionId,
+					SourceDefinitionID:      report.SourceDefinitionID,
 					SourceCategory:          report.SourceCategory,
 					SourceID:                report.SourceID,
-					DestinationDefinitionId: report.DestinationDefinitionId,
+					DestinationDefinitionID: report.DestinationDefinitionID,
 					DestinationID:           report.DestinationID,
 					SourceTaskRunID:         report.SourceTaskRunID,
 					SourceJobID:             report.SourceJobID,
@@ -373,10 +373,6 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 			EventType:      report.StatusDetail.EventType,
 			ErrorType:      report.StatusDetail.ErrorType,
 		})
-
-		if len(metricsByGroup[identifier].StatusDetails) >= r.maxReportsCountInARequest.Load() {
-			delete(metricsByGroup, identifier)
-		}
 	}
 
 	return values
@@ -740,10 +736,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		_, err = stmt.Exec(
 			workspaceID, r.namespace, r.instanceID,
-			metric.ConnectionDetails.SourceDefinitionId,
+			metric.ConnectionDetails.SourceDefinitionID,
 			metric.ConnectionDetails.SourceCategory,
 			metric.ConnectionDetails.SourceID,
-			metric.ConnectionDetails.DestinationDefinitionId,
+			metric.ConnectionDetails.DestinationDefinitionID,
 			metric.ConnectionDetails.DestinationID,
 			metric.ConnectionDetails.SourceTaskRunID,
 			metric.ConnectionDetails.SourceJobID,

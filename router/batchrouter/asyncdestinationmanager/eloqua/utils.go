@@ -172,8 +172,8 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 	if err != nil {
 		return nil, err
 	}
-	failedJobIDs := []int64{}
-	failedReasons := map[int64]string{}
+	abortedJobIDs := []int64{}
+	abortedReasons := map[int64]string{}
 	/**
 	We have a limit of 1000 rejected events per api call. And the offset starts from 0. So we are fetching 1000 rejected events every time making the api call and updating the offset accordingly.
 	*/
@@ -195,32 +195,32 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 				if len(successStatusCode) != 0 && len(uniqueInvalidFields) == 0 {
 					continue
 				}
-				failedJobIDs = append(failedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
-				failedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
+				abortedJobIDs = append(abortedJobIDs, eloqua.jobToCSVMap[val.RecordIndex])
+				abortedReasons[eloqua.jobToCSVMap[val.RecordIndex]] = generateErrorString(val)
 			}
 		}
 	}
-	left, _ := lo.Difference(jobIDs, failedJobIDs)
+	left, _ := lo.Difference(jobIDs, abortedJobIDs)
 	eventStatMeta := common.EventStatMeta{
-		FailedKeys:    failedJobIDs,
-		FailedReasons: failedReasons,
-		SucceededKeys: left,
+		AbortedKeys:    abortedJobIDs,
+		AbortedReasons: abortedReasons,
+		SucceededKeys:  left,
 	}
 	return &eventStatMeta, nil
 }
 
 func parseFailedData(syncId string, importingList []*jobsdb.JobT) *common.EventStatMeta {
 	jobIDs := []int64{}
-	failedReasons := map[int64]string{}
+	abortedReasons := map[int64]string{}
 	for _, job := range importingList {
 		jobIDs = append(jobIDs, job.JobID)
-		failedReasons[job.JobID] = "some error occurred please check the logs, using this syncId: " + syncId
+		abortedReasons[job.JobID] = "some error occurred please check the logs, using this syncId: " + syncId
 	}
 
 	eventStatMeta := common.EventStatMeta{
-		FailedKeys:    jobIDs,
-		FailedReasons: failedReasons,
-		SucceededKeys: []int64{},
+		AbortedKeys:    jobIDs,
+		AbortedReasons: abortedReasons,
+		SucceededKeys:  []int64{},
 	}
 	return &eventStatMeta
 }

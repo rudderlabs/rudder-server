@@ -202,6 +202,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.maxFailedCountForJob = config.GetReloadableIntVar(128, 1, "BatchRouter."+brt.destType+".maxFailedCountForJob", "BatchRouter.maxFailedCountForJob")
 	brt.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "BatchRouter.RSources."+brt.destType+".maxFailedCountForJob", "BatchRouter.RSources.maxFailedCountForJob")
 	brt.asyncUploadTimeout = config.GetReloadableDurationVar(30, time.Minute, "BatchRouter."+brt.destType+".asyncUploadTimeout", "BatchRouter.asyncUploadTimeout")
+	brt.asyncUploadWorkerTimeout = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".asyncUploadWorkerTimeout", "BatchRouter.asyncUploadWorkerTimeout")
 	brt.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "BatchRouter."+brt.destType+".retryTimeWindow", "BatchRouter."+brt.destType+".retryTimeWindowInMins", "BatchRouter.retryTimeWindow", "BatchRouter.retryTimeWindowInMins")
 	brt.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "BatchRouter.RSources."+brt.destType+".retryTimeWindow", "BatchRouter.RSources."+brt.destType+".retryTimeWindowInMins", "BatchRouter.RSources.retryTimeWindow", "BatchRouter.RSources.retryTimeWindowInMins")
 	brt.jobQueryBatchSize = config.GetReloadableIntVar(100000, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
@@ -210,9 +211,9 @@ func (brt *Handle) setupReloadableVars() {
 	brt.jobsDBCommandTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
 	brt.jobdDBQueryRequestTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.BatchRouter.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	brt.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries")
-	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter.minIdleSleep")
-	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
-	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter.mainLoopFreq")
+	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter."+brt.destType+".minIdleSleep", "BatchRouter.minIdleSleep")
+	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".uploadFreqInS", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
+	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".mainLoopFreq", "BatchRouter.mainLoopFreq")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
@@ -388,7 +389,7 @@ func (brt *Handle) backendConfigSubscriber() {
 			for _, source := range wConfig.Sources {
 				if len(source.Destinations) > 0 {
 					for _, destination := range source.Destinations {
-						if destination.DestinationDefinition.Name == brt.destType {
+						if destination.DestinationDefinition.Name == brt.destType && destination.Enabled {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)

@@ -285,7 +285,3 @@ type JobInfo struct {
 	fileSizeLimit int64
 	importingJobs []int64
 }
-
-type UploadData struct {
-	Data []map[string]interface{}
-}

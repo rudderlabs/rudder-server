@@ -42,7 +42,7 @@ type stagingFileRepo interface {
 }
 
 type fetchSchemaRepo interface {
-	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
+	FetchSchema(ctx context.Context) (model.Schema, error)
 }
 
 type Schema struct {
@@ -51,15 +51,12 @@ type Schema struct {
 	stagingFileRepo                  stagingFileRepo
 	log                              logger.Logger
 	stagingFilesSchemaPaginationSize int
-	skipDeepEqualSchemas             bool
 	enableIDResolution               bool
 
-	localSchema                     model.Schema
-	localSchemaMu                   sync.RWMutex
-	schemaInWarehouse               model.Schema
-	schemaInWarehouseMu             sync.RWMutex
-	unrecognizedSchemaInWarehouse   model.Schema
-	unrecognizedSchemaInWarehouseMu sync.RWMutex
+	localSchema         model.Schema
+	localSchemaMu       sync.RWMutex
+	schemaInWarehouse   model.Schema
+	schemaInWarehouseMu sync.RWMutex
 
 	stats struct {
 		schemaSize stats.Histogram
@@ -79,7 +76,6 @@ func New(
 		stagingFileRepo:                  repo.NewStagingFiles(db),
 		log:                              logger.Child("schema"),
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
-		skipDeepEqualSchemas:             conf.GetBool("Warehouse.skipDeepEqualSchemas", false),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
 	s.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
@@ -347,22 +343,16 @@ func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 // 2. Removes deprecated columns from schema
 // 3. Updates local warehouse schema and unrecognized schema instance
 func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
-	warehouseSchema, unrecognizedWarehouseSchema, err := repo.FetchSchema(ctx)
+	warehouseSchema, err := repo.FetchSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema: %w", err)
 	}
 
 	sh.removeDeprecatedColumns(warehouseSchema)
-	sh.removeDeprecatedColumns(unrecognizedWarehouseSchema)
 
 	sh.schemaInWarehouseMu.Lock()
-	defer sh.schemaInWarehouseMu.Unlock()
-	sh.unrecognizedSchemaInWarehouseMu.Lock()
-	defer sh.unrecognizedSchemaInWarehouseMu.Unlock()
-
 	sh.schemaInWarehouse = warehouseSchema
-	sh.unrecognizedSchemaInWarehouse = unrecognizedWarehouseSchema
-
+	sh.schemaInWarehouseMu.Unlock()
 	return nil
 }
 
@@ -388,31 +378,7 @@ func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 
 // hasSchemaChanged compares the localSchema with the schemaInWarehouse
 func (sh *Schema) hasSchemaChanged(localSchema model.Schema) bool {
-	if !sh.skipDeepEqualSchemas {
-		eq := reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
-		return !eq
-	}
-	// Iterating through all tableName in the localSchema
-	for tableName := range localSchema {
-		localColumns := localSchema[tableName]
-		warehouseColumns, whColumnsExist := sh.schemaInWarehouse[tableName]
-
-		// If warehouse does  not contain the specified table return true.
-		if !whColumnsExist {
-			return true
-		}
-		for columnName := range localColumns {
-			localColumn := localColumns[columnName]
-			warehouseColumn := warehouseColumns[columnName]
-
-			// If warehouse does not contain the specified column return true.
-			// If warehouse column does not match with the local one return true
-			if localColumn != warehouseColumn {
-				return true
-			}
-		}
-	}
-	return false
+	return !reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
 }
 
 // TableSchemaDiff returns the diff between the warehouse schema and the upload schema
@@ -482,14 +448,4 @@ func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
 	sh.schemaInWarehouseMu.RLock()
 	defer sh.schemaInWarehouseMu.RUnlock()
 	return len(sh.schemaInWarehouse[tableName])
-}
-
-func (sh *Schema) IsColumnInUnrecognizedSchema(t, c string) bool {
-	sh.unrecognizedSchemaInWarehouseMu.RLock()
-	defer sh.unrecognizedSchemaInWarehouseMu.RUnlock()
-	schema, ok := sh.unrecognizedSchemaInWarehouse[t]
-	if ok {
-		_, ok = schema[c]
-	}
-	return ok
 }

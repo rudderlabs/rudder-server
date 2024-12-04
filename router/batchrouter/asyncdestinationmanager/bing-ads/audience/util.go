@@ -424,7 +424,7 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 // GetUploadStats Related utils
 
 // get the list of unique error messages for a particular jobId.
-func getFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
+func getAbortedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
 	reasons := make(map[int64]string)
 	for key, errors := range clientIDErrors {
 		reasons[key] = strings.Join(lo.Keys(errors), commaSeparator)

@@ -1218,10 +1218,9 @@ func TestIntegration(t *testing.T) {
 			require.ErrorIs(t, err, sql.ErrNoRows)
 			require.Empty(t, schema)
 
-			warehouseSchema, unrecognizedWarehouseSchema, err := d.FetchSchema(ctx)
+			warehouseSchema, err := d.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.Empty(t, warehouseSchema)
-			require.Empty(t, unrecognizedWarehouseSchema)
 			t.Cleanup(func() {
 				dropSchema(t, d.DB.DB, namespace)
 			})
@@ -1254,10 +1253,9 @@ func TestIntegration(t *testing.T) {
 			_, err = d.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s.rudder_staging_123 (c1 string, c2 int);`, d.Namespace))
 			require.NoError(t, err)
 
-			warehouseSchema, unrecognizedWarehouseSchema, err := d.FetchSchema(ctx)
+			warehouseSchema, err := d.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, warehouseSchema)
-			require.NotEmpty(t, unrecognizedWarehouseSchema)
 			require.Contains(t, warehouseSchema, "test_table")
 			require.NotContains(t, warehouseSchema["test_table"], "event_date")
 			require.NotContains(t, warehouseSchema, "rudder_staging_123")
@@ -1276,19 +1274,6 @@ func TestIntegration(t *testing.T) {
 				"c8":          "int",
 			},
 				warehouseSchema["test_table"],
-			)
-			require.Equal(t, model.Schema{
-				"test_table": {
-					"c13": "<missing_datatype>",
-					"c16": "<missing_datatype>",
-					"c5":  "<missing_datatype>",
-					"c2":  "<missing_datatype>",
-					"c15": "<missing_datatype>",
-					"c9":  "<missing_datatype>",
-					"c17": "<missing_datatype>",
-				},
-			},
-				unrecognizedWarehouseSchema,
 			)
 
 			missingDatatypeStats := []string{"void", "timestamp_ntz", "struct", "array", "binary", "map", "decimal(10,2)"}

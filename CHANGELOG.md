@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.38.3](https://github.com/rudderlabs/rudder-server/compare/v1.38.2...v1.38.3) (2024-11-20)
+
+
+### Bug Fixes
+
+* allow only enabled dest in backendSubscriber, fix klaviyo bulk ([#5309](https://github.com/rudderlabs/rudder-server/issues/5309)) ([8808245](https://github.com/rudderlabs/rudder-server/commit/8808245065fb1fcb41d9b1e845b2a69b6847e073))
+
+## [1.38.2](https://github.com/rudderlabs/rudder-server/compare/v1.38.1...v1.38.2) (2024-11-19)
+
+
+### Bug Fixes
+
+* klaviyo bulk upload and BingAds OC  ([#5305](https://github.com/rudderlabs/rudder-server/issues/5305)) ([9c9ef73](https://github.com/rudderlabs/rudder-server/commit/9c9ef73d16326e4a12a69cebe0f71656b4928d42))
+
 ## [1.38.1](https://github.com/rudderlabs/rudder-server/compare/v1.38.0...v1.38.1) (2024-11-14)
 
 
