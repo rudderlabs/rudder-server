@@ -345,7 +345,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 			violatedConstraints := w.constraintsManager.ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := handleSchemaChange(
+				newColumnVal, convError := HandleSchemaChange(
 					dataTypeInSchema,
 					columnType,
 					columnVal,
@@ -522,8 +522,8 @@ func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId strin
 	return conn, nil
 }
 
-// handleSchemaChange checks if the existing column type is compatible with the new column type
-func handleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+// HandleSchemaChange checks if the existing column type is compatible with the new column type
+func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error
