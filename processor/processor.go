@@ -1239,7 +1239,7 @@ func (proc *Handle) updateMetricMaps(
 				sourceCategory:          event.Metadata.SourceCategory,
 				transformationID:        event.Metadata.TransformationID,
 				transformationVersionID: event.Metadata.TransformationVersionID,
-				trackingPlanID:          event.Metadata.TrackingPlanId,
+				trackingPlanID:          event.Metadata.TrackingPlanID,
 				trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 			}
 		}
@@ -1251,27 +1251,27 @@ func (proc *Handle) updateMetricMaps(
 		event.Metadata.SourceJobRunID,
 		event.Metadata.TransformationID,
 		event.Metadata.TransformationVersionID,
-		event.Metadata.TrackingPlanId,
+		event.Metadata.TrackingPlanID,
 		event.Metadata.TrackingPlanVersion,
 		status, event.StatusCode,
 		eventName, eventType,
 	)
 
 	if _, ok := connectionDetailsMap[key]; !ok {
-		connectionDetailsMap[key] = types.CreateConnectionDetail(
-			event.Metadata.SourceID,
-			event.Metadata.DestinationID,
-			event.Metadata.SourceTaskRunID,
-			event.Metadata.SourceJobID,
-			event.Metadata.SourceJobRunID,
-			event.Metadata.SourceDefinitionID,
-			event.Metadata.DestinationDefinitionID,
-			event.Metadata.SourceCategory,
-			event.Metadata.TransformationID,
-			event.Metadata.TransformationVersionID,
-			event.Metadata.TrackingPlanId,
-			event.Metadata.TrackingPlanVersion,
-		)
+		connectionDetailsMap[key] = &types.ConnectionDetails{
+			SourceID:                event.Metadata.SourceID,
+			SourceTaskRunID:         event.Metadata.SourceTaskRunID,
+			SourceJobID:             event.Metadata.SourceJobID,
+			SourceJobRunID:          event.Metadata.SourceJobRunID,
+			SourceDefinitionID:      event.Metadata.SourceDefinitionID,
+			SourceCategory:          event.Metadata.SourceCategory,
+			DestinationID:           event.Metadata.DestinationID,
+			DestinationDefinitionID: event.Metadata.DestinationDefinitionID,
+			TransformationID:        event.Metadata.TransformationID,
+			TransformationVersionID: event.Metadata.TransformationVersionID,
+			TrackingPlanID:          event.Metadata.TrackingPlanID,
+			TrackingPlanVersion:     event.Metadata.TrackingPlanVersion,
+		}
 	}
 
 	if _, ok := statusDetailsMap[key]; !ok {
@@ -1294,7 +1294,16 @@ func (proc *Handle) updateMetricMaps(
 
 		sd, ok := statusDetailsMap[key][sdkey]
 		if !ok {
-			sd = types.CreateStatusDetail(status, 0, 0, event.StatusCode, event.Error, payload(), eventName, eventType, ve.Type)
+			sd = &types.StatusDetail{
+				Status:         status,
+				StatusCode:     event.StatusCode,
+				SampleResponse: event.Error,
+				SampleEvent:    payload(),
+				EventName:      eventName,
+				EventType:      eventType,
+				ErrorType:      ve.Type,
+				StatTags:       event.StatTags,
+			}
 			statusDetailsMap[key][sdkey] = sd
 		}
 		sd.ViolationCount += incrementCount
@@ -1307,7 +1316,15 @@ func (proc *Handle) updateMetricMaps(
 	sdkey := fmt.Sprintf("%s:%d:%s:%s:%s", status, event.StatusCode, eventName, eventType, "")
 	sd, ok := statusDetailsMap[key][sdkey]
 	if !ok {
-		sd = types.CreateStatusDetail(status, 0, 0, event.StatusCode, event.Error, payload(), eventName, eventType, "")
+		sd = &types.StatusDetail{
+			Status:         status,
+			StatusCode:     event.StatusCode,
+			SampleResponse: event.Error,
+			SampleEvent:    payload(),
+			EventName:      eventName,
+			EventType:      eventType,
+			StatTags:       event.StatTags,
+		}
 		statusDetailsMap[key][sdkey] = sd
 	}
 
@@ -1564,9 +1581,31 @@ func getDiffMetrics(
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory, metricMetadata.transformationID, metricMetadata.transformationVersionID, metricMetadata.trackingPlanID, metricMetadata.trackingPlanVersion),
-				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
-				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, 0, "", []byte(`{}`), eventName, eventType, ""),
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:                metricMetadata.sourceID,
+					DestinationID:           metricMetadata.destinationID,
+					SourceTaskRunID:         metricMetadata.sourceTaskRunID,
+					SourceJobID:             metricMetadata.sourceJobID,
+					SourceJobRunID:          metricMetadata.sourceJobRunID,
+					SourceDefinitionID:      metricMetadata.sourceDefinitionID,
+					DestinationDefinitionID: metricMetadata.destinationDefinitionID,
+					SourceCategory:          metricMetadata.sourceCategory,
+					TransformationID:        metricMetadata.transformationID,
+					TransformationVersionID: metricMetadata.transformationVersionID,
+					TrackingPlanID:          metricMetadata.trackingPlanID,
+					TrackingPlanVersion:     metricMetadata.trackingPlanVersion,
+				},
+				PUDetails: types.PUDetails{
+					InPU: inPU,
+					PU:   pu,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:      types.DiffStatus,
+					Count:       diff,
+					SampleEvent: []byte(`{}`),
+					EventName:   eventName,
+					EventType:   eventType,
+				},
 			}
 			diffMetrics = append(diffMetrics, metric)
 			statFactory.NewTaggedStat(
@@ -1930,7 +1969,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 				trackingPlanVersion = int(version)
 			}
 		}
-		shallowEventCopy.Metadata.TrackingPlanId = trackingPlanID
+		shallowEventCopy.Metadata.TrackingPlanID = trackingPlanID
 		shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
 		shallowEventCopy.Metadata.SourceTpConfig = event.source.DgSourceTrackingPlanConfig.Config
 		shallowEventCopy.Metadata.MergedTpConfig = event.source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
@@ -2458,7 +2497,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 					trackingPlanVersion = int(version)
 				}
 			}
-			shallowEventCopy.Metadata.TrackingPlanId = trackingPlanID
+			shallowEventCopy.Metadata.TrackingPlanID = trackingPlanID
 			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
 			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
 			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
@@ -2991,7 +3030,7 @@ func (proc *Handle) transformSrcDest(
 					sourceCategory:          event.Metadata.SourceCategory,
 					transformationID:        event.Metadata.TransformationID,
 					transformationVersionID: event.Metadata.TransformationVersionID,
-					trackingPlanID:          event.Metadata.TrackingPlanId,
+					trackingPlanID:          event.Metadata.TrackingPlanID,
 					trackingPlanVersion:     event.Metadata.TrackingPlanVersion,
 				}
 			}
