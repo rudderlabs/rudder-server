@@ -59,6 +59,10 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	if len(uploadResp.Errors) > 0 {
 		return &uploadResp, fmt.Errorf("upload failed with errors: %+v", uploadResp.Errors)
 	}
+	if uploadResp.Data.Id == "" {
+		k.logger.Error("[klaviyo bulk upload] upload failed with empty importId", string(uploadBodyBytes))
+		return &uploadResp, fmt.Errorf("upload failed with empty importId")
+	}
 	uploadTimeStat := k.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, k.statLabels)
 	uploadTimeStat.Since(startTime)
 
@@ -66,6 +70,9 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 }
 
 func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, error) {
+	if importId == "" {
+		return nil, fmt.Errorf("importId is empty")
+	}
 	pollUrl := KlaviyoAPIURL + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
@@ -128,7 +135,7 @@ func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger
 		statsFactory:  statsFactory,
 		statLabels: stats.Tags{
 			"module":   "batch_router",
-			"destType": destination.Name,
+			"destType": destination.DestinationDefinition.Name,
 			"destID":   destination.ID,
 		},
 	}, nil
