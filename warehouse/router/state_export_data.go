@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/samber/lo"
 
@@ -243,7 +242,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		LastExecTime: &lastExecTime,
 	})
 
-	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
+	_, err = job.updateSchema(job.identifiesTableName())
 	if err != nil {
 		status := model.TableUploadUpdatingSchemaFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -253,7 +252,6 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		})
 		return job.processLoadTableResponse(map[string]error{job.identifiesTableName(): err})
 	}
-	var alteredUserSchema bool
 	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
 		status := model.TableUploadExecuting
 		lastExecTime := job.now()
@@ -261,7 +259,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 			Status:       &status,
 			LastExecTime: &lastExecTime,
 		})
-		alteredUserSchema, err = job.updateSchema(job.usersTableName())
+		_, err = job.updateSchema(job.usersTableName())
 		if err != nil {
 			status = model.TableUploadUpdatingSchemaFailed
 			errorsString := misc.QuoteLiteral(err.Error())
@@ -279,11 +277,6 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	}
 
 	errorMap := job.whManager.LoadUserTables(job.ctx)
-
-	if alteredIdentitySchema || alteredUserSchema {
-		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID)
-	}
 	return job.processLoadTableResponse(errorMap)
 }
 
@@ -499,7 +492,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 		}
 	}
 
-	var alteredSchema bool
 	for _, tableName := range identityTables {
 		if _, loaded := currentJobSucceededTables[tableName]; loaded {
 			continue
@@ -526,7 +518,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
 				Status: &status,
 			})
-			alteredSchema = true
 		}
 
 		status := model.TableUploadExecuting
@@ -551,11 +542,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			errorMap[tableName] = err
 			break
 		}
-	}
-
-	if alteredSchema {
-		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
 	}
 
 	return job.processLoadTableResponse(errorMap)
@@ -639,7 +625,6 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 
-	var alteredSchemaInAtLeastOneTable atomic.Bool
 	concurrencyGuard := make(chan struct{}, parallelLoads)
 
 	var (
@@ -680,10 +665,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		tableName := tableName
 		concurrencyGuard <- struct{}{}
 		rruntime.GoForWarehouse(func() {
-			alteredSchema, err := job.loadTable(tableName)
-			if alteredSchema {
-				alteredSchemaInAtLeastOneTable.Store(true)
-			}
+			_, err := job.loadTable(tableName)
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
@@ -695,12 +677,6 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		})
 	}
 	wg.Wait()
-
-	if alteredSchemaInAtLeastOneTable.Load() {
-		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
-	}
-
 	return loadErrors
 }
 

@@ -200,6 +200,9 @@ func (r *Router) Start(ctx context.Context) error {
 	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
+	g.Go(crash.NotifyWarehouse(func() error {
+		return r.syncRemoteSchema(gCtx)
+	}))
 	return g.Wait()
 }
 

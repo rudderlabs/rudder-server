@@ -11,10 +11,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -248,12 +247,6 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, uploadID int64) error {
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-	return sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
-}
-
 func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadID int64, updatedSchema model.Schema) error {
 	return sh.updateLocalSchema(ctx, uploadID, updatedSchema)
 }
@@ -285,40 +278,6 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updated
 	sh.localSchemaMu.Unlock()
 
 	return nil
-}
-
-// SyncRemoteSchema
-// 1. Fetches schema from local
-// 2. Fetches schema from warehouse
-// 3. Initialize local schema
-// 4. Updates local schema with warehouse schema if it has changed
-// 5. Returns true if schema has changed
-func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
-	if err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-
-	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
-
-	sh.localSchemaMu.Lock()
-	sh.localSchema = localSchema
-	sh.localSchemaMu.Unlock()
-
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-
-	schemaChanged := sh.hasSchemaChanged(localSchema)
-	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
-		if err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
-
-	return schemaChanged, nil
 }
 
 // GetLocalSchema returns the local schema from wh_schemas table
