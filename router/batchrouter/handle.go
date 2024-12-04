@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -150,7 +151,7 @@ type Handle struct {
 // mainLoop is responsible for pinging the workers periodically for every active partition
 func (brt *Handle) mainLoop(ctx context.Context) {
 	if brt.now == nil {
-		brt.now = time.Now
+		brt.now = timeutil.Now
 	}
 
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
