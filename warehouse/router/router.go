@@ -441,7 +441,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			continue
 		}
 
-		stagingFilesList, err := r.stagingRepo.GetForUpload(ctx, upload)
+		stagingFilesList, err := r.stagingRepo.GetForUploadID(ctx, upload.ID)
 		if err != nil {
 			return nil, err
 		}
