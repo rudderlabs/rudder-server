@@ -20,6 +20,7 @@ import (
 type MockKVStoreManager struct {
 	ctrl     *gomock.Controller
 	recorder *MockKVStoreManagerMockRecorder
+	isgomock struct{}
 }
 
 // MockKVStoreManagerMockRecorder is the mock recorder for MockKVStoreManager.
@@ -66,39 +67,39 @@ func (mr *MockKVStoreManagerMockRecorder) CreateClient() *gomock.Call {
 }
 
 // DeleteKey mocks base method.
-func (m *MockKVStoreManager) DeleteKey(arg0 string) error {
+func (m *MockKVStoreManager) DeleteKey(key string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteKey", arg0)
+	ret := m.ctrl.Call(m, "DeleteKey", key)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteKey indicates an expected call of DeleteKey.
-func (mr *MockKVStoreManagerMockRecorder) DeleteKey(arg0 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) DeleteKey(key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteKey", reflect.TypeOf((*MockKVStoreManager)(nil).DeleteKey), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteKey", reflect.TypeOf((*MockKVStoreManager)(nil).DeleteKey), key)
 }
 
 // HGetAll mocks base method.
-func (m *MockKVStoreManager) HGetAll(arg0 string) (map[string]string, error) {
+func (m *MockKVStoreManager) HGetAll(key string) (map[string]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HGetAll", arg0)
+	ret := m.ctrl.Call(m, "HGetAll", key)
 	ret0, _ := ret[0].(map[string]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // HGetAll indicates an expected call of HGetAll.
-func (mr *MockKVStoreManagerMockRecorder) HGetAll(arg0 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) HGetAll(key any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HGetAll", reflect.TypeOf((*MockKVStoreManager)(nil).HGetAll), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HGetAll", reflect.TypeOf((*MockKVStoreManager)(nil).HGetAll), key)
 }
 
 // HMGet mocks base method.
-func (m *MockKVStoreManager) HMGet(arg0 string, arg1 ...string) ([]any, error) {
+func (m *MockKVStoreManager) HMGet(key string, fields ...string) ([]any, error) {
 	m.ctrl.T.Helper()
-	varargs := []any{arg0}
-	for _, a := range arg1 {
+	varargs := []any{key}
+	for _, a := range fields {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "HMGet", varargs...)
@@ -108,79 +109,79 @@ func (m *MockKVStoreManager) HMGet(arg0 string, arg1 ...string) ([]any, error) {
 }
 
 // HMGet indicates an expected call of HMGet.
-func (mr *MockKVStoreManagerMockRecorder) HMGet(arg0 any, arg1 ...any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) HMGet(key any, fields ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]any{arg0}, arg1...)
+	varargs := append([]any{key}, fields...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HMGet", reflect.TypeOf((*MockKVStoreManager)(nil).HMGet), varargs...)
 }
 
 // HMSet mocks base method.
-func (m *MockKVStoreManager) HMSet(arg0 string, arg1 map[string]any) error {
+func (m *MockKVStoreManager) HMSet(key string, fields map[string]any) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HMSet", arg0, arg1)
+	ret := m.ctrl.Call(m, "HMSet", key, fields)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // HMSet indicates an expected call of HMSet.
-func (mr *MockKVStoreManagerMockRecorder) HMSet(arg0, arg1 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) HMSet(key, fields any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HMSet", reflect.TypeOf((*MockKVStoreManager)(nil).HMSet), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HMSet", reflect.TypeOf((*MockKVStoreManager)(nil).HMSet), key, fields)
 }
 
 // HSet mocks base method.
-func (m *MockKVStoreManager) HSet(arg0, arg1 string, arg2 any) error {
+func (m *MockKVStoreManager) HSet(key, field string, value any) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HSet", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "HSet", key, field, value)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // HSet indicates an expected call of HSet.
-func (mr *MockKVStoreManagerMockRecorder) HSet(arg0, arg1, arg2 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) HSet(key, field, value any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HSet", reflect.TypeOf((*MockKVStoreManager)(nil).HSet), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HSet", reflect.TypeOf((*MockKVStoreManager)(nil).HSet), key, field, value)
 }
 
 // SendDataAsJSON mocks base method.
-func (m *MockKVStoreManager) SendDataAsJSON(arg0 json.RawMessage, arg1 map[string]any) (any, error) {
+func (m *MockKVStoreManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]any) (any, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SendDataAsJSON", arg0, arg1)
+	ret := m.ctrl.Call(m, "SendDataAsJSON", jsonData, config)
 	ret0, _ := ret[0].(any)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SendDataAsJSON indicates an expected call of SendDataAsJSON.
-func (mr *MockKVStoreManagerMockRecorder) SendDataAsJSON(arg0, arg1 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) SendDataAsJSON(jsonData, config any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).SendDataAsJSON), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).SendDataAsJSON), jsonData, config)
 }
 
 // ShouldSendDataAsJSON mocks base method.
-func (m *MockKVStoreManager) ShouldSendDataAsJSON(arg0 map[string]any) bool {
+func (m *MockKVStoreManager) ShouldSendDataAsJSON(config map[string]any) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ShouldSendDataAsJSON", arg0)
+	ret := m.ctrl.Call(m, "ShouldSendDataAsJSON", config)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // ShouldSendDataAsJSON indicates an expected call of ShouldSendDataAsJSON.
-func (mr *MockKVStoreManagerMockRecorder) ShouldSendDataAsJSON(arg0 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) ShouldSendDataAsJSON(config any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShouldSendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).ShouldSendDataAsJSON), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShouldSendDataAsJSON", reflect.TypeOf((*MockKVStoreManager)(nil).ShouldSendDataAsJSON), config)
 }
 
 // StatusCode mocks base method.
-func (m *MockKVStoreManager) StatusCode(arg0 error) int {
+func (m *MockKVStoreManager) StatusCode(err error) int {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StatusCode", arg0)
+	ret := m.ctrl.Call(m, "StatusCode", err)
 	ret0, _ := ret[0].(int)
 	return ret0
 }
 
 // StatusCode indicates an expected call of StatusCode.
-func (mr *MockKVStoreManagerMockRecorder) StatusCode(arg0 any) *gomock.Call {
+func (mr *MockKVStoreManagerMockRecorder) StatusCode(err any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusCode", reflect.TypeOf((*MockKVStoreManager)(nil).StatusCode), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StatusCode", reflect.TypeOf((*MockKVStoreManager)(nil).StatusCode), err)
 }

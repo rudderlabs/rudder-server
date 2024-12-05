@@ -22,6 +22,7 @@ import (
 type MockTransformer struct {
 	ctrl     *gomock.Controller
 	recorder *MockTransformerMockRecorder
+	isgomock struct{}
 }
 
 // MockTransformerMockRecorder is the mock recorder for MockTransformer.
@@ -42,29 +43,29 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // ProxyRequest mocks base method.
-func (m *MockTransformer) ProxyRequest(arg0 context.Context, arg1 *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
+func (m *MockTransformer) ProxyRequest(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ProxyRequest", arg0, arg1)
+	ret := m.ctrl.Call(m, "ProxyRequest", ctx, proxyReqParams)
 	ret0, _ := ret[0].(transformer.ProxyRequestResponse)
 	return ret0
 }
 
 // ProxyRequest indicates an expected call of ProxyRequest.
-func (mr *MockTransformerMockRecorder) ProxyRequest(arg0, arg1 any) *gomock.Call {
+func (mr *MockTransformerMockRecorder) ProxyRequest(ctx, proxyReqParams any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProxyRequest", reflect.TypeOf((*MockTransformer)(nil).ProxyRequest), ctx, proxyReqParams)
 }
 
 // Transform mocks base method.
-func (m *MockTransformer) Transform(arg0 string, arg1 *types.TransformMessageT) []types.DestinationJobT {
+func (m *MockTransformer) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transform", arg0, arg1)
+	ret := m.ctrl.Call(m, "Transform", transformType, transformMessage)
 	ret0, _ := ret[0].([]types.DestinationJobT)
 	return ret0
 }
 
 // Transform indicates an expected call of Transform.
-func (mr *MockTransformerMockRecorder) Transform(arg0, arg1 any) *gomock.Call {
+func (mr *MockTransformerMockRecorder) Transform(transformType, transformMessage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transform", reflect.TypeOf((*MockTransformer)(nil).Transform), transformType, transformMessage)
 }

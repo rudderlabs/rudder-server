@@ -145,10 +145,10 @@ func (b *BingAdsBulkUploader) pollSingleImport(requestId string) common.PollStat
 		}
 	case "CompletedWithErrors":
 		return common.PollStatusResponse{
-			Complete:      true,
-			StatusCode:    200,
-			HasFailed:     true,
-			FailedJobURLs: uploadStatusResp.ResultFileUrl,
+			Complete:            true,
+			StatusCode:          200,
+			HasFailed:           true,
+			FailedJobParameters: uploadStatusResp.ResultFileUrl,
 		}
 	case "FileUploaded", "InProgress", "PendingFileUpload":
 		return common.PollStatusResponse{
@@ -185,7 +185,7 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		*/
 		pollStatusCode = append(pollStatusCode, resp.StatusCode)
 		completionStatus = append(completionStatus, resp.Complete)
-		failedJobURLs = append(failedJobURLs, resp.FailedJobURLs)
+		failedJobURLs = append(failedJobURLs, resp.FailedJobParameters)
 		cumulativeProgressStatus = cumulativeProgressStatus || resp.InProgress
 		cumulativeFailureStatus = cumulativeFailureStatus || resp.HasFailed
 	}
@@ -195,11 +195,11 @@ func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		cumulativeStatusCode = 200
 	}
 	cumulativeResp = common.PollStatusResponse{
-		Complete:      !lo.Contains(completionStatus, false),
-		InProgress:    cumulativeProgressStatus,
-		StatusCode:    cumulativeStatusCode,
-		HasFailed:     cumulativeFailureStatus,
-		FailedJobURLs: strings.Join(failedJobURLs, commaSeparator), // creating a comma separated string of all the result file urls
+		Complete:            !lo.Contains(completionStatus, false),
+		InProgress:          cumulativeProgressStatus,
+		StatusCode:          cumulativeStatusCode,
+		HasFailed:           cumulativeFailureStatus,
+		FailedJobParameters: strings.Join(failedJobURLs, commaSeparator), // creating a comma separated string of all the result file urls
 	}
 
 	return cumulativeResp
@@ -217,8 +217,8 @@ func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string) (com
 	eventStatsResponse := common.GetUploadStatsResponse{
 		StatusCode: 200,
 		Metadata: common.EventStatMeta{
-			FailedKeys:    lo.Keys(clientIDErrors),
-			FailedReasons: getFailedReasons(clientIDErrors),
+			AbortedKeys:    lo.Keys(clientIDErrors),
+			AbortedReasons: getAbortedReasons(clientIDErrors),
 		},
 	}
 
@@ -226,7 +226,7 @@ func (b *BingAdsBulkUploader) getUploadStatsOfSingleImport(filePath string) (com
 		"module":   "batch_router",
 		"destType": b.destName,
 	})
-	eventsAbortedStat.Count(len(eventStatsResponse.Metadata.FailedKeys))
+	eventsAbortedStat.Count(len(eventStatsResponse.Metadata.AbortedKeys))
 
 	eventsSuccessStat := b.statsFactory.NewTaggedStat("success_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
@@ -245,9 +245,9 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 		initialEventList = append(initialEventList, job.JobID)
 	}
 	eventStatsResponse := common.GetUploadStatsResponse{}
-	var failedJobIds []int64
-	var cumulativeFailedReasons map[int64]string
-	fileURLs := lo.Reject(strings.Split(uploadStatsInput.FailedJobURLs, commaSeparator), func(url string, _ int) bool {
+	var abortedJobIDs []int64
+	var cumulativeAbortedReasons map[int64]string
+	fileURLs := lo.Reject(strings.Split(uploadStatsInput.FailedJobParameters, commaSeparator), func(url string, _ int) bool {
 		return url == ""
 	})
 	for _, fileURL := range fileURLs {
@@ -265,15 +265,15 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 				StatusCode: 500,
 			}
 		}
-		cumulativeFailedReasons = lo.Assign(cumulativeFailedReasons, response.Metadata.FailedReasons)
-		failedJobIds = append(failedJobIds, response.Metadata.FailedKeys...)
+		cumulativeAbortedReasons = lo.Assign(cumulativeAbortedReasons, response.Metadata.AbortedReasons)
+		abortedJobIDs = append(abortedJobIDs, response.Metadata.AbortedKeys...)
 		eventStatsResponse.StatusCode = response.StatusCode
 	}
 
 	eventStatsResponse.Metadata = common.EventStatMeta{
-		FailedKeys:    failedJobIds,
-		FailedReasons: cumulativeFailedReasons,
-		SucceededKeys: getSuccessJobIDs(failedJobIds, initialEventList),
+		AbortedKeys:    abortedJobIDs,
+		AbortedReasons: cumulativeAbortedReasons,
+		SucceededKeys:  getSuccessJobIDs(abortedJobIDs, initialEventList),
 	}
 
 	return eventStatsResponse

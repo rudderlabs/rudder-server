@@ -21,7 +21,7 @@ func TestCalculateDataType(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		dataType, exists := calculateDataType(tc.columnType, tc.numericScale)
+		dataType, exists := CalculateDataType(tc.columnType, tc.numericScale.Int64)
 		require.Equal(t, tc.expected, dataType)
 		require.Equal(t, tc.exists, exists)
 	}

@@ -20,6 +20,7 @@ import (
 type MockAuthorizer struct {
 	ctrl     *gomock.Controller
 	recorder *MockAuthorizerMockRecorder
+	isgomock struct{}
 }
 
 // MockAuthorizerMockRecorder is the mock recorder for MockAuthorizer.
@@ -55,31 +56,31 @@ func (mr *MockAuthorizerMockRecorder) AuthStatusToggle(arg0 any) *gomock.Call {
 }
 
 // FetchToken mocks base method.
-func (m *MockAuthorizer) FetchToken(arg0 *oauth.RefreshTokenParams) (int, *oauth.AuthResponse) {
+func (m *MockAuthorizer) FetchToken(fetchTokenParams *oauth.RefreshTokenParams) (int, *oauth.AuthResponse) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FetchToken", arg0)
+	ret := m.ctrl.Call(m, "FetchToken", fetchTokenParams)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(*oauth.AuthResponse)
 	return ret0, ret1
 }
 
 // FetchToken indicates an expected call of FetchToken.
-func (mr *MockAuthorizerMockRecorder) FetchToken(arg0 any) *gomock.Call {
+func (mr *MockAuthorizerMockRecorder) FetchToken(fetchTokenParams any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchToken", reflect.TypeOf((*MockAuthorizer)(nil).FetchToken), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchToken", reflect.TypeOf((*MockAuthorizer)(nil).FetchToken), fetchTokenParams)
 }
 
 // RefreshToken mocks base method.
-func (m *MockAuthorizer) RefreshToken(arg0 *oauth.RefreshTokenParams) (int, *oauth.AuthResponse) {
+func (m *MockAuthorizer) RefreshToken(refTokenParams *oauth.RefreshTokenParams) (int, *oauth.AuthResponse) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RefreshToken", arg0)
+	ret := m.ctrl.Call(m, "RefreshToken", refTokenParams)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(*oauth.AuthResponse)
 	return ret0, ret1
 }
 
 // RefreshToken indicates an expected call of RefreshToken.
-func (mr *MockAuthorizerMockRecorder) RefreshToken(arg0 any) *gomock.Call {
+func (mr *MockAuthorizerMockRecorder) RefreshToken(refTokenParams any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockAuthorizer)(nil).RefreshToken), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockAuthorizer)(nil).RefreshToken), refTokenParams)
 }

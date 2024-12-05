@@ -170,7 +170,6 @@ func New(
 			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery:        service.NewRecovery(destType, r.uploadRepo),
 		encodingFactory: encodingFactory,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)

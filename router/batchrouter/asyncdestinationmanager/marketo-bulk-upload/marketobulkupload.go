@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -198,8 +199,8 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	case "Complete":
 		pollStatus.Complete = true
 		pollStatus.StatusCode = 200
-		pollStatus.FailedJobURLs = failedJobURLs
-		pollStatus.WarningJobURLs = warningJobURLs
+		pollStatus.FailedJobParameters = failedJobURLs
+		pollStatus.WarningJobParameters = warningJobURLs
 		pollStatus.HasFailed = hasFailed
 		pollStatus.HasWarning = hasWarning
 
@@ -209,8 +210,8 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 	case "Failed":
 		pollStatus.HasFailed = true
 		pollStatus.StatusCode = 400
-		pollStatus.FailedJobURLs = failedJobURLs
-		pollStatus.WarningJobURLs = warningJobURLs
+		pollStatus.FailedJobParameters = failedJobURLs
+		pollStatus.WarningJobParameters = warningJobURLs
 		pollStatus.HasWarning = hasWarning
 		pollStatus.Complete = true
 		pollStatus.Error = fmt.Sprintf("Marketo Bulk Upload Failed: %s", marketoResponse.Result[0].Message)
@@ -245,7 +246,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	var apiError *APIError
 	// Fetch and parse failed jobs
 	if b.hasFailures {
-		failedJobs, apiError = b.apiService.GetLeadStatus(input.FailedJobURLs)
+		failedJobs, apiError = b.apiService.GetLeadStatus(input.FailedJobParameters)
 
 		if apiError != nil {
 			return common.GetUploadStatsResponse{
@@ -258,7 +259,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	var warningJobs []map[string]string
 	// Fetch and parse warning jobs
 	if b.hasWarning {
-		warningJobs, apiError = b.apiService.GetLeadStatus(input.WarningJobURLs)
+		warningJobs, apiError = b.apiService.GetLeadStatus(input.WarningJobParameters)
 
 		if apiError != nil {
 			return common.GetUploadStatsResponse{
@@ -282,10 +283,10 @@ func (*MarketoBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 
 func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, failedJobs, warningJobs []map[string]string) common.EventStatMeta {
 	metadata := common.EventStatMeta{
-		FailedKeys:     make([]int64, 0),
+		AbortedKeys:    make([]int64, 0),
 		WarningKeys:    make([]int64, 0),
 		SucceededKeys:  make([]int64, 0),
-		FailedReasons:  make(map[int64]string),
+		AbortedReasons: make(map[int64]string),
 		WarningReasons: make(map[int64]string),
 	}
 
@@ -301,13 +302,13 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		}
 		// get jobID from jobToDataHash
 		hash := calculateHashCode(failedJobRow)
-		failedJobId := b.dataHashToJobId[hash]
-		if failedJobId != 0 {
-			metadata.FailedKeys = append(metadata.FailedKeys, failedJobId)
+		abortedJobID := b.dataHashToJobId[hash]
+		if abortedJobID != 0 {
+			metadata.AbortedKeys = append(metadata.AbortedKeys, abortedJobID)
 		}
-		failedJobReason := failedJob[MARKETO_FAILED_HEADER]
-		if failedJobReason != "" {
-			metadata.FailedReasons[failedJobId] = failedJobReason
+		abortedJobReason := failedJob[MARKETO_FAILED_HEADER]
+		if abortedJobReason != "" {
+			metadata.AbortedReasons[abortedJobID] = abortedJobReason
 		}
 
 	}
@@ -327,17 +328,17 @@ func (b *MarketoBulkUploader) updateJobStatus(importingList []*jobsdb.JobT, fail
 		warningJobId := b.dataHashToJobId[hash]
 		if warningJobId != 0 {
 			// Even if a job has warning, it is considered as a failure
-			metadata.FailedKeys = append(metadata.FailedKeys, warningJobId)
+			metadata.AbortedKeys = append(metadata.AbortedKeys, warningJobId)
 		}
 		warningJobReason := warningJob[MARKETO_WARNING_HEADER]
 		if warningJobReason != "" {
-			metadata.FailedReasons[warningJobId] = warningJobReason
+			metadata.AbortedReasons[warningJobId] = warningJobReason
 		}
 	}
 
 	// calculate succeeded keys
 	for _, job := range importingList {
-		if !lo.Contains(metadata.FailedKeys, job.JobID) && !lo.Contains(metadata.WarningKeys, job.JobID) {
+		if !lo.Contains(metadata.AbortedKeys, job.JobID) && !lo.Contains(metadata.WarningKeys, job.JobID) {
 			metadata.SucceededKeys = append(metadata.SucceededKeys, job.JobID)
 		}
 	}

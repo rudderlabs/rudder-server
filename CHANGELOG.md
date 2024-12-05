@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.38.3](https://github.com/rudderlabs/rudder-server/compare/v1.38.2...v1.38.3) (2024-11-20)
+
+
+### Bug Fixes
+
+* allow only enabled dest in backendSubscriber, fix klaviyo bulk ([#5309](https://github.com/rudderlabs/rudder-server/issues/5309)) ([8808245](https://github.com/rudderlabs/rudder-server/commit/8808245065fb1fcb41d9b1e845b2a69b6847e073))
+
+## [1.38.2](https://github.com/rudderlabs/rudder-server/compare/v1.38.1...v1.38.2) (2024-11-19)
+
+
+### Bug Fixes
+
+* klaviyo bulk upload and BingAds OC  ([#5305](https://github.com/rudderlabs/rudder-server/issues/5305)) ([9c9ef73](https://github.com/rudderlabs/rudder-server/commit/9c9ef73d16326e4a12a69cebe0f71656b4928d42))
+
+## [1.38.1](https://github.com/rudderlabs/rudder-server/compare/v1.38.0...v1.38.1) (2024-11-14)
+
+
+### Bug Fixes
+
+* bq partitioning for additional columns ([#5293](https://github.com/rudderlabs/rudder-server/issues/5293)) ([4da3bf1](https://github.com/rudderlabs/rudder-server/commit/4da3bf17e790cbc1876714c401b0895b2e9f8521))
+
+## [1.38.0](https://github.com/rudderlabs/rudder-server/compare/v1.37.0...v1.38.0) (2024-11-11)
+
+
+### Bug Fixes
+
+* add error logs for handle async for visibility of error ([#5248](https://github.com/rudderlabs/rudder-server/issues/5248)) ([2aae3ec](https://github.com/rudderlabs/rudder-server/commit/2aae3ecba92c3585b98f3bb1470561d80cb49119))
+* address flaky marketo test ([#5246](https://github.com/rudderlabs/rudder-server/issues/5246)) ([6abcedd](https://github.com/rudderlabs/rudder-server/commit/6abcedd30ef24a0810ab010bae126020b1391758))
+* parse error due incrorrect csv response from marketo-n ([#5252](https://github.com/rudderlabs/rudder-server/issues/5252)) ([2aae3ec](https://github.com/rudderlabs/rudder-server/commit/2aae3ecba92c3585b98f3bb1470561d80cb49119))
+* silent ignore of 4xx errors from reporting ([#5253](https://github.com/rudderlabs/rudder-server/issues/5253)) ([9f2b7e7](https://github.com/rudderlabs/rudder-server/commit/9f2b7e7ae2034113f77ad17e7802c134760eb526))
+* too many concurrent timer firings ([#5283](https://github.com/rudderlabs/rudder-server/issues/5283)) ([cae62c5](https://github.com/rudderlabs/rudder-server/commit/cae62c50ea5f4fa614071bd7265e586780e1935b))
+
+
+### Miscellaneous
+
+* **deps:** bump github.com/marcboeker/go-duckdb from 1.8.2 to 1.8.3 in the go-deps group ([#5263](https://github.com/rudderlabs/rudder-server/issues/5263)) ([f7fcd5a](https://github.com/rudderlabs/rudder-server/commit/f7fcd5afb376b90ebd7e08cccb04a6f73710bb87))
+* **deps:** bump the go-deps group across 1 directory with 11 updates ([#5260](https://github.com/rudderlabs/rudder-server/issues/5260)) ([d7f2a1b](https://github.com/rudderlabs/rudder-server/commit/d7f2a1b5c8e0671981d2f9e68d70c0415fdd24a8))
+* **deps:** bump the go-deps group across 1 directory with 2 updates ([#5240](https://github.com/rudderlabs/rudder-server/issues/5240)) ([4fbb837](https://github.com/rudderlabs/rudder-server/commit/4fbb837f800866f7217e12dd72fe8d68eb95292e))
+* **deps:** bump the go-deps group with 3 updates ([#5271](https://github.com/rudderlabs/rudder-server/issues/5271)) ([c2c4cbd](https://github.com/rudderlabs/rudder-server/commit/c2c4cbd53a433a8dbecaae076a5f45345058a402))
+* release 1.38.0 ([#5280](https://github.com/rudderlabs/rudder-server/issues/5280)) ([4d48f3c](https://github.com/rudderlabs/rudder-server/commit/4d48f3c5ce28cdc4091d2e73f72b707622b83c47))
+* remove unused columns from scylla ([#5261](https://github.com/rudderlabs/rudder-server/issues/5261)) ([d3000d6](https://github.com/rudderlabs/rudder-server/commit/d3000d6ec2d614114cb054d53e0e3c0b00b5ad11))
+
 ## [1.37.2](https://github.com/rudderlabs/rudder-server/compare/v1.37.1...v1.37.2) (2024-11-01)
 
 

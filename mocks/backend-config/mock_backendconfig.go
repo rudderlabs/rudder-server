@@ -23,6 +23,7 @@ import (
 type MockBackendConfig struct {
 	ctrl     *gomock.Controller
 	recorder *MockBackendConfigMockRecorder
+	isgomock struct{}
 }
 
 // MockBackendConfigMockRecorder is the mock recorder for MockBackendConfig.
@@ -100,15 +101,15 @@ func (mr *MockBackendConfigMockRecorder) SetUp() *gomock.Call {
 }
 
 // StartWithIDs mocks base method.
-func (m *MockBackendConfig) StartWithIDs(arg0 context.Context, arg1 string) {
+func (m *MockBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StartWithIDs", arg0, arg1)
+	m.ctrl.Call(m, "StartWithIDs", ctx, workspaces)
 }
 
 // StartWithIDs indicates an expected call of StartWithIDs.
-func (mr *MockBackendConfigMockRecorder) StartWithIDs(arg0, arg1 any) *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) StartWithIDs(ctx, workspaces any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockBackendConfig)(nil).StartWithIDs), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockBackendConfig)(nil).StartWithIDs), ctx, workspaces)
 }
 
 // Stop mocks base method.
@@ -124,27 +125,27 @@ func (mr *MockBackendConfigMockRecorder) Stop() *gomock.Call {
 }
 
 // Subscribe mocks base method.
-func (m *MockBackendConfig) Subscribe(arg0 context.Context, arg1 backendconfig.Topic) pubsub.DataChannel {
+func (m *MockBackendConfig) Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Subscribe", arg0, arg1)
+	ret := m.ctrl.Call(m, "Subscribe", ctx, topic)
 	ret0, _ := ret[0].(pubsub.DataChannel)
 	return ret0
 }
 
 // Subscribe indicates an expected call of Subscribe.
-func (mr *MockBackendConfigMockRecorder) Subscribe(arg0, arg1 any) *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) Subscribe(ctx, topic any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockBackendConfig)(nil).Subscribe), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockBackendConfig)(nil).Subscribe), ctx, topic)
 }
 
 // WaitForConfig mocks base method.
-func (m *MockBackendConfig) WaitForConfig(arg0 context.Context) {
+func (m *MockBackendConfig) WaitForConfig(ctx context.Context) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "WaitForConfig", arg0)
+	m.ctrl.Call(m, "WaitForConfig", ctx)
 }
 
 // WaitForConfig indicates an expected call of WaitForConfig.
-func (mr *MockBackendConfigMockRecorder) WaitForConfig(arg0 any) *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) WaitForConfig(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForConfig", reflect.TypeOf((*MockBackendConfig)(nil).WaitForConfig), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WaitForConfig", reflect.TypeOf((*MockBackendConfig)(nil).WaitForConfig), ctx)
 }

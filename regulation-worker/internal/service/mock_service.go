@@ -21,6 +21,7 @@ import (
 type MockAPIClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockAPIClientMockRecorder
+	isgomock struct{}
 }
 
 // MockAPIClientMockRecorder is the mock recorder for MockAPIClient.
@@ -73,6 +74,7 @@ func (mr *MockAPIClientMockRecorder) UpdateStatus(ctx, status, jobID any) *gomoc
 type MockdestDetail struct {
 	ctrl     *gomock.Controller
 	recorder *MockdestDetailMockRecorder
+	isgomock struct{}
 }
 
 // MockdestDetailMockRecorder is the mock recorder for MockdestDetail.
@@ -111,6 +113,7 @@ func (mr *MockdestDetailMockRecorder) GetDestDetails(destID any) *gomock.Call {
 type Mockdeleter struct {
 	ctrl     *gomock.Controller
 	recorder *MockdeleterMockRecorder
+	isgomock struct{}
 }
 
 // MockdeleterMockRecorder is the mock recorder for Mockdeleter.

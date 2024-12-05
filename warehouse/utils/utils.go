@@ -2,7 +2,6 @@ package warehouseutils
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -39,17 +38,18 @@ import (
 )
 
 const (
-	RS            = "RS"
-	BQ            = "BQ"
-	SNOWFLAKE     = "SNOWFLAKE"
-	POSTGRES      = "POSTGRES"
-	CLICKHOUSE    = "CLICKHOUSE"
-	MSSQL         = "MSSQL"
-	AzureSynapse  = "AZURE_SYNAPSE"
-	DELTALAKE     = "DELTALAKE"
-	S3Datalake    = "S3_DATALAKE"
-	GCSDatalake   = "GCS_DATALAKE"
-	AzureDatalake = "AZURE_DATALAKE"
+	RS                = "RS"
+	BQ                = "BQ"
+	SNOWFLAKE         = "SNOWFLAKE"
+	SnowpipeStreaming = "SNOWPIPE_STREAMING"
+	POSTGRES          = "POSTGRES"
+	CLICKHOUSE        = "CLICKHOUSE"
+	MSSQL             = "MSSQL"
+	AzureSynapse      = "AZURE_SYNAPSE"
+	DELTALAKE         = "DELTALAKE"
+	S3Datalake        = "S3_DATALAKE"
+	GCSDatalake       = "GCS_DATALAKE"
+	AzureDatalake     = "AZURE_DATALAKE"
 )
 
 const (
@@ -207,22 +207,6 @@ type ColumnInfo struct {
 	Type  string
 }
 
-//go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
-type Uploader interface {
-	IsWarehouseSchemaEmpty() bool
-	GetLocalSchema(ctx context.Context) (model.Schema, error)
-	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
-	GetTableSchemaInWarehouse(tableName string) model.TableSchema
-	GetTableSchemaInUpload(tableName string) model.TableSchema
-	GetLoadFilesMetadata(ctx context.Context, options GetLoadFilesOptions) ([]LoadFile, error)
-	GetSampleLoadFileLocation(ctx context.Context, tableName string) (string, error)
-	GetSingleLoadFile(ctx context.Context, tableName string) (LoadFile, error)
-	ShouldOnDedupUseNewRecord() bool
-	UseRudderStorage() bool
-	GetLoadFileType() string
-	CanAppend() bool
-}
-
 type GetLoadFilesOptions struct {
 	Table   string
 	StartID int64
@@ -234,6 +218,11 @@ type LoadFile struct {
 	Location string
 	Metadata json.RawMessage
 }
+
+type (
+	ModelWarehouse   = model.Warehouse
+	ModelTableSchema = model.TableSchema
+)
 
 func IDResolutionEnabled() bool {
 	return enableIDResolution
@@ -528,7 +517,8 @@ ToProviderCase converts string provided to case generally accepted in the wareho
 e.g. columns are uppercase in SNOWFLAKE and lowercase etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
-	if strings.ToUpper(provider) == SNOWFLAKE {
+	upperCaseProvider := strings.ToUpper(provider)
+	if upperCaseProvider == SNOWFLAKE || upperCaseProvider == SnowpipeStreaming {
 		str = strings.ToUpper(str)
 	}
 	return str

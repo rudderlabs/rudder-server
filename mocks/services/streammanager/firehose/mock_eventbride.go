@@ -20,6 +20,7 @@ import (
 type MockFireHoseClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockFireHoseClientMockRecorder
+	isgomock struct{}
 }
 
 // MockFireHoseClientMockRecorder is the mock recorder for MockFireHoseClient.
@@ -40,16 +41,16 @@ func (m *MockFireHoseClient) EXPECT() *MockFireHoseClientMockRecorder {
 }
 
 // PutRecord mocks base method.
-func (m *MockFireHoseClient) PutRecord(arg0 *firehose.PutRecordInput) (*firehose.PutRecordOutput, error) {
+func (m *MockFireHoseClient) PutRecord(input *firehose.PutRecordInput) (*firehose.PutRecordOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutRecord", arg0)
+	ret := m.ctrl.Call(m, "PutRecord", input)
 	ret0, _ := ret[0].(*firehose.PutRecordOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutRecord indicates an expected call of PutRecord.
-func (mr *MockFireHoseClientMockRecorder) PutRecord(arg0 any) *gomock.Call {
+func (mr *MockFireHoseClientMockRecorder) PutRecord(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockFireHoseClient)(nil).PutRecord), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockFireHoseClient)(nil).PutRecord), input)
 }

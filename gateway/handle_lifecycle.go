@@ -24,6 +24,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
@@ -37,6 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
 
 /*
@@ -115,7 +117,7 @@ func (gw *Handle) Setup(
 	gw.processRequestTime = gw.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gw.emptyAnonIdHeaderStat = gw.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 
-	gw.now = time.Now
+	gw.now = timeutil.Now
 	gw.diagnosisTicker = time.NewTicker(gw.conf.diagnosisTickerTime)
 	gw.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, gw.conf.maxDBBatchSize)
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
