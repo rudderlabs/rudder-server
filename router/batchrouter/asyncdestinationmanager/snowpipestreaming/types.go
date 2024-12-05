@@ -20,14 +20,15 @@ import (
 
 type (
 	Manager struct {
-		appConfig    *config.Config
-		logger       logger.Logger
-		statsFactory stats.Stats
-		destination  *backendconfig.DestinationT
-		requestDoer  requestDoer
-		now          func() time.Time
-		api          api
-		channelCache sync.Map
+		appConfig           *config.Config
+		logger              logger.Logger
+		statsFactory        stats.Stats
+		destination         *backendconfig.DestinationT
+		requestDoer         requestDoer
+		now                 func() time.Time
+		api                 api
+		channelCache        sync.Map
+		polledImportInfoMap map[string]*importInfo
 
 		config struct {
 			client struct {
@@ -52,7 +53,8 @@ type (
 				failed    stats.Counter
 				aborted   stats.Counter
 			}
-			discards stats.Counter
+			discards          stats.Counter
+			pollingInProgress stats.Counter
 		}
 	}
 
