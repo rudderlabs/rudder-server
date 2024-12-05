@@ -210,7 +210,7 @@ func (r *DefaultReporter) getDBHandle(syncerKey string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for syncer key: %s", syncerKey)
 }
 
-func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
+func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, syncerKey string) (reports []*types.ReportByStatus, reportedAt int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT min(reported_at) FROM %s WHERE reported_at < $1`, ReportsTable)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(syncerKey)
@@ -235,10 +235,15 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 		return nil, 0, nil
 	}
 
-	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, reported_at, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
+	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	if bucketEnd > currentMs {
+		return nil, 0, nil
+	}
+
+	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
 	sqlStatement = fmt.Sprintf(`
     SELECT 
-        %s,
+        %s, MAX(reported_at),
         COALESCE(
             (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
             ''
@@ -252,12 +257,12 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
     FROM 
         %s
     WHERE 
-        reported_at = $1
+        reported_at >= $1 and reported_at < $2
     GROUP BY 
         %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement, queryMin.Int64)
+	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -283,12 +288,12 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 			&metricReport.ConnectionDetails.TrackingPlanID,
 			&metricReport.ConnectionDetails.TrackingPlanVersion,
 			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
-			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.Status,
 			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
 			&metricReport.StatusDetail.StatusCode,
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
+			&metricReport.ReportedAt,
 			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
 			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 		)
@@ -322,6 +327,8 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 			report.ConnectionDetails.TrackingPlanID,
 			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
 			report.PUDetails.InPU, report.PUDetails.PU,
+			strconv.FormatBool(report.TerminalPU), strconv.FormatBool(report.InitialPU),
+			strconv.FormatInt(report.ReportedAt, 10),
 		}
 		return strings.Join(groupingIdentifiers, `::`)
 	}
@@ -378,6 +385,13 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 	return values
 }
 
+func (*DefaultReporter) getAggregationBucketMinute(timeMin, aggregationIntervalMin int64) (int64, int64) {
+	bucketStart := timeMin - (timeMin % aggregationIntervalMin)
+	bucketEnd := bucketStart + aggregationIntervalMin
+
+	return bucketStart, bucketEnd
+}
+
 func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
 	// for monitoring reports pileups
 	reportingLag := r.stats.NewTaggedStat(
@@ -426,6 +440,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			lastVacuum                 time.Time
 			vacuumInterval             = config.GetReloadableDurationVar(15, time.Minute, "Reporting.vacuumInterval")
 			vacuumThresholdBytes       = config.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.vacuumThresholdBytes")
+			aggregationInterval        = config.GetReloadableDurationVar(1, time.Minute, "Reporting.aggregationIntervalMinutes") // Values should be a factor of 60 or else we will panic, for example 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60
 		)
 		for {
 			if ctx.Err() != nil {
@@ -437,7 +452,12 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			currentMin := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
-			reports, reportedAt, err := r.getReports(currentMin, c.ConnInfo)
+			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
+			if aggregationIntervalMin <= 0 || 60%aggregationIntervalMin != 0 {
+				panic(fmt.Errorf("[ Reporting ]: Error aggregationIntervalMinutes should be a factor of 60, got %d", aggregationIntervalMin))
+			}
+
+			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
 				select {
@@ -496,7 +516,9 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				if err != nil {
 					return err
 				}
-				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at = $1`, reportedAt)
+				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
+				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 				} else {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -826,4 +827,139 @@ func TestAggregationLogic(t *testing.T) {
 	}
 
 	require.Equal(t, reportResults, reportingMetrics)
+}
+
+func TestGetAggregationBucket(t *testing.T) {
+	conf := config.New()
+	configSubscriber := newConfigSubscriber(logger.NOP)
+	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
+	t.Run("should return the correct aggregation bucket with default interval of 1 mintue", func(t *testing.T) {
+		cases := []struct {
+			reportedAt  int64
+			bucketStart int64
+			bucketEnd   int64
+		}{
+			{
+				reportedAt:  time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 1, 1, 10, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 1, 1, 10, 6, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 2, 4, 11, 5, 59, 10, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 2, 4, 11, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 2, 4, 11, 6, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 3, 5, 12, 59, 59, 59, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 3, 5, 12, 59, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 3, 5, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 1, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 1)
+			require.Equal(t, c.bucketStart, bs)
+			require.Equal(t, c.bucketEnd, be)
+		}
+	})
+
+	t.Run("should return the correct aggregation bucket with aggregation interval of 5 mintue", func(t *testing.T) {
+		cases := []struct {
+			reportedAt  int64
+			bucketStart int64
+			bucketEnd   int64
+		}{
+			{
+				reportedAt:  time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 1, 1, 10, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 1, 1, 10, 10, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 2, 4, 11, 5, 59, 10, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 2, 4, 11, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 2, 4, 11, 10, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 7, 30, 11, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 10, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 8, 50, 30, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 10, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 9, 5, 15, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 10, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 3, 5, 12, 55, 53, 1, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 3, 5, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 3, 5, 12, 57, 53, 1, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 3, 5, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 3, 5, 12, 59, 59, 59, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 3, 5, 12, 55, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 3, 5, 13, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 0, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 5, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 5)
+			require.Equal(t, c.bucketStart, bs)
+			require.Equal(t, c.bucketEnd, be)
+		}
+	})
+
+	t.Run("should return the correct aggregation bucket with aggregation interval of 15 mintue", func(t *testing.T) {
+		cases := []struct {
+			reportedAt  int64
+			bucketStart int64
+			bucketEnd   int64
+		}{
+			{
+				reportedAt:  time.Date(2022, 1, 1, 10, 5, 10, 40, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 1, 1, 10, 0, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 1, 1, 10, 15, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 2, 4, 11, 17, 59, 10, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 2, 4, 11, 15, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 2, 4, 11, 30, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 39, 10, 59, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 30, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 13, 45, 0, 0, time.UTC).Unix() / 60,
+			},
+			{
+				reportedAt:  time.Date(2022, 4, 6, 13, 59, 50, 30, time.UTC).Unix() / 60,
+				bucketStart: time.Date(2022, 4, 6, 13, 45, 0, 0, time.UTC).Unix() / 60,
+				bucketEnd:   time.Date(2022, 4, 6, 14, 0, 0, 0, time.UTC).Unix() / 60,
+			},
+		}
+
+		for _, c := range cases {
+			bs, be := reportHandle.getAggregationBucketMinute(c.reportedAt, 15)
+			require.Equal(t, c.bucketStart, bs)
+			require.Equal(t, c.bucketEnd, be)
+		}
+	})
 }
