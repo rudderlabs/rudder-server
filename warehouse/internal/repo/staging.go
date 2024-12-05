@@ -291,25 +291,16 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 	return schemas, nil
 }
 
-// GetForUploadID returns all the staging files for that uploadID
-func (sf *StagingFiles) GetForUploadID(ctx context.Context, sourceID, destinationID string, uploadId int64) ([]*model.StagingFile, error) {
-	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
-	WHERE
-		upload_id = $1
-		AND source_id = $2
-		AND destination_id = $3
-	ORDER BY
-		id ASC;`
-	rows, err := sf.db.QueryContext(ctx, query, uploadId, sourceID, destinationID)
+// GetForUploadID retrieves all the staging files associated with a specific upload ID.
+func (sf *StagingFiles) GetForUploadID(ctx context.Context, uploadID int64) ([]*model.StagingFile, error) {
+	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE upload_id = $1 ORDER BY id ASC;`
+
+	rows, err := sf.db.QueryContext(ctx, query, uploadID)
 	if err != nil {
-		return nil, fmt.Errorf("querying staging files: %w", err)
+		return nil, fmt.Errorf("querying staging files for upload %d: %w", uploadID, err)
 	}
 
 	return parseStagingFiles(rows)
-}
-
-func (sf *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]*model.StagingFile, error) {
-	return sf.GetForUploadID(ctx, upload.SourceID, upload.DestinationID, upload.ID)
 }
 
 func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
@@ -375,27 +366,13 @@ func (sf *StagingFiles) countPending(ctx context.Context, query string, value in
 	return count, nil
 }
 
-func (sf *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.Upload) (int64, error) {
+func (sf *StagingFiles) TotalEventsForUploadID(ctx context.Context, uploadID int64) (int64, error) {
 	var total sql.NullInt64
 
-	err := sf.db.QueryRowContext(ctx, `
-		SELECT
-			sum(total_events)
-		FROM
-			`+stagingTableName+`
-		WHERE
-			id >= $1
-			AND id <= $2
-			AND source_id = $3
-			AND destination_id = $4;
-		`,
-		upload.StagingFileStartID,
-		upload.StagingFileEndID,
-		upload.SourceID,
-		upload.DestinationID,
-	).Scan(&total)
+	query := `SELECT SUM(total_events) FROM ` + stagingTableName + ` WHERE upload_id = $1`
+	err := sf.db.QueryRowContext(ctx, query, uploadID).Scan(&total)
 	if err != nil {
-		return 0, fmt.Errorf("querying total rows for upload: %w", err)
+		return 0, fmt.Errorf("querying total events for upload %d: %w", uploadID, err)
 	}
 
 	return total.Int64, nil
@@ -438,47 +415,36 @@ func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, upload
 	return eventTimeRanges, nil
 }
 
-func (sf *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {
-	sqlStatement := `
-		SELECT
-		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
-		FROM
-		  ` + stagingTableName + `
-		WHERE
-		  id >= $1
-		  AND id <= $2
-		  AND source_id = $3
-		  AND destination_id = $4
+func (sf *StagingFiles) DestinationRevisionIDsForUploadID(ctx context.Context, uploadID int64) ([]string, error) {
+	query := `
+		SELECT DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
+		FROM ` + stagingTableName + `
+		WHERE upload_id = $1
 		  AND metadata ->> 'destination_revision_id' <> '';
 	`
-	rows, err := sf.db.QueryContext(ctx, sqlStatement,
-		upload.StagingFileStartID,
-		upload.StagingFileEndID,
-		upload.SourceID,
-		upload.DestinationID,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+
+	rows, err := sf.db.QueryContext(ctx, query, uploadID)
 	if err != nil {
-		return nil, fmt.Errorf("query destination revisionID: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("querying destination revision IDs for upload %d: %w", uploadID, err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var revisionIDs []string
+	var destinationRevisionIDs []string
 	for rows.Next() {
 		var revisionID string
-		err = rows.Scan(&revisionID)
-		if err != nil {
-			return nil, fmt.Errorf("scan destination revisionID: %w", err)
+		if err := rows.Scan(&revisionID); err != nil {
+			return nil, fmt.Errorf("scanning destination revision IDs for upload %d: %w", uploadID, err)
 		}
-		revisionIDs = append(revisionIDs, revisionID)
+		destinationRevisionIDs = append(destinationRevisionIDs, revisionID)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate destination revisionID: %w", err)
+		return nil, fmt.Errorf("iterating rows for destination revision IDs for upload %d: %w", uploadID, err)
 	}
 
-	return revisionIDs, nil
+	return destinationRevisionIDs, nil
 }
 
 func (sf *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
