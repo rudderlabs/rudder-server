@@ -10,9 +10,7 @@ import (
 )
 
 type LabelSet struct {
-	WorkspaceID string
-	// Namespace               string
-	// InstanceID              string
+	WorkspaceID             string
 	SourceDefinitionID      string
 	SourceCategory          string
 	SourceID                string
