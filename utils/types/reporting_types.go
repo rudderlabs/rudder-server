@@ -160,7 +160,7 @@ type ConnectionDetails struct {
 	SourceJobID             string `json:"sourceJobId"`
 	SourceJobRunID          string `json:"sourceJobRunId"`
 	SourceDefinitionID      string `json:"sourceDefinitionId"`
-	DestinationDefinitionID string `string:"destinationDefinitionId"`
+	DestinationDefinitionID string `json:"DestinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
 	TransformationID        string `json:"transformationId"`
 	TransformationVersionID string `json:"transformationVersionId"`

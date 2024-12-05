@@ -312,6 +312,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
+	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
 	bucket, _ := r.getAggregationBucketMinute(reports[0].ReportedAt, 1)
 	var values []*types.Metric
 
@@ -336,7 +337,7 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 
 	for _, report := range reports {
 		identifier := reportIdentifier(report)
-		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= r.maxReportsCountInARequest.Load() {
+		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= maxReportsCountInARequest {
 			metricsByGroup[identifier] = &types.Metric{
 				InstanceDetails: types.InstanceDetails{
 					WorkspaceID: report.WorkspaceID,
