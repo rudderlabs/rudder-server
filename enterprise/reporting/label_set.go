@@ -34,9 +34,10 @@ type LabelSet struct {
 	EventName               string
 	EventType               string
 	ErrorType               string
+	Bucket                  int64
 }
 
-func NewLabelSet(metric types.PUReportedMetric) LabelSet {
+func NewLabelSet(metric types.PUReportedMetric, bucket int64) LabelSet {
 	return LabelSet{
 		WorkspaceID:             metric.ConnectionDetails.SourceID,
 		SourceDefinitionID:      metric.ConnectionDetails.SourceDefinitionID,
@@ -60,11 +61,12 @@ func NewLabelSet(metric types.PUReportedMetric) LabelSet {
 		EventName:               metric.StatusDetail.EventName,
 		EventType:               metric.StatusDetail.EventType,
 		ErrorType:               metric.StatusDetail.ErrorType,
+		Bucket:                  bucket,
 	}
 }
 
 func (labelSet LabelSet) generateHash() string {
-	data := labelSet.WorkspaceID + labelSet.SourceDefinitionID + labelSet.SourceCategory + labelSet.SourceID + labelSet.DestinationDefinitionID + labelSet.DestinationID + labelSet.SourceTaskRunID + labelSet.SourceJobID + labelSet.SourceJobRunID + labelSet.TransformationID + labelSet.TransformationVersionID + labelSet.TrackingPlanID + strconv.Itoa(labelSet.TrackingPlanVersion) + labelSet.InPU + labelSet.PU + labelSet.Status + strconv.FormatBool(labelSet.TerminalState) + strconv.FormatBool(labelSet.InitialState) + strconv.Itoa(labelSet.StatusCode) + labelSet.EventName + labelSet.EventType + labelSet.ErrorType
+	data := labelSet.WorkspaceID + labelSet.SourceDefinitionID + labelSet.SourceCategory + labelSet.SourceID + labelSet.DestinationDefinitionID + labelSet.DestinationID + labelSet.SourceTaskRunID + labelSet.SourceJobID + labelSet.SourceJobRunID + labelSet.TransformationID + labelSet.TransformationVersionID + labelSet.TrackingPlanID + strconv.Itoa(labelSet.TrackingPlanVersion) + labelSet.InPU + labelSet.PU + labelSet.Status + strconv.FormatBool(labelSet.TerminalState) + strconv.FormatBool(labelSet.InitialState) + strconv.Itoa(labelSet.StatusCode) + labelSet.EventName + labelSet.EventType + labelSet.ErrorType + strconv.FormatInt(labelSet.Bucket, 10)
 	hash := murmur3.Sum64([]byte(data))
 	return hex.EncodeToString([]byte(strconv.FormatUint(hash, 16)))
 }

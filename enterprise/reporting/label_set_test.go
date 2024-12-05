@@ -33,7 +33,8 @@ func createMetricObject(eventName string) types.PUReportedMetric {
 func TestNewLabelSet(t *testing.T) {
 	t.Run("should create the correct LabelSet from types.PUReportedMetric", func(t *testing.T) {
 		inputMetric := createMetricObject("some-event-name")
-		labelSet := NewLabelSet(inputMetric)
+		bucket := int64(28889820)
+		labelSet := NewLabelSet(inputMetric, bucket)
 
 		assert.Equal(t, "some-source-id", labelSet.SourceID)
 		assert.Equal(t, "some-event-name", labelSet.EventName) // Default value
@@ -41,7 +42,8 @@ func TestNewLabelSet(t *testing.T) {
 
 	t.Run("should create the correct LabelSet with custom EventName", func(t *testing.T) {
 		inputMetric := createMetricObject("custom-event-name")
-		labelSet := NewLabelSet(inputMetric)
+		bucket := int64(28889820)
+		labelSet := NewLabelSet(inputMetric, bucket)
 
 		assert.Equal(t, "some-source-id", labelSet.SourceID)
 		assert.Equal(t, "custom-event-name", labelSet.EventName) // Custom event name
@@ -51,10 +53,11 @@ func TestNewLabelSet(t *testing.T) {
 func TestGenerateHash(t *testing.T) {
 	t.Run("same hash for same LabelSet", func(t *testing.T) {
 		inputMetric1 := createMetricObject("some-event-name")
-		labelSet1 := NewLabelSet(inputMetric1)
+		bucket := int64(28889820)
+		labelSet1 := NewLabelSet(inputMetric1, bucket)
 
 		inputMetric2 := createMetricObject("some-event-name")
-		labelSet2 := NewLabelSet(inputMetric2)
+		labelSet2 := NewLabelSet(inputMetric2, bucket)
 
 		hash1 := labelSet1.generateHash()
 		hash2 := labelSet2.generateHash()
@@ -64,10 +67,11 @@ func TestGenerateHash(t *testing.T) {
 
 	t.Run("different hash for different LabelSet", func(t *testing.T) {
 		inputMetric1 := createMetricObject("some-event-name-1")
-		labelSet1 := NewLabelSet(inputMetric1)
+		bucket := int64(28889820)
+		labelSet1 := NewLabelSet(inputMetric1, bucket)
 
 		inputMetric2 := createMetricObject("some-event-name-2")
-		labelSet2 := NewLabelSet(inputMetric2)
+		labelSet2 := NewLabelSet(inputMetric2, bucket)
 
 		hash1 := labelSet1.generateHash()
 		hash2 := labelSet2.generateHash()

@@ -312,6 +312,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
+	bucket, _ := r.getAggregationBucketMinute(reports[0].ReportedAt, 1)
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -364,6 +365,7 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					Bucket:     bucket * 60 * 1000,
 				},
 			}
 			values = append(values, metricsByGroup[identifier])
@@ -670,7 +672,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric) (types.PUReportedMetric, error) {
+func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric, reportedAt int64) (types.PUReportedMetric, error) {
 	if r.eventSampler == nil {
 		return metric, nil
 	}
@@ -678,7 +680,8 @@ func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReport
 	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
 
 	if isValidSampleEvent {
-		hash := NewLabelSet(metric).generateHash()
+		bucket, _ := r.getAggregationBucketMinute(reportedAt, 1)
+		hash := NewLabelSet(metric, bucket).generateHash()
 		found, err := r.eventSampler.Get(hash)
 		if err != nil {
 			return metric, err
@@ -745,7 +748,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		}
 
 		if r.eventSamplingEnabled.Load() {
-			metric, err = r.transformMetricWithEventSampling(metric)
+			metric, err = r.transformMetricWithEventSampling(metric, reportedAt)
 			if err != nil {
 				return err
 			}
