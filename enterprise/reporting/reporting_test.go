@@ -163,12 +163,14 @@ func TestGetAggregatedReports(t *testing.T) {
 		},
 	}
 	conf := config.New()
+	conf.Set("Reporting.aggregationIntervalMinutes", 10)
 	configSubscriber := newConfigSubscriber(logger.NOP)
 	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
 
 	t.Run("Should provide aggregated reports when batch size is 1", func(t *testing.T) {
 		conf.Set("Reporting.maxReportsCountInARequest", 1)
 		assert.Equal(t, 1, reportHandle.maxReportsCountInARequest.Load())
+		bucket, _ := reportHandle.getAggregationBucketMinute(28017690, 10)
 		expectedResponse := []*types.Metric{
 			{
 				InstanceDetails: types.InstanceDetails{
@@ -186,6 +188,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -215,6 +218,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -244,6 +248,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -266,6 +271,7 @@ func TestGetAggregatedReports(t *testing.T) {
 	t.Run("Should provide aggregated reports when batch size more than 1", func(t *testing.T) {
 		conf.Set("Reporting.maxReportsCountInARequest", 10)
 		assert.Equal(t, 10, reportHandle.maxReportsCountInARequest.Load())
+		bucket, _ := reportHandle.getAggregationBucketMinute(28017690, 10)
 		expectedResponse := []*types.Metric{
 			{
 				InstanceDetails: types.InstanceDetails{
@@ -283,6 +289,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -321,6 +328,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -343,6 +351,7 @@ func TestGetAggregatedReports(t *testing.T) {
 	t.Run("Should provide aggregated reports when batch size is more than 1 and reports with same identifier are more then batch size", func(t *testing.T) {
 		conf.Set("Reporting.maxReportsCountInARequest", 2)
 		assert.Equal(t, 2, reportHandle.maxReportsCountInARequest.Load())
+		bucket, _ := reportHandle.getAggregationBucketMinute(28017690, 10)
 		extraReport := &types.ReportByStatus{
 			InstanceDetails: types.InstanceDetails{
 				WorkspaceID: "some-workspace-id",
@@ -388,6 +397,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -426,6 +436,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -455,6 +466,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				},
 				ReportMetadata: types.ReportMetadata{
 					ReportedAt: 28017690 * 60 * 1000,
+					Bucket:     bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
