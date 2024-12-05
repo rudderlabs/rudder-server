@@ -163,6 +163,93 @@ func TestGetAggregatedReports(t *testing.T) {
 		},
 	}
 	conf := config.New()
+	configSubscriber := newConfigSubscriber(logger.NOP)
+	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
+func TestGetAggregatedReports(t *testing.T) {
+	inputReports := []*types.ReportByStatus{
+		{
+			InstanceDetails: types.InstanceDetails{
+				WorkspaceID: "some-workspace-id",
+			},
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:         "some-source-id",
+				DestinationID:    "some-destination-id",
+				TransformationID: "some-transformation-id",
+				TrackingPlanID:   "some-tracking-plan-id",
+			},
+			PUDetails: types.PUDetails{
+				InPU: "some-in-pu",
+				PU:   "some-pu",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 28017690,
+			},
+			StatusDetail: &types.StatusDetail{
+				Status:         "some-status",
+				Count:          3,
+				ViolationCount: 5,
+				StatusCode:     200,
+				SampleResponse: "",
+				SampleEvent:    []byte(`{}`),
+				ErrorType:      "",
+			},
+		},
+		{
+			InstanceDetails: types.InstanceDetails{
+				WorkspaceID: "some-workspace-id",
+			},
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:         "some-source-id",
+				DestinationID:    "some-destination-id",
+				TransformationID: "some-transformation-id",
+				TrackingPlanID:   "some-tracking-plan-id",
+			},
+			PUDetails: types.PUDetails{
+				InPU: "some-in-pu",
+				PU:   "some-pu",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 28017690,
+			},
+			StatusDetail: &types.StatusDetail{
+				Status:         "some-status",
+				Count:          2,
+				ViolationCount: 10,
+				StatusCode:     200,
+				SampleResponse: "",
+				SampleEvent:    []byte(`{}`),
+				ErrorType:      "some-error-type",
+			},
+		},
+		{
+			InstanceDetails: types.InstanceDetails{
+				WorkspaceID: "some-workspace-id",
+			},
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:         "some-source-id-2",
+				DestinationID:    "some-destination-id",
+				TransformationID: "some-transformation-id",
+				TrackingPlanID:   "some-tracking-plan-id",
+			},
+			PUDetails: types.PUDetails{
+				InPU: "some-in-pu",
+				PU:   "some-pu",
+			},
+			ReportMetadata: types.ReportMetadata{
+				ReportedAt: 28017690,
+			},
+			StatusDetail: &types.StatusDetail{
+				Status:         "some-status",
+				Count:          3,
+				ViolationCount: 10,
+				StatusCode:     200,
+				SampleResponse: "",
+				SampleEvent:    []byte(`{}`),
+				ErrorType:      "some-error-type",
+			},
+		},
+	}
+	conf := config.New()
 	conf.Set("Reporting.aggregationIntervalMinutes", 10)
 	configSubscriber := newConfigSubscriber(logger.NOP)
 	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)

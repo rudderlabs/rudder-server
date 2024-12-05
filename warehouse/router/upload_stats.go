@@ -60,9 +60,9 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		return
 	}
 
-	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUploadID(
 		job.ctx,
-		job.upload,
+		job.upload.ID,
 	)
 	if err != nil {
 		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
@@ -101,9 +101,9 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		return
 	}
 
-	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUpload(
+	numStagedEvents, err = job.stagingFileRepo.TotalEventsForUploadID(
 		job.ctx,
-		job.upload,
+		job.upload.ID,
 	)
 	if err != nil {
 		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
