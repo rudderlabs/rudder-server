@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
@@ -102,7 +107,7 @@ func TestAPI(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("Status=200(success=true)", func(t *testing.T) {
-			manager := api.New(successSnowpipeServer.URL, successSnowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, successSnowpipeServer.URL, successSnowpipeServer.Client())
 			res, err := manager.CreateChannel(ctx, ccr)
 			require.NoError(t, err)
 			require.EqualValues(t, &model.ChannelResponse{
@@ -118,7 +123,7 @@ func TestAPI(t *testing.T) {
 			)
 		})
 		t.Run("Status=200(success=false)", func(t *testing.T) {
-			manager := api.New(failureSnowpipeServer.URL, failureSnowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, failureSnowpipeServer.URL, failureSnowpipeServer.Client())
 			res, err := manager.CreateChannel(ctx, ccr)
 			require.NoError(t, err)
 			require.EqualValues(t, &model.ChannelResponse{
@@ -134,7 +139,7 @@ func TestAPI(t *testing.T) {
 			)
 		})
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(successSnowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, successSnowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 			})
 			res, err := manager.CreateChannel(ctx, ccr)
@@ -142,7 +147,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(successSnowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, successSnowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -153,7 +158,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
-			manager := api.New(successSnowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, successSnowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},
@@ -184,25 +189,25 @@ func TestAPI(t *testing.T) {
 
 		t.Run("Success", func(t *testing.T) {
 			t.Run("sync=true", func(t *testing.T) {
-				manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+				manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 				err := manager.DeleteChannel(ctx, channelID, true)
 				require.NoError(t, err)
 			})
 			t.Run("sync=false", func(t *testing.T) {
-				manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+				manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 				err := manager.DeleteChannel(ctx, channelID, false)
 				require.NoError(t, err)
 			})
 		})
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 			})
 			err := manager.DeleteChannel(ctx, channelID, true)
 			require.Error(t, err)
 		})
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -230,7 +235,7 @@ func TestAPI(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("Success", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 			res, err := manager.GetChannel(ctx, channelID)
 			require.NoError(t, err)
 			require.EqualValues(t, &model.ChannelResponse{
@@ -245,7 +250,7 @@ func TestAPI(t *testing.T) {
 			)
 		})
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 			})
 			res, err := manager.GetChannel(ctx, channelID)
@@ -253,7 +258,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -264,7 +269,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},
@@ -287,7 +292,10 @@ func TestAPI(t *testing.T) {
 			irJSON, err := json.Marshal(ir)
 			require.NoError(t, err)
 
-			body, err := io.ReadAll(r.Body)
+			gz, err := gzip.NewReader(r.Body)
+			require.NoError(t, err)
+
+			body, err := io.ReadAll(gz)
 			require.NoError(t, err)
 			require.NoError(t, r.Body.Close())
 			require.JSONEq(t, string(irJSON), string(body))
@@ -308,13 +316,13 @@ func TestAPI(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("Insert success", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 			res, err := manager.Insert(ctx, successChannelID, ir)
 			require.NoError(t, err)
 			require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, res)
 		})
 		t.Run("Insert failure", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 			res, err := manager.Insert(ctx, failureChannelID, ir)
 			require.NoError(t, err)
 			require.Equal(t, &model.InsertResponse{
@@ -340,7 +348,7 @@ func TestAPI(t *testing.T) {
 			)
 		})
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 				response: &http.Response{
 					StatusCode: http.StatusOK,
@@ -351,7 +359,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -362,7 +370,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},
@@ -391,7 +399,7 @@ func TestAPI(t *testing.T) {
 		ctx := context.Background()
 
 		t.Run("Success", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, snowpipeServer.Client())
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 			res, err := manager.GetStatus(ctx, channelID)
 			require.NoError(t, err)
 			require.Equal(t, &model.StatusResponse{
@@ -403,7 +411,7 @@ func TestAPI(t *testing.T) {
 			)
 		})
 		t.Run("Request failure", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				err: errors.New("bad client"),
 				response: &http.Response{
 					StatusCode: http.StatusOK,
@@ -414,7 +422,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusBadRequest,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
@@ -425,7 +433,7 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 		t.Run("Request failure (invalid response)", func(t *testing.T) {
-			manager := api.New(snowpipeServer.URL, &mockRequestDoer{
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
 				response: &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},

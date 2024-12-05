@@ -16,16 +16,16 @@ import (
 )
 
 func TestFeatureSetup(t *testing.T) {
-	config.Reset()
 	logger.Reset()
+	config := config.New()
 
 	f := &Factory{
 		EnterpriseToken: "dummy-token",
 	}
-	instanceA := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceA := f.Setup(context.Background(), config, &backendconfig.NOOP{})
 	instanceB := f.instance
 
-	instanceC := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceC := f.Setup(context.Background(), config, &backendconfig.NOOP{})
 	instanceD := f.instance
 
 	require.Equal(t, instanceA, instanceB)
@@ -33,7 +33,7 @@ func TestFeatureSetup(t *testing.T) {
 	require.Equal(t, instanceC, instanceD)
 
 	f = &Factory{}
-	instanceE := f.Setup(context.Background(), &backendconfig.NOOP{})
+	instanceE := f.Setup(context.Background(), config, &backendconfig.NOOP{})
 	instanceF := f.instance
 	require.Equal(t, instanceE, instanceF)
 	require.NotEqual(t, instanceE, backendconfig.NOOP{})
@@ -41,9 +41,7 @@ func TestFeatureSetup(t *testing.T) {
 
 func TestSetupForDelegates(t *testing.T) {
 	logger.Reset()
-
-	config.Reset()
-	defer config.Reset()
+	config := config.New()
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -119,7 +117,7 @@ func TestSetupForDelegates(t *testing.T) {
 					EnterpriseToken: "dummy-token",
 				}
 			}
-			med := NewReportingMediator(context.Background(), logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
+			med := NewReportingMediator(context.Background(), config, logger.NOP, f.EnterpriseToken, &backendconfig.NOOP{})
 			require.Len(t, med.reporters, tc.expectedDelegates)
 		})
 

@@ -57,7 +57,7 @@ func (job *UploadJob) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
 }
 
 func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
-	rowsInStagingFiles, err := job.stagingFileRepo.TotalEventsForUpload(ctx, job.upload)
+	rowsInStagingFiles, err := job.stagingFileRepo.TotalEventsForUploadID(ctx, job.upload.ID)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
