@@ -260,7 +260,7 @@ var _ = Describe("Reporting", func() {
 			Expect(aggregatedMetrics).To(Equal(expectedResponse))
 		})
 
-		It("Should provide aggregated reports when batch size is 10", func() {
+		It("Should provide aggregated reports when batch size more than 1", func() {
 			conf.Set("Reporting.maxReportsCountInARequest", 10)
 			Eventually(func() int { return reportHandle.maxReportsCountInARequest.Load() }).Should(Equal(10))
 			expectedResponse := []*types.Metric{
@@ -334,6 +334,140 @@ var _ = Describe("Reporting", func() {
 			}
 
 			aggregatedMetrics := reportHandle.getAggregatedReports(inputReports)
+			Expect(aggregatedMetrics).To(Equal(expectedResponse))
+		})
+
+		It("Should provide aggregated reports when batch size is more than 1 and reports with same identifier are more then batch size", func() {
+			conf.Set("Reporting.maxReportsCountInARequest", 2)
+			Eventually(func() int { return reportHandle.maxReportsCountInARequest.Load() }).Should(Equal(2))
+			extraReport := &types.ReportByStatus{
+				InstanceDetails: types.InstanceDetails{
+					WorkspaceID: "some-workspace-id",
+				},
+				ConnectionDetails: types.ConnectionDetails{
+					SourceID:         "some-source-id",
+					DestinationID:    "some-destination-id",
+					TransformationID: "some-transformation-id",
+					TrackingPlanID:   "some-tracking-plan-id",
+				},
+				PUDetails: types.PUDetails{
+					InPU: "some-in-pu",
+					PU:   "some-pu",
+				},
+				ReportMetadata: types.ReportMetadata{
+					ReportedAt: 28017690,
+				},
+				StatusDetail: &types.StatusDetail{
+					Status:         "some-status",
+					Count:          2,
+					ViolationCount: 10,
+					StatusCode:     200,
+					SampleResponse: "",
+					SampleEvent:    []byte(`{}`),
+					ErrorType:      "another-error-type",
+				},
+			}
+			newInputReports := append(inputReports, extraReport)
+			expectedResponse := []*types.Metric{
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 5,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "",
+						},
+						{
+							Status:         "some-status",
+							Count:          2,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
+					},
+				},
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          2,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "another-error-type",
+						},
+					},
+				},
+				{
+					InstanceDetails: types.InstanceDetails{
+						WorkspaceID: "some-workspace-id",
+					},
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:         "some-source-id-2",
+						DestinationID:    "some-destination-id",
+						TransformationID: "some-transformation-id",
+						TrackingPlanID:   "some-tracking-plan-id",
+					},
+					PUDetails: types.PUDetails{
+						InPU: "some-in-pu",
+						PU:   "some-pu",
+					},
+					ReportMetadata: types.ReportMetadata{
+						ReportedAt: 28017690 * 60 * 1000,
+					},
+					StatusDetails: []*types.StatusDetail{
+						{
+							Status:         "some-status",
+							Count:          3,
+							ViolationCount: 10,
+							StatusCode:     200,
+							SampleResponse: "",
+							SampleEvent:    []byte(`{}`),
+							ErrorType:      "some-error-type",
+						},
+					},
+				},
+			}
+
+			aggregatedMetrics := reportHandle.getAggregatedReports(newInputReports)
 			Expect(aggregatedMetrics).To(Equal(expectedResponse))
 		})
 	})
