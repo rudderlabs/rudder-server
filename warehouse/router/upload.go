@@ -383,7 +383,7 @@ func (job *UploadJob) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, job.upload)
+			rowCount, _ := job.stagingFileRepo.TotalEventsForUploadID(job.ctx, job.upload.ID)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -662,7 +662,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 		return "", fmt.Errorf("changing upload columns: %w", err)
 	}
 
-	inputCount, _ := job.stagingFileRepo.TotalEventsForUpload(job.ctx, upload)
+	inputCount, _ := job.stagingFileRepo.TotalEventsForUploadID(job.ctx, upload.ID)
 	outputCount, _ := job.tableUploadsRepo.TotalExportedEvents(job.ctx, job.upload.ID, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
