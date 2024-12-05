@@ -220,7 +220,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	// handling of refresh token response
 	if statusCode == http.StatusOK {
 		// fetching/refreshing through control plane was successful
-		return statusCode, refSecret, nil
+		return SuccessResponse(refSecret.Account)
 	}
 	return statusCode, refSecret, refErr
 }
@@ -357,7 +357,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		statsHandler.Increment("request", stats.Tags{
 			"errorMessage": "error in marshalling refresh token body",
 		})
-		return http.StatusInternalServerError, nil, err
+		return MarshalError(err)
 	}
 	refreshCpReq := &controlplane.Request{
 		Method:        http.MethodPost,
@@ -398,25 +398,21 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 			logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 			logger.NewStringField("Call Type", logTypeName))
 
-		return http.StatusInternalServerError, nil, errors.New("empty secret")
+		return EmptySecretResponse()
 	}
 
 	if errType, refErrMsg := h.GetRefreshTokenErrResp(response, &accountSecret); routerutils.IsNotEmptyString(refErrMsg) {
 		// potential oauth secret alert as we are not setting anything in the cache as secret
-		authResponse := &AuthResponse{
-			Err:          errType,
-			ErrorMessage: refErrMsg,
-		}
 		statsHandler.Increment("request", stats.Tags{
 			"errorMessage":  errType,
 			"isCallToCpApi": "true",
 		})
-		if authResponse.Err == common.RefTokenInvalidGrant {
+		if errType == common.RefTokenInvalidGrant {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
-			return http.StatusBadRequest, authResponse, fmt.Errorf("invalid grant")
+			return InvalidGrantResponse(accountSecret)
 		}
-		return http.StatusInternalServerError, authResponse, fmt.Errorf("error occurred while fetching/refreshing account info from CP: %s", refErrMsg)
+		return CpErrorResponse(errType, refErrMsg, accountSecret)
 	}
 	statsHandler.Increment("request", stats.Tags{
 		"errorMessage":  "",
@@ -428,7 +424,5 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 	h.Cache.Store(refTokenParams.AccountID, &AuthResponse{
 		Account: accountSecret,
 	})
-	return http.StatusOK, &AuthResponse{
-		Account: accountSecret,
-	}, nil
+	return SuccessResponse(accountSecret)
 }

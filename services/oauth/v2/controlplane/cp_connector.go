@@ -6,13 +6,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -89,26 +87,6 @@ func WithCpClientTimeout(timeout time.Duration) func(*connector) {
 	}
 }
 
-// processResponse is a helper function to process the response from the control plane
-func processResponse(resp *http.Response) (statusCode int, respBody string) {
-	var respData []byte
-	var ioUtilReadErr error
-	if resp != nil && resp.Body != nil {
-		respData, ioUtilReadErr = io.ReadAll(resp.Body)
-		if ioUtilReadErr != nil {
-			return http.StatusInternalServerError, ioUtilReadErr.Error()
-		}
-	}
-	// Detecting content type of the respData
-	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
-	// If content type is not of type "*text*", overriding it with empty string
-	if !contentTypePattern.MatchString(contentTypeHeader) {
-		respData = []byte("")
-	}
-
-	return resp.StatusCode, string(respData)
-}
-
 // CpApiCall is a function to make a call to the control plane, handle the response and return the status code and response body
 func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpStatTags := stats.Tags{
@@ -168,7 +146,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpStatTags["statusCode"] = strconv.Itoa(res.StatusCode)
 	cpStatTags["error"] = "" // got some valid response from cp
 	c.stats.NewTaggedStat("oauth_v2_cp_requests", stats.CountType, cpStatTags).Count(1)
-	statusCode, resp := processResponse(res)
+	statusCode, resp := common.ProcessResponse(res)
 	return statusCode, resp
 }
 
