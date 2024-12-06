@@ -22,6 +22,7 @@ type BadgerEventSampler struct {
 	ttl    config.ValueLoader[time.Duration]
 	ctx    context.Context
 	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 func DefaultPath(pathName string) (string, error) {
@@ -61,13 +62,18 @@ func NewBadgerEventSampler(ctx context.Context, pathName string, ttl config.Valu
 		ttl:    ttl,
 		ctx:    ctx,
 		cancel: cancel,
+		wg:     sync.WaitGroup{},
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	rruntime.Go(es.gcLoop)
+	es.wg.Add(1)
+	rruntime.Go(func() {
+		defer es.wg.Done()
+		es.gcLoop()
+	})
 
 	return es, nil
 }
@@ -107,35 +113,31 @@ func (es *BadgerEventSampler) Put(key string) error {
 	})
 }
 
-func (es *BadgerEventSampler) performGC() {
-	// One call would only result in removal of at max one log file.
-	// As an optimization, we can call it in a loop until it returns an error.
-	for {
-		select {
-		case <-es.ctx.Done():
-			return
-		default:
-			if err := es.db.RunValueLogGC(0.5); err != nil {
-				return
-			}
-		}
-	}
-}
-
 func (es *BadgerEventSampler) gcLoop() {
 	for {
 		select {
 		case <-es.ctx.Done():
+			_ = es.db.RunValueLogGC(0.5)
 			return
-
 		case <-time.After(5 * time.Minute):
-			es.performGC()
+		}
+	again:
+		if es.ctx.Err() != nil {
+			return
+		}
+		// One call would only result in removal of at max one log file.
+		// As an optimization, you could also immediately re-run it whenever it returns nil error
+		// (this is why `goto again` is used).
+		err := es.db.RunValueLogGC(0.5)
+		if err == nil {
+			goto again
 		}
 	}
 }
 
 func (es *BadgerEventSampler) Close() {
 	es.cancel()
+	es.wg.Wait()
 	if es.db != nil {
 		_ = es.db.Close()
 	}
