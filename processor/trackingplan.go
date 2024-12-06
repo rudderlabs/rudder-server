@@ -138,6 +138,16 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 		}
 		validatedEventsBySourceId[sourceId] = make([]transformer.TransformerEvent, 0)
 		validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventsToTransform...)
+		for _, event := range eventsToTransform {
+			messageIDs := event.Metadata.GetMessagesIDs()
+			for _, messageID := range messageIDs {
+				receivedAt := eventsByMessageID[messageID].ReceivedAt
+				eventsByMessageID[messageID] = types.SingularEventWithReceivedAt{
+					SingularEvent: event.Message,
+					ReceivedAt:    receivedAt,
+				}
+			}
+		}
 	}
 	return validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
 }
