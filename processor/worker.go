@@ -105,13 +105,13 @@ func (w *worker) start() {
 		defer w.lifecycle.wg.Done()
 		defer w.logger.Debugf("store routine stopped for worker: %s", w.partition)
 		for subJob := range w.channel.store {
-			if w.handle.config().disableStoreMerge {
-				w.handle.Store(w.partition, subJob)
-				continue
-			}
-
-			if firstSubJob && !subJob.hasMore {
-				w.handle.Store(w.partition, subJob)
+			if w.handle.config().disableStoreMerge.Load() {
+				if firstSubJob {
+					w.handle.Store(w.partition, subJob)
+					continue
+				}
+				mergedJob.merge(subJob)
+				w.handle.Store(w.partition, mergedJob)
 				continue
 			}
 

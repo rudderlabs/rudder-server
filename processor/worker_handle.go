@@ -33,7 +33,7 @@ type workerHandle interface {
 type workerHandleConfig struct {
 	maxEventsToProcess config.ValueLoader[int]
 
-	disableStoreMerge     bool
+	disableStoreMerge     config.ValueLoader[bool]
 	enablePipelining      bool
 	enableParallelScan    bool
 	pipelineBufferedItems int
