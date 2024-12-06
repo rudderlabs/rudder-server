@@ -3,34 +3,44 @@ package router
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 )
 
 func (r *Router) syncRemoteSchema(ctx context.Context) error {
-	r.configSubscriberLock.RLock()
-	warehouses := append([]model.Warehouse{}, r.warehouses...)
-	r.configSubscriberLock.RUnlock()
+	for {
+		r.configSubscriberLock.RLock()
+		warehouses := append([]model.Warehouse{}, r.warehouses...)
+		r.configSubscriberLock.RUnlock()
+		execTime := time.Now()
+		whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
+		if err != nil {
+			return fmt.Errorf("failed to create warehouse manager: %w", err)
+		}
 
-	whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
-	if err != nil {
-		return fmt.Errorf("failed to create warehouse manager: %w", err)
-	}
-
-	for _, warehouse := range warehouses {
-		sh := schema.New(
-			r.db,
-			warehouse,
-			r.conf,
-			r.logger.Child("syncer"),
-			r.statsFactory,
-		)
-		if err := r.SyncRemoteSchema(ctx, whManager, sh); err != nil {
-			return err
+		for _, warehouse := range warehouses {
+			sh := schema.New(
+				r.db,
+				warehouse,
+				r.conf,
+				r.logger.Child("syncer"),
+				r.statsFactory,
+			)
+			if err := r.SyncRemoteSchema(ctx, whManager, sh); err != nil {
+				return err
+			}
+		}
+		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)
+		select {
+		case <-ctx.Done():
+			r.logger.Infon("context is cancelled, stopped running schema syncer")
+			return nil
+		case <-time.After(time.Until(nextExecTime)):
 		}
 	}
-	return nil
 }
 
 func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *schema.Schema) error {
@@ -43,13 +53,12 @@ func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *sc
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged := sh.hasSchemaChanged(localSchema)
+	schemaChanged := sh.HasSchemaChanged(localSchema)
 	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+		err := sh.UpdateLocalSchemaWithWarehouse(ctx)
 		if err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
+			return fmt.Errorf("updating local schema: %w", err)
 		}
 	}
-
-	return schemaChanged, nil
+	return nil
 }

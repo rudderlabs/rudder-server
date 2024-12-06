@@ -1154,7 +1154,7 @@ func (w *worker) AvailableSlots() int {
 	return cap(w.input) - len(w.input) - w.inputReservations
 }
 
-// Reserve tries to reserve a slot in the worker's input channel, if available
+// ReserveSlot tries to reserve a slot in the worker's input channel, if available
 func (w *worker) ReserveSlot() *workerSlot {
 	if w.AvailableSlots() > 0 {
 		w.inputReservations++

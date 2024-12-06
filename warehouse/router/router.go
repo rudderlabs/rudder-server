@@ -94,6 +94,7 @@ type Router struct {
 		waitForWorkerSleep                time.Duration
 		uploadAllocatorSleep              time.Duration
 		uploadStatusTrackFrequency        time.Duration
+		syncSchemaFrequency               time.Duration
 		shouldPopulateHistoricIdentities  bool
 		uploadFreqInS                     config.ValueLoader[int64]
 		noOfWorkers                       config.ValueLoader[int]
@@ -444,7 +445,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			continue
 		}
 
-		stagingFilesList, err := r.stagingRepo.GetForUpload(ctx, upload)
+		stagingFilesList, err := r.stagingRepo.GetForUploadID(ctx, upload.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -695,6 +696,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.waitForWorkerSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
 	r.config.uploadAllocatorSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
 	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
+	r.config.syncSchemaFrequency = r.conf.GetDurationVar(12, time.Hour, "Warehouse.syncSchemaFrequency")
 	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
 	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")

@@ -427,7 +427,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 				},
 				schemaInWarehouse: tc.schemaInWarehouse,
 			}
-			require.Equal(t, tc.expected, s.hasSchemaChanged(tc.localSchema))
+			require.Equal(t, tc.expected, s.HasSchemaChanged(tc.localSchema))
 		})
 	}
 }

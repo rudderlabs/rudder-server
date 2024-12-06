@@ -17,12 +17,11 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -50,10 +49,11 @@ func New(
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
 		),
-		statsFactory: statsFactory,
-		destination:  destination,
-		now:          timeutil.Now,
-		channelCache: sync.Map{},
+		statsFactory:        statsFactory,
+		destination:         destination,
+		now:                 timeutil.Now,
+		channelCache:        sync.Map{},
+		polledImportInfoMap: make(map[string]*importInfo),
 	}
 
 	m.config.client.url = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
@@ -88,6 +88,7 @@ func New(
 	}))
 
 	m.stats.discards = statsFactory.NewTaggedStat("snowpipe_streaming_discards", stats.CountType, tags)
+	m.stats.pollingInProgress = statsFactory.NewTaggedStat("snowpipe_streaming_polling_in_progress", stats.CountType, tags)
 
 	if m.requestDoer == nil {
 		m.requestDoer = m.retryableClient().StandardClient()
@@ -96,7 +97,7 @@ func New(
 	m.api = newApiAdapter(
 		m.logger,
 		statsFactory,
-		snowpipeapi.New(m.config.client.url, m.requestDoer),
+		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
 	return m
@@ -362,13 +363,14 @@ func (m *Manager) abortJobs(asyncDest *common.AsyncDestinationStruct, abortReaso
 }
 
 // Poll checks the status of multiple imports using the import ID from pollInput.
-// It returns a PollStatusResponse indicating if any imports are still in progress or if any have failed or succeeded.
-// If any imports have failed, it deletes the channels for those imports.
+// For the once which have reached the terminal state (success or failure), it caches the import infos in polledImportInfoMap. Later if Poll is called again, it does not need to do the status check again.
+// Once all the imports have reached the terminal state, if any imports have failed, it deletes the channels for those imports.
+// It returns a PollStatusResponse indicating if any imports are still in progress or if any have failed or succeeded
 func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
-	var infos []*importInfo
-	err := json.Unmarshal([]byte(pollInput.ImportId), &infos)
+	var importInfos []*importInfo
+	err := json.Unmarshal([]byte(pollInput.ImportId), &importInfos)
 	if err != nil {
 		return common.PollStatusResponse{
 			InProgress: false,
@@ -382,67 +384,50 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var anyoneInProgress bool
-	for _, info := range infos {
-		inProgress, err := m.pollForImportInfo(ctx, info)
-		if err != nil {
-			info.Failed = true
-			info.Reason = err.Error()
-			continue
-		}
-		anyoneInProgress = anyoneInProgress || inProgress
-	}
-	if anyoneInProgress {
+	if anyInProgress := m.processPollImportInfos(ctx, importInfos); anyInProgress {
+		m.stats.pollingInProgress.Increment()
 		return common.PollStatusResponse{InProgress: true}
 	}
 
-	failedInfos := lo.Filter(infos, func(info *importInfo, index int) bool {
+	updatedImportInfos := lo.Map(importInfos, func(item *importInfo, index int) *importInfo {
+		return m.polledImportInfoMap[item.ChannelID]
+	})
+	failedImports := lo.Filter(updatedImportInfos, func(info *importInfo, index int) bool {
 		return info.Failed
 	})
-	for _, info := range failedInfos {
-		m.logger.Warnn("Failed to poll channel offset",
-			logger.NewStringField("channelId", info.ChannelID),
-			logger.NewStringField("offset", info.Offset),
-			logger.NewStringField("table", info.Table),
-			logger.NewStringField("reason", info.Reason),
-		)
+	m.cleanupFailedImports(ctx, failedImports)
+	m.updateJobStatistics(updatedImportInfos)
+	m.polledImportInfoMap = make(map[string]*importInfo)
 
-		if deleteErr := m.deleteChannel(ctx, info.Table, info.ChannelID); deleteErr != nil {
-			m.logger.Warnn("Failed to delete channel",
-				logger.NewStringField("channelId", info.ChannelID),
-				logger.NewStringField("table", info.Table),
-				obskit.Error(deleteErr),
-			)
-		}
-	}
-
-	var successJobsCount, failedJobsCount int
-	for _, info := range infos {
-		if info.Failed {
-			failedJobsCount += info.Count
-		} else {
-			successJobsCount += info.Count
-		}
-	}
-	m.stats.jobs.failed.Count(failedJobsCount)
-	m.stats.jobs.succeeded.Count(successJobsCount)
-
-	statusResponse := common.PollStatusResponse{
-		InProgress: false,
-		StatusCode: http.StatusOK,
-		Complete:   true,
-	}
-	if len(failedInfos) > 0 {
-		statusResponse.HasFailed = true
-		statusResponse.FailedJobParameters = stringify.Any(infos)
-	} else {
-		statusResponse.HasFailed = false
-		statusResponse.HasWarning = false
-	}
-	return statusResponse
+	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
 }
 
-func (m *Manager) pollForImportInfo(ctx context.Context, info *importInfo) (bool, error) {
+func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInfo) bool {
+	var anyInProgress bool
+	for i := range infos {
+		info := infos[i]
+
+		if _, alreadyProcessed := m.polledImportInfoMap[info.ChannelID]; alreadyProcessed {
+			continue
+		}
+
+		inProgress, err := m.getImportStatus(ctx, info)
+		if err != nil {
+			info.Failed = true
+			info.Reason = err.Error()
+			m.polledImportInfoMap[info.ChannelID] = info
+			continue
+		}
+		if !inProgress {
+			m.polledImportInfoMap[info.ChannelID] = info
+		}
+
+		anyInProgress = anyInProgress || inProgress
+	}
+	return anyInProgress
+}
+
+func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, error) {
 	log := m.logger.Withn(
 		logger.NewStringField("channelId", info.ChannelID),
 		logger.NewStringField("offset", info.Offset),
@@ -466,14 +451,64 @@ func (m *Manager) pollForImportInfo(ctx context.Context, info *importInfo) (bool
 	return statusRes.Offset != info.Offset, nil
 }
 
+func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
+	for _, info := range failedInfos {
+		m.logger.Warnn("Failed to poll channel offset",
+			logger.NewStringField("channelId", info.ChannelID),
+			logger.NewStringField("offset", info.Offset),
+			logger.NewStringField("table", info.Table),
+			logger.NewStringField("reason", info.Reason),
+		)
+
+		if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
+			m.logger.Warnn("Failed to delete channel",
+				logger.NewStringField("channelId", info.ChannelID),
+				logger.NewStringField("table", info.Table),
+				obskit.Error(err),
+			)
+		}
+	}
+}
+
+func (m *Manager) updateJobStatistics(importInfos []*importInfo) {
+	var successfulCount, failedCount int
+
+	for _, info := range importInfos {
+		if info.Failed {
+			failedCount += info.Count
+		} else {
+			successfulCount += info.Count
+		}
+	}
+	m.stats.jobs.failed.Count(failedCount)
+	m.stats.jobs.succeeded.Count(successfulCount)
+}
+
+func (m *Manager) buildPollStatusResponse(importInfos, failedImports []*importInfo) common.PollStatusResponse {
+	response := common.PollStatusResponse{
+		InProgress: false,
+		StatusCode: http.StatusOK,
+		Complete:   true,
+	}
+
+	if len(failedImports) > 0 {
+		response.HasFailed = true
+		response.FailedJobParameters = stringify.Any(importInfos)
+	} else {
+		response.HasFailed = false
+		response.HasWarning = false
+	}
+	return response
+}
+
 // GetUploadStats returns the status of the uploads for the snowpipe streaming destination.
 // It returns the status of the uploads for the given job IDs.
 // If any of the uploads have failed, it returns the reason for the failure.
 func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	m.logger.Infon("Getting import stats for snowpipe streaming destination")
 
-	var infos []*importInfo
-	err := json.Unmarshal([]byte(input.FailedJobParameters), &infos)
+	var importInfos []*importInfo
+	err := json.Unmarshal([]byte(input.FailedJobParameters), &importInfos)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: http.StatusBadRequest,
@@ -482,7 +517,7 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 	}
 
 	succeededTables, failedTables := make(map[string]struct{}), make(map[string]*importInfo)
-	for _, info := range infos {
+	for _, info := range importInfos {
 		if info.Failed {
 			failedTables[info.Table] = info
 		} else {

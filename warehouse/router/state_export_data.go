@@ -543,7 +543,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			break
 		}
 	}
-
 	return job.processLoadTableResponse(errorMap)
 }
 

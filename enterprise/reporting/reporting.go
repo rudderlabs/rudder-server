@@ -74,9 +74,10 @@ type DefaultReporter struct {
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
+	maxReportsCountInARequest config.ValueLoader[int]
 }
 
-func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
+func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
@@ -88,6 +89,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 	maxConcurrentRequests := config.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
+	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -114,6 +116,7 @@ func NewDefaultReporter(ctx context.Context, log logger.Logger, configSubscriber
 		maxOpenConnections:                   maxOpenConnections,
 		maxConcurrentRequests:                maxConcurrentRequests,
 		dbQueryTimeout:                       dbQueryTimeout,
+		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                stats,
 	}
 }
@@ -265,8 +268,9 @@ func (r *DefaultReporter) getReports(currentMs int64, syncerKey string) (reports
 	return metricReports, queryMin.Int64, err
 }
 
-func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
+func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
+	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -282,16 +286,13 @@ func (*DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []
 			report.ConnectionDetails.TrackingPlanID,
 			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
 			report.PUDetails.InPU, report.PUDetails.PU,
-			report.StatusDetail.Status,
-			strconv.Itoa(report.StatusDetail.StatusCode),
-			report.StatusDetail.EventName, report.StatusDetail.EventType,
 		}
 		return strings.Join(groupingIdentifiers, `::`)
 	}
 
 	for _, report := range reports {
 		identifier := reportIdentifier(report)
-		if _, ok := metricsByGroup[identifier]; !ok {
+		if _, ok := metricsByGroup[identifier]; !ok || len(metricsByGroup[identifier].StatusDetails) >= maxReportsCountInARequest {
 			metricsByGroup[identifier] = &types.Metric{
 				InstanceDetails: types.InstanceDetails{
 					WorkspaceID: report.WorkspaceID,

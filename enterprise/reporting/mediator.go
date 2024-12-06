@@ -34,7 +34,7 @@ type Mediator struct {
 	cronRunners []flusher.Runner
 }
 
-func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
+func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -58,7 +58,7 @@ func NewReportingMediator(ctx context.Context, log logger.Logger, enterpriseToke
 	})
 
 	// default reporting implementation
-	defaultReporter := NewDefaultReporter(rm.ctx, rm.log, configSubscriber, rm.stats)
+	defaultReporter := NewDefaultReporter(rm.ctx, conf, rm.log, configSubscriber, rm.stats)
 	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation
