@@ -97,7 +97,7 @@ func New(
 	m.api = newApiAdapter(
 		m.logger,
 		statsFactory,
-		snowpipeapi.New(m.config.client.url, m.requestDoer),
+		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
 	return m
