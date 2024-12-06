@@ -3,6 +3,7 @@ package types_test
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -101,6 +102,12 @@ func TestMetricJSONMarshaling(t *testing.T) {
 				StatTags: map[string]string{
 					"category": "validation",
 				},
+				FailedMessages: []*types.FailedMessage{
+					{
+						MessageID:  "1",
+						ReceivedAt: time.Now(),
+					},
+				},
 			},
 			{
 				Status:         "failed",
@@ -119,19 +126,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 		},
 	}
 
-	// Marshal the struct to JSON
 	marshaledJSON, err := json.Marshal(metric)
-	if err != nil {
-		t.Fatalf("Failed to marshal Metric struct: %v", err)
-	}
-
-	// Compare with expected JSON
-	var expected, actual map[string]interface{}
-	if err := json.Unmarshal([]byte(expectedJSON), &expected); err != nil {
-		t.Fatalf("Failed to unmarshal expected JSON: %v", err)
-	}
-	if err := json.Unmarshal(marshaledJSON, &actual); err != nil {
-		t.Fatalf("Failed to unmarshal actual JSON: %v", err)
-	}
-	require.Equal(t, expected, actual)
+	require.NoError(t, err)
+	require.JSONEq(t, expectedJSON, string(marshaledJSON))
 }
