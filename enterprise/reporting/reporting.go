@@ -353,6 +353,7 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 func (*DefaultReporter) getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	// If interval is not a factor of 60, then the bucket start will not be aligned to hour start
 	// For example, if intervalMs is 7, and timeMs is 28891085 (6:05) then the bucket start will be 28891079 (5:59)
+	// and current bucket will contain the data of 2 different hourly buckets, which is should not have happened.
 	// To avoid this, we round the intervalMs to the nearest factor of 60.
 	if intervalMs <= 0 || 60%intervalMs != 0 {
 		factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
