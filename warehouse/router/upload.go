@@ -291,24 +291,13 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
-	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
-	if err != nil {
-		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
-		return err
-	}
-	if hasSchemaChanged {
-		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	}
-
 	var (
 		newStatus       string
 		nextUploadState *state
 	)
 
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
-	if !hasSchemaChanged {
-		nextUploadState = nextState(job.upload.Status)
-	}
+	nextUploadState = nextState(job.upload.Status)
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[model.GeneratedUploadSchema]
 	}
@@ -339,7 +328,7 @@ func (job *UploadJob) run() (err error) {
 
 		case model.GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
-			if err = job.generateLoadFiles(hasSchemaChanged); err != nil {
+			if err = job.generateLoadFiles(); err != nil {
 				break
 			}
 			newStatus = nextUploadState.completed

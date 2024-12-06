@@ -11,10 +11,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -286,40 +285,6 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 	return nil
 }
 
-// SyncRemoteSchema
-// 1. Fetches schema from local
-// 2. Fetches schema from warehouse
-// 3. Initialize local schema
-// 4. Updates local schema with warehouse schema if it has changed
-// 5. Returns true if schema has changed
-func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
-	if err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-
-	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
-
-	sh.localSchemaMu.Lock()
-	sh.localSchema = localSchema
-	sh.localSchemaMu.Unlock()
-
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-
-	schemaChanged := sh.hasSchemaChanged(localSchema)
-	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, sh.schemaInWarehouse)
-		if err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
-
-	return schemaChanged, nil
-}
-
 // GetLocalSchema returns the local schema from wh_schemas table
 func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
@@ -375,8 +340,8 @@ func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-// hasSchemaChanged compares the localSchema with the schemaInWarehouse
-func (sh *Schema) hasSchemaChanged(localSchema model.Schema) bool {
+// HasSchemaChanged compares the localSchema with the schemaInWarehouse
+func (sh *Schema) HasSchemaChanged(localSchema model.Schema) bool {
 	return !reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
 }
 
