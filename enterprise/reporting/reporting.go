@@ -217,6 +217,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 	}
 
 	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
 	}
@@ -349,9 +350,25 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 	return values
 }
 
-func (*DefaultReporter) getAggregationBucketMinute(timeMin, aggregationIntervalMin int64) (int64, int64) {
-	bucketStart := timeMin - (timeMin % aggregationIntervalMin)
-	bucketEnd := bucketStart + aggregationIntervalMin
+func (*DefaultReporter) getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
+	// If interval is not a factor of 60, then the bucket start will not be aligned to hour start
+	// For example, if intervalMs is 7, and timeMs is 28891085 (6:05) then the bucket start will be 28891079 (5:59)
+	// To avoid this, we round the intervalMs to the nearest factor of 60.
+	if intervalMs <= 0 || 60%intervalMs != 0 {
+		factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
+		closestFactor := factors[0]
+		for _, factor := range factors {
+			if factor < intervalMs {
+				closestFactor = factor
+			} else {
+				break
+			}
+		}
+		intervalMs = closestFactor
+	}
+
+	bucketStart := timeMs - (timeMs % intervalMs)
+	bucketEnd := bucketStart + intervalMs
 
 	return bucketStart, bucketEnd
 }
@@ -417,10 +434,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 			getReportsStart := time.Now()
 			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
-			if aggregationIntervalMin <= 0 || 60%aggregationIntervalMin != 0 {
-				panic(fmt.Errorf("[ Reporting ]: Error aggregationIntervalMinutes should be a factor of 60, got %d", aggregationIntervalMin))
-			}
-
 			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
 				r.log.Errorw("getting reports", "error", err)
