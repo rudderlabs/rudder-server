@@ -32,6 +32,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 		"reportedAt": 1730712600000,
 		"trackingPlanId": "1",
 		"trackingPlanVersion": 1,
+		"bucket": 1730712600000,
 		"reports": [
 			{
 				"state": "failed",
@@ -86,7 +87,8 @@ func TestMetricJSONMarshaling(t *testing.T) {
 			InitialPU:  false,
 		},
 		ReportMetadata: types.ReportMetadata{
-			ReportedAt: 1730712600000,
+			ReportedAt:        1730712600000,
+			SampleEventBucket: 1730712600000,
 		},
 		StatusDetails: []*types.StatusDetail{
 			{
