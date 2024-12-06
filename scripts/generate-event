@@ -1,16 +1,105 @@
 #!/bin/bash
 
-if [[ $# != 2 ]]; then
-	echo "Usage: ./generate-event <write_key> <end_point>"
-	echo "Example: ./generate-event 1S0ibSaDlSSGkaQuHLi9feJqIUBNAE https://<data_plane_url>/v1/batch"
-	exit
+# Default values
+endPoint=""
+repeatCount=1
+repeatDelay=1
+eventsPerRun=1
+concurrency=1
+
+# Parse key=value arguments
+for arg in "$@"; do
+  case $arg in
+    endPoint=*)
+      endPoint="${arg#*=}"
+      ;;
+    repeatCount=*)
+      repeatCount="${arg#*=}"
+      ;;
+    repeatDelay=*)
+      repeatDelay="${arg#*=}"
+      ;;
+    eventsPerRun=*)
+      eventsPerRun="${arg#*=}"
+      ;;
+    concurrency=*)
+      concurrency="${arg#*=}"
+      ;;
+    *)
+      echo "Unknown argument: $arg"
+      echo "Usage: ./generate-event endPoint=<url> repeatCount=<number> eventsPerRun=<number> repeatDelay=<seconds> concurrency=<number>"
+      exit 1
+      ;;
+  esac
+done
+
+# Validate required arguments
+if [[ -z $endPoint ]]; then
+  echo "Error: endPoint is required"
+  echo "Usage: ./generate-event endPoint=<url> repeatCount=<number> eventsPerRun=<number> repeatDelay=<seconds> concurrency=<number>"
+  exit 1
 fi
 
-dir=$(
-	cd "$(dirname "${BASH_SOURCE[0]}")" || exit
-	pwd -P
-)
+# write_keys=("2ZoCQEI1Y9LNLe4QnEG0Vsmp9ld" "2jjvcYgnaxCj1FKgzgulcQk3S25")
+write_keys=("2SEMHBD56KYXEunktzr05UCrML6" "2TkVKAcJrChq0cLj3jNh5CcUmZD" "2V78NnazcshJ0zUgoiZqrTjMYmZ" "2VGCj19GVl1bfhsbDo85WM1R9vG" "2VxIFVQoWZHe3jXiLQPZ2AOnWQz" "2WJ5XHakhGfErt43DBff4TVUmg3" "2WWk95uCTzlIVbQXHRqRezVTavX" "2ZoCQEI1Y9LNLe4QnEG0Vsmp9ld" "2alVVJNW06KUdzSWUaO9uXMkMvm" "2dJhnoarKUWd9VgwwJK6rCP3lv7" "2drI9z15G2cET90dRQ5wYCFBItd" "2hMKV5bl3VY9AuxOWcky3x1ErMv" "2hMKi07eig0P566vxyvbVBIRN4B" "2hMKivYpdowjEePK6umqwjZt759" "2jN54jqq8itACcShVY2IErrW6ES" "2jPRsPmdqNt0GgvLFRUsFTsRsyd" "2jjvcYgnaxCj1FKgzgulcQk3S25")
 
-#curl -u $1: -X POST http://$2:8080/v1/track -d @$dir/track.json --header "Content-Type: application/json"
-#curl -u $1: -X POST $2 -d @$dir/track.json --header "Content-Type: application/json"
-curl -u "$1": -X POST "$2" -d @"${dir}"/batch.json --header "Content-Type: application/json" # give absolute path for batch.json to test on local machine
+dir=$(
+  cd "$(dirname "${BASH_SOURCE[0]}")" || exit
+  pwd -P
+)
+jsonFile="track.json"
+tempDir="${dir}/temp"
+# Check if the tempDir exists. If it does, skip the creation step.
+if [ ! -d "$tempDir" ]; then
+    mkdir -p "$tempDir"  # Create the directory if it doesn't exist
+fi
+
+# Define the cleanup function
+cleanup() {
+  echo "Cancellation requested. Cleaning up..."
+  cancelFlag=1
+  # You can also perform any cleanup tasks here, such as removing temp files.
+}
+
+# Trap SIGINT (Ctrl+C) signal and call cleanup
+trap cleanup SIGINT
+
+# Main loop
+for run in $(seq 1 "$repeatCount"); do
+    echo ""
+    echo ""
+    echo "Run #$run ----- $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    eventSuffix="event_"
+
+    for concurrencyIndex in $(seq 1 "$concurrency"); do
+        {
+            eventSuffix="event_${concurrencyIndex}_"
+
+            for i in $(seq 1 "$eventsPerRun"); do
+                for j in "${!write_keys[@]}"; do
+                    if [[ $cancelFlag -eq 1 ]]; then
+                        echo "Process cancelled, exiting..."
+                        exit 0
+                    fi
+
+                    current_time=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+                    jq --arg j "$j" --arg i "$i" --arg eventSuffix "$eventSuffix" --arg current_time "$current_time" \
+                        '.event = $eventSuffix + $j + "_" + $i 
+                        | .sentAt = $current_time 
+                        | .originalTimestamp = $current_time' \
+                        "${dir}/${jsonFile}" > "${tempDir}/${eventSuffix}_${jsonFile}"
+
+                    curl -u "${write_keys[$j]}": -X POST "$endPoint" -d @"${tempDir}/${eventSuffix}_${jsonFile}" --header "Content-Type: application/json"
+                done
+            done
+        } & # Run in the background
+    done
+
+    # Wait for all background jobs to finish
+    wait
+
+    if [[ $run -lt $repeatCount ]]; then
+        sleep "$repeatDelay"
+    fi
+done

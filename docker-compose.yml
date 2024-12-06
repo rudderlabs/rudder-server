@@ -7,20 +7,20 @@ services:
       - build/docker.env
     ports:
       - "6432:5432"
-  backend:
-    build:
-      context: ./
-      dockerfile: Dockerfile
-    depends_on:
-      - db
-      - transformer
-    entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
-    ports:
-      - "8080:8080"
-    env_file:
-      - build/docker.env
-    environment:
-      - JOBS_DB_HOST=db
+  #  backend:
+  #    build:
+  #      context: ./
+  #      dockerfile: Dockerfile
+  #    depends_on:
+  #      - db
+  #      - transformer
+  #    entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
+  #    ports:
+  #      - "8080:8080"
+  #    env_file:
+  #      - build/docker.env
+  #    environment:
+  #      - JOBS_DB_HOST=db
   #   Uncomment the following lines to mount workspaceConfig file
   #   volumes:
   #     - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
@@ -28,6 +28,9 @@ services:
     image: "rudderstack/rudder-transformer:latest"
     ports:
       - "9090:9090"
+    environment:
+      - JOBS_DB_HOST=db
+      - CONFIG_BACKEND_URL=https://api.dev.rudderlabs.com
   minio:
     image: minio/minio
     profiles:

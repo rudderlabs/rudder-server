@@ -368,8 +368,8 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 					InitialPU:  report.InitialPU,
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
-					Bucket:     sampleEventBucket * 60 * 1000,
+					ReportedAt:        report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					SampleEventBucket: sampleEventBucket * 60 * 1000,
 				},
 			}
 			values = append(values, metricsByGroup[identifier])

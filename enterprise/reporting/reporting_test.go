@@ -187,8 +187,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -217,8 +217,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -247,8 +247,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -288,8 +288,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -327,8 +327,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -396,8 +396,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -435,8 +435,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
@@ -465,8 +465,8 @@ func TestGetAggregatedReports(t *testing.T) {
 					PU:   "some-pu",
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: 28017690 * 60 * 1000,
-					Bucket:     bucket * 60 * 1000,
+					ReportedAt:        28017690 * 60 * 1000,
+					SampleEventBucket: bucket * 60 * 1000,
 				},
 				StatusDetails: []*types.StatusDetail{
 					{
