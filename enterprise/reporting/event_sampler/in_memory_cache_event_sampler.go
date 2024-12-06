@@ -1,7 +1,7 @@
 package event_sampler
 
 import (
-	"sync"
+	"context"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/cachettl"
@@ -9,17 +9,21 @@ import (
 )
 
 type InMemoryCacheEventSampler struct {
+	ctx    context.Context
+	cancel context.CancelFunc
 	cache  *cachettl.Cache[string, bool]
-	mu     sync.Mutex
 	ttl    config.ValueLoader[time.Duration]
 	limit  config.ValueLoader[int]
 	length int
 }
 
-func NewInMemoryCacheEventSampler(ttl config.ValueLoader[time.Duration], limit config.ValueLoader[int]) (*InMemoryCacheEventSampler, error) {
+func NewInMemoryCacheEventSampler(ctx context.Context, ttl config.ValueLoader[time.Duration], limit config.ValueLoader[int]) (*InMemoryCacheEventSampler, error) {
 	c := cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
+	ctx, cancel := context.WithCancel(ctx)
 
 	es := &InMemoryCacheEventSampler{
+		ctx:    ctx,
+		cancel: cancel,
 		cache:  c,
 		ttl:    ttl,
 		limit:  limit,
@@ -34,15 +38,11 @@ func NewInMemoryCacheEventSampler(ttl config.ValueLoader[time.Duration], limit c
 }
 
 func (es *InMemoryCacheEventSampler) Get(key string) (bool, error) {
-	es.mu.Lock()
-	defer es.mu.Unlock()
 	value := es.cache.Get(key)
 	return value, nil
 }
 
 func (es *InMemoryCacheEventSampler) Put(key string) error {
-	es.mu.Lock()
-	defer es.mu.Unlock()
 	if es.length >= es.limit.Load() {
 		return nil
 	}
@@ -53,4 +53,5 @@ func (es *InMemoryCacheEventSampler) Put(key string) error {
 }
 
 func (es *InMemoryCacheEventSampler) Close() {
+	es.cancel()
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -31,7 +32,7 @@ func DefaultPath(pathName string) (string, error) {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, pathName), nil
 }
 
-func NewBadgerEventSampler(pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*BadgerEventSampler, error) {
+func NewBadgerEventSampler(ctx context.Context, pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*BadgerEventSampler, error) {
 	dbPath, err := DefaultPath(pathName)
 	if err != nil || dbPath == "" {
 		return nil, err
@@ -51,7 +52,7 @@ func NewBadgerEventSampler(pathName string, ttl config.ValueLoader[time.Duration
 		WithSyncWrites(conf.GetBool("Reporting.eventSampling.badgerDB.syncWrites", false)).
 		WithDetectConflicts(conf.GetBool("Reporting.eventSampling.badgerDB.detectConflicts", false))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 
 	db, err := badger.Open(opts)
 
@@ -66,7 +67,7 @@ func NewBadgerEventSampler(pathName string, ttl config.ValueLoader[time.Duration
 		return nil, err
 	}
 
-	go es.gcLoop()
+	rruntime.Go(es.gcLoop)
 
 	return es, nil
 }

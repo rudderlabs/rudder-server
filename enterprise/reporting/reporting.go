@@ -99,7 +99,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
-	eventSamplingCardinality := conf.GetReloadableIntVar(1000000, 1, "Reporting.eventSampling.cardinality")
+	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
@@ -108,7 +108,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
 		if err != nil {
 			panic(err)
 		}
