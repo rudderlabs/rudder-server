@@ -57,7 +57,6 @@ func TestWHSchemasRepo(t *testing.T) {
 			},
 		}
 		schema = model.WHSchema{
-			UploadID:        1,
 			SourceID:        sourceID,
 			Namespace:       namespace,
 			DestinationID:   destinationID,
@@ -144,7 +143,6 @@ func TestWHSchemasRepo(t *testing.T) {
 		t.Log("multiple")
 		latestNamespace := "latest_namespace"
 		schemaLatest := model.WHSchema{
-			UploadID:        2,
 			SourceID:        sourceID,
 			Namespace:       latestNamespace,
 			DestinationID:   destinationID,

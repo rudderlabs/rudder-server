@@ -17,7 +17,6 @@ const whSchemaTableName = warehouseutils.WarehouseSchemasTable
 
 const whSchemaTableColumns = `
 	id,
-   	wh_upload_id,
    	source_id,
 	namespace,
    	destination_id,
@@ -53,20 +52,19 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 
 	err = sh.db.QueryRowContext(ctx, `
 		INSERT INTO `+whSchemaTableName+` (
-		  wh_upload_id, source_id, namespace, destination_id,
+          source_id, namespace, destination_id,
 		  destination_type, schema, created_at,
 		  updated_at
 		)
 		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (
+		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
 			source_id, destination_id, namespace
 		  ) DO
 		UPDATE
 		SET
-		  schema = $6,
+		  schema = $5,
 		  updated_at = $7 RETURNING id;
 `,
-		whSchema.UploadID,
 		whSchema.SourceID,
 		whSchema.Namespace,
 		whSchema.DestinationID,
@@ -125,7 +123,6 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 		)
 		err := rows.Scan(
 			&whSchema.ID,
-			&whSchema.UploadID,
 			&whSchema.SourceID,
 			&whSchema.Namespace,
 			&whSchema.DestinationID,

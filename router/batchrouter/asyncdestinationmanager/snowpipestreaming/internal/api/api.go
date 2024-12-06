@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,9 @@ import (
 	"strconv"
 
 	jsoniter "github.com/json-iterator/go"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -18,6 +22,12 @@ type (
 	API struct {
 		clientURL   string
 		requestDoer requestDoer
+		config      struct {
+			enableCompression config.ValueLoader[bool]
+		}
+		stats struct {
+			insertRequestBodySize stats.Histogram
+		}
 	}
 
 	requestDoer interface {
@@ -27,11 +37,17 @@ type (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-func New(clientURL string, requestDoer requestDoer) *API {
-	return &API{
+func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
+	a := &API{
 		clientURL:   clientURL,
 		requestDoer: requestDoer,
 	}
+	a.config.enableCompression = conf.GetReloadableBoolVar(true, "SnowpipeStreaming.enableCompression")
+	a.stats.insertRequestBodySize = statsFactory.NewTaggedStat("snowpipe_streaming_request_body_size", stats.HistogramType, stats.Tags{
+		"api": "insert",
+	})
+
+	return a
 }
 
 func mustRead(r io.Reader) []byte {
@@ -135,12 +151,34 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 		return nil, fmt.Errorf("marshalling insert request: %w", err)
 	}
 
+	enableCompression := a.config.enableCompression.Load()
+
+	var (
+		r           io.Reader
+		payloadSize int
+	)
+
+	if enableCompression {
+		r, payloadSize, err = gzippedReader(reqJSON)
+		if err != nil {
+			return nil, fmt.Errorf("creating gzip reader: %w", err)
+		}
+	} else {
+		r = bytes.NewBuffer(reqJSON)
+		payloadSize = len(reqJSON)
+	}
+
+	a.stats.insertRequestBodySize.Observe(float64(payloadSize))
+
 	insertURL := a.clientURL + "/channels/" + channelID + "/insert"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, insertURL, bytes.NewBuffer(reqJSON))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, insertURL, r)
 	if err != nil {
 		return nil, fmt.Errorf("creating insert request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if enableCompression {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 
 	resp, reqErr := a.requestDoer.Do(req)
 	if reqErr != nil {
@@ -183,4 +221,16 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 		return nil, fmt.Errorf("decoding status response: %w", err)
 	}
 	return &res, nil
+}
+
+func gzippedReader(reqJSON []byte) (io.Reader, int, error) {
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	if _, err := gz.Write(reqJSON); err != nil {
+		return nil, 0, fmt.Errorf("writing to gzip writer: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return nil, 0, fmt.Errorf("closing gzip writer: %w", err)
+	}
+	return &b, b.Len(), nil
 }

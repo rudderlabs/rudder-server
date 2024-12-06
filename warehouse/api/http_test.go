@@ -295,7 +295,6 @@ func TestHTTPApi(t *testing.T) {
 
 	schemaRepo := repo.NewWHSchemas(db)
 	_, err = schemaRepo.Insert(ctx, &model.WHSchema{
-		UploadID:        1,
 		SourceID:        sourceID,
 		Namespace:       namespace,
 		DestinationID:   destinationID,

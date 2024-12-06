@@ -32,7 +32,7 @@ Reporting Feature
 
 // ReportingFeature handles reporting statuses / errors to reporting service
 type ReportingFeature interface {
-	Setup(cxt context.Context, backendConfig backendconfig.BackendConfig) types.Reporting
+	Setup(cxt context.Context, conf *config.Config, backendConfig backendconfig.BackendConfig) types.Reporting
 }
 
 // Features contains optional implementations of Enterprise only features.

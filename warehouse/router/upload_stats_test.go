@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -243,7 +244,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			},
 		}, nil)
 
-		count, err := repo.NewStagingFiles(sqlmiddleware.New(db)).TotalEventsForUpload(context.Background(), job.upload)
+		count, err := repo.NewStagingFiles(sqlmiddleware.New(db)).TotalEventsForUploadID(context.Background(), job.upload.ID)
 		require.NoError(t, err)
 		require.EqualValues(t, 5, count)
 	})

@@ -948,7 +948,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.Equal(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status: assert.AnError general error for testing","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -997,6 +997,85 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destinationId": "test-destination",
 			"status":        "failed",
 		}).LastValue())
+	})
+	t.Run("Poll caching", func(t *testing.T) {
+		importID := `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":false,"reason":"","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":false,"reason":"","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		statusCalls := 0
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-channel-1": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: false, Success: true}, nil
+				},
+				"test-channel-2": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: true, Success: false}, nil
+				},
+				"test-channel-3": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0"}, nil
+				},
+				"test-channel-4": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "4"}, nil
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.True(t, output.InProgress)
+
+		t.Log("Polling again should not call getStatus for channels 1, 2 and 4 since they already reached the terminal state")
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-channel-3": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "3"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-channel-1": func() error {
+					return nil
+				},
+				"test-channel-2": func() error {
+					return nil
+				},
+			},
+		}
+		output = sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.Equal(t, `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":true,"reason":"invalid status response with valid: false, success: true","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":true,"reason":"invalid status response with valid: true, success: false","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`, output.FailedJobParameters)
+		require.EqualValues(t, 3, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 7, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "succeeded",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_polling_in_progress", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+		}).LastValue())
+		require.Equal(t, 5, statusCalls) // 4 channels + 1 for polling in progress
 	})
 
 	t.Run("GetUploadStats with invalid importInfo", func(t *testing.T) {

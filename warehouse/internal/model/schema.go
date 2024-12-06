@@ -22,7 +22,6 @@ const (
 
 type WHSchema struct {
 	ID              int64
-	UploadID        int64
 	SourceID        string
 	Namespace       string
 	DestinationID   string
