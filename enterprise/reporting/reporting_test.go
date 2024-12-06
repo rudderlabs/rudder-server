@@ -163,7 +163,7 @@ func TestGetAggregatedReports(t *testing.T) {
 		},
 	}
 	conf := config.New()
-	conf.Set("Reporting.aggregationIntervalMinutes", 10)
+	conf.Set("Reporting.eventSampling.durationInMinutes", 10)
 	configSubscriber := newConfigSubscriber(logger.NOP)
 	reportHandle := NewDefaultReporter(context.Background(), conf, logger.NOP, configSubscriber, stats.NOP)
 
