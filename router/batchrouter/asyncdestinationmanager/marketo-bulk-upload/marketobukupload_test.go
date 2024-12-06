@@ -10,11 +10,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/marketo_bulk_upload"
+	mockmarketoservice "github.com/rudderlabs/rudder-server/mocks/router/marketo_bulk_upload"
 	mbu "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 )
 
@@ -22,7 +23,7 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockAPIService := mockAPIService.NewMockMarketoAPIServiceInterface(ctrl)
+	mockAPIService := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
 	testLogger := logger.NewLogger().Child("marketo-bulk-upload-test")
 
 	destConfg := mbu.MarketoConfig{
@@ -136,7 +137,7 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockAPIService := mockAPIService.NewMockMarketoAPIServiceInterface(ctrl)
+	mockAPIService := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
 	testLogger := logger.NewLogger().Child("marketo-bulk-upload-test")
 
 	destConfg := mbu.MarketoConfig{
@@ -210,7 +211,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockAPIService := mockAPIService.NewMockMarketoAPIServiceInterface(ctrl)
+	mockAPIService := mockmarketoservice.NewMockMarketoAPIServiceInterface(ctrl)
 	testLogger := logger.NewLogger().Child("marketo-bulk-upload-test")
 
 	// Create a temporary file for the upload setup
@@ -356,10 +357,10 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			ImportingList:  importingList,
-			FailedJobURLs:  "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
-			WarningJobURLs: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/warnings.json",
-			Parameters:     json.RawMessage(`{"importId":"test-import-123"}`),
+			ImportingList:        importingList,
+			FailedJobParameters:  "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
+			WarningJobParameters: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/warnings.json",
+			Parameters:           json.RawMessage(`{"importId":"test-import-123"}`),
 		})
 
 		assert.Equal(t, 200, result.StatusCode)
@@ -368,18 +369,18 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		metadata := result.Metadata
 
 		// Verify failed jobs
-		assert.Contains(t, metadata.FailedKeys, int64(1))
-		assert.Equal(t, "Invalid email format", metadata.FailedReasons[1])
+		assert.Contains(t, metadata.AbortedKeys, int64(1))
+		assert.Equal(t, "Invalid email format", metadata.AbortedReasons[1])
 
 		// Verify failed jobs from warnings
-		assert.Contains(t, metadata.FailedKeys, int64(2))
-		assert.Equal(t, "Duplicate record", metadata.FailedReasons[2])
+		assert.Contains(t, metadata.AbortedKeys, int64(2))
+		assert.Equal(t, "Duplicate record", metadata.AbortedReasons[2])
 
 		// Verify succeeded jobs
 		assert.Contains(t, metadata.SucceededKeys, int64(3))
 
 		// Verify counts
-		assert.Equal(t, 2, len(metadata.FailedKeys))
+		assert.Equal(t, 2, len(metadata.AbortedKeys))
 		assert.Equal(t, 1, len(metadata.SucceededKeys))
 		assert.Equal(t, 0, len(metadata.WarningKeys))
 	})
@@ -417,9 +418,9 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			})
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			ImportingList: []*jobsdb.JobT{{JobID: 1}},
-			FailedJobURLs: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
-			Parameters:    json.RawMessage(`{"importId":"test-import-123"}`),
+			ImportingList:       []*jobsdb.JobT{{JobID: 1}},
+			FailedJobParameters: "https://123-ABC-456.mktorest.com/bulk/v1/leads/batch/test-import-123/failures.json",
+			Parameters:          json.RawMessage(`{"importId":"test-import-123"}`),
 		})
 
 		assert.Equal(t, 500, result.StatusCode)

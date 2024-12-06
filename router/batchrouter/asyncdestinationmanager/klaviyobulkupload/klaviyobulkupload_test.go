@@ -17,9 +17,9 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
+	mockklaviyoservice "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	klaviyobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
 )
 
 var currentDir, _ = os.Getwd()
@@ -48,7 +48,7 @@ func TestUpload(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
@@ -205,7 +205,7 @@ func TestPoll(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
@@ -260,8 +260,8 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, http.StatusOK, jobStatus.StatusCode)
 		assert.Equal(t, false, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
-		assert.Empty(t, jobStatus.FailedJobURLs)
-		assert.Empty(t, jobStatus.WarningJobURLs)
+		assert.Empty(t, jobStatus.FailedJobParameters)
+		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Empty(t, jobStatus.Error)
 	})
 
@@ -304,7 +304,7 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, true, jobStatus.Complete)
 		assert.Equal(t, true, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
-		assert.Empty(t, jobStatus.WarningJobURLs)
+		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Equal(t, "The import job failed", jobStatus.Error)
 	})
 }
@@ -313,7 +313,7 @@ func TestGetUploadStats(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
@@ -387,7 +387,7 @@ func TestGetUploadStats(t *testing.T) {
 			Return(uploadStatsResp, nil)
 
 		uploadStatsInput := common.GetUploadStatsInput{
-			FailedJobURLs: "importId1",
+			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -398,8 +398,8 @@ func TestGetUploadStats(t *testing.T) {
 		assert.NotNil(t, statsResponse)
 		assert.Equal(t, http.StatusOK, statsResponse.StatusCode)
 		// assert.Equal(t, "The import job failed", statsResponse.Error)
-		assert.NotEmpty(t, statsResponse.Metadata.FailedKeys)
-		assert.NotEmpty(t, statsResponse.Metadata.FailedReasons)
+		assert.NotEmpty(t, statsResponse.Metadata.AbortedKeys)
+		assert.NotEmpty(t, statsResponse.Metadata.AbortedReasons)
 		assert.NotEmpty(t, statsResponse.Metadata.SucceededKeys)
 	})
 
@@ -409,7 +409,7 @@ func TestGetUploadStats(t *testing.T) {
 			Return(nil, fmt.Errorf("some error"))
 
 		uploadStatsInput := common.GetUploadStatsInput{
-			FailedJobURLs: "importId1",
+			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},

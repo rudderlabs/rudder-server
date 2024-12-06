@@ -3,14 +3,13 @@ package common
 import (
 	stdjson "encoding/json"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -54,15 +53,16 @@ func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, erro
 }
 
 type PollStatusResponse struct {
-	Complete       bool
-	InProgress     bool
-	StatusCode     int
-	HasFailed      bool
-	HasWarning     bool
-	FailedJobURLs  string
-	WarningJobURLs string
-	Error          string `json:"error"`
+	Complete             bool
+	InProgress           bool
+	StatusCode           int
+	HasFailed            bool
+	HasWarning           bool
+	FailedJobParameters  string
+	WarningJobParameters string
+	Error                string `json:"error"`
 }
+
 type AsyncUploadOutput struct {
 	ImportingJobIDs     []int64
 	ImportingParameters stdjson.RawMessage
@@ -82,20 +82,6 @@ type AsyncPoll struct {
 	ImportId string `json:"importId"`
 }
 
-type ErrorResponse struct {
-	Error string
-}
-
-type Connection struct {
-	Source      backendconfig.SourceT
-	Destination backendconfig.DestinationT
-}
-type BatchedJobs struct {
-	Jobs       []*jobsdb.JobT
-	Connection *Connection
-	TimeWindow time.Time
-}
-
 type AsyncJob struct {
 	Message  map[string]interface{} `json:"message"`
 	Metadata map[string]interface{} `json:"metadata"`
@@ -105,11 +91,6 @@ type AsyncUploadT struct {
 	Config   map[string]interface{} `json:"config"`
 	Input    []AsyncJob             `json:"input"`
 	DestType string                 `json:"destType"`
-}
-
-type UploadStruct struct {
-	ImportId string                 `json:"importId"`
-	Metadata map[string]interface{} `json:"metadata"`
 }
 
 type MetaDataT struct {
@@ -141,27 +122,20 @@ type AsyncDestinationStruct struct {
 	SourceJobRunID        string
 }
 
-type AsyncFailedPayload struct {
-	Config   map[string]interface{}   `json:"config"`
-	Input    []map[string]interface{} `json:"input"`
-	DestType string                   `json:"destType"`
-	ImportId string                   `json:"importId"`
-	MetaData MetaDataT                `json:"metadata"`
-}
-
 type GetUploadStatsInput struct {
-	FailedJobURLs      string
-	Parameters         stdjson.RawMessage
-	ImportingList      []*jobsdb.JobT
-	PollResultFileURLs string
-	WarningJobURLs     string
+	FailedJobParameters  string
+	Parameters           stdjson.RawMessage
+	ImportingList        []*jobsdb.JobT
+	WarningJobParameters string
 }
 
 type EventStatMeta struct {
 	FailedKeys     []int64
+	AbortedKeys    []int64
 	WarningKeys    []int64
 	SucceededKeys  []int64
 	FailedReasons  map[int64]string
+	AbortedReasons map[int64]string
 	WarningReasons map[int64]string
 }
 
@@ -169,10 +143,6 @@ type GetUploadStatsResponse struct {
 	StatusCode int           `json:"statusCode"`
 	Metadata   EventStatMeta `json:"metadata"`
 	Error      string        `json:"error"`
-}
-
-func GetTransformedData(payload stdjson.RawMessage) string {
-	return gjson.GetBytes(payload, "body.JSON").String()
 }
 
 func GetMarshalledData(payload string, jobID int64) (string, error) {
@@ -204,19 +174,4 @@ func GetBatchRouterConfigStringMap(key, destType string, defaultValue []string) 
 		return config.GetStringSlice("BatchRouter."+destType+"."+key, defaultValue)
 	}
 	return config.GetStringSlice("BatchRouter."+key, defaultValue)
-}
-
-/*
-Generates array of strings for comma separated string
-Also removes "" elements from the array of strings if any.
-*/
-func GenerateArrayOfStrings(value string) []string {
-	result := []string{}
-	requestIdsArray := strings.Split(value, ",")
-	for _, requestId := range requestIdsArray {
-		if requestId != "" {
-			result = append(result, requestId)
-		}
-	}
-	return result
 }

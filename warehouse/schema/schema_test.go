@@ -78,7 +78,6 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 	destinationID := "test_destination_id"
 	namespace := "test_namespace"
 	warehouseType := warehouseutils.RS
-	uploadID := int64(1)
 	tableName := "test_table"
 
 	schemaInWarehouse := model.Schema{
@@ -181,7 +180,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 
 			ctx := context.Background()
 
-			err = s.UpdateLocalSchema(ctx, uploadID, tc.mockSchema.Schema)
+			err = s.UpdateLocalSchema(ctx, tc.mockSchema.Schema)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 				require.Equal(t, tc.wantSchema, s.localSchema)
@@ -195,7 +194,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 			require.NoError(t, err)
 			require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 
-			err = s.UpdateLocalSchemaWithWarehouse(ctx, uploadID)
+			err = s.UpdateLocalSchemaWithWarehouse(ctx)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 				require.Equal(t, schemaInWarehouse, s.localSchema)

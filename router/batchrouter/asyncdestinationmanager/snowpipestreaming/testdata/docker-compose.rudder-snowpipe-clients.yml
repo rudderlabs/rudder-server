@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  rudder-snowpipe-clients:
+    image: "rudderstack/rudder-snowpipe-clients:develop"
+    ports:
+      - "9078"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:9078/health || exit 1
+      interval: 1s
+      retries: 25

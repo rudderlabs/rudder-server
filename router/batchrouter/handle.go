@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -40,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -76,6 +78,7 @@ type Handle struct {
 	maxFailedCountForJob         config.ValueLoader[int]
 	maxFailedCountForSourcesJob  config.ValueLoader[int]
 	asyncUploadTimeout           config.ValueLoader[time.Duration]
+	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
 	reportingEnabled             bool
@@ -148,7 +151,7 @@ type Handle struct {
 // mainLoop is responsible for pinging the workers periodically for every active partition
 func (brt *Handle) mainLoop(ctx context.Context) {
 	if brt.now == nil {
-		brt.now = time.Now
+		brt.now = timeutil.Now
 	}
 
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)

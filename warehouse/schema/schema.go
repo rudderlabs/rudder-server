@@ -248,20 +248,20 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, uploadID int64) error {
+func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context) error {
 	sh.schemaInWarehouseMu.RLock()
 	defer sh.schemaInWarehouseMu.RUnlock()
-	return sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+	return sh.updateLocalSchema(ctx, sh.schemaInWarehouse)
 }
 
-func (sh *Schema) UpdateLocalSchema(ctx context.Context, uploadID int64, updatedSchema model.Schema) error {
-	return sh.updateLocalSchema(ctx, uploadID, updatedSchema)
+func (sh *Schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
+	return sh.updateLocalSchema(ctx, updatedSchema)
 }
 
 // updateLocalSchema
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
-func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updatedSchema model.Schema) error {
+func (sh *Schema) updateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
 	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
@@ -269,7 +269,6 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, uploadId int64, updated
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
 	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		UploadID:        uploadId,
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
 		DestinationID:   sh.warehouse.Destination.ID,
@@ -312,7 +311,7 @@ func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 
 	schemaChanged := sh.hasSchemaChanged(localSchema)
 	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, uploadID, sh.schemaInWarehouse)
+		err := sh.updateLocalSchema(ctx, sh.schemaInWarehouse)
 		if err != nil {
 			return false, fmt.Errorf("updating local schema: %w", err)
 		}

@@ -1,7 +1,5 @@
 package snowflake
 
-import "database/sql"
-
 var dataTypesMap = map[string]string{
 	"boolean":  "boolean",
 	"int":      "number",
@@ -44,9 +42,9 @@ var dataTypesMapToRudder = map[string]string{
 	"VARIANT":          "json",
 }
 
-func calculateDataType(columnType string, numericScale sql.NullInt64) (string, bool) {
+func CalculateDataType(columnType string, numericScale int64) (string, bool) {
 	if datatype, ok := dataTypesMapToRudder[columnType]; ok {
-		if datatype == "int" && numericScale.Valid && numericScale.Int64 > 0 {
+		if datatype == "int" && numericScale > 0 {
 			datatype = "float"
 		}
 		return datatype, true
