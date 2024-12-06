@@ -216,17 +216,17 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	_, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, MAX(reported_at), (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at >= $1 and reported_at < $2 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
+	sqlStatement = fmt.Sprintf(`SELECT %s, MAX(reported_at), (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at < $1 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
+	rows, err = dbHandle.Query(sqlStatement, bucketEnd)
 	if err != nil {
 		panic(err)
 	}
@@ -494,8 +494,8 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					return err
 				}
 				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
-				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
-				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
+				_, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at < $1`, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 				} else {
