@@ -81,7 +81,8 @@ type InstanceDetails struct {
 }
 
 type ReportMetadata struct {
-	ReportedAt int64 `json:"reportedAt"`
+	ReportedAt        int64 `json:"reportedAt"`
+	SampleEventBucket int64 `json:"bucket"`
 }
 
 type Metric struct {

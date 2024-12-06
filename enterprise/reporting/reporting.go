@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -75,10 +76,15 @@ type DefaultReporter struct {
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
 	maxReportsCountInARequest config.ValueLoader[int]
+
+	eventSamplingEnabled  config.ValueLoader[bool]
+	eventSamplingDuration config.ValueLoader[time.Duration]
+	eventSampler          event_sampler.EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
+	var eventSampler event_sampler.EventSampler
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -90,10 +96,22 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
+	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
+	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
+	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
+	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+	}
+
+	if eventSamplingEnabled.Load() {
+		var err error
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
+		if err != nil {
+			panic(err)
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -118,6 +136,9 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		dbQueryTimeout:                       dbQueryTimeout,
 		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                stats,
+		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSamplingDuration:                eventSamplingDuration,
+		eventSampler:                         eventSampler,
 	}
 }
 
@@ -223,7 +244,25 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, MAX(reported_at), (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at >= $1 and reported_at < $2 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
+	sqlStatement = fmt.Sprintf(`
+    SELECT 
+        %s, MAX(reported_at),
+        COALESCE(
+            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            ''
+        ) AS sample_response,
+        COALESCE(
+            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            '{}'::jsonb
+        ) AS sample_event,
+        SUM(count),
+        SUM(violation_count)
+    FROM 
+        %s
+    WHERE 
+        reported_at >= $1 and reported_at < $2
+		GROUP BY 
+        %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
@@ -277,6 +316,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
+	sampleEventBucket, _ := r.getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -328,7 +368,8 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 					InitialPU:  report.InitialPU,
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					ReportedAt:        report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					SampleEventBucket: sampleEventBucket * 60 * 1000,
 				},
 			}
 			values = append(values, metricsByGroup[identifier])
@@ -648,6 +689,34 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
+func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric, reportedAt int64) (types.PUReportedMetric, error) {
+	if r.eventSampler == nil {
+		return metric, nil
+	}
+
+	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
+
+	if isValidSampleEvent {
+		sampleEventBucket, _ := r.getAggregationBucketMinute(reportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
+		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
+		found, err := r.eventSampler.Get(hash)
+		if err != nil {
+			return metric, err
+		}
+
+		if found {
+			metric.StatusDetail.SampleEvent = json.RawMessage(`{}`)
+			metric.StatusDetail.SampleResponse = ""
+		} else {
+			err := r.eventSampler.Put(hash)
+			if err != nil {
+				return metric, err
+			}
+		}
+	}
+	return metric, nil
+}
+
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -693,6 +762,13 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
+
+		if r.eventSamplingEnabled.Load() {
+			metric, err = r.transformMetricWithEventSampling(metric, reportedAt)
+			if err != nil {
+				return err
+			}
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)
@@ -746,4 +822,8 @@ func (r *DefaultReporter) getTags(label string) stats.Tags {
 func (r *DefaultReporter) Stop() {
 	r.cancel()
 	_ = r.g.Wait()
+
+	if r.eventSampler != nil {
+		r.eventSampler.Close()
+	}
 }
