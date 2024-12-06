@@ -14,12 +14,13 @@ import (
 
 func TestBadger(t *testing.T) {
 	conf := config.New()
-	ttl := conf.GetReloadableDurationVar(500, time.Millisecond, "Reporting.eventSampling.durationInMinutes")
+	ttl := conf.GetReloadableDurationVar(3000, time.Millisecond, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(10, 1, "Reporting.eventSampling.cardinality")
 	log := logger.NewLogger()
 
 	t.Run("should put and get keys", func(t *testing.T) {
+		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		es, _ := NewEventSampler(ttl, eventSamplerType, eventSamplingCardinality, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
@@ -37,25 +38,30 @@ func TestBadger(t *testing.T) {
 	})
 
 	t.Run("should not get evicted keys", func(t *testing.T) {
+		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
+		assert.Equal(t, 100*time.Millisecond, ttl.Load())
+
 		es, _ := NewEventSampler(ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		defer es.Close()
+
 		_ = es.Put("key1")
 
-		time.Sleep(600 * time.Millisecond)
-		val1, _ := es.Get("key1")
-
-		assert.False(t, val1, "Expected key1 to be evicted")
-		es.Close()
+		require.Eventually(t, func() bool {
+			val1, _ := es.Get("key1")
+			return !val1
+		}, 1*time.Second, 50*time.Millisecond)
 	})
 }
 
 func TestInMemoryCache(t *testing.T) {
 	conf := config.New()
-	ttl := conf.GetReloadableDurationVar(500, time.Millisecond, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("in_memory_cache", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(3, 1, "Reporting.eventSampling.cardinality")
+	ttl := conf.GetReloadableDurationVar(3000, time.Millisecond, "Reporting.eventSampling.durationInMinutes")
 	log := logger.NewLogger()
 
 	t.Run("should put and get keys", func(t *testing.T) {
+		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		es, _ := NewEventSampler(ttl, eventSamplerType, eventSamplingCardinality, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
@@ -72,17 +78,20 @@ func TestInMemoryCache(t *testing.T) {
 	})
 
 	t.Run("should not get evicted keys", func(t *testing.T) {
+		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
+		assert.Equal(t, 100*time.Millisecond, ttl.Load())
 		es, _ := NewEventSampler(ttl, eventSamplerType, eventSamplingCardinality, conf, log)
 		_ = es.Put("key1")
 
-		time.Sleep(600 * time.Millisecond)
-
-		val1, _ := es.Get("key1")
-
-		assert.False(t, val1, "Expected key1 to be evicted")
+		require.Eventually(t, func() bool {
+			val1, _ := es.Get("key1")
+			return !val1
+		}, 1*time.Second, 50*time.Millisecond)
 	})
 
 	t.Run("should not add keys if length exceeds", func(t *testing.T) {
+		conf.Set("Reporting.eventSampling.durationInMinutes", 3000)
+		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		es, _ := NewEventSampler(ttl, eventSamplerType, eventSamplingCardinality, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")

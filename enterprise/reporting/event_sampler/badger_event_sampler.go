@@ -21,7 +21,6 @@ type BadgerEventSampler struct {
 	ttl    config.ValueLoader[time.Duration]
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
 }
 
 func DefaultPath(pathName string) (string, error) {
@@ -61,7 +60,6 @@ func NewBadgerEventSampler(pathName string, ttl config.ValueLoader[time.Duration
 		ttl:    ttl,
 		ctx:    ctx,
 		cancel: cancel,
-		wg:     sync.WaitGroup{},
 	}
 
 	if err != nil {
@@ -109,14 +107,16 @@ func (es *BadgerEventSampler) Put(key string) error {
 }
 
 func (es *BadgerEventSampler) performGC() {
-	es.wg.Add(1)
-	defer es.wg.Done()
-
 	// One call would only result in removal of at max one log file.
 	// As an optimization, we can call it in a loop until it returns an error.
 	for {
-		if err := es.db.RunValueLogGC(0.5); err != nil {
-			break
+		select {
+		case <-es.ctx.Done():
+			return
+		default:
+			if err := es.db.RunValueLogGC(0.5); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -125,7 +125,6 @@ func (es *BadgerEventSampler) gcLoop() {
 	for {
 		select {
 		case <-es.ctx.Done():
-			es.performGC()
 			return
 
 		case <-time.After(5 * time.Minute):
@@ -136,7 +135,6 @@ func (es *BadgerEventSampler) gcLoop() {
 
 func (es *BadgerEventSampler) Close() {
 	es.cancel()
-	es.wg.Wait()
 	if es.db != nil {
 		_ = es.db.Close()
 	}

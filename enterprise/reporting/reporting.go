@@ -77,8 +77,9 @@ type DefaultReporter struct {
 	stats                     stats.Stats
 	maxReportsCountInARequest config.ValueLoader[int]
 
-	eventSamplingEnabled config.ValueLoader[bool]
-	eventSampler         event_sampler.EventSampler
+	eventSamplingEnabled  config.ValueLoader[bool]
+	eventSamplingDuration config.ValueLoader[time.Duration]
+	eventSampler          event_sampler.EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -136,6 +137,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                stats,
 		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
 	}
 }
@@ -681,8 +683,8 @@ func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReport
 	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
 
 	if isValidSampleEvent {
-		bucket, _ := r.getAggregationBucketMinute(reportedAt, 1)
-		hash := NewLabelSet(metric, bucket).generateHash()
+		sampleEventBucket, _ := r.getAggregationBucketMinute(reportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
+		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
 		found, err := r.eventSampler.Get(hash)
 		if err != nil {
 			return metric, err
