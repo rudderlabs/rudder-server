@@ -247,6 +247,7 @@ func (m *mockWorkerHandle) logger() logger.Logger {
 func (m *mockWorkerHandle) config() workerHandleConfig {
 	return workerHandleConfig{
 		enablePipelining:      m.pipelining,
+		disableStoreMerge:     config.SingleValueLoader(true),
 		maxEventsToProcess:    config.SingleValueLoader(m.loopEvents),
 		pipelineBufferedItems: 1,
 		subJobSize:            10,
