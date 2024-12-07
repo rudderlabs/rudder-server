@@ -132,5 +132,10 @@ var (
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
 		},
+		"snowpipe_streaming_request_body_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+		},
 	}
 )

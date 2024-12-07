@@ -1399,7 +1399,7 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, error) {
 			schema[tableName] = make(map[string]string)
 		}
 
-		if datatype, ok := calculateDataType(columnType, numericScale); ok {
+		if datatype, ok := CalculateDataType(columnType, numericScale.Int64); ok {
 			schema[tableName][columnName] = datatype
 		} else {
 			whutils.WHCounterStat(sf.stats, whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)

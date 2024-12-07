@@ -17,6 +17,7 @@ import (
 	lyticsBulkUpload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/sftp"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
 )
 
@@ -45,6 +46,8 @@ func newRegularManager(
 		return lyticsBulkUpload.NewManager(logger, statsFactory, destination)
 	case "CLEVERTAP_SEGMENT":
 		return clevertapSegment.NewManager(logger, statsFactory, destination, connection)
+	case "SNOWPIPE_STREAMING":
+		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
 	}
 	return nil, errors.New("invalid destination type")
 }

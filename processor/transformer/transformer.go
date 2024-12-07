@@ -539,6 +539,9 @@ func (trans *handle) destTransformURL(destType string) string {
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		}
 	}
+	if destType == warehouseutils.SnowpipeStreaming {
+		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+	}
 	return destinationEndPoint
 }
 
