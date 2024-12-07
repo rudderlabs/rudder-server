@@ -261,9 +261,9 @@ func (brt *Handle) Shutdown() {
 	_ = brt.backgroundWait()
 }
 
-func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT, connection *backendconfig.Connection) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
-	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
+	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig, connection)
 	if err != nil {
 		brt.logger.Errorf("BRT: Error initializing async destination struct for %s destination: %v", destination.Name, err)
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
@@ -277,17 +277,18 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
 	}
 	brt.asyncDestinationStruct[destination.ID].Destination = destination
+	brt.asyncDestinationStruct[destination.ID].Connection = connection
 	brt.asyncDestinationStruct[destination.ID].Manager = manager
 }
 
-func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
+func (brt *Handle) refreshDestination(destination backendconfig.DestinationT, connection backendconfig.Connection) {
 	if asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
 		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
 		if ok && asyncDestStruct.Destination != nil &&
 			asyncDestStruct.Destination.RevisionID == destination.RevisionID {
 			return
 		}
-		brt.initAsyncDestinationStruct(&destination)
+		brt.initAsyncDestinationStruct(&destination, &connection)
 	}
 }
 
@@ -395,7 +396,7 @@ func (brt *Handle) backendConfigSubscriber() {
 								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
-							brt.refreshDestination(destination)
+							brt.refreshDestination(destination, wConfig.Connections[destination.ID])
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {

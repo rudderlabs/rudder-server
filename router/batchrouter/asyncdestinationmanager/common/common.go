@@ -114,6 +114,7 @@ type AsyncDestinationStruct struct {
 	UploadMutex           sync.RWMutex
 	DestinationUploadURL  string
 	Destination           *backendconfig.DestinationT
+	Connection            *backendconfig.Connection
 	Manager               AsyncDestinationManager
 	AttemptNums           map[int64]int
 	FirstAttemptedAts     map[int64]time.Time

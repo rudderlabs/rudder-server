@@ -10,6 +10,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	bingadsaudience "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/audience"
 	bingadsofflineconversions "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/offline-conversions"
+	clevertapSegment "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/clevertap_segment"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
@@ -25,6 +26,7 @@ func newRegularManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	connection *backendconfig.Connection,
 ) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
@@ -41,6 +43,8 @@ func newRegularManager(
 		return klaviyobulkupload.NewManager(logger, statsFactory, destination)
 	case "LYTICS_BULK_UPLOAD":
 		return lyticsBulkUpload.NewManager(logger, statsFactory, destination)
+	case "CLEVERTAP_SEGMENT":
+		return clevertapSegment.NewManager(logger, statsFactory, destination, connection)
 	}
 	return nil, errors.New("invalid destination type")
 }
@@ -59,10 +63,11 @@ func NewManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	connection *backendconfig.Connection,
 ) (common.AsyncDestinationManager, error) {
 	switch {
 	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
-		return newRegularManager(conf, logger, statsFactory, destination, backendConfig)
+		return newRegularManager(conf, logger, statsFactory, destination, backendConfig, connection)
 	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
 		return newSFTPManager(logger, statsFactory, destination)
 	}
