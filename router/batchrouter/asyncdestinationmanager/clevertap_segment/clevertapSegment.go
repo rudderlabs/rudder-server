@@ -48,7 +48,7 @@ func (u *clevertapServiceImpl) getCleverTapEndpoint(region string) (string, erro
 }
 
 func (u *clevertapServiceImpl) getBulkApi(destConfig DestinationConfig) *clevertapServiceImpl {
-	endpoint, err := u.getCleverTapEndpoint(destConfig.region)
+	endpoint, err := u.getCleverTapEndpoint(destConfig.Region)
 	if err != nil {
 		return nil
 	}
@@ -84,7 +84,7 @@ func (u *clevertapServiceImpl) MakeHTTPRequest(data *HttpRequestData) ([]byte, i
 	return body, res.StatusCode, err
 }
 
-func (u *clevertapServiceImpl) UploadBulkFile(filePath string, presignedURL string) error {
+func (u *clevertapServiceImpl) UploadBulkFile(filePath, presignedURL string) error {
 	// Open the file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -120,12 +120,10 @@ func (u *clevertapServiceImpl) UploadBulkFile(filePath string, presignedURL stri
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("upload failed, status: %s, response: %s", resp.Status, string(body))
 	}
-
-	fmt.Println("CSV file uploaded successfully!")
 	return nil
 }
 
-func (u *clevertapServiceImpl) getPresignedS3URL(appKey string, accessToken string) (string, error) {
+func (u *clevertapServiceImpl) getPresignedS3URL(appKey, accessToken string) (string, error) {
 	data := &HttpRequestData{
 		Method:      http.MethodPost,
 		Endpoint:    u.BulkApi,
@@ -134,7 +132,7 @@ func (u *clevertapServiceImpl) getPresignedS3URL(appKey string, accessToken stri
 		accessToken: accessToken,
 	}
 
-	body, _, err := u.MakeHTTPRequest(data)
+	body, statusCode, err := u.MakeHTTPRequest(data)
 	if err != nil {
 		return "", err
 	}
@@ -142,13 +140,23 @@ func (u *clevertapServiceImpl) getPresignedS3URL(appKey string, accessToken stri
 	// Parse the response
 	var result struct {
 		PresignedS3URL string `json:"presignedS3URL"`
+		Expiry         string `json:"expiry"`
+		Status         string `json:"status"`
+		Error          string `json:"error"`
+		Code           int    `json:"code"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", err
 	}
 
+	if statusCode != 200 {
+		err := fmt.Errorf("Error while fetching preSignedUrl: %s", result.Error)
+		return "", err
+	}
+
 	if result.PresignedS3URL == "" {
-		return "", fmt.Errorf("presigned URL is empty after parsing")
+		err := fmt.Errorf("presigned URL is empty after parsing")
+		return "", err
 	}
 
 	return result.PresignedS3URL, nil
@@ -175,7 +183,7 @@ func (u *clevertapServiceImpl) convertToConnectionConfig(conn *backendconfig.Con
 
 	// Set default SenderName if it is empty
 	if connConfig.Config.Destination.SenderName == "" {
-		connConfig.Config.Destination.SenderName = "Rudderstack"
+		connConfig.Config.Destination.SenderName = DEFAULT_SENDER_NAME
 	}
 
 	return &connConfig, nil
@@ -191,7 +199,7 @@ func (u *clevertapServiceImpl) namingSegment(destination *backendconfig.Destinat
 		"filename": csvFilePath,
 		"creator":  u.ConnectionConfig.Config.Destination.SenderName,
 		"url":      presignedURL,
-		"replace":  false,
+		"replace":  true,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -210,8 +218,28 @@ func (u *clevertapServiceImpl) namingSegment(destination *backendconfig.Destinat
 	}
 
 	// Use MakeHTTPRequest to send the request
-	_, _, err = u.MakeHTTPRequest(data)
+	body, statusCode, err := u.MakeHTTPRequest(data)
 	if err != nil {
+		return err
+	}
+	// Parse the response
+	var result struct {
+		SegmentID int    `json:"Segment ID"`
+		Status    string `json:"status"`
+		Error     string `json:"error"`
+		Code      int    `json:"code"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return err
+	}
+
+	if statusCode != 200 {
+		err := fmt.Errorf("Error while namimng segment: %s", result.Error)
+		return err
+	}
+
+	if result.SegmentID == 0 {
+		err := fmt.Errorf("Segment Creation is Unsuccessful")
 		return err
 	}
 
@@ -220,7 +248,6 @@ func (u *clevertapServiceImpl) namingSegment(destination *backendconfig.Destinat
 
 func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
-	// connection := asyncDestStruct.Connection
 	filePath := asyncDestStruct.FileName
 	var failedJobs []int64
 	var successJobs []int64
@@ -267,7 +294,6 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	uploadTimeStat.Since(startTime)
 
 	if errorDuringUpload != nil {
-		u.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
 		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
@@ -294,12 +320,10 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	errorDuringNaming := u.service.namingSegment(destination, presignedURL, actionFiles.CSVFilePath, u.appKey, u.accessToken)
 
 	if errorDuringNaming != nil {
-		// Handle error appropriately, e.g., log it or return it
-		u.logger.Error("Error during naming segment: %v", errorDuringNaming)
 		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(asyncDestStruct.FailedJobIDs, failedJobs...),
-			FailedReason:  fmt.Sprintf("Error during naming segment: %v", errorDuringNaming.Error()),
-			FailedCount:   len(asyncDestStruct.FailedJobIDs) + len(failedJobs),
+			AbortCount:    len(asyncDestStruct.ImportingJobIDs),
+			AbortJobIDs:   asyncDestStruct.ImportingJobIDs,
+			AbortReason:   fmt.Sprintf("%s %v", "Error while creating the segment", err.Error()),
 			DestinationID: destination.ID,
 		}
 	}

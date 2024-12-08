@@ -1,7 +1,6 @@
 package clevertapSegment
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"io"
@@ -32,7 +31,7 @@ type ClevertapBulkUploader struct {
 type DestinationConfig struct {
 	AppKey                   string                   `json:"appKey"`
 	AccessToken              string                   `json:"accessToken"`
-	region                   string                   `json:"region"`
+	Region                   string                   `json:"region"`
 	OneTrustCookieCategories []OneTrustCookieCategory `json:"oneTrustCookieCategories"`
 }
 
@@ -78,6 +77,8 @@ type Data struct {
 	Metadata Metadata `json:"metadata"`
 }
 
+const DEFAULT_SENDER_NAME = "Rudderstack"
+
 type ConnectionConfig struct {
 	SourceID      string `json:"sourceId"`
 	DestinationID string `json:"destinationId"`
@@ -94,10 +95,8 @@ type ConnectionConfig struct {
 
 type Uploader interface {
 	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
-	UploadBulkFile(ctx context.Context, filePath string) (bool, error)
 	PopulateCsvFile(actionFile *ActionFileInfo, line string, data Data) error
 	convertToConnectionConfig(conn *backendconfig.Connection) (*ConnectionConfig, error)
-	namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath string) error
 }
 
 type HttpClient interface {
@@ -105,7 +104,7 @@ type HttpClient interface {
 }
 
 type clevertapService interface {
-	UploadBulkFile(filePath string, presignedURL string) error
+	UploadBulkFile(filePath, presignedURL string) error
 	MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error)
 	getPresignedS3URL(string, string) (string, error)
 	namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath, appKey, accessToken string) error

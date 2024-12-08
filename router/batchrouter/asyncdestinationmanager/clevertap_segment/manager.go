@@ -42,6 +42,9 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 	clevertapService := &clevertapServiceImpl{}
 	clevertapImpl := clevertapService.getBulkApi(destConfig)
 	clevertapConnectionConfig, err := clevertapService.convertToConnectionConfig(connection)
+	if err != nil {
+		return nil, fmt.Errorf("error converting to connection config for clevertap segment: %v", err)
+	}
 
 	return common.SimpleAsyncDestinationManager{
 		UploaderAndTransformer: NewClevertapBulkUploader(logger, statsFactory, destName, destConfig.AccessToken, destConfig.AppKey, clevertapImpl.BulkApi, clevertapService, clevertapConnectionConfig),
