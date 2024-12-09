@@ -21,10 +21,11 @@ type ClevertapBulkUploader struct {
 	statsFactory              stats.Stats
 	appKey                    string
 	accessToken               string
-	baseEndpoint              string
+	presignedURLEndpoint      string
+	notifyEndpoint            string
 	fileSizeLimit             int64
 	jobToCSVMap               map[int64]int64
-	service                   clevertapService
+	service                   ClevertapService
 	clevertapConnectionConfig *ConnectionConfig
 }
 
@@ -79,33 +80,37 @@ type Data struct {
 
 const DEFAULT_SENDER_NAME = "Rudderstack"
 
+type Destination struct {
+	SchemaVersion string `json:"schemaVersion"`
+	SegmentName   string `json:"segmentName"`
+	AdminEmail    string `json:"adminEmail"`
+	SenderName    string `json:"senderName"`
+}
+
+type ConnConfig struct {
+	Destination Destination `json:"destination"`
+}
+
 type ConnectionConfig struct {
-	SourceID      string `json:"sourceId"`
-	DestinationID string `json:"destinationId"`
-	Enabled       bool   `json:"enabled"`
-	Config        struct {
-		Destination struct {
-			SchemaVersion string `json:"schemaVersion"`
-			SegmentName   string `json:"segmentName"`
-			AdminEmail    string `json:"adminEmail"`
-			SenderName    string `json:"senderName"`
-		} `json:"destination"`
-	} `json:"config"`
+	SourceId      string     `json:"sourceId"`
+	DestinationId string     `json:"destinationId"`
+	Enabled       bool       `json:"enabled"`
+	Config        ConnConfig `json:"config"`
 }
 
 type Uploader interface {
 	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
 	PopulateCsvFile(actionFile *ActionFileInfo, line string, data Data) error
 	convertToConnectionConfig(conn *backendconfig.Connection) (*ConnectionConfig, error)
+	getPresignedS3URL(string, string, ClevertapService) (string, error)
+	namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath, appKey, accessToken string, clevertapService ClevertapService) error
 }
 
 type HttpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-type clevertapService interface {
+type ClevertapService interface {
 	UploadBulkFile(filePath, presignedURL string) error
 	MakeHTTPRequest(data *HttpRequestData) ([]byte, int, error)
-	getPresignedS3URL(string, string) (string, error)
-	namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath, appKey, accessToken string) error
 }

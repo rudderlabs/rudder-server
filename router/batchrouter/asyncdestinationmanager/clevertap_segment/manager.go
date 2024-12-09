@@ -12,14 +12,15 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewClevertapBulkUploader(logger logger.Logger, statsFactory stats.Stats, destinationName, accessToken, appKey, endpoint string, clevertap clevertapService, connectionConfig *ConnectionConfig) common.AsyncUploadAndTransformManager {
+func NewClevertapBulkUploader(logger logger.Logger, statsFactory stats.Stats, destinationName, accessToken, appKey string, clevertapEndpoints *ClevertapServiceImpl, clevertap ClevertapService, connectionConfig *ConnectionConfig) common.AsyncUploadAndTransformManager {
 	return &ClevertapBulkUploader{
 		destName:                  destinationName,
 		logger:                    logger.Child("Clevertap").Child("ClevertapBulkUploader"),
 		statsFactory:              statsFactory,
 		accessToken:               accessToken,
 		appKey:                    appKey,
-		baseEndpoint:              endpoint,
+		presignedURLEndpoint:      clevertapEndpoints.BulkApi,
+		notifyEndpoint:            clevertapEndpoints.NotifyApi,
 		fileSizeLimit:             common.GetBatchRouterConfigInt64("MaxUploadLimit", destinationName, 5*bytesize.GB),
 		jobToCSVMap:               map[int64]int64{},
 		service:                   clevertap,
@@ -39,7 +40,7 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 	}
 	destName := destination.DestinationDefinition.Name
 
-	clevertapService := &clevertapServiceImpl{}
+	clevertapService := &ClevertapServiceImpl{}
 	clevertapImpl := clevertapService.getBulkApi(destConfig)
 	clevertapConnectionConfig, err := clevertapService.convertToConnectionConfig(connection)
 	if err != nil {
@@ -47,6 +48,6 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 	}
 
 	return common.SimpleAsyncDestinationManager{
-		UploaderAndTransformer: NewClevertapBulkUploader(logger, statsFactory, destName, destConfig.AccessToken, destConfig.AppKey, clevertapImpl.BulkApi, clevertapService, clevertapConnectionConfig),
+		UploaderAndTransformer: NewClevertapBulkUploader(logger, statsFactory, destName, destConfig.AccessToken, destConfig.AppKey, clevertapImpl, clevertapService, clevertapConnectionConfig),
 	}, nil
 }

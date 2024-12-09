@@ -1,0 +1,5 @@
+{"message":{"action":"insert","fields":{"i":"90478tyr3fgiwhbjwu98y3ruwhe","g":"12345"}},"metadata":{"job_id":1}}
+{"message":{"action":"update","fields":{"i": "abc@xyz.com"}},"metadata":{"job_id":2}}
+{"message":{"action":"update","fields":{"g": "6789"}},"metadata":{"job_id":3}}
+{"message":{"action":"update","fields":{"g": "6543"}},"metadata":{"job_id":4}}
+

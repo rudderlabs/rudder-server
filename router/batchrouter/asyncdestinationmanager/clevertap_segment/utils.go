@@ -53,6 +53,7 @@ func (u *ClevertapBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, line
 		actionFile.CSVWriter.Flush()
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
+		// fmt.println("size exceeding")
 		actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 	}
 	return nil
@@ -103,7 +104,7 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 	// Create a scanner to read the existing file line by line
 	existingFile, err := os.Open(existingFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open existing file: %v", err)
+		return nil, fmt.Errorf("failed to open existing file")
 	}
 	defer existingFile.Close()
 
@@ -114,8 +115,10 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 		line := scanner.Text()
 		var data Data
 		if err := jsoniter.Unmarshal([]byte(line), &data); err != nil {
-			// Collect the failed job ID
-			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
+			// Collect the failed job ID only if it's valid
+			if data.Metadata.JobID != 0 { // Check if JobID is not zero
+				actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
+			}
 			continue
 		}
 
@@ -130,7 +133,10 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 		// Populate the CSV file and collect success/failure job IDs
 		err := u.PopulateCsvFile(actionFile, line, data)
 		if err != nil {
-			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
+			// Collect the failed job ID only if it's valid
+			if data.Metadata.JobID != 0 { // Check if JobID is not zero
+				actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
+			}
 		}
 	}
 
