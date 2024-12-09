@@ -28,8 +28,8 @@ func NewStatsCollector(eventSamplerType string, statsFactory stats.Stats) *Stats
 		stats:       statsFactory,
 		getCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerGetCount, stats.CountType, tags),
 		putCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerPutCount, stats.CountType, tags),
-		getDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerGetDuration, stats.HistogramType, tags),
-		putDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerPutDuration, stats.HistogramType, tags),
+		getDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerGetDuration, stats.TimerType, tags),
+		putDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerPutDuration, stats.TimerType, tags),
 	}
 }
 
