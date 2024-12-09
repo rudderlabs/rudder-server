@@ -112,6 +112,7 @@ func (w *worker) start() {
 				}
 				mergedJob.merge(subJob)
 				w.handle.Store(w.partition, mergedJob)
+				firstSubJob = true
 				continue
 			}
 
