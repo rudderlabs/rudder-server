@@ -284,7 +284,7 @@ func (m *Manager) markFailed(ctx context.Context, ids []int64, failError error) 
 
 type Uploader struct{}
 
-func (*Uploader) IsWarehouseSchemaEmpty() bool                                      { return true }
+func (*Uploader) IsSchemaEmpty() bool                                               { return true }
 func (*Uploader) UpdateLocalSchema(context.Context, model.Schema) error             { return nil }
 func (*Uploader) GetTableSchemaInUpload(string) model.TableSchema                   { return model.TableSchema{} }
 func (*Uploader) ShouldOnDedupUseNewRecord() bool                                   { return false }

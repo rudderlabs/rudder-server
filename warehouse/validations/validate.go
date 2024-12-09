@@ -553,7 +553,7 @@ type dummyUploader struct {
 	dest *backendconfig.DestinationT
 }
 
-func (*dummyUploader) IsWarehouseSchemaEmpty() bool { return true }
+func (*dummyUploader) IsSchemaEmpty() bool { return true }
 func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
 	return model.Schema{}, nil
 }
