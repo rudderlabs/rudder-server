@@ -6,6 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
@@ -56,9 +57,21 @@ func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannel
 
 	resp, err := a.api.CreateChannel(ctx, req)
 	if err != nil {
+		a.logger.Warnn("Failed to create channel", obskit.Error(err))
 		tags["success"] = "false"
 		return nil, err
 	}
+	a.logger.Infon("Created channel",
+		logger.NewBoolField("success", resp.Success),
+		logger.NewStringField("channelID", resp.ChannelID),
+		logger.NewStringField("channelName", resp.ChannelName),
+		logger.NewBoolField("valid", resp.Valid),
+		logger.NewBoolField("deleted", resp.Deleted),
+		logger.NewStringField("tableName", req.TableConfig.Table),
+		logger.NewStringField("error", resp.Error),
+		logger.NewStringField("code", resp.Code),
+		logger.NewStringField("message", resp.SnowflakeAPIMessage),
+	)
 	tags["success"] = strconv.FormatBool(resp.Success)
 	tags["code"] = resp.Code
 	return resp, nil
