@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -352,12 +353,12 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 			rsourcesStats: rsourcesStats,
 		},
 		{
-			subJobs:       jobs[len(jobs)/3 : 2*len(jobs)/2],
+			subJobs:       jobs[len(jobs)/3 : 2*len(jobs)/3],
 			hasMore:       true,
 			rsourcesStats: rsourcesStats,
 		},
 		{
-			subJobs:       jobs[2*len(jobs)/2:],
+			subJobs:       jobs[2*len(jobs)/3:],
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
 		},
@@ -414,4 +415,119 @@ func (m *mockWorkerHandle) Store(partition string, in *storeMessage) {
 	s.trackedUsers += len(in.trackedUsersReports)
 	m.partitionStats[partition] = s
 	m.log.Infof("Store partition: %s stats: %+v", partition, s)
+}
+
+type mockWorkerHandle2 struct {
+	*mockWorkerHandle
+	doTransform       chan struct{}
+	storeResult       []int
+	disableStoreMerge *atomic.Bool
+}
+
+func (m *mockWorkerHandle2) getJobs(partition string) jobsdb.JobsResult {
+	j := m.mockWorkerHandle.getJobs(partition)
+	for i := range j.Jobs {
+		j.Jobs[i].JobID = int64(i)
+	}
+	return j
+}
+
+func (m *mockWorkerHandle2) transformations(partition string, in *transformationMessage) *storeMessage {
+	<-m.doTransform
+	return m.mockWorkerHandle.transformations(partition, in)
+}
+
+func (m *mockWorkerHandle2) Store(partition string, in *storeMessage) {
+	m.mockWorkerHandle.Store(partition, in)
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	m.storeResult = append(m.storeResult, in.totalEvents)
+}
+
+func (m *mockWorkerHandle2) config() workerHandleConfig {
+	return workerHandleConfig{
+		enablePipelining:      m.pipelining,
+		disableStoreMerge:     m.disableStoreMerge,
+		maxEventsToProcess:    config.SingleValueLoader(m.loopEvents),
+		pipelineBufferedItems: 1,
+		subJobSize:            10,
+		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
+		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
+		enableParallelScan:    m.enableParallelScan,
+	}
+}
+
+func TestReloadableMergeBeforeStore(t *testing.T) {
+	wh1 := &mockWorkerHandle{
+		pipelining: true,
+		log:        logger.NOP,
+		loopEvents: 100,
+		partitionStats: map[string]struct {
+			queried      int
+			marked       int
+			processed    int
+			transformed  int
+			stored       int
+			subBatches   int
+			trackedUsers int
+		}{},
+		limitsReached:                true,
+		shouldProcessMultipleSubJobs: true,
+		enableParallelScan:           true,
+	}
+	wh := &mockWorkerHandle2{
+		mockWorkerHandle:  wh1,
+		doTransform:       make(chan struct{}),
+		disableStoreMerge: &atomic.Bool{},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	poolCtx, poolCancel := context.WithCancel(ctx)
+	var limiterWg sync.WaitGroup
+	wh.limiters.query = kitsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
+	wh.limiters.process = kitsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
+	wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
+	wh.limiters.transform = kitsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
+	defer limiterWg.Wait()
+	defer poolCancel()
+	wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, wh) }, logger.NOP)
+	wp.PingWorker("somePartition")
+
+	wh.doTransform <- struct{}{}
+	wh.doTransform <- struct{}{}
+	wh.doTransform <- struct{}{}
+	time.Sleep(1 * time.Second)
+	wh.validate(t)
+	wh.statsMu.Lock()
+	require.Equal(t, []int{100}, wh.storeResult)
+	wh.storeResult = nil
+	wh.statsMu.Unlock()
+
+	wp.PingWorker("somePartition")
+	wh.doTransform <- struct{}{}
+	time.Sleep(time.Second)
+	wh.disableStoreMerge.Store(true)
+	wh.doTransform <- struct{}{}
+	wh.doTransform <- struct{}{}
+	time.Sleep(1 * time.Second)
+	wh.validate(t)
+	wh.statsMu.Lock()
+	require.Equal(t, []int{66, 34}, wh.storeResult)
+	wh.storeResult = nil
+	wh.statsMu.Unlock()
+
+	wp.PingWorker("somePartition")
+	wh.doTransform <- struct{}{}
+	time.Sleep(time.Second)
+	wh.disableStoreMerge.Store(false)
+	wh.doTransform <- struct{}{}
+	wh.doTransform <- struct{}{}
+	time.Sleep(1 * time.Second)
+	wh.validate(t)
+	wh.statsMu.Lock()
+	require.Equal(t, []int{33, 67}, wh.storeResult)
+	wh.storeResult = nil
+
+	cancel()
+	wp.Shutdown()
 }
