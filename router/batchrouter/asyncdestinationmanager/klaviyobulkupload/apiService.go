@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -16,12 +18,32 @@ const (
 	KlaviyoAPIURL = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
 )
 
+type RLHTTPClient struct {
+	client      *http.Client
+	Ratelimiter *rate.Limiter
+}
+
+func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if err := c.Ratelimiter.Wait(req.Context()); err != nil {
+		return nil, err
+	}
+	return c.client.Do(req)
+}
+
 type KlaviyoAPIServiceImpl struct {
-	client        *http.Client
+	client        *RLHTTPClient
 	PrivateAPIKey string
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	statLabels    stats.Tags
+}
+
+func NewClient(rl *rate.Limiter) *RLHTTPClient {
+	rlc := &RLHTTPClient{
+		client:      http.DefaultClient,
+		Ratelimiter: rl,
+	}
+	return rlc
 }
 
 func setRequestHeaders(req *http.Request, apiKey string) {
@@ -66,6 +88,7 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 }
 
 func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, error) {
+	rl := rate.NewLimiter(rate.Every(60*time.Second), 150) // 50 request every 10 seconds
 	pollUrl := KlaviyoAPIURL + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
