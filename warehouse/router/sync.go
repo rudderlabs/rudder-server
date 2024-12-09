@@ -49,13 +49,14 @@ func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *sc
 		return fmt.Errorf("fetching schema from local: %w", err)
 	}
 
-	if err := sh.FetchSchemaFromWarehouse(ctx, m); err != nil {
+	var schemaFromWarehouse model.Schema
+	if schemaFromWarehouse, err = sh.FetchSchemaFromWarehouse(ctx, m); err != nil {
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
 	schemaChanged := sh.HasSchemaChanged(localSchema)
 	if schemaChanged {
-		err := sh.UpdateLocalSchemaWithWarehouse(ctx)
+		err := sh.UpdateLocalSchemaWithWarehouse(ctx, schemaFromWarehouse)
 		if err != nil {
 			return fmt.Errorf("updating local schema: %w", err)
 		}

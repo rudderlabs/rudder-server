@@ -892,5 +892,5 @@ func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) 
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
-	return job.schemaHandle.UpdateLocalSchema(ctx, schema)
+	return job.schemaHandle.UpdateSchema(ctx, schema)
 }

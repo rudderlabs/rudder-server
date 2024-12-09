@@ -281,7 +281,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	errorMap := job.whManager.LoadUserTables(job.ctx)
 	if alteredIdentitySchema || alteredUserSchema {
 		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx)
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -552,7 +552,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	}
 	if alteredSchema {
 		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx) // TODO check error
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -693,7 +693,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable.Load() {
 		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx) // TODO check error
 	}
 	return loadErrors
 }

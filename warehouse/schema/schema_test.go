@@ -203,13 +203,12 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 			require.Empty(t, s.GetTableSchemaInWarehouse(tableName))
 			require.True(t, s.IsWarehouseSchemaEmpty())
 
-			err := s.FetchSchemaFromWarehouse(ctx, &mockRepo)
+			_, err := s.FetchSchemaFromWarehouse(ctx, &mockRepo)
 			if tc.wantError == nil {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
 			}
-			require.Equal(t, tc.expectedSchema, s.schemaInWarehouse)
 			require.Equal(t, tc.expectedSchema[tableName], s.GetTableSchemaInWarehouse(tableName))
 			require.Equal(t, len(tc.expectedSchema[tableName]), s.GetColumnsCountInWarehouseSchema(tableName))
 			if len(tc.expectedSchema) > 0 {
@@ -340,9 +339,7 @@ func TestSchema_TableSchemaDiff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := Schema{
-				schemaInWarehouse: tc.currentSchema,
-			}
+			s := Schema{}
 			diff := s.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
@@ -425,7 +422,6 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 				warehouse: model.Warehouse{
 					Type: warehouseutils.SNOWFLAKE,
 				},
-				schemaInWarehouse: tc.schemaInWarehouse,
 			}
 			require.Equal(t, tc.expected, s.HasSchemaChanged(tc.localSchema))
 		})
