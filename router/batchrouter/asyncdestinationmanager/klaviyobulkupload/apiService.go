@@ -18,12 +18,12 @@ const (
 	KlaviyoAPIURL = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
 )
 
-type RLHTTPClient struct {
+type RateLimiterHTTPClient struct {
 	client      *http.Client
 	Ratelimiter *rate.Limiter
 }
 
-func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, error) {
+func (c *RateLimiterHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	if err := c.Ratelimiter.Wait(req.Context()); err != nil {
 		return nil, err
 	}
@@ -31,17 +31,18 @@ func (c *RLHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 type KlaviyoAPIServiceImpl struct {
-	client        *RLHTTPClient
+	client        *RateLimiterHTTPClient
 	PrivateAPIKey string
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	statLabels    stats.Tags
 }
 
-func NewClient(rl *rate.Limiter) *RLHTTPClient {
-	rlc := &RLHTTPClient{
-		client:      http.DefaultClient,
-		Ratelimiter: rl,
+func newRateLimiterClient() *RateLimiterHTTPClient {
+	rlc := &RateLimiterHTTPClient{
+		client: http.DefaultClient,
+		// Doc: https://developers.klaviyo.com/en/reference/bulk_import_profiles
+		Ratelimiter: rate.NewLimiter(rate.Every(400*time.Millisecond), 10),
 	}
 	return rlc
 }
@@ -88,7 +89,6 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 }
 
 func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, error) {
-	rl := rate.NewLimiter(rate.Every(60*time.Second), 150) // 50 request every 10 seconds
 	pollUrl := KlaviyoAPIURL + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
@@ -145,7 +145,7 @@ func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger
 		return nil, fmt.Errorf("privateApiKey not found or not a string")
 	}
 	return &KlaviyoAPIServiceImpl{
-		client:        http.DefaultClient,
+		client:        newRateLimiterClient(),
 		PrivateAPIKey: privateApiKey,
 		logger:        logger,
 		statsFactory:  statsFactory,
