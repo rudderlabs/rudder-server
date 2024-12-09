@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -188,44 +189,10 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		u := repo.NewUploads(db)
 		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
-		testcases := []struct {
-			name          string
-			sourceID      string
-			destinationID string
-			uploadId      int64
-			expected      []*model.StagingFile
-		}{
-			{
-				name:          "get all",
-				sourceID:      "source_id",
-				destinationID: "destination_id",
-				uploadId:      uploadId,
-				expected:      stagingFiles,
-			},
-			{
-				name:          "missing source id",
-				sourceID:      "bad_source_id",
-				destinationID: "destination_id",
-				uploadId:      uploadId,
-				expected:      []*model.StagingFile(nil),
-			},
-			{
-				name:          "missing destination id",
-				sourceID:      "source_id",
-				destinationID: "bad_destination_id",
-				uploadId:      uploadId,
-				expected:      []*model.StagingFile(nil),
-			},
-		}
-		for _, tc := range testcases {
-			tc := tc
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				retrieved, err := r.GetForUploadID(ctx, tc.sourceID, tc.destinationID, tc.uploadId)
-				require.NoError(t, err)
-				require.Equal(t, tc.expected, retrieved)
-			})
-		}
+
+		retrieved, err := r.GetForUploadID(ctx, uploadId)
+		require.NoError(t, err)
+		require.Equal(t, stagingFiles, retrieved)
 	})
 
 	t.Run("GetSchemasByIDs", func(t *testing.T) {
@@ -400,11 +367,11 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 			upload, err := uploadRepo.Get(ctx, uploadID)
 			require.NoError(t, err)
 
-			events, err := r.TotalEventsForUpload(ctx, upload)
+			events, err := r.TotalEventsForUploadID(ctx, upload.ID)
 			require.NoError(t, err)
 			require.Equal(t, int64(input.Files)*100, events)
 
-			revisionIDs, err := r.DestinationRevisionIDs(ctx, upload)
+			revisionIDs, err := r.DestinationRevisionIDsForUploadID(ctx, upload.ID)
 			require.NoError(t, err)
 			require.Equal(t, []string{"destination_revision_id"}, revisionIDs)
 		})
@@ -461,7 +428,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 				)
 				require.NoError(t, err)
 
-				files, err := r.GetForUploadID(ctx, "source_id", "destination_id", 1)
+				files, err := r.GetForUploadID(ctx, 1)
 				require.NoError(t, err)
 
 				for _, file := range files {

@@ -961,7 +961,7 @@ func TestHandleSchemaChange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			newColumnVal, convError := handleSchemaChange(
+			newColumnVal, convError := HandleSchemaChange(
 				tc.existingDatatype,
 				tc.currentDataType,
 				tc.value,

@@ -20,6 +20,7 @@ import (
 type MockStreamProducer struct {
 	ctrl     *gomock.Controller
 	recorder *MockStreamProducerMockRecorder
+	isgomock struct{}
 }
 
 // MockStreamProducerMockRecorder is the mock recorder for MockStreamProducer.
@@ -54,9 +55,9 @@ func (mr *MockStreamProducerMockRecorder) Close() *gomock.Call {
 }
 
 // Produce mocks base method.
-func (m *MockStreamProducer) Produce(arg0 json.RawMessage, arg1 any) (int, string, string) {
+func (m *MockStreamProducer) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Produce", arg0, arg1)
+	ret := m.ctrl.Call(m, "Produce", jsonData, destConfig)
 	ret0, _ := ret[0].(int)
 	ret1, _ := ret[1].(string)
 	ret2, _ := ret[2].(string)
@@ -64,7 +65,7 @@ func (m *MockStreamProducer) Produce(arg0 json.RawMessage, arg1 any) (int, strin
 }
 
 // Produce indicates an expected call of Produce.
-func (mr *MockStreamProducerMockRecorder) Produce(arg0, arg1 any) *gomock.Call {
+func (mr *MockStreamProducerMockRecorder) Produce(jsonData, destConfig any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Produce", reflect.TypeOf((*MockStreamProducer)(nil).Produce), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Produce", reflect.TypeOf((*MockStreamProducer)(nil).Produce), jsonData, destConfig)
 }

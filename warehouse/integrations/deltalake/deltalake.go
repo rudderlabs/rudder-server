@@ -14,8 +14,6 @@ import (
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -248,11 +247,6 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	return middleware, nil
 }
 
-// CrashRecover crash recover scenarios
-func (d *Deltalake) CrashRecover(ctx context.Context) error {
-	return d.dropDanglingStagingTables(ctx)
-}
-
 // dropDanglingStagingTables drops dangling staging tables
 func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
@@ -339,25 +333,24 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 }
 
 // FetchSchema fetches the schema from the warehouse
-func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, error) {
 	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
 	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
 	if err := d.CreateSchema(ctx); err != nil {
-		return nil, nil, fmt.Errorf("creating schema: %w", err)
+		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 	tableNames, err := d.fetchTables(ctx, nonRudderStagingTableRegex)
 	if err != nil {
-		return model.Schema{}, model.Schema{}, fmt.Errorf("fetching tables: %w", err)
+		return model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
 
 	// For each table, fetch the attributes
 	for _, tableName := range tableNames {
 		tableSchema, err := d.fetchTableAttributes(ctx, tableName)
 		if err != nil {
-			return model.Schema{}, model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
+			return model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
 		}
 
 		for colName, dataType := range tableSchema {
@@ -371,16 +364,11 @@ func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, model.Schema
 			if datatype, ok := dataTypesMapToRudder[dataType]; ok {
 				schema[tableName][colName] = datatype
 			} else {
-				if _, ok := unrecognizedSchema[tableName]; !ok {
-					unrecognizedSchema[tableName] = make(model.TableSchema)
-				}
-				unrecognizedSchema[tableName][colName] = warehouseutils.MissingDatatype
-
 				d.sendStatForMissingDatatype(dataType)
 			}
 		}
 	}
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {

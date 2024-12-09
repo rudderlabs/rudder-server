@@ -170,7 +170,6 @@ func New(
 			LoadRepo:           repo.NewLoadFiles(db),
 			ControlPlaneClient: controlPlaneClient,
 		},
-		recovery:        service.NewRecovery(destType, r.uploadRepo),
 		encodingFactory: encodingFactory,
 	}
 	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
@@ -442,7 +441,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			continue
 		}
 
-		stagingFilesList, err := r.stagingRepo.GetForUpload(ctx, upload)
+		stagingFilesList, err := r.stagingRepo.GetForUploadID(ctx, upload.ID)
 		if err != nil {
 			return nil, err
 		}

@@ -20,6 +20,7 @@ import (
 type MockRoundTripper struct {
 	ctrl     *gomock.Controller
 	recorder *MockRoundTripperMockRecorder
+	isgomock struct{}
 }
 
 // MockRoundTripperMockRecorder is the mock recorder for MockRoundTripper.

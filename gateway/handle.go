@@ -488,7 +488,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
 			if !ok || !arctx.ReplaySource {
-				receivedAt = time.Now().Format(misc.RFC3339Milli)
+				receivedAt = gw.now().Format(misc.RFC3339Milli)
 			}
 			singularEventBatch := SingularEventBatch{
 				Batch:      userEvent.events,
