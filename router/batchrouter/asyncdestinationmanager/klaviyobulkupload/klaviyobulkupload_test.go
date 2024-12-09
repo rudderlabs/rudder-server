@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -17,9 +18,9 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	mockklaviyoservice "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
+	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
+	klaviyobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
 )
 
 var currentDir, _ = os.Getwd()
@@ -48,7 +49,7 @@ func TestUpload(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
@@ -192,20 +193,29 @@ func TestUploadIntegration(t *testing.T) {
 		ImportingJobIDs: []int64{1, 2, 3},
 	}
 
-	output := kbu.Upload(asyncDestStruct)
-	assert.NotNil(t, output)
-	assert.Equal(t, destination.ID, output.DestinationID)
-	assert.Empty(t, output.FailedJobIDs)
-	assert.Empty(t, output.AbortJobIDs)
-	assert.Empty(t, output.AbortReason)
-	assert.NotEmpty(t, output.ImportingJobIDs)
+	uploadResp := kbu.Upload(asyncDestStruct)
+	assert.NotNil(t, uploadResp)
+	assert.Equal(t, destination.ID, uploadResp.DestinationID)
+	assert.Empty(t, uploadResp.FailedJobIDs)
+	assert.Empty(t, uploadResp.AbortJobIDs)
+	assert.Empty(t, uploadResp.AbortReason)
+	assert.NotEmpty(t, uploadResp.ImportingJobIDs)
+	assert.NotNil(t, uploadResp.ImportingParameters)
+
+	importId := gjson.GetBytes(uploadResp.ImportingParameters, "importId").String()
+	pollResp := kbu.Poll(common.AsyncPoll{ImportId: importId})
+	assert.NotNil(t, pollResp)
+	assert.Equal(t, http.StatusOK, pollResp.StatusCode)
+	assert.True(t, pollResp.Complete)
+	assert.False(t, pollResp.HasFailed)
+	assert.False(t, pollResp.HasWarning)
 }
 
 func TestPoll(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{
@@ -313,7 +323,7 @@ func TestGetUploadStats(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockKlaviyoAPIService := mockklaviyoservice.NewMockKlaviyoAPIService(ctrl)
+	mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
 	testLogger := logger.NewLogger().Child("klaviyo-bulk-upload-test")
 
 	uploader := klaviyobulkupload.KlaviyoBulkUploader{

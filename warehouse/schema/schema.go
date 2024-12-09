@@ -413,18 +413,3 @@ func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
 	defer sh.schemaInWarehouseMu.RUnlock()
 	return len(sh.schemaInWarehouse[tableName])
 }
-
-func (sh *Schema) MergeUploadSchemaWithLocalSchema(schema model.Schema) model.Schema {
-	sh.localSchemaMu.RLock()
-	defer sh.localSchemaMu.RUnlock()
-	var mergedSchema = sh.localSchema
-	for tableName, columnMap := range schema {
-		if _, ok := mergedSchema[tableName]; !ok {
-			mergedSchema[tableName] = model.TableSchema{}
-		}
-		for columnName, columnType := range columnMap {
-			mergedSchema[tableName][columnName] = columnType
-		}
-	}
-	return mergedSchema
-}

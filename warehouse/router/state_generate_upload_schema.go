@@ -30,6 +30,5 @@ func (job *UploadJob) generateUploadSchema() error {
 	}
 
 	job.upload.UploadSchema = uploadSchema
-	mergedSchema := job.schemaHandle.MergeUploadSchemaWithLocalSchema(uploadSchema)
-	return job.schemaHandle.UpdateLocalSchema(job.ctx, mergedSchema)
+	return nil
 }
