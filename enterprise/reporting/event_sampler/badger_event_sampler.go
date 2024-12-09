@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -23,6 +24,7 @@ type BadgerEventSampler struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+	sc     *StatsCollector
 }
 
 func DefaultPath(pathName string) (string, error) {
@@ -33,7 +35,14 @@ func DefaultPath(pathName string) (string, error) {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, pathName), nil
 }
 
-func NewBadgerEventSampler(ctx context.Context, pathName string, ttl config.ValueLoader[time.Duration], conf *config.Config, log logger.Logger) (*BadgerEventSampler, error) {
+func NewBadgerEventSampler(
+	ctx context.Context,
+	pathName string,
+	ttl config.ValueLoader[time.Duration],
+	conf *config.Config,
+	log logger.Logger,
+	stats stats.Stats,
+) (*BadgerEventSampler, error) {
 	dbPath, err := DefaultPath(pathName)
 	if err != nil || dbPath == "" {
 		return nil, err
@@ -63,6 +72,7 @@ func NewBadgerEventSampler(ctx context.Context, pathName string, ttl config.Valu
 		ctx:    ctx,
 		cancel: cancel,
 		wg:     sync.WaitGroup{},
+		sc:     NewStatsCollector(BadgerTypeEventSampler, stats),
 	}
 
 	if err != nil {
@@ -81,6 +91,9 @@ func NewBadgerEventSampler(ctx context.Context, pathName string, ttl config.Valu
 func (es *BadgerEventSampler) Get(key string) (bool, error) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
+	start := time.Now()
+	defer es.sc.RecordGetDuration(start)
+	es.sc.RecordGet()
 
 	var found bool
 
@@ -106,6 +119,9 @@ func (es *BadgerEventSampler) Get(key string) (bool, error) {
 func (es *BadgerEventSampler) Put(key string) error {
 	es.mu.Lock()
 	defer es.mu.Unlock()
+	start := time.Now()
+	defer es.sc.RecordPutDuration(start)
+	es.sc.RecordPut()
 
 	return es.db.Update(func(txn *badger.Txn) error {
 		entry := badger.NewEntry([]byte(key), []byte{1}).WithTTL(es.ttl.Load())

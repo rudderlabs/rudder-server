@@ -108,7 +108,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log, stats)
 		if err != nil {
 			panic(err)
 		}
