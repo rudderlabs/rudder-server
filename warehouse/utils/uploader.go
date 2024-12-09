@@ -8,7 +8,7 @@ import (
 
 //go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
-	IsWarehouseSchemaEmpty() bool
+	IsSchemaEmpty() bool
 	GetLocalSchema(ctx context.Context) (model.Schema, error)
 	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
@@ -28,7 +28,7 @@ func NewNoOpUploader() Uploader {
 	return &noopUploader{}
 }
 
-func (n *noopUploader) IsWarehouseSchemaEmpty() bool {
+func (n *noopUploader) IsSchemaEmpty() bool {
 	return false
 }
 func (n *noopUploader) GetLocalSchema(ctx context.Context) (model.Schema, error)         { return nil, nil } // nolint:nilnil

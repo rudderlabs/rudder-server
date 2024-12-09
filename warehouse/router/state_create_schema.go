@@ -7,7 +7,7 @@ import (
 )
 
 func (job *UploadJob) createRemoteSchema(whManager manager.Manager) error {
-	if job.schemaHandle.IsWarehouseSchemaEmpty() {
+	if job.schemaHandle.IsSchemaEmpty() {
 		if err := whManager.CreateSchema(job.ctx); err != nil {
 			return fmt.Errorf("creating schema: %w", err)
 		}

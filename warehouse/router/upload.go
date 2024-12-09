@@ -841,8 +841,8 @@ func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName s
 	return locations[0].Location, nil
 }
 
-func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
-	return job.schemaHandle.IsWarehouseSchemaEmpty()
+func (job *UploadJob) IsSchemaEmpty() bool {
+	return job.schemaHandle.IsSchemaEmpty()
 }
 
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {

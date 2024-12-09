@@ -201,7 +201,7 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 			ctx := context.Background()
 
 			require.Empty(t, s.GetTableSchemaInWarehouse(tableName))
-			require.True(t, s.IsWarehouseSchemaEmpty())
+			require.True(t, s.IsSchemaEmpty())
 
 			_, err := s.FetchSchemaFromWarehouse(ctx, &mockRepo)
 			if tc.wantError == nil {
@@ -210,15 +210,15 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
 			}
 			require.Equal(t, tc.expectedSchema[tableName], s.GetTableSchemaInWarehouse(tableName))
-			require.Equal(t, len(tc.expectedSchema[tableName]), s.GetColumnsCountInWarehouseSchema(tableName))
+			require.Equal(t, len(tc.expectedSchema[tableName]), s.GetColumnsCountInSchema(tableName))
 			if len(tc.expectedSchema) > 0 {
-				require.False(t, s.IsWarehouseSchemaEmpty())
+				require.False(t, s.IsSchemaEmpty())
 			} else {
-				require.True(t, s.IsWarehouseSchemaEmpty())
+				require.True(t, s.IsSchemaEmpty())
 			}
 			s.UpdateWarehouseTableSchema(updatedTable, updatedSchema)
 			require.Equal(t, updatedSchema, s.GetTableSchemaInWarehouse(updatedTable))
-			require.False(t, s.IsWarehouseSchemaEmpty())
+			require.False(t, s.IsSchemaEmpty())
 		})
 	}
 }

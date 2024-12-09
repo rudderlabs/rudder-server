@@ -400,13 +400,13 @@ func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model
 	sh.localSchema[tableName] = tableSchema
 }
 
-func (sh *Schema) IsWarehouseSchemaEmpty() bool {
+func (sh *Schema) IsSchemaEmpty() bool {
 	sh.localSchemaMu.RLock()
 	defer sh.localSchemaMu.RUnlock()
 	return len(sh.localSchema) == 0
 }
 
-func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
+func (sh *Schema) GetColumnsCountInSchema(tableName string) int {
 	sh.localSchemaMu.RLock()
 	defer sh.localSchemaMu.RUnlock()
 	return len(sh.localSchema[tableName])

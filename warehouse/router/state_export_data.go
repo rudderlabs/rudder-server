@@ -789,7 +789,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: whutils.TableNameForStats(tableName)},
 	}
-	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
+	currentColumnsCount := job.schemaHandle.GetColumnsCountInSchema(tableName)
 
 	job.gaugeStat(`warehouse_load_table_column_count`, tags...).Gauge(currentColumnsCount)
 	job.gaugeStat(`warehouse_load_table_column_limit`, tags...).Gauge(columnCountLimit)
