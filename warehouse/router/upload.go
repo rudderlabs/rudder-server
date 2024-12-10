@@ -37,7 +37,6 @@ import (
 const (
 	GeneratingStagingFileFailedState = "generating_staging_file_failed"
 	GeneratedStagingFileState        = "generated_staging_file"
-	FetchingRemoteSchemaFailed       = "fetching_remote_schema_failed"
 	InternalProcessingFailed         = "internal_processing_failed"
 )
 
@@ -291,24 +290,13 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
-	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
-	if err != nil {
-		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
-		return err
-	}
-	if hasSchemaChanged {
-		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	}
-
 	var (
 		newStatus       string
 		nextUploadState *state
 	)
 
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
-	if !hasSchemaChanged {
-		nextUploadState = nextState(job.upload.Status)
-	}
+	nextUploadState = nextState(job.upload.Status)
 	if nextUploadState == nil {
 		nextUploadState = stateTransitions[model.GeneratedUploadSchema]
 	}
@@ -339,7 +327,7 @@ func (job *UploadJob) run() (err error) {
 
 		case model.GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
-			if err = job.generateLoadFiles(hasSchemaChanged); err != nil {
+			if err = job.generateLoadFiles(); err != nil {
 				break
 			}
 			newStatus = nextUploadState.completed
@@ -853,8 +841,8 @@ func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName s
 	return locations[0].Location, nil
 }
 
-func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
-	return job.schemaHandle.IsWarehouseSchemaEmpty()
+func (job *UploadJob) IsSchemaEmpty() bool {
+	return job.schemaHandle.IsSchemaEmpty()
 }
 
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
@@ -904,5 +892,5 @@ func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) 
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
-	return job.schemaHandle.UpdateLocalSchema(ctx, schema)
+	return job.schemaHandle.UpdateSchema(ctx, schema)
 }
