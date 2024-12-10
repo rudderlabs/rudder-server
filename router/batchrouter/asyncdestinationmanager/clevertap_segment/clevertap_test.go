@@ -1,10 +1,10 @@
 package clevertapSegment_test
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
-	"fmt" 
-	"path/filepath" 
 
 	"go.uber.org/mock/gomock"
 
@@ -59,48 +59,48 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			config.Reset()
 		})
 
-		// It("TestClevertapUploadWrongFilepath", func() {
-		// 	initClevertap()
-		// 	ctrl := gomock.NewController(GinkgoT())
-		// 	defer ctrl.Finish()
+		It("TestClevertapUploadWrongFilepath", func() {
+			initClevertap()
+			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
 
-		// 	clevertapService := mocks.NewMockClevertapService(ctrl)
-		// 	clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
-		// 		BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
-		// 		NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
-		// 		ConnectionConfig: &ClevertapSegment.ConnectionConfig{
-		// 			SourceId:      "source123",
-		// 			DestinationId: "destination456",
-		// 			Enabled:       true,
-		// 			Config: ClevertapSegment.ConnConfig{
-		// 				Destination: ClevertapSegment.Destination{
-		// 					SchemaVersion: "v1.0",
-		// 					SegmentName:   "User Segment A",
-		// 					AdminEmail:    "admin@example.com",
-		// 					SenderName:    "Rudderstack",
-		// 				},
-		// 			},
-		// 		},
-		// 	}
-		// 	bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
-		// 	asyncDestination := common.AsyncDestinationStruct{
-		// 		ImportingJobIDs: []int64{1, 2, 3, 4},
-		// 		FailedJobIDs:    []int64{},
-		// 		FileName:        "",
-		// 		Destination:     &destination,
-		// 	}
+			clevertapService := mocks.NewMockClevertapService(ctrl)
+			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+				ConnectionConfig: &ClevertapSegment.ConnectionConfig{
+					SourceId:      "source123",
+					DestinationId: "destination456",
+					Enabled:       true,
+					Config: ClevertapSegment.ConnConfig{
+						Destination: ClevertapSegment.Destination{
+							SchemaVersion: "v1.0",
+							SegmentName:   "User Segment A",
+							AdminEmail:    "admin@example.com",
+							SenderName:    "Rudderstack",
+						},
+					},
+				},
+			}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			asyncDestination := common.AsyncDestinationStruct{
+				ImportingJobIDs: []int64{1, 2, 3, 4},
+				FailedJobIDs:    []int64{},
+				FileName:        "",
+				Destination:     &destination,
+			}
 
-		// 	expected := common.AsyncUploadOutput{
-		// 		FailedReason:    "got error while transforming the file. failed to open existing file",
-		// 		ImportingJobIDs: nil,
-		// 		FailedJobIDs:    []int64{1, 2, 3, 4},
-		// 		ImportingCount:  0,
-		// 		FailedCount:     4,
-		// 	}
+			expected := common.AsyncUploadOutput{
+				FailedReason:    "got error while transforming the file. failed to open existing file",
+				ImportingJobIDs: nil,
+				FailedJobIDs:    []int64{1, 2, 3, 4},
+				ImportingCount:  0,
+				FailedCount:     4,
+			}
 
-		// 	received := bulkUploader.Upload(&asyncDestination)
-		// 	Expect(received).To(Equal(expected))
-		// })
+			received := bulkUploader.Upload(&asyncDestination)
+			Expect(received).To(Equal(expected))
+		})
 
 		It("TestClevertapErrorWhileUploadingData", func() {
 			initClevertap()
@@ -137,9 +137,9 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 
 			// Mock handling for MakeHTTPRequest
 			clevertapService.EXPECT().
-			MakeHTTPRequest(gomock.Any()).
-			Return([]byte(`{"presignedS3URL": "https://abc.com", "expiry": "2023-12-31T23:59:59Z", "status": "success", "code": 200}`), 200, nil).
-			Times(1)
+				MakeHTTPRequest(gomock.Any()).
+				Return([]byte(`{"presignedS3URL": "https://abc.com", "expiry": "2023-12-31T23:59:59Z", "status": "success", "code": 200}`), 200, nil).
+				Times(1)
 
 			// Mock expectations
 			clevertapService.EXPECT().
@@ -192,9 +192,9 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 
 			// Mock handling for MakeHTTPRequest
 			clevertapService.EXPECT().
-			MakeHTTPRequest(gomock.Any()).
-			Return([]byte(`{"presignedS3URL": "https://abc.com", "expiry": "2023-12-31T23:59:59Z", "status": "success", "code": 200}`), 200, nil).
-			Times(1)
+				MakeHTTPRequest(gomock.Any()).
+				Return([]byte(`{"presignedS3URL": "https://abc.com", "expiry": "2023-12-31T23:59:59Z", "status": "success", "code": 200}`), 200, nil).
+				Times(1)
 
 			// Mock expectations for UploadBulkFile
 			clevertapService.EXPECT().
@@ -202,9 +202,9 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 				Return(nil).
 				Times(1)
 
-				clevertapService.EXPECT().
+			clevertapService.EXPECT().
 				MakeHTTPRequest(gomock.Any()).
-				Return([]byte(`{"Segment ID": "1234", "status": "success", "code": 200}`), 200, nil).
+				Return([]byte(`{"Segment ID": 1234, "status": "success", "code": 200}`), 200, nil).
 				Times(1)
 
 			expected := common.AsyncUploadOutput{
@@ -212,6 +212,66 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 				FailedJobIDs:    []int64{},
 				ImportingCount:  4,
 				FailedCount:     0,
+			}
+
+			received := bulkUploader.Upload(&asyncDestination)
+			Expect(received).To(Equal(expected))
+		})
+
+		It("TestFailureClevertapUploadWhileNaming", func() {
+			initClevertap()
+			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			clevertapService := mocks.NewMockClevertapService(ctrl)
+			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+				ConnectionConfig: &ClevertapSegment.ConnectionConfig{
+					SourceId:      "source123",
+					DestinationId: "destination456",
+					Enabled:       true,
+					Config: ClevertapSegment.ConnConfig{
+						Destination: ClevertapSegment.Destination{
+							SchemaVersion: "v1.0",
+							SegmentName:   "User Segment A",
+							AdminEmail:    "admin@example.com",
+							SenderName:    "Rudderstack",
+						},
+					},
+				},
+			}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			asyncDestination := common.AsyncDestinationStruct{
+				ImportingJobIDs: []int64{1, 2, 3, 4},
+				FailedJobIDs:    []int64{},
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
+				Destination:     &destination,
+			}
+
+			// Mock handling for MakeHTTPRequest
+			clevertapService.EXPECT().
+				MakeHTTPRequest(gomock.Any()).
+				Return([]byte(`{"presignedS3URL": "https://abc.com", "expiry": "2023-12-31T23:59:59Z", "status": "success", "code": 200}`), 200, nil).
+				Times(1)
+
+			// Mock expectations for UploadBulkFile
+			clevertapService.EXPECT().
+				UploadBulkFile(gomock.Any(), "https://abc.com").
+				Return(nil).
+				Times(1)
+
+			clevertapService.EXPECT().
+				MakeHTTPRequest(gomock.Any()).
+				Return([]byte(`{"error": "Email id is either not in the right format or does not belong to a valid admin", "status": "fail", "code": 401}`), 401, nil).
+				Times(1)
+
+			expected := common.AsyncUploadOutput{
+				AbortJobIDs:  []int64{1, 2, 3, 4},
+				FailedJobIDs: nil,
+				AbortCount:   4,
+				FailedCount:  0,
+				AbortReason:  "Error while creating the segment Error while namimng segment: Email id is either not in the right format or does not belong to a valid admin",
 			}
 
 			received := bulkUploader.Upload(&asyncDestination)

@@ -294,11 +294,11 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	if errorDuringUpload != nil {
 		failedJobs = append(failedJobs, actionFiles.SuccessfulJobIDs...)
 
-	// Append only failed job IDs if they exist
-	if len(actionFiles.FailedJobIDs) > 0 {
-		fmt.Println("Here")
-		failedJobs = append(failedJobs, actionFiles.FailedJobIDs...)
-	}
+		// Append only failed job IDs if they exist
+		if len(actionFiles.FailedJobIDs) > 0 {
+			fmt.Println("Here")
+			failedJobs = append(failedJobs, actionFiles.FailedJobIDs...)
+		}
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
 		if err != nil {
@@ -327,7 +327,7 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		return common.AsyncUploadOutput{
 			AbortCount:    len(asyncDestStruct.ImportingJobIDs),
 			AbortJobIDs:   asyncDestStruct.ImportingJobIDs,
-			AbortReason:   fmt.Sprintf("%s %v", "Error while creating the segment", err.Error()),
+			AbortReason:   fmt.Sprintf("%s %v", "Error while creating the segment", errorDuringNaming),
 			DestinationID: destination.ID,
 		}
 	}
