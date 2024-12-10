@@ -121,7 +121,7 @@ func (u *ClevertapServiceImpl) UploadBulkFile(filePath, presignedURL string) err
 	return nil
 }
 
-func (u *ClevertapBulkUploader) getPresignedS3URL(appKey, accessToken string, clevertapService ClevertapService) (string, error) {
+func (u *ClevertapBulkUploader) getPresignedS3URL(appKey, accessToken string) (string, error) {
 	data := &HttpRequestData{
 		Method:      http.MethodPost,
 		Endpoint:    u.presignedURLEndpoint,
@@ -187,7 +187,7 @@ func (u *ClevertapServiceImpl) convertToConnectionConfig(conn *backendconfig.Con
 	return &connConfig, nil
 }
 
-func (u *ClevertapBulkUploader) namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath, appKey, accessToken string, clevertapService ClevertapService) error {
+func (u *ClevertapBulkUploader) namingSegment(presignedURL, csvFilePath, appKey, accessToken string) error {
 	url := u.notifyEndpoint
 
 	// Construct the request payload
@@ -271,7 +271,7 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		"destType": u.destName,
 	})
 
-	presignedURL, urlErr := u.getPresignedS3URL(u.appKey, u.accessToken, u.service)
+	presignedURL, urlErr := u.getPresignedS3URL(u.appKey, u.accessToken)
 
 	if urlErr != nil {
 		eventsAbortedStat := u.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
@@ -321,7 +321,7 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	failedJobs = append(failedJobs, actionFiles.FailedJobIDs...)
 	successJobs = append(successJobs, actionFiles.SuccessfulJobIDs...)
 
-	errorDuringNaming := u.namingSegment(destination, presignedURL, actionFiles.CSVFilePath, u.appKey, u.accessToken, u.service)
+	errorDuringNaming := u.namingSegment(presignedURL, actionFiles.CSVFilePath, u.appKey, u.accessToken)
 
 	if errorDuringNaming != nil {
 		return common.AsyncUploadOutput{

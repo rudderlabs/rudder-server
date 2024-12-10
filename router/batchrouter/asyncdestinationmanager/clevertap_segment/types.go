@@ -103,7 +103,7 @@ type Uploader interface {
 	PopulateCsvFile(actionFile *ActionFileInfo, line string, data Data) error
 	convertToConnectionConfig(conn *backendconfig.Connection) (*ConnectionConfig, error)
 	getPresignedS3URL(string, string, ClevertapService) (string, error)
-	namingSegment(destination *backendconfig.DestinationT, presignedURL, csvFilePath, appKey, accessToken string, clevertapService ClevertapService) error
+	namingSegment(presignedURL, csvFilePath, appKey, accessToken string) error
 }
 
 type HttpClient interface {

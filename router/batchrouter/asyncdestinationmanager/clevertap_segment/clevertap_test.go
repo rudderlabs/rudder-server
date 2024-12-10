@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -52,7 +53,8 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 
 			// Ensure the log directory exists
 			logDir := "/tmp/rudder-async-destination-logs"
-			os.MkdirAll(logDir, os.ModePerm) // Create the directory if it doesn't exist
+			err := os.MkdirAll(logDir, os.ModePerm) // Create the directory if it doesn't exist
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		AfterEach(func() {
@@ -277,6 +279,5 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			received := bulkUploader.Upload(&asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
-
 	})
 })
