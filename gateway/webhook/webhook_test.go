@@ -73,6 +73,10 @@ func (v0 *mockSourceTransformAdapter) getTransformerURL(string) (string, error) 
 	return v0.url, nil
 }
 
+func (v0 *mockSourceTransformAdapter) getAdapterVersion() string {
+	return transformer.V0
+}
+
 func getMockSourceTransformAdapterFunc(url string) func(ctx context.Context) (sourceTransformAdapter, error) {
 	return func(ctx context.Context) (sourceTransformAdapter, error) {
 		mst := &mockSourceTransformAdapter{}
@@ -481,7 +485,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.EqualValues(t, m.LastValue(), 1)
 }
 
-func TestPrepareRequestBody(t *testing.T) {
+func TestPrepareTransformerEventRequestV1(t *testing.T) {
 	type requestOpts struct {
 		method  string
 		target  string
@@ -565,7 +569,93 @@ func TestPrepareRequestBody(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareRequestBody(tc.req, tc.sourceType, []string{"adjust", "shopify"})
+			result, err := prepareTransformerEventRequestV1(tc.req, tc.sourceType, []string{"adjust", "shopify"})
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedResponse, string(result))
+		})
+	}
+}
+
+func TestPrepareTransformerEventRequestV2(t *testing.T) {
+	type requestOpts struct {
+		method  string
+		target  string
+		body    io.Reader
+		params  map[string]string
+		headers map[string]string
+	}
+
+	createRequest := func(reqOpts requestOpts) *http.Request {
+		r := httptest.NewRequest(reqOpts.method, reqOpts.target, reqOpts.body)
+		for k, v := range reqOpts.headers {
+			r.Header.Set(k, v)
+		}
+
+		q := r.URL.Query()
+		for k, v := range reqOpts.params {
+			q.Add(k, v)
+		}
+		r.URL.RawQuery = q.Encode()
+		return r
+	}
+
+	testCases := []struct {
+		name               string
+		req                *http.Request
+		includeQueryParams bool
+		wantError          bool
+		expectedResponse   string
+	}{
+		{
+			name:             "Empty request body with no query parameters and no headers",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com"}),
+			expectedResponse: `{"method":"POST","url":"/","proto":"HTTP/1.1","headers":{},"body":"{}","query_parameters":{}}`,
+		},
+		{
+			name:             "Empty request body with query parameters and no headers",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
+			expectedResponse: `{"method":"POST","url":"/?key=value","proto":"HTTP/1.1","headers":{},"body":"{}","query_parameters":{"key":["value"]}}`,
+		},
+		{
+			name:             "Some payload with no query parameters and no headers",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
+			expectedResponse: `{"method":"POST","url":"/","proto":"HTTP/1.1","headers":{},"body":"{\"key\":\"value\"}","query_parameters":{}}`,
+		},
+		{
+			name:             "Empty request body with headers and no query parameters",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", headers: map[string]string{"content-type": "application/json"}}),
+			expectedResponse: `{"method":"POST","url":"/","proto":"HTTP/1.1","headers":{"Content-Type":["application/json"]},"body":"{}","query_parameters":{}}`,
+		},
+		{
+			name:             "Empty request body with headers and query parameters",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}, headers: map[string]string{"content-type": "application/json"}}),
+			expectedResponse: `{"method":"POST","url":"/?key=value","proto":"HTTP/1.1","headers":{"Content-Type":["application/json"]},"body":"{}","query_parameters":{"key":["value"]}}`,
+		},
+		{
+			name:             "Some payload with headers and no parameters",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), headers: map[string]string{"content-type": "application/json"}}),
+			expectedResponse: `{"method":"POST","url":"/","proto":"HTTP/1.1","headers":{"Content-Type":["application/json"]},"body":"{\"key\":\"value\"}","query_parameters":{}}`,
+		},
+		{
+			name:             "Some payload with parameters and no headers",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`), params: map[string]string{"key": "value"}}),
+			expectedResponse: `{"method":"POST","url":"/?key=value","proto":"HTTP/1.1","headers":{},"body":"{\"key\":\"value\"}","query_parameters":{"key":["value"]}}`,
+		},
+		{
+			name:             "Error reading request body",
+			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: iotest.ErrReader(errors.New("some error"))}),
+			wantError:        true,
+			expectedResponse: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := prepareTransformerEventRequestV2(tc.req)
 			if tc.wantError {
 				require.Error(t, err)
 				return
