@@ -199,13 +199,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build image (no-push)
         uses: docker/build-push-action@v6
         with:
@@ -300,13 +300,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build image (no-push)
         uses: docker/build-push-action@v6
         with:
@@ -352,13 +352,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ docker-oss, docker-oss-meta ]
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Create multi-arch manifest for Docker OSS
         run: |
           while read -r tag; do
@@ -375,13 +375,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ docker-ent, docker-ent-meta ]
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Create multi-arch manifest for Docker ENT
         run: |
           while read -r tag; do
@@ -398,13 +398,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ docker-suppression-backup-service, docker-sbsvc-meta ]
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
         uses: docker/login-action@v3.3.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Create multi-arch manifest for Docker Suppression Backup Service
         run: |
           while read -r tag; do
