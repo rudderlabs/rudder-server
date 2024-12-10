@@ -11,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 )
 
 func TestBadger(t *testing.T) {
@@ -23,14 +25,31 @@ func TestBadger(t *testing.T) {
 
 	t.Run("should put and get keys", func(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
+
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+			"type": BadgerTypeEventSampler,
+		}).LastValue(), float64(3))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
+			"type": BadgerTypeEventSampler,
+		}).Durations()), 3)
+
 		val1, _ := es.Get("key1")
 		val2, _ := es.Get("key2")
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
+
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+			"type": BadgerTypeEventSampler,
+		}).LastValue(), float64(4))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
+			"type": BadgerTypeEventSampler,
+		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
 		assert.True(t, val2, "Expected key2 to be present")
@@ -43,7 +62,7 @@ func TestBadger(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
 
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, stats.NOP)
 		defer es.Close()
 
 		_ = es.Put("key1")
@@ -65,14 +84,31 @@ func TestInMemoryCache(t *testing.T) {
 
 	t.Run("should put and get keys", func(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
+
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).LastValue(), float64(3))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).Durations()), 3)
+
 		val1, _ := es.Get("key1")
 		val2, _ := es.Get("key2")
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
+
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).LastValue(), float64(4))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
 		assert.True(t, val2, "Expected key2 to be present")
@@ -83,7 +119,7 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not get evicted keys", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, stats.NOP)
 		_ = es.Put("key1")
 
 		require.Eventually(t, func() bool {
@@ -95,18 +131,34 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not add keys if length exceeds", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 3000)
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 		_ = es.Put("key4")
 		_ = es.Put("key5")
 
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).LastValue(), float64(3))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).Durations()), 3)
+
 		val1, _ := es.Get("key1")
 		val2, _ := es.Get("key2")
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
 		val5, _ := es.Get("key5")
+
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).LastValue(), float64(5))
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
+			"type": InMemoryCacheTypeEventSampler,
+		}).Durations()), 5)
 
 		assert.True(t, val1, "Expected key1 to be present")
 		assert.True(t, val2, "Expected key2 to be present")
@@ -149,6 +201,7 @@ func BenchmarkEventSampler(b *testing.B) {
 				eventSamplingCardinality,
 				conf,
 				log,
+				stats.NOP,
 			)
 			require.NoError(b, err)
 
