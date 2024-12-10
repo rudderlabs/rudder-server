@@ -161,6 +161,57 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			Expect(received).To(Equal(expected))
 		})
 
+		It("TestClevertapErrorWhilePreSignedURLFetch", func() {
+			initClevertap()
+			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			clevertapService := mocks.NewMockClevertapService(ctrl)
+			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+				ConnectionConfig: &ClevertapSegment.ConnectionConfig{
+					SourceId:      "source123",
+					DestinationId: "destination456",
+					Enabled:       true,
+					Config: ClevertapSegment.ConnConfig{
+						Destination: ClevertapSegment.Destination{
+							SchemaVersion: "v1.0",
+							SegmentName:   "User Segment A",
+							AdminEmail:    "admin@example.com",
+							SenderName:    "Rudderstack",
+						},
+					},
+				},
+			}
+
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+
+			asyncDestination := common.AsyncDestinationStruct{
+				ImportingJobIDs: []int64{1, 2, 3, 4},
+				FailedJobIDs:    []int64{},
+				FileName:        filepath.Join(currentDir, "testdata/uploadData.txt"),
+				Destination:     &destination,
+			}
+
+			// Mock handling for MakeHTTPRequest
+			clevertapService.EXPECT().
+				MakeHTTPRequest(gomock.Any()).
+				Return([]byte(`{"error": "Invalid Credentials", "status": "fail", "code": 401}`), 401, nil).
+				Times(1)
+
+			expected := common.AsyncUploadOutput{
+				AbortReason:     "Error while fetching presigned url Error while fetching preSignedUrl: Invalid Credentials",
+				ImportingJobIDs: nil,
+				AbortJobIDs:     []int64{1, 2, 3, 4},
+				ImportingCount:  0,
+				AbortCount:      4,
+			}
+
+			received := bulkUploader.Upload(&asyncDestination)
+			Expect(received).To(Equal(expected))
+		})
+
 		It("TestSuccessfulClevertapUpload", func() {
 			initClevertap()
 			ctrl := gomock.NewController(GinkgoT())

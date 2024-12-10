@@ -3,15 +3,18 @@ package clevertapSegment
 import (
 	"bufio"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -152,4 +155,66 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 	actionFile.FileSize = fileInfo.Size()
 
 	return actionFile, nil
+}
+
+// GetCleverTapEndpoint returns the API endpoint for the given region
+func (u *ClevertapServiceImpl) getCleverTapEndpoint(region string) (string, error) {
+	// Mapping of regions to endpoints
+	endpoints := map[string]string{
+		"IN":        "in1.api.clevertap.com",
+		"SINGAPORE": "sg1.api.clevertap.com",
+		"US":        "us1.api.clevertap.com",
+		"INDONESIA": "aps3.api.clevertap.com",
+		"UAE":       "mec1.api.clevertap.com",
+		"EU":        "api.clevertap.com",
+	}
+
+	// Normalize the region input to uppercase for case-insensitivity
+	region = strings.ToUpper(region)
+
+	// Check if the region exists in the map
+	if endpoint, exists := endpoints[region]; exists {
+		return endpoint, nil
+	}
+
+	// Return an error if the region is not recognized
+	return "", fmt.Errorf("unknown region: %s", region)
+}
+
+func (u *ClevertapServiceImpl) getBulkApi(destConfig DestinationConfig) *ClevertapServiceImpl {
+	endpoint, err := u.getCleverTapEndpoint(destConfig.Region)
+	if err != nil {
+		return nil
+	}
+	return &ClevertapServiceImpl{
+		BulkApi:   fmt.Sprintf("https://%s/get_custom_list_segment_url", endpoint),
+		NotifyApi: fmt.Sprintf("https://%s/upload_custom_list_segment_completed", endpoint),
+	}
+}
+
+// Function to convert *backendconfig.Connection to ConnectionConfig using marshal and unmarshal
+func (u *ClevertapServiceImpl) convertToConnectionConfig(conn *backendconfig.Connection) (*ConnectionConfig, error) {
+	if conn == nil {
+		return nil, fmt.Errorf("connection is nil")
+	}
+
+	// Marshal the backendconfig.Connection to JSON
+	data, err := json.Marshal(conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal connection: %w", err)
+	}
+
+	// Unmarshal the JSON into ConnectionConfig
+	var connConfig ConnectionConfig
+	err = json.Unmarshal(data, &connConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal to ConnectionConfig: %w", err)
+	}
+
+	// Set default SenderName if it is empty
+	if connConfig.Config.Destination.SenderName == "" {
+		connConfig.Config.Destination.SenderName = DEFAULT_SENDER_NAME
+	}
+
+	return &connConfig, nil
 }
