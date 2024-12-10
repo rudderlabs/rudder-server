@@ -43,13 +43,14 @@ func (a *apiAdapter) defaultTags(apiName string) stats.Tags {
 }
 
 func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannelRequest) (*model.ChannelResponse, error) {
-	a.logger.Infon("Creating channel",
+	log := a.logger.Withn(
 		logger.NewStringField("rudderIdentifier", req.RudderIdentifier),
 		logger.NewStringField("partition", req.Partition),
 		logger.NewStringField("database", req.TableConfig.Database),
 		logger.NewStringField("namespace", req.TableConfig.Schema),
 		logger.NewStringField("table", req.TableConfig.Table),
 	)
+	log.Infon("Creating channel")
 
 	tags := a.defaultTags(createChannelAPI)
 	defer a.recordDuration(tags)()
@@ -59,6 +60,16 @@ func (a *apiAdapter) CreateChannel(ctx context.Context, req *model.CreateChannel
 		tags["success"] = "false"
 		return nil, err
 	}
+	a.logger.Infon("Create channel response",
+		logger.NewBoolField("success", resp.Success),
+		logger.NewStringField("channelID", resp.ChannelID),
+		logger.NewStringField("channelName", resp.ChannelName),
+		logger.NewBoolField("valid", resp.Valid),
+		logger.NewBoolField("deleted", resp.Deleted),
+		logger.NewStringField("error", resp.Error),
+		logger.NewStringField("code", resp.Code),
+		logger.NewStringField("message", resp.SnowflakeAPIMessage),
+	)
 	tags["success"] = strconv.FormatBool(resp.Success)
 	tags["code"] = resp.Code
 	return resp, nil
