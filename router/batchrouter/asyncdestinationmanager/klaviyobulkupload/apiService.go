@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -16,12 +18,33 @@ const (
 	KlaviyoAPIURL = "https://a.klaviyo.com/api/profile-bulk-import-jobs/"
 )
 
+type RateLimiterHTTPClient struct {
+	client      *http.Client
+	Ratelimiter *rate.Limiter
+}
+
+func (c *RateLimiterHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if err := c.Ratelimiter.Wait(req.Context()); err != nil {
+		return nil, err
+	}
+	return c.client.Do(req)
+}
+
 type KlaviyoAPIServiceImpl struct {
-	client        *http.Client
+	client        *RateLimiterHTTPClient
 	PrivateAPIKey string
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	statLabels    stats.Tags
+}
+
+func newRateLimiterClient() *RateLimiterHTTPClient {
+	rlc := &RateLimiterHTTPClient{
+		client: http.DefaultClient,
+		// Doc: https://developers.klaviyo.com/en/reference/bulk_import_profiles
+		Ratelimiter: rate.NewLimiter(rate.Every(400*time.Millisecond), 10),
+	}
+	return rlc
 }
 
 func setRequestHeaders(req *http.Request, apiKey string) {
@@ -59,6 +82,10 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	if len(uploadResp.Errors) > 0 {
 		return &uploadResp, fmt.Errorf("upload failed with errors: %+v", uploadResp.Errors)
 	}
+	if uploadResp.Data.Id == "" {
+		k.logger.Error("[klaviyo bulk upload] upload failed with empty importId", string(uploadBodyBytes))
+		return &uploadResp, fmt.Errorf("upload failed with empty importId")
+	}
 	uploadTimeStat := k.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, k.statLabels)
 	uploadTimeStat.Since(startTime)
 
@@ -66,6 +93,9 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 }
 
 func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, error) {
+	if importId == "" {
+		return nil, fmt.Errorf("importId is empty")
+	}
 	pollUrl := KlaviyoAPIURL + importId
 	req, err := http.NewRequest("GET", pollUrl, nil)
 	if err != nil {
@@ -122,13 +152,13 @@ func NewKlaviyoAPIService(destination *backendconfig.DestinationT, logger logger
 		return nil, fmt.Errorf("privateApiKey not found or not a string")
 	}
 	return &KlaviyoAPIServiceImpl{
-		client:        http.DefaultClient,
+		client:        newRateLimiterClient(),
 		PrivateAPIKey: privateApiKey,
 		logger:        logger,
 		statsFactory:  statsFactory,
 		statLabels: stats.Tags{
 			"module":   "batch_router",
-			"destType": destination.Name,
+			"destType": destination.DestinationDefinition.Name,
 			"destID":   destination.ID,
 		},
 	}, nil
