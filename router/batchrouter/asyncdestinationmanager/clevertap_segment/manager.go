@@ -1,8 +1,9 @@
 package clevertapSegment
 
 import (
-	"encoding/json"
 	"fmt"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -12,7 +13,18 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewClevertapBulkUploader(logger logger.Logger, statsFactory stats.Stats, destinationName, accessToken, appKey string, clevertapEndpoints *ClevertapServiceImpl, clevertap ClevertapService, connectionConfig *ConnectionConfig) common.AsyncUploadAndTransformManager {
+var jsonFast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+func NewClevertapBulkUploader(
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	destinationName,
+	accessToken,
+	appKey string,
+	clevertapEndpoints *Endpoints,
+	clevertap ClevertapService,
+	connectionConfig *ConnectionConfig,
+) common.AsyncUploadAndTransformManager {
 	return &ClevertapBulkUploader{
 		destName:                  destinationName,
 		logger:                    logger.Child("Clevertap").Child("ClevertapBulkUploader"),
@@ -29,25 +41,34 @@ func NewClevertapBulkUploader(logger logger.Logger, statsFactory stats.Stats, de
 }
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, connection *backendconfig.Connection) (common.AsyncDestinationManager, error) {
-	destConfig := DestinationConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
+	var destConfig DestinationConfig
+	destConfig, err := Convert[map[string]interface{}, DestinationConfig](destination.Config)
 	if err != nil {
-		return nil, fmt.Errorf("error in marshalling destination config: %v", err)
+		return nil, fmt.Errorf("error in converting destination config: %v", err)
 	}
-	err = json.Unmarshal(jsonConfig, &destConfig)
+
+	clevertapConnectionConfig, err := ConvertToConnectionConfig(connection)
 	if err != nil {
-		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
+		return nil, fmt.Errorf("error converting to connection config for clevertap segment: %v", err)
 	}
 	destName := destination.DestinationDefinition.Name
 
 	clevertapService := &ClevertapServiceImpl{}
-	clevertapImpl := clevertapService.getBulkApi(destConfig)
-	clevertapConnectionConfig, err := clevertapService.convertToConnectionConfig(connection)
+	endpoints, err := GetBulkApi(destConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error converting to connection config for clevertap segment: %v", err)
+		return nil, fmt.Errorf("error getting bulk api for clevertap segment: %v", err)
 	}
 
 	return common.SimpleAsyncDestinationManager{
-		UploaderAndTransformer: NewClevertapBulkUploader(logger, statsFactory, destName, destConfig.AccessToken, destConfig.AppKey, clevertapImpl, clevertapService, clevertapConnectionConfig),
+		UploaderAndTransformer: NewClevertapBulkUploader(
+			logger,
+			statsFactory,
+			destName,
+			destConfig.AccessToken,
+			destConfig.AppKey,
+			endpoints,
+			clevertapService,
+			&clevertapConnectionConfig,
+		),
 	}, nil
 }

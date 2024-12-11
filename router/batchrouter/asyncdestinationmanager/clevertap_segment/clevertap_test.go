@@ -65,6 +65,10 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			initClevertap()
 			ctrl := gomock.NewController(GinkgoT())
 			defer ctrl.Finish()
+			endpoints := &ClevertapSegment.Endpoints{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+			}
 
 			clevertapService := mocks.NewMockClevertapService(ctrl)
 			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
@@ -84,7 +88,7 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 					},
 				},
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), endpoints, clevertapService, clevertapServiceImpl.ConnectionConfig)}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
@@ -110,6 +114,10 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			defer ctrl.Finish()
 
 			clevertapService := mocks.NewMockClevertapService(ctrl)
+			endpoints := &ClevertapSegment.Endpoints{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+			}
 			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
 				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
 				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
@@ -128,7 +136,7 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 				},
 			}
 
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), endpoints, clevertapService, clevertapServiceImpl.ConnectionConfig)}
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -185,7 +193,12 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 				},
 			}
 
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			endpoints := &ClevertapSegment.Endpoints{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+			}
+
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), endpoints, clevertapService, clevertapServiceImpl.ConnectionConfig)}
 
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
@@ -235,7 +248,11 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 					},
 				},
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			endpoints := &ClevertapSegment.Endpoints{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+			}
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), endpoints, clevertapService, clevertapServiceImpl.ConnectionConfig)}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},
@@ -277,6 +294,10 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 			defer ctrl.Finish()
 
 			clevertapService := mocks.NewMockClevertapService(ctrl)
+			endpoints := &ClevertapSegment.Endpoints{
+				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
+				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
+			}
 			clevertapServiceImpl := ClevertapSegment.ClevertapServiceImpl{
 				BulkApi:   "https://api.clevertap.com/get_custom_list_segment_url",
 				NotifyApi: "https://api.clevertap.com/upload_custom_list_segment_completed",
@@ -294,7 +315,15 @@ var _ = Describe("CLEVERTAP_SEGMENT test", func() {
 					},
 				},
 			}
-			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP, "CLEVERTAP_SEGMENT", destination.Config["clevertapAccountKey"].(string), destination.Config["clevertapAccountId"].(string), &clevertapServiceImpl, clevertapService, clevertapServiceImpl.ConnectionConfig)}
+			clevertapBulkUploader := ClevertapSegment.NewClevertapBulkUploader(logger.NOP, stats.NOP,
+				"CLEVERTAP_SEGMENT",
+				destination.Config["clevertapAccountKey"].(string),
+				destination.Config["clevertapAccountId"].(string),
+				endpoints,
+				clevertapService,
+				clevertapServiceImpl.ConnectionConfig,
+			)
+			bulkUploader := common.SimpleAsyncDestinationManager{UploaderAndTransformer: clevertapBulkUploader}
 			asyncDestination := common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1, 2, 3, 4},
 				FailedJobIDs:    []int64{},

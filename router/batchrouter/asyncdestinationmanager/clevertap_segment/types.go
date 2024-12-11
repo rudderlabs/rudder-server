@@ -7,27 +7,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
-
-type ClevertapBulkUploader struct {
-	destName                  string
-	logger                    logger.Logger
-	statsFactory              stats.Stats
-	appKey                    string
-	accessToken               string
-	presignedURLEndpoint      string
-	notifyEndpoint            string
-	fileSizeLimit             int64
-	jobToCSVMap               map[int64]int64
-	service                   ClevertapService
-	clevertapConnectionConfig *ConnectionConfig
-}
 
 type DestinationConfig struct {
 	AppKey                   string                   `json:"appKey"`
@@ -85,6 +67,11 @@ type Destination struct {
 	SegmentName   string `json:"segmentName"`
 	AdminEmail    string `json:"adminEmail"`
 	SenderName    string `json:"senderName"`
+}
+
+type Endpoints struct {
+	BulkApi   string
+	NotifyApi string
 }
 
 type ConnConfig struct {
