@@ -79,7 +79,7 @@ func (u *ClevertapBulkUploader) populateCsvFile(actionFile *ActionFileInfo, line
 	return nil
 }
 
-func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionFileInfo, error) {
+func (u *ClevertapBulkUploader) createCSVFile(inputDataFilePath string) (*ActionFileInfo, error) {
 	// Create a temporary directory using misc.CreateTMPDIR
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -100,17 +100,17 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 	}
 	defer actionFile.File.Close() // Ensure the file is closed when done
 
-	// Store the CSV file path in the ActionFileInfo struct
-	actionFile.CSVFilePath = csvFilePath
+	// // Store the CSV file path in the ActionFileInfo struct
+	// actionFile.CSVFilePath = csvFilePath
 
 	// Create a scanner to read the existing file line by line
-	existingFile, err := os.Open(existingFilePath)
+	inputFile, err := os.Open(inputDataFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open existing file")
 	}
-	defer existingFile.Close()
+	defer inputFile.Close()
 
-	scanner := bufio.NewScanner(existingFile)
+	scanner := bufio.NewScanner(inputFile)
 	scanner.Buffer(nil, 50000*1024) // Adjust the buffer size if necessary
 
 	for scanner.Scan() {
@@ -180,24 +180,27 @@ func (u *ClevertapBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			DestinationID: destination.ID,
 		}
 	}
-	uploadRetryableStat := u.statsFactory.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": u.destName,
+	eventsOverLimit := u.statsFactory.NewTaggedStat("events_over_prescribed_limit", stats.CountType, map[string]string{
+		"module":        "batch_router",
+		"destType":      u.destName,
+		"destinationID": destination.ID,
 	})
 
-	uploadRetryableStat.Count(len(actionFiles.FailedJobIDs))
+	eventsOverLimit.Count(len(actionFiles.FailedJobIDs))
 
 	uploadTimeStat := u.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
-		"module":   "batch_router",
-		"destType": u.destName,
+		"module":        "batch_router",
+		"destType":      u.destName,
+		"destinationID": destination.ID,
 	})
 
 	presignedURL, urlErr := u.getPresignedS3URL(u.appKey, u.accessToken) // API
 
 	if urlErr != nil {
 		eventsAbortedStat := u.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
-			"module":   "batch_router",
-			"destType": u.destName,
+			"module":        "batch_router",
+			"destType":      u.destName,
+			"destinationID": destination.ID,
 		})
 		eventsAbortedStat.Count(len(asyncDestStruct.ImportingJobIDs))
 		return common.AsyncUploadOutput{
