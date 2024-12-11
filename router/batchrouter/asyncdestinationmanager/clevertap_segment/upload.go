@@ -36,7 +36,7 @@ func (*ClevertapBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (u *ClevertapBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, line string, data Data) error {
+func (u *ClevertapBulkUploader) populateCsvFile(actionFile *ActionFileInfo, line string, data Data) error {
 	newFileSize := actionFile.FileSize + int64(len(line))
 	if newFileSize < u.fileSizeLimit {
 		actionFile.FileSize = newFileSize
@@ -74,7 +74,6 @@ func (u *ClevertapBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, line
 		actionFile.CSVWriter.Flush()
 		actionFile.SuccessfulJobIDs = append(actionFile.SuccessfulJobIDs, data.Metadata.JobID)
 	} else {
-		// fmt.println("size exceeding")
 		actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 	}
 	return nil
@@ -95,7 +94,7 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 	csvFilePath := fmt.Sprintf("%v.csv", path)
 
 	// Initialize the CSV writer with the generated file path
-	actionFile, err := CreateCSVWriter(csvFilePath)
+	actionFile, err := createCSVWriter(csvFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +133,7 @@ func (u *ClevertapBulkUploader) createCSVFile(existingFilePath string) (*ActionF
 		payloadSizeStat.Observe(float64(len(data.Message.Fields)))
 
 		// Populate the CSV file and collect success/failure job IDs
-		err := u.PopulateCsvFile(actionFile, line, data)
+		err := u.populateCsvFile(actionFile, line, data)
 		if err != nil {
 			// Collect the failed job ID only if it's valid
 			if data.Metadata.JobID != 0 { // Check if JobID is not zero

@@ -42,19 +42,19 @@ func NewClevertapBulkUploader(
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, connection *backendconfig.Connection) (common.AsyncDestinationManager, error) {
 	var destConfig DestinationConfig
-	destConfig, err := Convert[map[string]interface{}, DestinationConfig](destination.Config)
+	destConfig, err := convert[map[string]interface{}, DestinationConfig](destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("error in converting destination config: %v", err)
 	}
 
-	clevertapConnectionConfig, err := ConvertToConnectionConfig(connection)
+	clevertapConnectionConfig, err := convertToConnectionConfig(connection)
 	if err != nil {
 		return nil, fmt.Errorf("error converting to connection config for clevertap segment: %v", err)
 	}
 	destName := destination.DestinationDefinition.Name
 
 	clevertapService := &ClevertapServiceImpl{}
-	endpoints, err := GetBulkApi(destConfig)
+	endpoints, err := getBulkApi(destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error getting bulk api for clevertap segment: %v", err)
 	}

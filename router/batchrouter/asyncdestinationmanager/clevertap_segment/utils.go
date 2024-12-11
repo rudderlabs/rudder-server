@@ -9,7 +9,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
-func CreateCSVWriter(fileName string) (*ActionFileInfo, error) {
+func createCSVWriter(fileName string) (*ActionFileInfo, error) {
 	// Open or create the file where the CSV will be written
 	file, err := os.Create(fileName)
 	if err != nil {
@@ -27,8 +27,8 @@ func CreateCSVWriter(fileName string) (*ActionFileInfo, error) {
 	}, nil
 }
 
-func GetBulkApi(destConfig DestinationConfig) (*Endpoints, error) {
-	endpoint, err := GetCleverTapEndpoint(destConfig.Region)
+func getBulkApi(destConfig DestinationConfig) (*Endpoints, error) {
+	endpoint, err := getCleverTapEndpoint(destConfig.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +38,8 @@ func GetBulkApi(destConfig DestinationConfig) (*Endpoints, error) {
 	}, nil
 }
 
-// GetCleverTapEndpoint returns the API endpoint for the given region
-func GetCleverTapEndpoint(region string) (string, error) {
+// getCleverTapEndpoint returns the API endpoint for the given region
+func getCleverTapEndpoint(region string) (string, error) {
 	// Mapping of regions to endpoints
 	endpoints := map[string]string{
 		"IN":        "in1.api.clevertap.com",
@@ -67,7 +67,7 @@ type ConfigOutput interface {
 }
 
 // Generic function to convert input to output using JSON marshal/unmarshal
-func Convert[T any, U ConfigOutput](input T) (U, error) {
+func convert[T any, U ConfigOutput](input T) (U, error) {
 	var output U
 
 	// Marshal the input to JSON
@@ -85,8 +85,8 @@ func Convert[T any, U ConfigOutput](input T) (U, error) {
 	return output, nil
 }
 
-func ConvertToConnectionConfig(conn *backendconfig.Connection) (ConnectionConfig, error) {
-	connConfig, err := Convert[map[string]interface{}, ConnectionConfig](conn.Config)
+func convertToConnectionConfig(conn *backendconfig.Connection) (ConnectionConfig, error) {
+	connConfig, err := convert[map[string]interface{}, ConnectionConfig](conn.Config)
 	if err != nil {
 		return ConnectionConfig{}, fmt.Errorf("failed to convert to connection config: %w", err)
 	}

@@ -22,7 +22,7 @@ func TestGetCleverTapEndpoint(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.region, func(t *testing.T) {
-			endpoint, err := GetCleverTapEndpoint(tc.region)
+			endpoint, err := getCleverTapEndpoint(tc.region)
 
 			if tc.expectErr {
 				assert.Error(t, err)
@@ -38,7 +38,7 @@ func TestGetBulkApi(t *testing.T) {
 	destConfig := DestinationConfig{Region: "IN"}
 	assert.Equal(t, "IN", destConfig.Region)
 
-	endpoints, err := GetBulkApi(destConfig)
+	endpoints, err := getBulkApi(destConfig)
 	assert.Nil(t, err)
 	assert.NotNil(t, endpoints)
 	assert.NotEmpty(t, endpoints.BulkApi)
@@ -60,7 +60,9 @@ func TestConvertToConnectionConfig(t *testing.T) {
 				SourceID:      "source123",
 				DestinationID: "destination456",
 				Enabled:       true,
-				Config:        nil,
+				Config: map[string]interface{}{
+					"invalidKey": make(chan int), // Channels cannot be marshaled to JSON
+				},
 			},
 			expected: expected{
 				isErr: true,
@@ -82,22 +84,21 @@ func TestConvertToConnectionConfig(t *testing.T) {
 			},
 			expected: expected{
 				senderName: "Rudderstack",
-				isErr:      false,
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run("", func(t *testing.T) {
-			connConfig, err := ConvertToConnectionConfig(tc.conn)
+			connConfig, err := convertToConnectionConfig(tc.conn)
 
 			if tc.expected.isErr {
 				assert.Error(t, err)
 				assert.Equal(t, "", connConfig.Config.Destination.SenderName)
 				return
 			}
-			assert.NoError(t, err)
 
+			assert.NoError(t, err)
 			if connConfig.Config.Destination.SenderName == "" {
 				assert.Equal(t, DEFAULT_SENDER_NAME, connConfig.Config.Destination.SenderName)
 			} else {
