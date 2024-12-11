@@ -301,6 +301,9 @@ func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	if whSchema.Schema == nil {
 		return model.Schema{}, nil
 	}
+	sh.localSchemaMu.Lock()
+	sh.localSchema = whSchema.Schema
+	sh.localSchemaMu.Unlock()
 	return whSchema.Schema, nil
 }
 

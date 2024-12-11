@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
@@ -30,7 +31,8 @@ func (r *Router) syncRemoteSchema(ctx context.Context) error {
 				r.statsFactory,
 			)
 			if err := r.SyncRemoteSchema(ctx, whManager, sh); err != nil {
-				return err
+				r.logger.Errorn("failed to sync schema", obskit.Error(err))
+				continue
 			}
 		}
 		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)

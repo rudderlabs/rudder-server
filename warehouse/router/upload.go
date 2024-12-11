@@ -289,7 +289,11 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup(job.ctx)
-
+	_, err = job.schemaHandle.GetLocalSchema(job.ctx)
+	if err != nil {
+		_, _ = job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
 	var (
 		newStatus       string
 		nextUploadState *state
