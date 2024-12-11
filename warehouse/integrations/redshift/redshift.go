@@ -739,7 +739,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	_, identifyStagingTable, err = rs.loadTable(ctx,
 		warehouseutils.IdentifiesTable,
 		rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable),
-		rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable),
+		rs.Uploader.GetTableSchema(warehouseutils.IdentifiesTable),
 		true,
 	)
 	if err != nil {
@@ -760,7 +760,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		_, _, err := rs.loadTable(ctx,
 			warehouseutils.UsersTable,
 			rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
-			rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
+			rs.Uploader.GetTableSchema(warehouseutils.UsersTable),
 			false,
 		)
 		if err != nil {
@@ -775,7 +775,7 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 
-	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := rs.Uploader.GetTableSchema(warehouseutils.UsersTable)
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an autoincrement field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
@@ -1311,7 +1311,7 @@ func (rs *Redshift) LoadTable(ctx context.Context, tableName string) (*types.Loa
 		ctx,
 		tableName,
 		rs.Uploader.GetTableSchemaInUpload(tableName),
-		rs.Uploader.GetTableSchemaInWarehouse(tableName),
+		rs.Uploader.GetTableSchema(tableName),
 		false,
 	)
 	return loadTableStat, err

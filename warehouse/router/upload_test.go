@@ -151,7 +151,7 @@ func TestColumnCountStat(t *testing.T) {
 				statsFactory: statsStore,
 				schemaHandle: &schema.Schema{}, // TODO use constructor
 			}
-			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
+			j.schemaHandle.UpdateTableSchema(tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
 				"test-column-3": "string",

@@ -1758,7 +1758,7 @@ func newMockUploader(
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
-	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+	mockUploader.EXPECT().GetTableSchema(tableName).Return(schemaInWarehouse).AnyTimes()
 	mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
 	mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
 

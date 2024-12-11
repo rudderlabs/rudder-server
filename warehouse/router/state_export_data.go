@@ -294,7 +294,7 @@ func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error)
 			return
 		}
 
-		job.schemaHandle.UpdateWarehouseTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+		job.schemaHandle.UpdateTableSchema(tName, tableSchemaDiff.UpdatedSchema)
 		alteredSchema = true
 	}
 	return
@@ -518,7 +518,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 				errorMap := map[string]error{tableName: err}
 				return job.processLoadTableResponse(errorMap)
 			}
-			job.schemaHandle.UpdateWarehouseTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			job.schemaHandle.UpdateTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
 
 			status := model.TableUploadUpdatedSchema
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{

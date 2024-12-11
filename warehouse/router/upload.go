@@ -845,8 +845,8 @@ func (job *UploadJob) IsSchemaEmpty() bool {
 	return job.schemaHandle.IsSchemaEmpty()
 }
 
-func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	return job.schemaHandle.GetTableSchemaInWarehouse(tableName)
+func (job *UploadJob) GetTableSchema(tableName string) model.TableSchema {
+	return job.schemaHandle.GetTableSchema(tableName)
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {

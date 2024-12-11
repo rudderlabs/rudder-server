@@ -292,7 +292,7 @@ func (*Uploader) UseRudderStorage() bool                                        
 func (*Uploader) CanAppend() bool                                                   { return false }
 func (*Uploader) GetLoadFileType() string                                           { return "" }
 func (*Uploader) GetLocalSchema(context.Context) (model.Schema, error)              { return model.Schema{}, nil }
-func (*Uploader) GetTableSchemaInWarehouse(string) model.TableSchema                { return model.TableSchema{} }
+func (*Uploader) GetTableSchema(string) model.TableSchema                           { return model.TableSchema{} }
 func (*Uploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
 func (*Uploader) GetLoadFilesMetadata(context.Context, whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
 	return []whutils.LoadFile{}, nil

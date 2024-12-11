@@ -130,6 +130,20 @@ func (mr *MockUploaderMockRecorder) GetSingleLoadFile(ctx, tableName any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSingleLoadFile", reflect.TypeOf((*MockUploader)(nil).GetSingleLoadFile), ctx, tableName)
 }
 
+// GetTableSchema mocks base method.
+func (m *MockUploader) GetTableSchema(tableName string) model.TableSchema {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTableSchema", tableName)
+	ret0, _ := ret[0].(model.TableSchema)
+	return ret0
+}
+
+// GetTableSchema indicates an expected call of GetTableSchema.
+func (mr *MockUploaderMockRecorder) GetTableSchema(tableName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchema", reflect.TypeOf((*MockUploader)(nil).GetTableSchema), tableName)
+}
+
 // GetTableSchemaInUpload mocks base method.
 func (m *MockUploader) GetTableSchemaInUpload(tableName string) model.TableSchema {
 	m.ctrl.T.Helper()
@@ -142,20 +156,6 @@ func (m *MockUploader) GetTableSchemaInUpload(tableName string) model.TableSchem
 func (mr *MockUploaderMockRecorder) GetTableSchemaInUpload(tableName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInUpload", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInUpload), tableName)
-}
-
-// GetTableSchemaInWarehouse mocks base method.
-func (m *MockUploader) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTableSchemaInWarehouse", tableName)
-	ret0, _ := ret[0].(model.TableSchema)
-	return ret0
-}
-
-// GetTableSchemaInWarehouse indicates an expected call of GetTableSchemaInWarehouse.
-func (mr *MockUploaderMockRecorder) GetTableSchemaInWarehouse(tableName any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTableSchemaInWarehouse", reflect.TypeOf((*MockUploader)(nil).GetTableSchemaInWarehouse), tableName)
 }
 
 // IsSchemaEmpty mocks base method.

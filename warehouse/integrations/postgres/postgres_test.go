@@ -1324,8 +1324,8 @@ func TestIntegration(t *testing.T) {
 			mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), whutils.GetLoadFilesOptions{Table: whutils.IdentifiesTable}).Return([]whutils.LoadFile{{Location: identifiesUploadOutput.Location}}, nil).AnyTimes()
 			mockUploader.EXPECT().GetTableSchemaInUpload(whutils.UsersTable).Return(usersTableSchema).AnyTimes()
 			mockUploader.EXPECT().GetTableSchemaInUpload(whutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInWarehouse(whutils.UsersTable).Return(usersTableSchema).AnyTimes()
-			mockUploader.EXPECT().GetTableSchemaInWarehouse(whutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchema(whutils.UsersTable).Return(usersTableSchema).AnyTimes()
+			mockUploader.EXPECT().GetTableSchema(whutils.IdentifiesTable).Return(IdentifiesTableSchema).AnyTimes()
 			mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
 
 			primaryPG := postgres.New(config.New(), logger.NOP, stats.NOP)
@@ -1420,7 +1420,7 @@ func mockUploader(
 	mockUploader.EXPECT().UseRudderStorage().Return(false).AnyTimes()
 	mockUploader.EXPECT().GetLoadFilesMetadata(gomock.Any(), gomock.Any()).Return(loadFiles, nil).AnyTimes() // Try removing this
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
-	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+	mockUploader.EXPECT().GetTableSchema(tableName).Return(schemaInWarehouse).AnyTimes()
 	mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
 
 	return mockUploader

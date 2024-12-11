@@ -385,13 +385,13 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 	return diff
 }
 
-func (sh *Schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
+func (sh *Schema) GetTableSchema(tableName string) model.TableSchema {
 	sh.localSchemaMu.RLock()
 	defer sh.localSchemaMu.RUnlock()
 	return sh.localSchema[tableName]
 }
 
-func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
+func (sh *Schema) UpdateTableSchema(tableName string, tableSchema model.TableSchema) {
 	sh.localSchemaMu.RLock()
 	defer sh.localSchemaMu.RUnlock()
 	if sh.localSchema == nil {

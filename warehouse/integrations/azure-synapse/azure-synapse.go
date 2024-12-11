@@ -278,7 +278,7 @@ func (as *AzureSynapse) loadTable(
 		tableSchemaInUpload,
 	)
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		as.Uploader.GetTableSchemaInWarehouse(
+		as.Uploader.GetTableSchema(
 			tableName,
 		),
 	)
@@ -609,7 +609,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	defer as.dropStagingTable(ctx, unionStagingTableName)
 	defer as.dropStagingTable(ctx, identifyStagingTable)
 
-	userColMap := as.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := as.Uploader.GetTableSchema(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
