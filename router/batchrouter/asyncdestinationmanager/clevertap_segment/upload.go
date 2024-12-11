@@ -111,7 +111,7 @@ func (u *ClevertapBulkUploader) createCSVFile(inputDataFilePath string) (*Action
 	defer inputFile.Close()
 
 	scanner := bufio.NewScanner(inputFile)
-	scanner.Buffer(nil, 50000*1024) // Adjust the buffer size if necessary
+	scanner.Buffer(nil, 50000*1024) //  maximum size of a single line that the scanner can read. Adjust the buffer size if necessary
 
 	for scanner.Scan() {
 		line := scanner.Text()

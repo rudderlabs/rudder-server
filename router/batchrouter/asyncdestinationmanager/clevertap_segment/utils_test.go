@@ -43,7 +43,8 @@ func TestGetBulkApi(t *testing.T) {
 	assert.NotNil(t, endpoints)
 	assert.NotEmpty(t, endpoints.BulkApi)
 	assert.NotEmpty(t, endpoints.NotifyApi)
-	// TODO: Validate endpoints.BulkApi and endpoints.NotifyApi
+	assert.Equal(t, "https://in1.api.clevertap.com/get_custom_list_segment_url", endpoints.BulkApi)
+	assert.Equal(t, "https://in1.api.clevertap.com/upload_custom_list_segment_completed", endpoints.NotifyApi)
 }
 
 func TestConvertToConnectionConfig(t *testing.T) {
