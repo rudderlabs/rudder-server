@@ -14,6 +14,7 @@ const (
 	BadgerEventSamplerPathName    = "/reporting-badger"
 )
 
+//go:generate mockgen -destination=../../../mocks/enterprise/reporting/event_sampler/mock_event_sampler.go -package=mocks github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler EventSampler
 type EventSampler interface {
 	Put(key string) error
 	Get(key string) (bool, error)
