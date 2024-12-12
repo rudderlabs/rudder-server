@@ -248,11 +248,11 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
     SELECT 
         %s, MAX(reported_at),
         COALESCE(
-            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
             ''
         ) AS sample_response,
         COALESCE(
-            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE sample_event != '{}'::jsonb))[1], 
+            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
             '{}'::jsonb
         ) AS sample_event,
         SUM(count),
