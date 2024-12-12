@@ -32,6 +32,8 @@ type LabelSet struct {
 	EventName               string
 	EventType               string
 	ErrorType               string
+	ErrorCode               string
+	ErrorMessage            string
 	Bucket                  int64
 }
 
@@ -60,6 +62,8 @@ func NewLabelSet(metric types.PUReportedMetric, bucket int64) LabelSet {
 		EventType:               metric.StatusDetail.EventType,
 		ErrorType:               metric.StatusDetail.ErrorType,
 		Bucket:                  bucket,
+		ErrorCode:               metric.StatusDetail.ErrorDetails.Code,
+		ErrorMessage:            metric.StatusDetail.ErrorDetails.Message,
 	}
 }
 
