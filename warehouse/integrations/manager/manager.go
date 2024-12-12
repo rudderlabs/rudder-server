@@ -28,7 +28,7 @@ import (
 
 type Manager interface {
 	Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error
-	FetchSchema(ctx context.Context) (model.Schema, model.Schema, error)
+	FetchSchema(ctx context.Context) (model.Schema, error)
 	CreateSchema(ctx context.Context) (err error)
 	CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error)
 	AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
@@ -64,7 +64,7 @@ func New(destType string, conf *config.Config, logger logger.Logger, stats stats
 		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
-	case warehouseutils.SNOWFLAKE:
+	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil
@@ -89,7 +89,7 @@ func NewWarehouseOperations(destType string, conf *config.Config, logger logger.
 		return redshift.New(conf, logger, stats), nil
 	case warehouseutils.BQ:
 		return bigquery.New(conf, logger), nil
-	case warehouseutils.SNOWFLAKE:
+	case warehouseutils.SNOWFLAKE, warehouseutils.SnowpipeStreaming:
 		return snowflake.New(conf, logger, stats), nil
 	case warehouseutils.POSTGRES:
 		return postgres.New(conf, logger, stats), nil

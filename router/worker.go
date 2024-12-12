@@ -676,7 +676,7 @@ func (w *worker) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status}
+				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags}
 				errorCount++
 				continue
 			}
@@ -701,7 +701,7 @@ func (w *worker) processDestinationJobs() {
 				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "dontBatch", true)
 			}
 		}
-		w.postStatusOnResponseQ(respStatusCode, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
+		w.postStatusOnResponseQ(respStatusCode, destinationJob, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
 
 		w.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
@@ -978,12 +978,13 @@ func (w *worker) updateAbortedMetrics(destinationID, workspaceId, statusCode, er
 	eventsAbortedStat.Increment()
 }
 
-func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessage,
+func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types.DestinationJobT,
 	respContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT,
 	errorAt string,
 ) {
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
+	payload := destinationJob.Message
 	if destinationJobMetadata.FirstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
@@ -1005,11 +1006,12 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 		}
 		w.logger.Debugf("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
-			userID:  destinationJobMetadata.UserID,
-			worker:  w,
-			job:     destinationJobMetadata.JobT,
-			status:  status,
-			payload: inputPayload,
+			userID:   destinationJobMetadata.UserID,
+			worker:   w,
+			job:      destinationJobMetadata.JobT,
+			status:   status,
+			payload:  inputPayload,
+			statTags: destinationJob.StatTags,
 		}
 		return
 	}
@@ -1064,11 +1066,12 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, payload json.RawMessa
 	}
 	w.logger.Debugf("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
-		userID:  destinationJobMetadata.UserID,
-		worker:  w,
-		job:     destinationJobMetadata.JobT,
-		status:  status,
-		payload: inputPayload,
+		userID:   destinationJobMetadata.UserID,
+		worker:   w,
+		job:      destinationJobMetadata.JobT,
+		status:   status,
+		payload:  inputPayload,
+		statTags: destinationJob.StatTags,
 	}
 }
 

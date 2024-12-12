@@ -882,9 +882,8 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
 		SELECT
@@ -901,10 +900,10 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
 	)
 	if errors.Is(err, io.EOF) {
-		return schema, unrecognizedSchema, nil
+		return schema, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -912,7 +911,7 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 		var tableName, columnName, columnType string
 
 		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
-			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+			return nil, fmt.Errorf("scanning schema: %w", err)
 		}
 
 		if _, ok := schema[tableName]; !ok {
@@ -921,19 +920,14 @@ func (ms *MSSQL) FetchSchema(ctx context.Context) (model.Schema, model.Schema, e
 		if datatype, ok := mssqlDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(model.TableSchema)
-			}
-			unrecognizedSchema[tableName][columnName] = warehouseutils.MissingDatatype
-
 			warehouseutils.WHCounterStat(ms.stats, warehouseutils.RudderMissingDatatype, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (ms *MSSQL) LoadUserTables(ctx context.Context) map[string]error {

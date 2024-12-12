@@ -1162,9 +1162,8 @@ func TestIntegration(t *testing.T) {
 				return item.Name
 			}))
 
-			warehouseSchema, unrecognizedWarehouseSchema, err := bq.FetchSchema(ctx)
+			warehouseSchema, err := bq.FetchSchema(ctx)
 			require.NoError(t, err)
-			require.Empty(t, unrecognizedWarehouseSchema)
 
 			fetchedTables := lo.Keys(warehouseSchema)
 			require.Equal(t, []string{tableName}, fetchedTables)

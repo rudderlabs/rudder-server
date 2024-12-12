@@ -282,7 +282,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 
 	if alteredIdentitySchema || alteredUserSchema {
 		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID)
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -398,11 +398,6 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 
 	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
-		// columns present in unrecognized schema should be skipped
-		if job.schemaHandle.IsColumnInUnrecognizedSchema(tName, columnName) {
-			continue
-		}
-
 		columnsToAdd = append(columnsToAdd, whutils.ColumnInfo{Name: columnName, Type: columnType})
 	}
 
@@ -560,7 +555,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 	if alteredSchema {
 		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
 	}
 
 	return job.processLoadTableResponse(errorMap)
@@ -703,7 +698,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable.Load() {
 		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx, job.upload.ID) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
 	}
 
 	return loadErrors

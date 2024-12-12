@@ -22,7 +22,7 @@ import (
 const (
 	BATCHSIZE             = 10000
 	MAXALLOWEDPROFILESIZE = 512000
-	MAXPAYLOADSIZE        = 4900000
+	MAXPAYLOADSIZE        = 4600000
 	IMPORT_ID_SEPARATOR   = ":"
 )
 
@@ -106,7 +106,9 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 	importStatuses := make(map[string]string)
 	failedImports := make([]string, 0)
 	for _, importId := range importIds {
-		importStatuses[importId] = "queued"
+		if importId != "" {
+			importStatuses[importId] = "queued"
+		}
 	}
 
 	for {
@@ -138,27 +140,26 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 	}
 	if len(failedImports) == 0 {
 		return common.PollStatusResponse{
-			Complete:      true,
-			HasFailed:     false,
-			HasWarning:    false,
-			StatusCode:    200,
-			InProgress:    false,
-			FailedJobURLs: "",
+			Complete:            true,
+			HasFailed:           false,
+			HasWarning:          false,
+			StatusCode:          200,
+			InProgress:          false,
+			FailedJobParameters: "",
 		}
 	}
 	return common.PollStatusResponse{
-		Complete:      true,
-		HasFailed:     true,
-		HasWarning:    false,
-		StatusCode:    200,
-		InProgress:    false,
-		FailedJobURLs: strings.Join(failedImports, IMPORT_ID_SEPARATOR),
+		Complete:            true,
+		HasFailed:           true,
+		HasWarning:          false,
+		StatusCode:          200,
+		InProgress:          false,
+		FailedJobParameters: strings.Join(failedImports, IMPORT_ID_SEPARATOR),
 	}
 }
 
 func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobURLs, IMPORT_ID_SEPARATOR)
-
+	pollResultImportIds := strings.Split(UploadStatsInput.FailedJobParameters, IMPORT_ID_SEPARATOR)
 	// make a map of jobId to error reason
 	jobIdToErrorMap := make(map[int64]string)
 
@@ -171,7 +172,7 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 	ErrorMap := kbu.JobIdToIdentifierMap
 	var successKeys []int64
 
-	var failedJobIds []int64
+	var abortedJobIDs []int64
 	for _, pollResultImportId := range pollResultImportIds {
 		uploadStatsResp, err := kbu.KlaviyoAPIService.GetUploadErrors(pollResultImportId)
 		if err != nil {
@@ -191,19 +192,19 @@ func (kbu *KlaviyoBulkUploader) GetUploadStats(UploadStatsInput common.GetUpload
 				identifierId = orgPayload.AnonymousId
 			}
 			jobId := ErrorMap[identifierId]
-			failedJobIds = append(failedJobIds, jobId)
+			abortedJobIDs = append(abortedJobIDs, jobId)
 			errorDetail := item.Attributes.Detail
 			jobIdToErrorMap[jobId] = errorDetail
 		}
 	}
-	successKeys, _ = lo.Difference(jobIDs, failedJobIds)
+	successKeys, _ = lo.Difference(jobIDs, abortedJobIDs)
 	return common.GetUploadStatsResponse{
 		StatusCode: 200,
 		Error:      "The import job failed",
 		Metadata: common.EventStatMeta{
-			FailedKeys:    failedJobIds,
-			FailedReasons: jobIdToErrorMap,
-			SucceededKeys: successKeys,
+			AbortedKeys:    abortedJobIDs,
+			AbortedReasons: jobIdToErrorMap,
+			SucceededKeys:  successKeys,
 		},
 	}
 }
@@ -284,8 +285,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		// if profileStructure length is more than 500 kB, throw an error
 		profileStructureJSON, _ := json.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
-		profileSizeStat.Observe(float64(profileSize)) // Record the size in the histogram
-		if float64(len(profileStructureJSON)) >= MAXALLOWEDPROFILESIZE {
+		profileSizeStat.Observe(profileSize) // Record the size in the histogram
+		if len(profileStructureJSON) >= MAXALLOWEDPROFILESIZE {
 			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
 			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue
@@ -304,7 +305,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
-			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors)
+			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors, destinationID)
 			continue
 		}
 

@@ -283,7 +283,7 @@ func (cat *createAlterTable) Validate(ctx context.Context) error {
 func (fs *fetchSchema) Validate(ctx context.Context) error {
 	defer fs.manager.Cleanup(ctx)
 
-	if _, _, err := fs.manager.FetchSchema(ctx); err != nil {
+	if _, err := fs.manager.FetchSchema(ctx); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil

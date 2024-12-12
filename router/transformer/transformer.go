@@ -248,8 +248,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonfast.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
-			integrations.CollectIntgTransformErrorStats([]byte(gjson.GetBytes(respData, "output").Raw))
-			err = jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &destinationJobs)
+			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
+			integrations.CollectIntgTransformErrorStats(rawResp)
+			err = jsonfast.Unmarshal(rawResp, &destinationJobs)
 		}
 
 		// Validate the response received from the transformer

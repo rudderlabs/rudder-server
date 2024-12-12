@@ -48,16 +48,17 @@ type SyncSource struct {
 }
 
 type StatusDetail struct {
-	Status         string           `json:"state"`
-	Count          int64            `json:"count"`
-	StatusCode     int              `json:"statusCode"`
-	SampleResponse string           `json:"sampleResponse"`
-	SampleEvent    json.RawMessage  `json:"sampleEvent"`
-	EventName      string           `json:"eventName"`
-	EventType      string           `json:"eventType"`
-	ErrorType      string           `json:"errorType"`
-	ViolationCount int64            `json:"violationCount"`
-	FailedMessages []*FailedMessage `json:"-"`
+	Status         string            `json:"state"`
+	Count          int64             `json:"count"`
+	StatusCode     int               `json:"statusCode"`
+	SampleResponse string            `json:"sampleResponse"`
+	SampleEvent    json.RawMessage   `json:"sampleEvent"`
+	EventName      string            `json:"eventName"`
+	EventType      string            `json:"eventType"`
+	ErrorType      string            `json:"errorType"`
+	ViolationCount int64             `json:"violationCount"`
+	StatTags       map[string]string `json:"-"`
+	FailedMessages []*FailedMessage  `json:"-"`
 }
 
 type FailedMessage struct {
@@ -80,7 +81,8 @@ type InstanceDetails struct {
 }
 
 type ReportMetadata struct {
-	ReportedAt int64 `json:"reportedAt"`
+	ReportedAt        int64 `json:"reportedAt"`
+	SampleEventBucket int64 `json:"bucket"`
 }
 
 type Metric struct {
@@ -157,8 +159,8 @@ type ConnectionDetails struct {
 	SourceTaskRunID         string `json:"sourceTaskRunId"`
 	SourceJobID             string `json:"sourceJobId"`
 	SourceJobRunID          string `json:"sourceJobRunId"`
-	SourceDefinitionId      string `json:"sourceDefinitionId"`
-	DestinationDefinitionId string `string:"destinationDefinitionId"`
+	SourceDefinitionID      string `json:"sourceDefinitionId"`
+	DestinationDefinitionID string `json:"DestinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
 	TransformationID        string `json:"transformationId"`
 	TransformationVersionID string `json:"transformationVersionId"`
@@ -176,37 +178,6 @@ type PUReportedMetric struct {
 	ConnectionDetails
 	PUDetails
 	StatusDetail *StatusDetail
-}
-
-func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc, trid, trvid, tpid string, tpv int) *ConnectionDetails {
-	return &ConnectionDetails{
-		SourceID:                sid,
-		DestinationID:           did,
-		SourceTaskRunID:         strid,
-		SourceJobID:             sjid,
-		SourceJobRunID:          sjrid,
-		SourceDefinitionId:      sdid,
-		DestinationDefinitionId: ddid,
-		SourceCategory:          sc,
-		TransformationID:        trid,
-		TransformationVersionID: trvid,
-		TrackingPlanID:          tpid,
-		TrackingPlanVersion:     tpv,
-	}
-}
-
-func CreateStatusDetail(status string, count, violationCount int64, code int, resp string, event json.RawMessage, eventName, eventType, errorType string) *StatusDetail {
-	return &StatusDetail{
-		Status:         status,
-		Count:          count,
-		ViolationCount: violationCount,
-		StatusCode:     code,
-		SampleResponse: resp,
-		SampleEvent:    event,
-		EventName:      eventName,
-		EventType:      eventType,
-		ErrorType:      errorType,
-	}
 }
 
 func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
