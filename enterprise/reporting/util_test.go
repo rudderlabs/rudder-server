@@ -649,7 +649,6 @@ func TestTransformMetricWithEventSamplingWithNilEventSampler(t *testing.T) {
 	}
 	transformedMetric, err := transformMetricWithEventSampling(metric, 1234567890, nil, 60)
 	require.NoError(t, err)
-
 	require.Equal(t, sampleEvent, []byte(transformedMetric.StatusDetail.SampleEvent))
 	require.Equal(t, sampleResponse, transformedMetric.StatusDetail.SampleResponse)
 }
