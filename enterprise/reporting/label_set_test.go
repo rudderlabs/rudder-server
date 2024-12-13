@@ -56,43 +56,56 @@ func TestGenerateHash(t *testing.T) {
 		name              string
 		metric1           types.PUReportedMetric
 		metric2           types.PUReportedMetric
-		bucket            int64
+		bucket1           int64
+		bucket2           int64
 		shouldHashesMatch bool
 	}{
 		{
 			name:              "same hash for same LabelSet for metrics",
 			metric1:           createMetricObject(someEventName, ""),
 			metric2:           createMetricObject(someEventName, ""),
-			bucket:            28889820,
+			bucket1:           28889820,
+			bucket2:           28889820,
 			shouldHashesMatch: true,
 		},
 		{
-			name:              "different hash for different LabelSet for metrics",
+			name:              "different hash for label set with different event name for metrics",
 			metric1:           createMetricObject(someEventName, ""),
 			metric2:           createMetricObject("some-event-name-2", ""),
-			bucket:            28889820,
+			bucket1:           28889820,
+			bucket2:           28889820,
+			shouldHashesMatch: false,
+		},
+		{
+			name:              "different hash for label set with different buckets for metrics",
+			metric1:           createMetricObject(someEventName, ""),
+			metric2:           createMetricObject(someEventName, ""),
+			bucket1:           28889000,
+			bucket2:           28889820,
 			shouldHashesMatch: false,
 		},
 		{
 			name:              "same hash for same LabelSet for errors",
 			metric1:           createMetricObject(someEventName, "Some error message"),
 			metric2:           createMetricObject(someEventName, "Some error message"),
-			bucket:            28889820,
+			bucket1:           28889820,
+			bucket2:           28889820,
 			shouldHashesMatch: true,
 		},
 		{
 			name:              "different hash for different LabelSet with different messages for errors",
 			metric1:           createMetricObject(someEventName, "Some error message 1"),
 			metric2:           createMetricObject(someEventName, "Some error message 2"),
-			bucket:            28889820,
+			bucket1:           28889820,
+			bucket2:           28889820,
 			shouldHashesMatch: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			labelSet1 := NewLabelSet(test.metric1, test.bucket)
-			labelSet2 := NewLabelSet(test.metric2, test.bucket)
+			labelSet1 := NewLabelSet(test.metric1, test.bucket1)
+			labelSet2 := NewLabelSet(test.metric2, test.bucket2)
 
 			hash1 := labelSet1.generateHash()
 			hash2 := labelSet2.generateHash()
