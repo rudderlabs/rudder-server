@@ -653,6 +653,34 @@ func TestTransformMetricWithEventSamplingWithNilEventSampler(t *testing.T) {
 	require.Equal(t, sampleResponse, transformedMetric.StatusDetail.SampleResponse)
 }
 
+func TestFloorFactor(t *testing.T) {
+	tests := []struct {
+		name       string
+		intervalMs int64
+		expected   int64
+	}{
+		// Edge cases
+		{name: "Smaller than smallest factor", intervalMs: 0, expected: 1},
+		{name: "Exact match for smallest factor", intervalMs: 1, expected: 1},
+		{name: "Exact match for largest factor", intervalMs: 60, expected: 60},
+		{name: "Larger than largest factor", intervalMs: 100, expected: 60},
+
+		// Typical cases
+		{name: "Between 10 and 12", intervalMs: 11, expected: 10},
+		{name: "Between 4 and 6", intervalMs: 5, expected: 5},
+		{name: "Between 20 and 30", intervalMs: 25, expected: 20},
+		{name: "Exact match in the middle", intervalMs: 30, expected: 30},
+		{name: "Exact match at a non-boundary point", intervalMs: 12, expected: 12},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := floorFactor(test.intervalMs)
+			require.Equal(t, test.expected, result)
+		})
+	}
+}
+
 func TestTransformMetricWithEventSampling(t *testing.T) {
 	sampleEvent := []byte(`{"event": "2"}`)
 	sampleResponse := "sample response"
