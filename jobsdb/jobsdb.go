@@ -792,7 +792,9 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
-	jd.conf.payloadColumnType = payloadColumnType(jd.config.GetIntVar(0, 1, jd.tablePrefix+"."+string(jd.ownerType)+".payloadColumnType", jd.tablePrefix+".payloadColumnType"))
+	if jd.conf.payloadColumnType == 0 {
+		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetIntVar(0, 1, "JobsDB."+jd.tablePrefix+"."+string(jd.ownerType)+".payloadColumnType", "JobsDB."+jd.tablePrefix+".payloadColumnType"))
+	}
 
 	if jd.stats == nil {
 		jd.stats = stats.Default
