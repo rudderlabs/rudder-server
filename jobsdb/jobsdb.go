@@ -73,6 +73,15 @@ const (
 	pgErrorCodeTableReadonly         = "RS001"
 )
 
+type payloadColumnType int
+
+const (
+	JSONB payloadColumnType = iota
+	BYTEA
+	TEXT
+	// JSON	// Explore afterwards?
+)
+
 // QueryConditions holds jobsdb query conditions
 type QueryConditions struct {
 	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
@@ -499,6 +508,7 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
+		payloadColumnType              payloadColumnType
 		maxTableSize                   config.ValueLoader[int64]
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
@@ -702,6 +712,18 @@ func WithStats(s stats.Stats) OptsFunc {
 	}
 }
 
+func WithBinaryPayload() OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.payloadColumnType = 1
+	}
+}
+
+func WithTextPayload() OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.payloadColumnType = 2
+	}
+}
+
 func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.skipMaintenanceError = ignore
@@ -769,6 +791,8 @@ func (jd *Handle) init() {
 	if jd.config == nil {
 		jd.config = config.Default
 	}
+
+	jd.conf.payloadColumnType = payloadColumnType(jd.config.GetIntVar(0, 1, jd.tablePrefix+"."+string(jd.ownerType)+".payloadColumnType", jd.tablePrefix+".payloadColumnType"))
 
 	if jd.stats == nil {
 		jd.stats = stats.Default
@@ -1429,6 +1453,15 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	var payloadColumnType string
+	switch jd.conf.payloadColumnType {
+	case JSONB:
+		payloadColumnType = "JSONB"
+	case BYTEA:
+		payloadColumnType = "BYTEA"
+	case TEXT:
+		payloadColumnType = "TEXT"
+	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
@@ -1436,7 +1469,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		user_id TEXT NOT NULL,
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
-		event_payload JSONB NOT NULL,
+		event_payload `+payloadColumnType+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
@@ -2215,6 +2248,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
 		var job JobT
+		var payload Payload
 		var jsState sql.NullString
 		var jsAttemptNum sql.NullInt64
 		var jsExecTime sql.NullTime
@@ -2223,13 +2257,14 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
 		if err != nil {
 			return JobsResult{}, false, err
 		}
+		job.EventPayload = payload.PayloadBytes()
 		if jsState.Valid {
 			resultsetStates[jsState.String] = struct{}{}
 			job.LastJobStatus.JobState = jsState.String
@@ -2287,6 +2322,32 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		PayloadSize:   payloadSize,
 		EventsCount:   eventCount,
 	}, true, nil
+}
+
+type Payload struct {
+	S string
+	B []byte
+}
+
+func (p *Payload) PayloadBytes() []byte {
+	if p.B != nil {
+		return p.B
+	}
+	return []byte(p.S)
+}
+
+func (p *Payload) Scan(src interface{}) error {
+	b, ok := src.([]byte)
+	if !ok {
+		s, ok := src.(string)
+		if !ok {
+			return errors.New("neither string nor bytes")
+		}
+		p.S = s
+		return nil
+	}
+	p.B = b
+	return nil
 }
 
 func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]map[string]map[ParameterFilterT]struct{}, err error) {
