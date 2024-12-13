@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const someEventName = "some-event-name"
 
-func createMetricObject(eventName string, withError bool) types.PUReportedMetric {
+func createMetricObject(eventName, errorMessage string) types.PUReportedMetric {
 	metric := types.PUReportedMetric{
 		ConnectionDetails: types.ConnectionDetails{
 			SourceID:      "some-source-id",
@@ -30,10 +31,10 @@ func createMetricObject(eventName string, withError bool) types.PUReportedMetric
 			EventType:      "some-event-type",
 		},
 	}
-	if withError {
+	if errorMessage != "" {
 		metric.StatusDetail.ErrorDetails = types.ErrorDetails{
 			Code:    "some-error-code",
-			Message: "some-error-message",
+			Message: errorMessage,
 		}
 	}
 	return metric
@@ -41,7 +42,7 @@ func createMetricObject(eventName string, withError bool) types.PUReportedMetric
 
 func TestNewLabelSet(t *testing.T) {
 	t.Run("should create the correct LabelSet from types.PUReportedMetric", func(t *testing.T) {
-		inputMetric := createMetricObject(someEventName, false)
+		inputMetric := createMetricObject(someEventName, "")
 		bucket := int64(28889820)
 		labelSet := NewLabelSet(inputMetric, bucket)
 
@@ -51,59 +52,52 @@ func TestNewLabelSet(t *testing.T) {
 }
 
 func TestGenerateHash(t *testing.T) {
-	t.Run("same hash for same LabelSet for metrics", func(t *testing.T) {
-		inputMetric1 := createMetricObject(someEventName, false)
-		bucket := int64(28889820)
-		labelSet1 := NewLabelSet(inputMetric1, bucket)
+	tests := []struct {
+		name              string
+		metric1           types.PUReportedMetric
+		metric2           types.PUReportedMetric
+		bucket            int64
+		shouldHashesMatch bool
+	}{
+		{
+			name:              "same hash for same LabelSet for metrics",
+			metric1:           createMetricObject(someEventName, ""),
+			metric2:           createMetricObject(someEventName, ""),
+			bucket:            28889820,
+			shouldHashesMatch: true,
+		},
+		{
+			name:              "different hash for different LabelSet for metrics",
+			metric1:           createMetricObject(someEventName, ""),
+			metric2:           createMetricObject("some-event-name-2", ""),
+			bucket:            28889820,
+			shouldHashesMatch: false,
+		},
+		{
+			name:              "same hash for same LabelSet for errors",
+			metric1:           createMetricObject(someEventName, "Some error message"),
+			metric2:           createMetricObject(someEventName, "Some error message"),
+			bucket:            28889820,
+			shouldHashesMatch: true,
+		},
+		{
+			name:              "different hash for different LabelSet with different messages for errors",
+			metric1:           createMetricObject(someEventName, "Some error message 1"),
+			metric2:           createMetricObject(someEventName, "Some error message 2"),
+			bucket:            28889820,
+			shouldHashesMatch: false,
+		},
+	}
 
-		inputMetric2 := createMetricObject(someEventName, false)
-		labelSet2 := NewLabelSet(inputMetric2, bucket)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			labelSet1 := NewLabelSet(test.metric1, test.bucket)
+			labelSet2 := NewLabelSet(test.metric2, test.bucket)
 
-		hash1 := labelSet1.generateHash()
-		hash2 := labelSet2.generateHash()
+			hash1 := labelSet1.generateHash()
+			hash2 := labelSet2.generateHash()
 
-		assert.Equal(t, hash1, hash2)
-	})
-
-	t.Run("different hash for different LabelSet for metrics", func(t *testing.T) {
-		inputMetric1 := createMetricObject("some-event-name-1", false)
-		bucket := int64(28889820)
-		labelSet1 := NewLabelSet(inputMetric1, bucket)
-
-		inputMetric2 := createMetricObject("some-event-name-2", false)
-		labelSet2 := NewLabelSet(inputMetric2, bucket)
-
-		hash1 := labelSet1.generateHash()
-		hash2 := labelSet2.generateHash()
-
-		assert.NotEqual(t, hash1, hash2)
-	})
-
-	t.Run("same hash for same LabelSet for errors", func(t *testing.T) {
-		inputMetric1 := createMetricObject(someEventName, true)
-		bucket := int64(28889820)
-		labelSet1 := NewLabelSet(inputMetric1, bucket)
-
-		inputMetric2 := createMetricObject(someEventName, true)
-		labelSet2 := NewLabelSet(inputMetric2, bucket)
-
-		hash1 := labelSet1.generateHash()
-		hash2 := labelSet2.generateHash()
-
-		assert.Equal(t, hash1, hash2)
-	})
-
-	t.Run("different hash for different LabelSet for errors", func(t *testing.T) {
-		inputMetric1 := createMetricObject("some-event-name-1", true)
-		bucket := int64(28889820)
-		labelSet1 := NewLabelSet(inputMetric1, bucket)
-
-		inputMetric2 := createMetricObject("some-event-name-2", true)
-		labelSet2 := NewLabelSet(inputMetric2, bucket)
-
-		hash1 := labelSet1.generateHash()
-		hash2 := labelSet2.generateHash()
-
-		assert.NotEqual(t, hash1, hash2)
-	})
+			require.Equal(t, test.shouldHashesMatch, hash1 == hash2)
+		})
+	}
 }
