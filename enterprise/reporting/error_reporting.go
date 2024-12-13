@@ -124,7 +124,7 @@ func NewErrorDetailReporter(
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.BadgerEventSamplerErrorsPathName, conf, log)
 		if err != nil {
 			panic(err)
 		}
