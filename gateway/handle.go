@@ -782,9 +782,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.streamMsgValidator(&msg)
 		if err != nil {
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("invalid message in request",
-				logger.NewStringField("properties", msg.Properties.String()),
-				obskit.Error(err))
+				loggerFields...)
 			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
 			stat.Report(gw.stats)
 			return nil, errors.New(response.InvalidStreamMessage)
@@ -798,10 +799,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				if err != nil {
 					stat.RequestEventsFailed(1, response.NotRudderEvent)
 					stat.Report(gw.stats)
-					gw.logger.Errorn("failed to set type in message",
-						logger.NewStringField("message", string(msg.Payload)),
-						logger.NewStringField("properties", msg.Properties.String()),
-						obskit.Error(err))
+					loggerFields := msg.Properties.LoggerFields()
+					loggerFields = append(loggerFields, obskit.Error(err))
+					gw.logger.Errorn("failed to set type in message", loggerFields...)
 					return nil, errors.New(response.NotRudderEvent)
 				}
 			}
@@ -816,8 +816,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				stat.RequestFailed(response.NotRudderEvent)
 				stat.Report(gw.stats)
 				gw.logger.Errorn("failed to set messageID in message",
-					logger.NewStringField("message", string(msg.Payload)),
-					logger.NewStringField("properties", msg.Properties.String()),
 					obskit.Error(err))
 				return nil, errors.New(response.NotRudderEvent)
 			}
@@ -827,8 +825,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
 			gw.logger.Errorn("failed to get rudderId",
-				logger.NewStringField("message", string(msg.Payload)),
-				logger.NewStringField("properties", msg.Properties.String()),
 				obskit.Error(err))
 			return nil, errors.New(response.NotRudderEvent)
 		}
@@ -836,10 +832,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if err != nil {
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("failed to set rudderId in message",
-				logger.NewStringField("message", string(msg.Payload)),
-				logger.NewStringField("properties", msg.Properties.String()),
-				obskit.Error(err))
+				loggerFields...)
 			return nil, errors.New(response.NotRudderEvent)
 		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
@@ -899,8 +895,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
 			gw.logger.Errorn("failed to fill receivedAt in message",
-				logger.NewStringField("message", string(msg.Payload)),
-				logger.NewStringField("properties", msg.Properties.String()),
 				obskit.Error(err))
 			return nil, fmt.Errorf("filling receivedAt: %w", err)
 		}
@@ -910,8 +904,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
 			gw.logger.Errorn("failed to fill request_ip in message",
-				logger.NewStringField("message", string(msg.Payload)),
-				logger.NewStringField("properties", msg.Properties.String()),
 				obskit.Error(err))
 			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
@@ -928,10 +920,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("failed to marshal event batch",
-				logger.NewStringField("message", string(msg.Payload)),
-				logger.NewStringField("properties", msg.Properties.String()),
-				obskit.Error(err))
+				loggerFields...)
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 		jobUUID := uuid.New()

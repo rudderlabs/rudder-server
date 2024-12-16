@@ -1179,6 +1179,8 @@ github.com/rudderlabs/rudder-schemas v0.5.3 h1:IWWjAo2TzsjwHNhS2EAr1+0MjvA8BoTpJ
 github.com/rudderlabs/rudder-schemas v0.5.3/go.mod h1:iUpjG/Zb+ioZcNLvXNYXSKQ2LpPlsIDBfxfCDH9ue/E=
 github.com/rudderlabs/rudder-schemas v0.5.4-0.20241213050258-c9aed7397f29 h1:hGn2CQgFZZksWNVLRvU/HQ9JnRHoos11/isVteDByJo=
 github.com/rudderlabs/rudder-schemas v0.5.4-0.20241213050258-c9aed7397f29/go.mod h1:iUpjG/Zb+ioZcNLvXNYXSKQ2LpPlsIDBfxfCDH9ue/E=
+github.com/rudderlabs/rudder-schemas v0.5.4-0.20241216054002-580f14e29fb9 h1:opWnzKMwZVjf4S1dmHBjju+vXndY6IU+7udghXS9bks=
+github.com/rudderlabs/rudder-schemas v0.5.4-0.20241216054002-580f14e29fb9/go.mod h1:Bb6LxF2tQVr8XOw7sbzq6iZZK4HwiAufvVUDnEuH3lM=
 github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a h1:OZcvpApxEYNkB9UNXrKDUBufQ24Lsr2Cs0pw70tzXBw=
 github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
 github.com/rudderlabs/sql-tunnels v0.1.7 h1:wDCRl6zY4M5gfWazf7XkSTGQS3yjBzUiUgEMBIfHNDA=
