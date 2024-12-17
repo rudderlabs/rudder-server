@@ -110,7 +110,7 @@ func NewErrorDetailReporter(
 	sleepInterval := conf.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := conf.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
 	maxOpenConnections := conf.GetIntVar(16, 1, "Reporting.errorReporting.maxOpenConnections")
-	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
+	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.errorReporting.eventSampling.enabled")
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
