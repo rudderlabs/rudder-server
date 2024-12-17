@@ -73,6 +73,12 @@ const (
 	pgErrorCodeTableReadonly         = "RS001"
 )
 
+var payloadTypes = map[payloadColumnType]string{
+	JSONB: "jsonb",
+	TEXT:  "text",
+	BYTEA: "bytea",
+}
+
 type payloadColumnType int
 
 const (
@@ -1102,7 +1108,7 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 		).Scan(&columnType)
 		jd.assertError(err)
 		jd.logger.Infow("previous column type", "type", columnType)
-		if columnType != string(jd.conf.payloadColumnType) {
+		if columnType != payloadTypes[jd.conf.payloadColumnType] {
 			var jobID int64
 			err := jd.dbHandle.QueryRowContext(
 				ctx,
