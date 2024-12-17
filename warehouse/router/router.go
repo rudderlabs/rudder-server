@@ -74,6 +74,8 @@ type Router struct {
 	inProgressMap     map[workerIdentifierMapKey][]jobID
 	inProgressMapLock sync.RWMutex
 
+	processingMu sync.Mutex
+
 	scheduledTimesCache     map[string][]int
 	scheduledTimesCacheLock sync.RWMutex
 
@@ -371,18 +373,22 @@ loop:
 			continue
 		}
 
+		r.processingMu.Lock()
 		inProgressNamespaces := r.getInProgressNamespaces()
 		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil && ctx.Err() == nil {
 			r.logger.Errorn("Error getting uploads to process", logger.NewErrorField(err))
+			r.processingMu.Unlock()
 			return err
 		}
-
 		for _, uploadJob := range uploadJobsToProcess {
 			r.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+		}
+		r.processingMu.Unlock()
 
+		for _, uploadJob := range uploadJobsToProcess {
 			workerName := r.workerIdentifier(uploadJob.warehouse)
 
 			r.workerChannelMapLock.RLock()
@@ -595,6 +601,9 @@ func (r *Router) handlePriorityForWaitingUploads(ctx context.Context, warehouse 
 	if latestInfo.Status != model.Waiting {
 		return defaultUploadPriority, nil
 	}
+
+	r.processingMu.Lock()
+	defer r.processingMu.Unlock()
 
 	// If it is present do nothing else delete it
 	if _, inProgress := r.isUploadJobInProgress(warehouse, latestInfo.ID); !inProgress {
