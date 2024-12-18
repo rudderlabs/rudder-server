@@ -6,6 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 const (
@@ -27,15 +28,16 @@ func NewEventSampler(
 	eventSamplingCardinality config.ValueLoader[int],
 	conf *config.Config,
 	log logger.Logger,
+	stats stats.Stats,
 ) (es EventSampler, err error) {
 	switch eventSamplerType.Load() {
 	case BadgerTypeEventSampler:
-		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log)
+		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log, stats)
 	case InMemoryCacheTypeEventSampler:
-		es, err = NewInMemoryCacheEventSampler(ctx, ttl, eventSamplingCardinality)
+		es, err = NewInMemoryCacheEventSampler(ctx, ttl, eventSamplingCardinality, stats)
 	default:
 		log.Warnf("invalid event sampler type: %s. Using default badger event sampler", eventSamplerType.Load())
-		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log)
+		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log, stats)
 	}
 
 	if err != nil {
