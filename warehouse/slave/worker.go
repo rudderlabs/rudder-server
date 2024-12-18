@@ -12,23 +12,20 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary

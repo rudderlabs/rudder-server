@@ -581,7 +581,7 @@ func (d *Deltalake) LoadTable(
 	tableName string,
 ) (*types.LoadTableStats, error) {
 	uploadTableSchema := d.Uploader.GetTableSchemaInUpload(tableName)
-	warehouseTableSchema := d.Uploader.GetTableSchemaInWarehouse(tableName)
+	warehouseTableSchema := d.Uploader.GetTableSchema(tableName)
 
 	loadTableStat, _, err := d.loadTable(
 		ctx,
@@ -980,9 +980,9 @@ func (d *Deltalake) hasAWSCredentials() bool {
 func (d *Deltalake) LoadUserTables(ctx context.Context) map[string]error {
 	var (
 		identifiesSchemaInUpload    = d.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
-		identifiesSchemaInWarehouse = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable)
+		identifiesSchemaInWarehouse = d.Uploader.GetTableSchema(warehouseutils.IdentifiesTable)
 		usersSchemaInUpload         = d.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
-		usersSchemaInWarehouse      = d.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+		usersSchemaInWarehouse      = d.Uploader.GetTableSchema(warehouseutils.UsersTable)
 	)
 
 	d.logger.Infow("started loading for identifies and users tables",

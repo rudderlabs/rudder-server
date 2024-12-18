@@ -151,7 +151,7 @@ func TestColumnCountStat(t *testing.T) {
 				statsFactory: statsStore,
 				schemaHandle: &schema.Schema{}, // TODO use constructor
 			}
-			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
+			j.schemaHandle.UpdateTableSchema(tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
 				"test-column-3": "string",
@@ -166,7 +166,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))
+				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInSchema(tableName))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)
