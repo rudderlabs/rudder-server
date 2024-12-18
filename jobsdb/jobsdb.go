@@ -2392,7 +2392,13 @@ func (p *Payload) PayloadBytes() []byte {
 	if p.B != nil {
 		return p.B
 	}
-	return []byte(p.S)
+	// return []byte(p.S)
+	buffer := new(bytes.Buffer)
+	if err := json.Compact(buffer, []byte(p.S)); err != nil {
+		return []byte(`{}`)
+	}
+
+	return buffer.Bytes()
 }
 
 func (p *Payload) Scan(src interface{}) error {

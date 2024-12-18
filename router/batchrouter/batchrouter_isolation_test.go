@@ -242,6 +242,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
 	config.Set("DB.host", postgresContainer.Host)
+	config.Set("enableStats", false)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
@@ -358,7 +359,14 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	}
 
 	var minExecTime, maxExecTime time.Time
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',20)").Scan(&minExecTime, &maxExecTime), "it should be able to query the min and max execution times")
+	require.NoError(
+		t,
+		postgresContainer.DB.QueryRowContext(
+			ctx,
+			"SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',20)",
+		).Scan(&minExecTime, &maxExecTime),
+		"it should be able to query the min and max execution times",
+	)
 	overallDuration = maxExecTime.Sub(minExecTime)
 
 	cancel()
