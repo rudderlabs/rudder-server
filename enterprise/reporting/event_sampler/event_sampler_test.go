@@ -23,7 +23,7 @@ func TestBadger(t *testing.T) {
 
 	t.Run("should put and get keys", func(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -43,7 +43,7 @@ func TestBadger(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
 
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log)
 		defer es.Close()
 
 		_ = es.Put("key1")
@@ -65,7 +65,7 @@ func TestInMemoryCache(t *testing.T) {
 
 	t.Run("should put and get keys", func(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -83,7 +83,7 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not get evicted keys", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log)
 		_ = es.Put("key1")
 
 		require.Eventually(t, func() bool {
@@ -95,7 +95,7 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not add keys if length exceeds", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 3000)
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -147,6 +147,7 @@ func BenchmarkEventSampler(b *testing.B) {
 				ttl,
 				eventSamplerType,
 				eventSamplingCardinality,
+				BadgerEventSamplerMetricsPathName,
 				conf,
 				log,
 			)
