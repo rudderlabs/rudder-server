@@ -66,7 +66,7 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
 			Run(t, func(t *testing.T, event string) {
-				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, string(event), "geolocation information should be present")
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
 				require.Equal(t, londonIP, gjson.Get(event, "context.geo.ip").String(), "contex.ip should take precedence over clientIP")
 				require.Equal(t, "London", gjson.Get(event, "context.geo.city").String(), "contex.ip should take precedence over clientIP")
 			})
@@ -79,7 +79,7 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(boxfordIP).
 			WithContextIP("").
 			Run(t, func(t *testing.T, event string) {
-				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, string(event), "geolocation information should be present")
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
 				require.Equal(t, boxfordIP, gjson.Get(event, "context.geo.ip").String(), "clientIP should be used by the geolocation service")
 				require.Equal(t, "Boxford", gjson.Get(event, "context.geo.city").String(), "clientIP should be used by the geolocation service")
 			})
@@ -92,7 +92,7 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithClientIP(londonIP).
 			WithContextIP(invalidIP).
 			Run(t, func(t *testing.T, event string) {
-				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, string(event), "geolocation information should be present")
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
 				require.Equal(t, invalidIP, gjson.Get(event, "context.geo.ip").String(), "geolocation service should use the first non blank context.ip even if invalid")
 				require.Equal(t, "", gjson.Get(event, "context.geo.city").String(), "geolocation service should use the first non blank context.ip even if invalid")
 			})
