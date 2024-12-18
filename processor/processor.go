@@ -13,16 +13,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,9 +24,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
@@ -3296,7 +3292,10 @@ func (proc *Handle) transformSrcDest(
 			// in case of custom transformations metadata of first event is returned along with all events in session
 			// source_id will be same for all events belong to same user in a session
 			metadata := response.Events[i].Metadata
-
+			if metadata.OriginalSourceID != "" {
+				proc.logger.Infof("OriginalSourceID: %v", metadata.OriginalSourceID)
+				proc.logger.Infof("SourceID: %v", metadata.SourceID)
+			}
 			sourceID := metadata.SourceID
 			destID := metadata.DestinationID
 			rudderID := metadata.RudderID
