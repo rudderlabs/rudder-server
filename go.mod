@@ -1,7 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
 go 1.23.3
-
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
@@ -41,7 +40,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.5.0
-	github.com/docker/docker v27.4.0+incompatible
+	github.com/docker/docker v27.4.1+incompatible
 	github.com/go-chi/chi/v5 v5.2.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -78,7 +77,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.45.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
-	github.com/rudderlabs/rudder-schemas v0.5.3
+	github.com/rudderlabs/rudder-schemas v0.5.4
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.14.0
@@ -89,7 +88,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.12.1
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/cast v1.7.0
+	github.com/spf13/cast v1.7.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
@@ -214,7 +213,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.22.1 // indirect
+	github.com/go-playground/validator/v10 v10.23.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.1.0 // indirect
