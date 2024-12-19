@@ -503,7 +503,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	).RecordDuration()()
 
 	columnTypeMap := map[string]string{srcDS.JobTable: "jsonb", destDS.JobTable: "jsonb"}
-	// find colummn types first - to differentiate between `bytea` and `jsonb`
+	// find colummn types first - to differentiate between `text`, `bytea` and `jsonb`
 	rows, err := tx.QueryContext(
 		ctx,
 		fmt.Sprintf(
@@ -531,7 +531,6 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		return 0, fmt.Errorf("rows.Err() on column types: %w", err)
 	}
 	payloadLiteral := getColumnConversion(columnTypeMap[srcDS.JobTable], columnTypeMap[destDS.JobTable])
-	jd.logger.Info(payloadLiteral)
 
 	compactDSQuery := fmt.Sprintf(
 		`with last_status as (select * from "v_last_%[1]s"),
