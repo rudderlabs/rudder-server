@@ -709,11 +709,11 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 		errorMessage = err.Error()
 		status = response.GetErrorStatusCode(errorMessage)
 		responseBody = response.GetStatus(errorMessage)
-		gw.logger.Infon("response",
+		gw.logger.Errorn("response",
 			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
-			logger.NewStringField("body", responseBody),
+			obskit.Error(err),
 		)
 		gw.logger.Debugn("response",
 			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
@@ -763,6 +763,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	if err != nil {
 		stat.RequestFailed(response.InvalidJSON)
 		stat.Report(gw.stats)
+		gw.logger.Errorn("invalid json in request",
+			obskit.Error(err))
 		return nil, errors.New(response.InvalidJSON)
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))
@@ -770,6 +772,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	if len(messages) == 0 {
 		stat.RequestFailed(response.NotRudderEvent)
 		stat.Report(gw.stats)
+		gw.logger.Errorn("no messages in request")
 		return nil, errors.New(response.NotRudderEvent)
 	}
 
@@ -779,7 +782,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.streamMsgValidator(&msg)
 		if err != nil {
-			gw.logger.Errorn("invalid message in request", logger.NewErrorField(err))
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("invalid message in request",
+				loggerFields...)
 			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
 			stat.Report(gw.stats)
 			return nil, errors.New(response.InvalidStreamMessage)
@@ -793,6 +799,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				if err != nil {
 					stat.RequestEventsFailed(1, response.NotRudderEvent)
 					stat.Report(gw.stats)
+					loggerFields := msg.Properties.LoggerFields()
+					loggerFields = append(loggerFields, obskit.Error(err))
+					gw.logger.Errorn("failed to set type in message", loggerFields...)
 					return nil, errors.New(response.NotRudderEvent)
 				}
 			}
@@ -806,6 +815,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			if err != nil {
 				stat.RequestFailed(response.NotRudderEvent)
 				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to set messageID in message",
+					obskit.Error(err))
 				return nil, errors.New(response.NotRudderEvent)
 			}
 		}
@@ -813,12 +824,18 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if err != nil {
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
+			gw.logger.Errorn("failed to get rudderId",
+				obskit.Error(err))
 			return nil, errors.New(response.NotRudderEvent)
 		}
 		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
 		if err != nil {
 			stat.RequestFailed(response.NotRudderEvent)
 			stat.Report(gw.stats)
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to set rudderId in message",
+				loggerFields...)
 			return nil, errors.New(response.NotRudderEvent)
 		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
@@ -877,6 +894,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			err = fmt.Errorf("filling receivedAt: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
+			gw.logger.Errorn("failed to fill receivedAt in message",
+				obskit.Error(err))
 			return nil, fmt.Errorf("filling receivedAt: %w", err)
 		}
 		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
@@ -884,6 +903,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			err = fmt.Errorf("filling request_ip: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
+			gw.logger.Errorn("failed to fill request_ip in message",
+				obskit.Error(err))
 			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
 
@@ -899,6 +920,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
 			stat.Report(gw.stats)
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to marshal event batch",
+				loggerFields...)
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 		jobUUID := uuid.New()

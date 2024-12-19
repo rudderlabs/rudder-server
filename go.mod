@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.23.3
+go 1.23.4
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -78,7 +78,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.45.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.3
-	github.com/rudderlabs/rudder-schemas v0.5.3
+	github.com/rudderlabs/rudder-schemas v0.5.4
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.14.0
@@ -214,7 +214,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.22.1 // indirect
+	github.com/go-playground/validator/v10 v10.23.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.1.0 // indirect

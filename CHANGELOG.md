@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.2](https://github.com/rudderlabs/rudder-server/compare/v1.39.1...v1.39.2) (2024-12-18)
+
+
+### Miscellaneous
+
+* add error msg in the logs when gw req fails ([#5369](https://github.com/rudderlabs/rudder-server/issues/5369)) ([a0ef0f1](https://github.com/rudderlabs/rudder-server/commit/a0ef0f15ca456fc459233bf70c324cc60cfca7f0))
+
 ## [1.39.1](https://github.com/rudderlabs/rudder-server/compare/v1.39.0...v1.39.1) (2024-12-17)
 
 
