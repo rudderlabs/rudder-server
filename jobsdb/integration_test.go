@@ -1026,7 +1026,9 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 
 func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
-	jobDB := Handle{config: config.New()}
+	conf := config.New()
+	conf.Set("JobsDB.payloadColumnType", 0)
+	jobDB := Handle{config: conf}
 	ch := func(n int) string {
 		return strings.Repeat("�", n)
 	}
@@ -1071,9 +1073,8 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 
 	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)))
 	require.NoError(t, err)
-	defer jobDB.TearDown()
 
-	eventPayload := []byte(`{"batch": [{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
+	eventPayload := []byte(`{"batch":[{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
 	for i, tt := range toValidUTF8Tests {
 
 		customVal := fmt.Sprintf("TEST_%d", i)
@@ -1111,6 +1112,174 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 			string(unprocessedJob.Jobs[0].EventPayload),
 		)
 	}
+	jobDB.TearDown()
+
+	conf.Set("JobsDB.payloadColumnType", 2)
+	textDB := &Handle{config: conf}
+	require.NoError(t, textDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+
+	toValidUTF8TestsForText := []struct {
+		in  string
+		out string
+		err error
+	}{
+		{`\u0000`, `\u0000`, nil},
+		{`\u0000☺\u0000b☺`, `\u0000☺\u0000b☺`, nil},
+		// NOTE: we are not handling the following:
+		// {"\u0000", ""},
+		// {"\u0000☺\u0000b☺", "☺b☺"},
+
+		{"", "", nil},
+		{"abc", "abc", nil},
+		{"\uFDDD", "\uFDDD", nil},
+		{"a\xffb", `a\ufffdb`, nil},
+		{"a\xffb\uFFFD", `a\ufffdb�`, nil},
+		{"a☺\xffb☺\xC0\xAFc☺\xff", `a☺\ufffdb☺\ufffd\ufffdc☺\ufffd`, nil},
+		{"\xC0\xAF", `\ufffd\ufffd`, nil},
+		{"\xE0\x80\xAF", `\ufffd\ufffd\ufffd`, nil},
+		{"\xed\xa0\x80", `\ufffd\ufffd\ufffd`, nil},
+		{"\xed\xbf\xbf", `\ufffd\ufffd\ufffd`, nil},
+		{"\xF0\x80\x80\xaf", `\ufffd\ufffd\ufffd\ufffd`, nil},
+		{"\xF8\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
+		{"\xFC\x80\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
+
+		// {"\ud800", ""},
+		// 15
+		{`\ud800`, `\ud800`, nil},
+		{`\uDEAD`, `\uDEAD`, nil},
+
+		{`\uD83D\ub000`, `\uD83D\ub000`, nil},
+		{`\uD83D\ude04`, `\uD83D\ude04`, nil},
+
+		{`\u4e2d\u6587`, `\u4e2d\u6587`, nil},
+		{`\ud83d\udc4a`, `\ud83d\udc4a`, nil},
+
+		// 21
+		{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
+		{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
+	}
+	for i, tt := range toValidUTF8TestsForText {
+
+		customVal := fmt.Sprintf("TEST_%d", i)
+
+		jobs := []*JobT{{
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
+			UserID:       uuid.New().String(),
+			UUID:         uuid.New(),
+			CustomVal:    customVal,
+			WorkspaceId:  defaultWorkspaceID,
+			EventCount:   1,
+		}}
+
+		err := textDB.Store(context.Background(), jobs)
+		if tt.err != nil {
+			require.NoError(t, err, "text column should never error", i)
+			continue
+		}
+
+		require.NoError(t, err)
+
+		unprocessedJob, err := textDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.NoError(t, err, "should not error")
+
+		require.Len(t, unprocessedJob.Jobs, 1)
+
+		require.Equal(t,
+			string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
+			string(unprocessedJob.Jobs[0].EventPayload),
+			"testCase", i,
+		)
+	}
+	textDB.TearDown()
+
+	conf.Set("JobsDB.payloadColumnType", 1)
+	byteaDB := &Handle{config: conf}
+	require.NoError(t, byteaDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+
+	byteaInvalidInputSyntaxError := errors.New("pq: invalid input syntax for type bytea")
+	toValidUTF8TestsForBytea := []struct {
+		in  string
+		out string
+		err error
+	}{
+		{`\u0000`, "", nil},
+		{`\u0000☺\u0000b☺`, "☺b☺", nil},
+		// NOTE: we are not handling the following:
+		// {"\u0000", ""},
+		// {"\u0000☺\u0000b☺", "☺b☺"},
+
+		{"", "", nil},
+		{"abc", "abc", nil},
+		{"\uFDDD", "\uFDDD", nil},
+		{"a\xffb", "a" + ch(1) + "b", byteaInvalidInputSyntaxError},
+		{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD", byteaInvalidInputSyntaxError},
+		{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1), byteaInvalidInputSyntaxError},
+		{"\xC0\xAF", ch(2), byteaInvalidInputSyntaxError},
+		{"\xE0\x80\xAF", ch(3), byteaInvalidInputSyntaxError},
+		{"\xed\xa0\x80", ch(3), byteaInvalidInputSyntaxError},
+		{"\xed\xbf\xbf", ch(3), byteaInvalidInputSyntaxError},
+		{"\xF0\x80\x80\xaf", ch(4), byteaInvalidInputSyntaxError},
+		{"\xF8\x80\x80\x80\xAF", ch(5), byteaInvalidInputSyntaxError},
+		{"\xFC\x80\x80\x80\x80\xAF", ch(6), byteaInvalidInputSyntaxError},
+
+		// {"\ud800", ""},
+		// 15
+		{`\ud800`, ch(1), nil},
+		{`\uDEAD`, ch(1), nil},
+
+		{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
+		{`\uD83D\ude04`, "😄", nil},
+
+		{`\u4e2d\u6587`, "中文", nil},
+		{`\ud83d\udc4a`, "\xf0\x9f\x91\x8a", nil},
+
+		{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
+		{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
+	}
+	for i, tt := range toValidUTF8TestsForBytea {
+
+		customVal := fmt.Sprintf("TEST_%d", i)
+
+		jobs := []*JobT{{
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
+			UserID:       uuid.New().String(),
+			UUID:         uuid.New(),
+			CustomVal:    customVal,
+			WorkspaceId:  defaultWorkspaceID,
+			EventCount:   1,
+		}}
+
+		err := byteaDB.Store(context.Background(), jobs)
+		if tt.err != nil {
+			require.Error(t, err, "should error", i)
+			require.Contains(t, err.Error(), tt.err.Error(), "should contain error", i)
+			continue
+		}
+
+		require.NoError(t, err, i)
+
+		unprocessedJob, err := byteaDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.NoError(t, err, "should not error", i)
+
+		require.Len(t, unprocessedJob.Jobs, 1)
+
+		require.JSONEq(t,
+			string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
+			string(unprocessedJob.Jobs[0].EventPayload),
+			i,
+		)
+	}
+	byteaDB.TearDown()
 }
 
 // BenchmarkJobsdb takes time... keep waiting
