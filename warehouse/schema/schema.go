@@ -11,10 +11,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -53,10 +52,8 @@ type Schema struct {
 	stagingFilesSchemaPaginationSize int
 	enableIDResolution               bool
 
-	localSchema         model.Schema
-	localSchemaMu       sync.RWMutex
-	schemaInWarehouse   model.Schema
-	schemaInWarehouseMu sync.RWMutex
+	localSchema   model.Schema
+	localSchemaMu sync.RWMutex
 
 	stats struct {
 		schemaSize stats.Histogram
@@ -248,20 +245,24 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context) error {
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-	return sh.updateLocalSchema(ctx, sh.schemaInWarehouse)
+func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, warehouseSchema model.Schema) error {
+	sh.localSchemaMu.RLock()
+	defer sh.localSchemaMu.RUnlock()
+	return sh.updateSchema(ctx, warehouseSchema)
 }
 
-func (sh *Schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
-	return sh.updateLocalSchema(ctx, updatedSchema)
+func (sh *Schema) UpdateLocalSchema(ctx context.Context) error {
+	return sh.updateSchema(ctx, sh.localSchema)
+}
+
+func (sh *Schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
+	return sh.updateSchema(ctx, updatedSchema)
 }
 
 // updateLocalSchema
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
-func (sh *Schema) updateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
+func (sh *Schema) updateSchema(ctx context.Context, updatedSchema model.Schema) error {
 	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
@@ -286,40 +287,6 @@ func (sh *Schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 	return nil
 }
 
-// SyncRemoteSchema
-// 1. Fetches schema from local
-// 2. Fetches schema from warehouse
-// 3. Initialize local schema
-// 4. Updates local schema with warehouse schema if it has changed
-// 5. Returns true if schema has changed
-func (sh *Schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
-	if err != nil {
-		return false, fmt.Errorf("fetching schema from local: %w", err)
-	}
-
-	if err := sh.FetchSchemaFromWarehouse(ctx, fetchSchemaRepo); err != nil {
-		return false, fmt.Errorf("fetching schema from warehouse: %w", err)
-	}
-
-	sh.localSchemaMu.Lock()
-	sh.localSchema = localSchema
-	sh.localSchemaMu.Unlock()
-
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-
-	schemaChanged := sh.hasSchemaChanged(localSchema)
-	if schemaChanged {
-		err := sh.updateLocalSchema(ctx, sh.schemaInWarehouse)
-		if err != nil {
-			return false, fmt.Errorf("updating local schema: %w", err)
-		}
-	}
-
-	return schemaChanged, nil
-}
-
 // GetLocalSchema returns the local schema from wh_schemas table
 func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
@@ -334,6 +301,9 @@ func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	if whSchema.Schema == nil {
 		return model.Schema{}, nil
 	}
+	sh.localSchemaMu.Lock()
+	sh.localSchema = whSchema.Schema
+	sh.localSchemaMu.Unlock()
 	return whSchema.Schema, nil
 }
 
@@ -341,18 +311,14 @@ func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 // 1. Fetches schema from warehouse
 // 2. Removes deprecated columns from schema
 // 3. Updates local warehouse schema and unrecognized schema instance
-func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
+func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) (model.Schema, error) {
 	warehouseSchema, err := repo.FetchSchema(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
 	sh.removeDeprecatedColumns(warehouseSchema)
-
-	sh.schemaInWarehouseMu.Lock()
-	sh.schemaInWarehouse = warehouseSchema
-	sh.schemaInWarehouseMu.Unlock()
-	return nil
+	return warehouseSchema, nil
 }
 
 // removeDeprecatedColumns skips deprecated columns from the schema map
@@ -375,9 +341,9 @@ func (sh *Schema) removeDeprecatedColumns(schema model.Schema) {
 	}
 }
 
-// hasSchemaChanged compares the localSchema with the schemaInWarehouse
-func (sh *Schema) hasSchemaChanged(localSchema model.Schema) bool {
-	return !reflect.DeepEqual(localSchema, sh.schemaInWarehouse)
+// HasSchemaChanged compares the localSchema with the schemaInWarehouse
+func (sh *Schema) HasSchemaChanged(schema model.Schema) bool {
+	return !reflect.DeepEqual(schema, sh.localSchema)
 }
 
 // TableSchemaDiff returns the diff between the warehouse schema and the upload schema
@@ -388,9 +354,9 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 		AlteredColumnMap: make(model.TableSchema),
 	}
 
-	sh.schemaInWarehouseMu.RLock()
-	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
-	sh.schemaInWarehouseMu.RUnlock()
+	sh.localSchemaMu.RLock()
+	currentTableSchema, ok := sh.localSchema[tableName]
+	sh.localSchemaMu.RUnlock()
 
 	if !ok {
 		if len(tableSchema) == 0 {
@@ -422,29 +388,29 @@ func (sh *Schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 	return diff
 }
 
-func (sh *Schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-	return sh.schemaInWarehouse[tableName]
+func (sh *Schema) GetTableSchema(tableName string) model.TableSchema {
+	sh.localSchemaMu.RLock()
+	defer sh.localSchemaMu.RUnlock()
+	return sh.localSchema[tableName]
 }
 
-func (sh *Schema) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
-	sh.schemaInWarehouseMu.Lock()
-	defer sh.schemaInWarehouseMu.Unlock()
-	if sh.schemaInWarehouse == nil {
-		sh.schemaInWarehouse = make(model.Schema)
+func (sh *Schema) UpdateTableSchema(tableName string, tableSchema model.TableSchema) {
+	sh.localSchemaMu.RLock()
+	defer sh.localSchemaMu.RUnlock()
+	if sh.localSchema == nil {
+		sh.localSchema = make(model.Schema)
 	}
-	sh.schemaInWarehouse[tableName] = tableSchema
+	sh.localSchema[tableName] = tableSchema
 }
 
-func (sh *Schema) IsWarehouseSchemaEmpty() bool {
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-	return len(sh.schemaInWarehouse) == 0
+func (sh *Schema) IsSchemaEmpty() bool {
+	sh.localSchemaMu.RLock()
+	defer sh.localSchemaMu.RUnlock()
+	return len(sh.localSchema) == 0
 }
 
-func (sh *Schema) GetColumnsCountInWarehouseSchema(tableName string) int {
-	sh.schemaInWarehouseMu.RLock()
-	defer sh.schemaInWarehouseMu.RUnlock()
-	return len(sh.schemaInWarehouse[tableName])
+func (sh *Schema) GetColumnsCountInSchema(tableName string) int {
+	sh.localSchemaMu.RLock()
+	defer sh.localSchemaMu.RUnlock()
+	return len(sh.localSchema[tableName])
 }

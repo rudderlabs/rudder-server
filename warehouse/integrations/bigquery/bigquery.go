@@ -615,7 +615,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		return fmt.Sprintf("FIRST_VALUE(`%[1]s` IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `%[1]s`", column)
 	}
 
-	userColMap := bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := bq.uploader.GetTableSchema(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -705,7 +705,7 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	usersSchema := getTableSchema(bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable))
+	usersSchema := getTableSchema(bq.uploader.GetTableSchema(warehouseutils.UsersTable))
 	metaData := &bigquery.TableMetadata{
 		Schema: usersSchema,
 	}

@@ -441,7 +441,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 		}
 		defer whManager.Cleanup(ctx)
 
-		err = job.schemaHandle.FetchSchemaFromWarehouse(ctx, whManager)
+		_, err = job.schemaHandle.FetchSchemaFromWarehouse(ctx, whManager)
 		if err != nil {
 			r.logger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			_, _ = job.setUploadError(err, model.Aborted)

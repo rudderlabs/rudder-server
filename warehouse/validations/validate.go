@@ -553,13 +553,13 @@ type dummyUploader struct {
 	dest *backendconfig.DestinationT
 }
 
-func (*dummyUploader) IsWarehouseSchemaEmpty() bool { return true }
+func (*dummyUploader) IsSchemaEmpty() bool { return true }
 func (*dummyUploader) GetLocalSchema(context.Context) (model.Schema, error) {
 	return model.Schema{}, nil
 }
 func (*dummyUploader) UpdateLocalSchema(context.Context, model.Schema) error { return nil }
 func (*dummyUploader) ShouldOnDedupUseNewRecord() bool                       { return false }
-func (*dummyUploader) GetTableSchemaInWarehouse(string) model.TableSchema    { return nil }
+func (*dummyUploader) GetTableSchema(string) model.TableSchema               { return nil }
 func (*dummyUploader) GetTableSchemaInUpload(string) model.TableSchema       { return nil }
 func (*dummyUploader) CanAppend() bool                                       { return false }
 func (*dummyUploader) GetSampleLoadFileLocation(context.Context, string) (string, error) {
