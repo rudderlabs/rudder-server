@@ -117,12 +117,6 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 
 	f.initCommonTags()
 	f.initStats(f.commonTags)
-	if _, err := db.Exec(
-		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(table)),
-	); err != nil {
-		log.Errorn("error full vacuuming", logger.NewStringField("table", table), obskit.Error(err))
-		return nil, fmt.Errorf("error full vacuuming %s table %w", table, err)
-	}
 	return &f, nil
 }
 
