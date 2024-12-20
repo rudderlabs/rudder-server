@@ -256,12 +256,17 @@ func (trans *handle) transform(
 		return Response{}
 	}
 	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
-	// flip back afterwards
+	// flip back afterward
+	fmt.Println("before swapping in clientEvents")
 	for i := range clientEvents {
 		if clientEvents[i].Metadata.OriginalSourceID != "" {
+			fmt.Println("Metadata for client events: ", clientEvents[i].Metadata)
+			fmt.Println("Original Source ID: ", clientEvents[i].Metadata.OriginalSourceID)
+			fmt.Println("Source ID: ", clientEvents[i].Metadata.SourceID)
 			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
 		}
 	}
+	fmt.Println("after swapping in clientEvents")
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
 		"dest_id":   clientEvents[0].Destination.ID,
@@ -316,11 +321,15 @@ func (trans *handle) transform(
 	var outClientEvents []TransformerResponse
 	var failedEvents []TransformerResponse
 
+	fmt.Println("before swapping in transformResponse")
 	for _, batch := range transformResponse {
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
 			if transformerResponse.Metadata.OriginalSourceID != "" {
+				fmt.Println("Metadata for transformer response: ", transformerResponse.Metadata)
+				fmt.Println("Original Source ID: ", transformerResponse.Metadata.OriginalSourceID)
+				fmt.Println("Source ID: ", transformerResponse.Metadata.SourceID)
 				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
 			switch transformerResponse.StatusCode {
@@ -331,6 +340,7 @@ func (trans *handle) transform(
 			}
 		}
 	}
+	fmt.Println("after swapping in transformResponse")
 
 	trans.sentStat.Count(len(clientEvents))
 	trans.receivedStat.Count(len(outClientEvents))
