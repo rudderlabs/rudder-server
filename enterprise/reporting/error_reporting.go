@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -160,12 +161,14 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	if !edr.config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
 		return func() {}
 	}
-	if _, err := dbHandle.ExecContext(
-		context.Background(),
-		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
-	); err != nil {
-		edr.log.Errorn("error full vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
-		panic(err)
+	if edr.config.GetBool("Reporting.errorReporting.vacuumAtStartup", false) {
+		if _, err := dbHandle.ExecContext(
+			context.Background(),
+			fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
+		); err != nil {
+			edr.log.Errorn("error full vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
+			panic(err)
+		}
 	}
 
 	return func() {

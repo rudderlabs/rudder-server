@@ -185,9 +185,11 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	if !config.GetBool("Reporting.syncer.enabled", true) {
 		return func() {}
 	}
-	if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
-		r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
-		panic(err)
+	if config.GetBool("Reporting.syncer.vacuumAtStartup", false) {
+		if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
+			r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
+			panic(err)
+		}
 	}
 	return func() {
 		r.g.Go(func() error {
