@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,8 +43,8 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithGeolocationEnabledAtSource(true).
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
-			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.Empty(t, gjson.GetBytes(event, "context.geo").Raw, "no geolocation information should be present when the feature is disabled")
+			Run(t, func(t *testing.T, event string) {
+				require.Empty(t, gjson.Get(event, "context.geo").Raw, "no geolocation information should be present when the feature is disabled")
 			})
 	})
 
@@ -55,8 +54,8 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithGeolocationEnabledAtSource(false).
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
-			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.Empty(t, gjson.GetBytes(event, "context.geo").Raw, "no geolocation information should be present when geolocation is disabled at source")
+			Run(t, func(t *testing.T, event string) {
+				require.Empty(t, gjson.Get(event, "context.geo").Raw, "no geolocation information should be present when geolocation is disabled at source")
 			})
 	})
 
@@ -66,10 +65,10 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithGeolocationEnabledAtSource(true).
 			WithClientIP(boxfordIP).
 			WithContextIP(londonIP).
-			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, londonIP, gjson.GetBytes(event, "context.geo.ip").String(), "contex.ip should take precedence over clientIP")
-				require.Equal(t, "London", gjson.GetBytes(event, "context.geo.city").String(), "contex.ip should take precedence over clientIP")
+			Run(t, func(t *testing.T, event string) {
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
+				require.Equal(t, londonIP, gjson.Get(event, "context.geo.ip").String(), "contex.ip should take precedence over clientIP")
+				require.Equal(t, "London", gjson.Get(event, "context.geo.city").String(), "contex.ip should take precedence over clientIP")
 			})
 	})
 
@@ -79,10 +78,10 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithGeolocationEnabledAtSource(true).
 			WithClientIP(boxfordIP).
 			WithContextIP("").
-			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, boxfordIP, gjson.GetBytes(event, "context.geo.ip").String(), "clientIP should be used by the geolocation service")
-				require.Equal(t, "Boxford", gjson.GetBytes(event, "context.geo.city").String(), "clientIP should be used by the geolocation service")
+			Run(t, func(t *testing.T, event string) {
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
+				require.Equal(t, boxfordIP, gjson.Get(event, "context.geo.ip").String(), "clientIP should be used by the geolocation service")
+				require.Equal(t, "Boxford", gjson.Get(event, "context.geo.city").String(), "clientIP should be used by the geolocation service")
 			})
 	})
 
@@ -92,10 +91,10 @@ func TestProcessorGeolocation(t *testing.T) {
 			WithGeolocationEnabledAtSource(true).
 			WithClientIP(londonIP).
 			WithContextIP(invalidIP).
-			Run(t, func(t *testing.T, event json.RawMessage) {
-				require.NotEmpty(t, gjson.GetBytes(event, "context.geo").Raw, string(event), "geolocation information should be present")
-				require.Equal(t, invalidIP, gjson.GetBytes(event, "context.geo.ip").String(), "geolocation service should use the first non blank context.ip even if invalid")
-				require.Equal(t, "", gjson.GetBytes(event, "context.geo.city").String(), "geolocation service should use the first non blank context.ip even if invalid")
+			Run(t, func(t *testing.T, event string) {
+				require.NotEmpty(t, gjson.Get(event, "context.geo").Raw, event, "geolocation information should be present")
+				require.Equal(t, invalidIP, gjson.Get(event, "context.geo.ip").String(), "geolocation service should use the first non blank context.ip even if invalid")
+				require.Equal(t, "", gjson.Get(event, "context.geo.city").String(), "geolocation service should use the first non blank context.ip even if invalid")
 			})
 	})
 }
@@ -127,7 +126,7 @@ func (s *geolocationScenario) WithClientIP(ip string) *geolocationScenario {
 	return s
 }
 
-func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, event json.RawMessage)) {
+func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, event string)) {
 	config.Reset()
 	defer config.Reset()
 	writeKey := "writekey-1"
@@ -141,8 +140,8 @@ func (s *geolocationScenario) Run(t *testing.T, verification func(t *testing.T, 
 
 	s.requireJobsCount(t, db, "gw", "succeeded", 1)
 	s.requireJobsCount(t, db, "rt", "aborted", 1)
-	var payload json.RawMessage
-	require.NoError(t, db.QueryRow("SELECT event_payload FROM unionjobsdb('rt',1)").Scan(&payload))
+	var payload string
+	require.NoError(t, db.QueryRow("SELECT event_payload FROM rt_jobs_1").Scan(&payload))
 	verification(t, payload)
 }
 
@@ -192,6 +191,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 }
 
 func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
+	config.Set("enableStats", false)
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
 	config.Set("DB.host", postgresContainer.Host)

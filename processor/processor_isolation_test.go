@@ -31,6 +31,7 @@ import (
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -227,6 +228,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
 	config.Set("Router.toAbortDestinationIDs", destinationID)
 	config.Set("archival.Enabled", false)
+	config.Set("enableStats", false)
 
 	config.Set("Processor.isolationMode", string(spec.isolationMode))
 
@@ -330,9 +332,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	overallDuration = maxJobTime.Sub(gwMinJobTime)
 
 	require.Eventually(t, func() bool {
-		var pendingJobsCount int
-		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdb('rt',5) WHERE COALESCE(job_state, 'pending') != 'aborted'").Scan(&pendingJobsCount))
-		return pendingJobsCount == 0
+		return rmetrics.PendingEvents("rt", rmetrics.All, rmetrics.All).IntValue() == 0
 	}, 100*time.Second, 1*time.Second, "all rt jobs should be aborted")
 	cancel()
 	<-svcDone
