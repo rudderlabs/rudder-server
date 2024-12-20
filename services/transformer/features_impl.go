@@ -24,6 +24,11 @@ type featuresService struct {
 }
 
 func (t *featuresService) SourceTransformerVersion() string {
+	// If transformer is upgraded to V2, enable V2 spec communication
+	if gjson.GetBytes(t.features, "upgradedToSourceTransformV2").Bool() {
+		return V2
+	}
+
 	// V0 Deprecation: This function will verify if `supportSourceTransformV1` is available and enabled
 	// if `supportSourceTransformV1` is not enabled, transformer is not compatible and server will panic with appropriate message.
 	if gjson.GetBytes(t.features, "supportSourceTransformV1").Bool() {
