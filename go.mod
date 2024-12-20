@@ -41,7 +41,7 @@ require (
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.5.0
-	github.com/docker/docker v27.4.0+incompatible
+	github.com/docker/docker v27.4.1+incompatible
 	github.com/go-chi/chi/v5 v5.2.0
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
@@ -65,7 +65,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.82
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/onsi/ginkgo/v2 v2.22.0
+	github.com/onsi/ginkgo/v2 v2.22.1
 	github.com/onsi/gomega v1.36.1
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/oschwald/maxminddb-golang v1.13.1
@@ -89,7 +89,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.12.1
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/cast v1.7.0
+	github.com/spf13/cast v1.7.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
@@ -107,8 +107,8 @@ require (
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sync v0.10.0
-	google.golang.org/api v0.212.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241206012308-a4fef0638583
+	google.golang.org/api v0.214.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576
 	google.golang.org/grpc v1.68.1
 	google.golang.org/protobuf v1.36.0
 )
@@ -231,7 +231,7 @@ require (
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
+	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
@@ -339,13 +339,13 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/mod v0.21.0 // indirect
-	golang.org/x/net v0.32.0 // indirect
+	golang.org/x/mod v0.22.0 // indirect
+	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.8.0
-	golang.org/x/tools v0.26.0 // indirect
+	golang.org/x/tools v0.28.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241118233622-e639e219e697 // indirect
