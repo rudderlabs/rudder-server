@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/gjson"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -192,13 +193,22 @@ func TestUploadIntegration(t *testing.T) {
 		ImportingJobIDs: []int64{1, 2, 3},
 	}
 
-	output := kbu.Upload(asyncDestStruct)
-	assert.NotNil(t, output)
-	assert.Equal(t, destination.ID, output.DestinationID)
-	assert.Empty(t, output.FailedJobIDs)
-	assert.Empty(t, output.AbortJobIDs)
-	assert.Empty(t, output.AbortReason)
-	assert.NotEmpty(t, output.ImportingJobIDs)
+	uploadResp := kbu.Upload(asyncDestStruct)
+	assert.NotNil(t, uploadResp)
+	assert.Equal(t, destination.ID, uploadResp.DestinationID)
+	assert.Empty(t, uploadResp.FailedJobIDs)
+	assert.Empty(t, uploadResp.AbortJobIDs)
+	assert.Empty(t, uploadResp.AbortReason)
+	assert.NotEmpty(t, uploadResp.ImportingJobIDs)
+	assert.NotNil(t, uploadResp.ImportingParameters)
+
+	importId := gjson.GetBytes(uploadResp.ImportingParameters, "importId").String()
+	pollResp := kbu.Poll(common.AsyncPoll{ImportId: importId})
+	assert.NotNil(t, pollResp)
+	assert.Equal(t, http.StatusOK, pollResp.StatusCode)
+	assert.True(t, pollResp.Complete)
+	assert.False(t, pollResp.HasFailed)
+	assert.False(t, pollResp.HasWarning)
 }
 
 func TestPoll(t *testing.T) {
@@ -260,8 +270,8 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, http.StatusOK, jobStatus.StatusCode)
 		assert.Equal(t, false, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
-		assert.Empty(t, jobStatus.FailedJobURLs)
-		assert.Empty(t, jobStatus.WarningJobURLs)
+		assert.Empty(t, jobStatus.FailedJobParameters)
+		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Empty(t, jobStatus.Error)
 	})
 
@@ -304,7 +314,7 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, true, jobStatus.Complete)
 		assert.Equal(t, true, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
-		assert.Empty(t, jobStatus.WarningJobURLs)
+		assert.Empty(t, jobStatus.WarningJobParameters)
 		assert.Equal(t, "The import job failed", jobStatus.Error)
 	})
 }
@@ -387,7 +397,7 @@ func TestGetUploadStats(t *testing.T) {
 			Return(uploadStatsResp, nil)
 
 		uploadStatsInput := common.GetUploadStatsInput{
-			FailedJobURLs: "importId1",
+			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -398,8 +408,8 @@ func TestGetUploadStats(t *testing.T) {
 		assert.NotNil(t, statsResponse)
 		assert.Equal(t, http.StatusOK, statsResponse.StatusCode)
 		// assert.Equal(t, "The import job failed", statsResponse.Error)
-		assert.NotEmpty(t, statsResponse.Metadata.FailedKeys)
-		assert.NotEmpty(t, statsResponse.Metadata.FailedReasons)
+		assert.NotEmpty(t, statsResponse.Metadata.AbortedKeys)
+		assert.NotEmpty(t, statsResponse.Metadata.AbortedReasons)
 		assert.NotEmpty(t, statsResponse.Metadata.SucceededKeys)
 	})
 
@@ -409,7 +419,7 @@ func TestGetUploadStats(t *testing.T) {
 			Return(nil, fmt.Errorf("some error"))
 
 		uploadStatsInput := common.GetUploadStatsInput{
-			FailedJobURLs: "importId1",
+			FailedJobParameters: "importId1",
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},

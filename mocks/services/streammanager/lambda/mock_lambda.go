@@ -20,6 +20,7 @@ import (
 type MockLambdaClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockLambdaClientMockRecorder
+	isgomock struct{}
 }
 
 // MockLambdaClientMockRecorder is the mock recorder for MockLambdaClient.
@@ -40,16 +41,16 @@ func (m *MockLambdaClient) EXPECT() *MockLambdaClientMockRecorder {
 }
 
 // Invoke mocks base method.
-func (m *MockLambdaClient) Invoke(arg0 *lambda.InvokeInput) (*lambda.InvokeOutput, error) {
+func (m *MockLambdaClient) Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Invoke", arg0)
+	ret := m.ctrl.Call(m, "Invoke", input)
 	ret0, _ := ret[0].(*lambda.InvokeOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Invoke indicates an expected call of Invoke.
-func (mr *MockLambdaClientMockRecorder) Invoke(arg0 any) *gomock.Call {
+func (mr *MockLambdaClientMockRecorder) Invoke(input any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Invoke", reflect.TypeOf((*MockLambdaClient)(nil).Invoke), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Invoke", reflect.TypeOf((*MockLambdaClient)(nil).Invoke), input)
 }

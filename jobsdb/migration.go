@@ -12,6 +12,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
@@ -97,6 +98,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				return nil
 			}
 
+			migrateFromDatasets := lo.Map(migrateFrom, func(ds dsWithPendingJobCount, _ int) dataSetT { return ds.ds })
 			if pendingJobsCount > 0 { // migrate incomplete jobs
 				var destination dataSetT
 				if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
@@ -110,11 +112,15 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return err
 				}
 
-				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
-				jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
-				jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
+				jd.logger.Infon(
+					"[[ migrateDSLoop ]]",
+					logger.NewIntField("pendingJobsCount", int64(pendingJobsCount)),
+					logger.NewIntField("migrateFrom", int64(len(migrateFrom))),
+					logger.NewStringField("to", destination.Index),
+					logger.NewStringField("insert before", insertBeforeDS.Index),
+				)
 
-				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
+				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
 				if err != nil {
 					return fmt.Errorf("failed to marshal journal payload: %w", err)
 				}
@@ -130,13 +136,33 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 				totalJobsMigrated := 0
 				var noJobsMigrated int
-				for _, source := range migrateFrom {
-					jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
-					noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
-					if err != nil {
-						return fmt.Errorf("failed to migrate jobs: %w", err)
+				for i := range migrateFrom {
+					source := migrateFrom[i]
+					if source.numJobsPending > 0 {
+						jd.logger.Infon(
+							"[[ migrateDSLoop ]]: Migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
+						noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source.ds, destination)
+						if err != nil {
+							return fmt.Errorf("failed to migrate jobs: %w", err)
+						}
+						jd.assert(
+							noJobsMigrated == source.numJobsPending,
+							fmt.Sprintf(
+								"noJobsMigrated: %d != source.numJobsPending: %d",
+								noJobsMigrated, source.numJobsPending,
+							),
+						)
+						totalJobsMigrated += noJobsMigrated
+					} else {
+						jd.logger.Infon(
+							"[[ migrateDSLoop ]]: No jobs to migrate",
+							logger.NewStringField("from", source.ds.Index),
+							logger.NewStringField("to", destination.Index),
+						)
 					}
-					totalJobsMigrated += noJobsMigrated
 				}
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
@@ -147,7 +173,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
 
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
 			if err != nil {
 				return fmt.Errorf("failed to marshal journal payload: %w", err)
 			}
@@ -160,7 +186,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to acquire lock: %w", err)
 			}
-			if err = jd.postMigrateHandleDS(tx, migrateFrom); err != nil {
+			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
 				return fmt.Errorf("failed to post migrate handle ds: %w", err)
 			}
 			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
@@ -180,6 +206,11 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 	}
 	return err
+}
+
+type dsWithPendingJobCount struct {
+	ds             dataSetT
+	numJobsPending int
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
@@ -364,15 +395,15 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 // getMigrationList returns the list of datasets to migrate from,
 // the number of unfinished jobs contained in these datasets
 // and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
-func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
+func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendingJobCount, pendingJobsCount int, insertBeforeDS dataSetT, err error) {
 	var (
 		liveDSCount, migrateDSProbeCount int
 		// we don't want `maxDSSize` value to change, during dsList loop
 		maxDSSize = jd.conf.MaxDSSize.Load()
-		waiting   *smallDS
+		waiting   *dsWithPendingJobCount
 	)
 
-	jd.logger.Debugf("[[ migrateDSLoop ]]: DS list %+v", dsList)
+	jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewField("dsList", dsList))
 
 	for idx, ds := range dsList {
 		var idxCheck bool
@@ -393,25 +424,28 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, p
 			err = migrateErr
 			return
 		}
-		jd.logger.Debugf(
-			"[[ migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
-			migrate, isSmall, recordsLeft, ds,
+		jd.logger.Debugn(
+			"[[ migrateDSLoop ]]: Migrate check",
+			logger.NewBoolField("migrate", migrate),
+			logger.NewBoolField("isSmall", isSmall),
+			logger.NewIntField("recordsLeft", int64(recordsLeft)),
+			logger.NewStringField("ds", ds.Index),
 		)
 
 		if migrate {
 			if waiting != nil { // add current and waiting DS, no matter if the current ds is small or not, it doesn't matter
-				migrateFrom = append(migrateFrom, waiting.ds, ds)
+				migrateFrom = append(migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
-				pendingJobsCount += waiting.recordsLeft + recordsLeft
+				pendingJobsCount += waiting.numJobsPending + recordsLeft
 				liveDSCount += 2
 				waiting = nil
 			} else if !isSmall || len(migrateFrom) > 0 { // add only if the current DS is not small or if we already have some DS in the list
-				migrateFrom = append(migrateFrom, ds)
+				migrateFrom = append(migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
 				pendingJobsCount += recordsLeft
 				liveDSCount++
 			} else { // add the current small DS as waiting for the next iteration to pickup
-				waiting = &smallDS{ds: ds, recordsLeft: recordsLeft}
+				waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
 			}
 		} else {
 			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
@@ -491,6 +525,7 @@ func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
 		if err := jd.dropDSInTx(tx, ds); err != nil {
 			return err
 		}
+		delete(jd.dsRangeFuncMap, ds.Index)
 	}
 	return nil
 }
@@ -526,59 +561,45 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 	).RecordDuration()()
 
 	var delCount, totalCount int
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&totalCount); err != nil {
-		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobTable, err)
-	}
+	var oldTerminalJobsExist bool
+	var maxCreatedAt time.Time
 
-	// Jobs which have either succeeded or expired
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(DISTINCT(job_id))
-                                      from %q
-                                      WHERE job_state IN ('%s')`,
-		ds.JobStatusTable, strings.Join(validTerminalStates, "', '"))
-	if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&delCount); err != nil {
-		return false, false, 0, fmt.Errorf("error getting count of jobs in %s: %w", ds.JobStatusTable, err)
+	query := fmt.Sprintf(
+		`with combinedResult as (
+			select
+			(select count(*) from %[1]q) as totalJobCount,
+			(select count(*) from %[2]q where job_state = ANY($1)) as terminalJobCount,
+			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
+			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired
+		)
+		select totalJobCount, terminalJobCount, maxCreatedAt, retentionExpired from combinedResult`,
+		ds.JobTable, ds.JobStatusTable)
+
+	if err := jd.dbHandle.QueryRow(
+		query,
+		pq.Array(validTerminalStates),
+		time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load()),
+	).Scan(&totalCount, &delCount, &maxCreatedAt, &oldTerminalJobsExist); err != nil {
+		return false, false, 0, fmt.Errorf("error running check query in %s: %w", ds.JobStatusTable, err)
 	}
 
 	recordsLeft = totalCount - delCount
 
-	if jd.conf.minDSRetentionPeriod.Load() > 0 {
-		var maxCreatedAt time.Time
-		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement).Scan(&maxCreatedAt); err != nil {
-			return false, false, 0, fmt.Errorf("error getting max created_at from %s: %w", ds.JobTable, err)
-		}
-
-		if time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
-			return false, false, recordsLeft, nil
-		}
+	if jd.conf.minDSRetentionPeriod.Load() > 0 && time.Since(maxCreatedAt) < jd.conf.minDSRetentionPeriod.Load() {
+		return false, false, recordsLeft, nil
 	}
 
-	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		var terminalJobsExist bool
-		sqlStatement = fmt.Sprintf(`SELECT EXISTS (
-									SELECT id
-										FROM %q
-										WHERE job_state = ANY($1) and exec_time < $2)`,
-			ds.JobStatusTable)
-		if err = jd.dbHandle.QueryRow(sqlStatement, pq.Array(validTerminalStates), time.Now().Add(-1*jd.conf.maxDSRetentionPeriod.Load())).Scan(&terminalJobsExist); err != nil {
-			return false, false, 0, fmt.Errorf("checking terminalJobsExist %s: %w", ds.JobStatusTable, err)
-		}
-		if terminalJobsExist {
-			return true, false, recordsLeft, nil
-		}
+	if jd.conf.maxDSRetentionPeriod.Load() > 0 && oldTerminalJobsExist {
+		return true, false, recordsLeft, nil
 	}
 
-	smallThreshold := jd.conf.migration.jobMinRowsMigrateThres() * float64(jd.conf.MaxDSSize.Load())
-	isSmall := func() bool {
-		return float64(totalCount) < smallThreshold
-	}
+	isSmall := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres()*float64(jd.conf.MaxDSSize.Load())
 
 	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres() {
-		return true, isSmall(), recordsLeft, nil
+		return true, isSmall, recordsLeft, nil
 	}
 
-	if isSmall() {
+	if isSmall {
 		return true, true, recordsLeft, nil
 	}
 

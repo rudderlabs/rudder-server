@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -18,12 +19,12 @@ type Factory struct {
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) types.Reporting {
+func (m *Factory) Setup(ctx context.Context, conf *config.Config, backendConfig backendconfig.BackendConfig) types.Reporting {
 	m.oneInstance.Do(func() {
 		if m.Log == nil {
 			m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
 		}
-		m.instance = NewReportingMediator(ctx, m.Log, m.EnterpriseToken, backendConfig)
+		m.instance = NewReportingMediator(ctx, conf, m.Log, m.EnterpriseToken, backendConfig)
 	})
 	return m.instance
 }

@@ -415,10 +415,9 @@ func TestIntegration(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, err := ch.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
-			require.Empty(t, unrecognizedSchema)
 		})
 
 		t.Run("Invalid host", func(t *testing.T) {
@@ -441,10 +440,9 @@ func TestIntegration(t *testing.T) {
 			err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 			require.NoError(t, err)
 
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, err := ch.FetchSchema(ctx)
 			require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse").Error())
 			require.Empty(t, schema)
-			require.Empty(t, unrecognizedSchema)
 		})
 
 		t.Run("Invalid database", func(t *testing.T) {
@@ -467,10 +465,9 @@ func TestIntegration(t *testing.T) {
 			err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 			require.NoError(t, err)
 
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, err := ch.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.Empty(t, schema)
-			require.Empty(t, unrecognizedSchema)
 		})
 
 		t.Run("Empty schema", func(t *testing.T) {
@@ -496,10 +493,9 @@ func TestIntegration(t *testing.T) {
 			err = ch.CreateSchema(ctx)
 			require.NoError(t, err)
 
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, err := ch.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.Empty(t, schema)
-			require.Empty(t, unrecognizedSchema)
 		})
 
 		t.Run("Unrecognized schema", func(t *testing.T) {
@@ -531,16 +527,9 @@ func TestIntegration(t *testing.T) {
 			))
 			require.NoError(t, err)
 
-			schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+			schema, err := ch.FetchSchema(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
-			require.NotEmpty(t, unrecognizedSchema)
-
-			require.Equal(t, unrecognizedSchema, model.Schema{
-				table: {
-					"x": "<missing_datatype>",
-				},
-			})
 		})
 	})
 
@@ -674,10 +663,9 @@ func TestIntegration(t *testing.T) {
 				require.NoError(t, err)
 
 				t.Log("Verifying empty schema")
-				schema, unrecognizedSchema, err := ch.FetchSchema(ctx)
+				schema, err := ch.FetchSchema(ctx)
 				require.NoError(t, err)
 				require.Empty(t, schema)
-				require.Empty(t, unrecognizedSchema)
 
 				t.Log("Creating schema")
 				err = ch.CreateSchema(ctx)
@@ -715,10 +703,9 @@ func TestIntegration(t *testing.T) {
 				require.NoError(t, err)
 
 				t.Log("Verifying schema")
-				schema, unrecognizedSchema, err = ch.FetchSchema(ctx)
+				schema, err = ch.FetchSchema(ctx)
 				require.NoError(t, err)
 				require.NotEmpty(t, schema)
-				require.Empty(t, unrecognizedSchema)
 
 				t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 				if tc.disableNullable {
@@ -774,10 +761,9 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("Verifying empty schema")
-				schema, unrecognizedSchema, err = ch.FetchSchema(ctx)
+				schema, err = ch.FetchSchema(ctx)
 				require.NoError(t, err)
 				require.Empty(t, schema)
-				require.Empty(t, unrecognizedSchema)
 			})
 		}
 	})

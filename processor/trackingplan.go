@@ -81,7 +81,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 		proc.logger.Debug("Validation input size", len(eventList))
 
 		// Checking if the tracking plan exists
-		isTpExists := eventList[0].Metadata.TrackingPlanId != ""
+		isTpExists := eventList[0].Metadata.TrackingPlanID != ""
 		if !isTpExists {
 			// pass on the jobs for transformation(User, Dest)
 			validatedEventsBySourceId[sourceId] = make([]transformer.TransformerEvent, 0)
@@ -102,7 +102,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 			continue
 		}
 
-		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanId, eventList[0].Metadata.TrackingPlanVersion)
+		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanID, eventList[0].Metadata.TrackingPlanVersion)
 
 		transformerEvent := eventList[0]
 		destination := &transformerEvent.Destination
@@ -166,7 +166,7 @@ func (proc *Handle) newValidationStat(metadata *transformer.Metadata) *TrackingP
 		"destType":            metadata.DestinationType,
 		"source":              metadata.SourceID,
 		"workspaceId":         metadata.WorkspaceID,
-		"trackingPlanId":      metadata.TrackingPlanId,
+		"trackingPlanId":      metadata.TrackingPlanID,
 		"trackingPlanVersion": strconv.Itoa(metadata.TrackingPlanVersion),
 	}
 

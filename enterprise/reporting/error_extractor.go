@@ -96,61 +96,86 @@ func checkForGoMapOrList(value interface{}) bool {
 	return false
 }
 
-func (ext *ExtractorHandle) getSimpleMessage(jsonStr string) string {
-	if !IsJSON(jsonStr) {
-		return jsonStr
+func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
+	if !IsJSON(sampleResponse) {
+		return sampleResponse
 	}
 
 	var jsonMap map[string]interface{}
-	er := json.Unmarshal([]byte(jsonStr), &jsonMap)
+	er := json.Unmarshal([]byte(sampleResponse), &jsonMap)
 	if er != nil {
-		ext.log.Debugf("%v is not a unmarshallable into interface{}", jsonStr)
-		return jsonStr
+		ext.log.Debugn("sampleResponse is not a unmarshallable into interface{}", logger.NewStringField("sampleResponse", sampleResponse))
+		return sampleResponse
 	}
 
 	for key, erRes := range jsonMap {
-		erResStr, isString := erRes.(string)
-		if !isString {
-			ext.log.Debugf("Type-assertion failed for %v with value %v: not a string", key, erRes)
+		if result := ext.handleKey(key, erRes); result != "" {
+			return result
 		}
+	}
+	return ""
+}
+
+func (ext *ExtractorHandle) handleKey(key string, value interface{}) string {
+	switch key {
+	case "reason", "Error", responseKey, errorKey:
+		valueStr, ok := value.(string)
+		if !ok {
+			ext.log.Debugn("Handling key", logger.NewStringField("key", key), logger.NewField("value", value))
+			return ""
+		}
+
 		switch key {
 		case "reason":
-			return erResStr
+			return valueStr
 		case "Error":
-			if !IsJSON(erResStr) {
-				return strings.Split(erResStr, "\n")[0]
-			}
-			return ""
+			return handleError(valueStr)
 		case responseKey, errorKey:
-			if IsJSON(erResStr) {
-				var unmarshalledJson interface{}
-				unmarshalledErr := json.Unmarshal([]byte(erResStr), &unmarshalledJson)
-				if unmarshalledErr != nil {
-					return erResStr
-				}
-				return getErrorMessageFromResponse(unmarshalledJson, ext.ErrorMessageKeys)
-			}
-			lowerErResStr := strings.ToLower(erResStr)
-			if strings.Contains(lowerErResStr, "<body") && strings.Contains(lowerErResStr, "</body>") {
-				return getHTMLErrorMessage(erResStr)
-			}
-
-			if len(erResStr) == 0 {
-				return ""
-			}
-			return erResStr
-		// Warehouse related errors
-		case "internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed":
-			valAsMap, isMap := erRes.(map[string]interface{})
-			if !isMap {
-				ext.log.Debugf("Failed while type asserting to map[string]interface{} warehouse error with whKey:%s", key)
-				return ""
-			}
-			return getErrorFromWarehouse(valAsMap)
+			return ext.handleResponseOrErrorKey(valueStr)
 		}
+
+	case "internal_processing_failed", "fetching_remote_schema_failed", "exporting_data_failed":
+		// Allow handleWarehouseError to process the value, regardless of its type
+		return ext.handleWarehouseError(value, key)
 	}
 
 	return ""
+}
+
+func handleError(valueStr string) string {
+	if !IsJSON(valueStr) {
+		firstLine := strings.Split(valueStr, "\n")[0]
+		return firstLine
+	}
+	return ""
+}
+
+func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
+	if IsJSON(valueStr) {
+		var unmarshalledJSON interface{}
+		if err := json.Unmarshal([]byte(valueStr), &unmarshalledJSON); err != nil {
+			return valueStr
+		}
+		result := getErrorMessageFromResponse(unmarshalledJSON, ext.ErrorMessageKeys)
+		return result
+	}
+
+	lowerStr := strings.ToLower(valueStr)
+	if strings.Contains(lowerStr, "<body") && strings.Contains(lowerStr, "</body>") {
+		result := getHTMLErrorMessage(valueStr)
+		return result
+	}
+
+	return valueStr
+}
+
+func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
+	valAsMap, isMap := value.(map[string]interface{})
+	if !isMap {
+		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key", logger.NewStringField("key", key), logger.NewField("value", value))
+		return ""
+	}
+	return getErrorFromWarehouse(valAsMap)
 }
 
 func getHTMLErrorMessage(erResStr string) string {
@@ -302,10 +327,21 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 	return regexdMsg
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
-	// version deprecation logic
+func getErrorCodeFromStatTags(statTags map[string]string) string {
+	var errorCodeParts []string
+	if len(statTags) > 0 {
+		if errorCategory, ok := statTags["errorCategory"]; ok {
+			errorCodeParts = append(errorCodeParts, errorCategory)
+		}
+		if errorType, ok := statTags["errorType"]; ok {
+			errorCodeParts = append(errorCodeParts, errorType)
+		}
+	}
+	return strings.Join(errorCodeParts, ":")
+}
+
+func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
 	var score int
-	var errorCode string
 
 	errorMessage = strings.ToLower(errorMessage)
 	for keyword, s := range lowercasedDeprecationKeywords {
@@ -314,8 +350,15 @@ func (ext *ExtractorHandle) GetErrorCode(errorMessage string) string {
 		}
 	}
 
-	if score > ext.versionDeprecationThresholdScore.Load() {
-		errorCode = "deprecation"
+	return score > ext.versionDeprecationThresholdScore.Load()
+}
+
+func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
+	if errorCode := getErrorCodeFromStatTags(statTags); errorCode != "" {
+		return errorCode
 	}
-	return errorCode
+	if ext.isVersionDeprecationError(errorMessage) {
+		return "deprecation"
+	}
+	return ""
 }
