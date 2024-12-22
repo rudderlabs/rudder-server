@@ -8,7 +8,7 @@ type EventsCountMap map[string]int
 
 func defaultStagingFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"wh_staging_files": 32,
+		"wh_staging_files": 28,
 	}
 }
 
@@ -21,11 +21,11 @@ func defaultStagingFilesWithIDResolutionEventsMap() EventsCountMap {
 func defaultTableUploadsEventsMap(destType string) EventsCountMap {
 	if destType == whutils.BQ {
 		return EventsCountMap{
-			"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
+			"identifies": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "_groups": 4,
 		}
 	} else {
 		return EventsCountMap{
-			"identifies": 4, "users": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
+			"identifies": 4, "tracks": 4, "product_track": 4, "pages": 4, "screens": 4, "aliases": 4, "groups": 4,
 		}
 	}
 }
