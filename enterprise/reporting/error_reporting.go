@@ -800,4 +800,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 func (edr *ErrorDetailReporter) Stop() {
 	edr.cancel()
 	_ = edr.g.Wait()
+	if edr.eventSampler != nil {
+		edr.eventSampler.Close()
+	}
 }
