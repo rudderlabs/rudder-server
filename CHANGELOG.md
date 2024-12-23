@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.3](https://github.com/rudderlabs/rudder-server/compare/v1.39.2...v1.39.3) (2024-12-23)
+
+
+### Bug Fixes
+
+* replay tracking plan bug ([#5389](https://github.com/rudderlabs/rudder-server/issues/5389)) ([74056f8](https://github.com/rudderlabs/rudder-server/commit/74056f8211b3ed5b4c3d0485753401371bc53751))
+
 ## [1.39.2](https://github.com/rudderlabs/rudder-server/compare/v1.39.1...v1.39.2) (2024-12-18)
 
 
