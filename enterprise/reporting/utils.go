@@ -50,9 +50,9 @@ func transformMetricWithEventSampling(metric types.PUReportedMetric, reportedAt 
 		return metric, nil
 	}
 
-	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
+	isValidSample := (metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}") || metric.StatusDetail.SampleResponse != ""
 
-	if isValidSampleEvent {
+	if isValidSample {
 		sampleEventBucket, _ := getAggregationBucketMinute(reportedAt, eventSamplingDuration)
 		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
 		found, err := eventSampler.Get(hash)
