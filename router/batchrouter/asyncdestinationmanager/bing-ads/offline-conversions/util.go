@@ -480,7 +480,6 @@ func calculateHashCode(data string) string {
 }
 
 func hashFields(input map[string]interface{}) (stdjson.RawMessage, error) {
-
 	// Create a new map to hold the hashed fields
 	hashedMap := make(map[string]interface{})
 
@@ -508,5 +507,4 @@ func hashFields(input map[string]interface{}) (stdjson.RawMessage, error) {
 	}
 
 	return json.RawMessage(result), nil
-
 }

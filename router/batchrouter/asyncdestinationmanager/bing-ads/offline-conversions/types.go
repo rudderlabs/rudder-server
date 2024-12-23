@@ -42,7 +42,7 @@ type DestinationConfig struct {
 	CustomerAccountID string `json:"customerAccountId"`
 	CustomerID        string `json:"customerId"`
 	RudderAccountID   string `json:"rudderAccountId"`
-	isHashRequired    bool   `json:"isHashRequired`
+	IsHashRequired    bool   `json:"isHashRequired"`
 }
 
 type ActionFileInfo struct {
