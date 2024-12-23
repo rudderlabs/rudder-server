@@ -15,13 +15,14 @@ type Client struct {
 	client *http.Client
 }
 type BingAdsBulkUploader struct {
-	destName      string
-	service       bingads.BulkServiceI
-	logger        logger.Logger
-	statsFactory  stats.Stats
-	client        Client
-	fileSizeLimit int64
-	eventsLimit   int64
+	destName       string
+	service        bingads.BulkServiceI
+	logger         logger.Logger
+	statsFactory   stats.Stats
+	client         Client
+	fileSizeLimit  int64
+	eventsLimit    int64
+	isHashRequired bool
 }
 type Message struct {
 	Fields json.RawMessage `json:"fields"`
@@ -41,6 +42,7 @@ type DestinationConfig struct {
 	CustomerAccountID string `json:"customerAccountId"`
 	CustomerID        string `json:"customerId"`
 	RudderAccountID   string `json:"rudderAccountId"`
+	isHashRequired    bool   `json:"isHashRequired`
 }
 
 type ActionFileInfo struct {
