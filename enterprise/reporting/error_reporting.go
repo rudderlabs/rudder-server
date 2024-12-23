@@ -178,12 +178,14 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	if !edr.config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
 		return func() {}
 	}
-	if _, err := dbHandle.ExecContext(
-		context.Background(),
-		fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
-	); err != nil {
-		edr.log.Errorn("error full vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
-		panic(err)
+	if edr.config.GetBool("Reporting.errorReporting.vacuumAtStartup", false) {
+		if _, err := dbHandle.ExecContext(
+			context.Background(),
+			fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
+		); err != nil {
+			edr.log.Errorn("error full vacuuming", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
+			panic(err)
+		}
 	}
 
 	return func() {
