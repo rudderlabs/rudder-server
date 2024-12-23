@@ -26,203 +26,6 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 	}
 	return m.schemas, nil
 }
-
-type mockFetchSchemaRepo struct {
-	schemaInWarehouse             model.Schema
-	unrecognizedSchemaInWarehouse model.Schema
-	err                           error
-}
-
-func (m *mockFetchSchemaRepo) FetchSchema(context.Context) (model.Schema, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-
-	return m.schemaInWarehouse, nil
-}
-
-func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
-	sourceID := "test_source_id"
-	destinationID := "test_destination_id"
-	namespace := "test_namespace"
-	destType := warehouseutils.RS
-	workspaceID := "test-workspace-id"
-	tableName := "test-table"
-	updatedTable := "updated_test_table"
-	updatedSchema := model.TableSchema{
-		"updated_test_int":       "int",
-		"updated_test_str":       "string",
-		"updated_test_bool":      "boolean",
-		"updated_test_float":     "float",
-		"updated_test_timestamp": "timestamp",
-		"updated_test_date":      "date",
-		"updated_test_datetime":  "datetime",
-	}
-
-	testCases := []struct {
-		name           string
-		mockSchema     model.Schema
-		mockErr        error
-		expectedSchema model.Schema
-		wantError      error
-	}{
-		{
-			name:           "no schema in warehouse",
-			mockSchema:     model.Schema{},
-			expectedSchema: model.Schema{},
-		},
-		{
-			name:       "error in fetching schema from warehouse",
-			mockSchema: model.Schema{},
-			mockErr:    errors.New("test error"),
-			wantError:  errors.New("fetching schema from warehouse: test error"),
-		},
-		{
-			name: "no deprecated columns",
-			mockSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":       "int",
-					"test_str":       "string",
-					"test_bool":      "boolean",
-					"test_float":     "float",
-					"test_timestamp": "timestamp",
-					"test_date":      "date",
-					"test_datetime":  "datetime",
-				},
-			},
-			expectedSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":       "int",
-					"test_str":       "string",
-					"test_bool":      "boolean",
-					"test_float":     "float",
-					"test_timestamp": "timestamp",
-					"test_date":      "date",
-					"test_datetime":  "datetime",
-				},
-			},
-		},
-		{
-			name: "invalid deprecated column format",
-			mockSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-			expectedSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-		},
-		{
-			name: "valid deprecated column format",
-			mockSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-					"test-deprecated-546a4f59-c303-474e-b2c7-cf37361b5c2f": "int",
-					"test-deprecated-c60bf1e9-7cbd-42d4-8a7d-af01f5ff7d8b": "string",
-					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
-				},
-			},
-			expectedSchema: model.Schema{
-				tableName: model.TableSchema{
-					"test_int":                 "int",
-					"test_str":                 "string",
-					"test_bool":                "boolean",
-					"test_float":               "float",
-					"test_timestamp":           "timestamp",
-					"test_date":                "date",
-					"test_datetime":            "datetime",
-					"test-deprecated-column":   "int",
-					"test-deprecated-column-1": "string",
-					"test-deprecated-column-2": "boolean",
-				},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			mockRepo := mockFetchSchemaRepo{
-				schemaInWarehouse:             tc.mockSchema,
-				unrecognizedSchemaInWarehouse: tc.mockSchema,
-				err:                           tc.mockErr,
-			}
-
-			s := &Schema{
-				warehouse: model.Warehouse{
-					Source: backendconfig.SourceT{
-						ID: sourceID,
-					},
-					Destination: backendconfig.DestinationT{
-						ID: destinationID,
-						DestinationDefinition: backendconfig.DestinationDefinitionT{
-							Name: destType,
-						},
-					},
-					WorkspaceID: workspaceID,
-					Namespace:   namespace,
-				},
-				log: logger.NOP,
-			}
-
-			ctx := context.Background()
-
-			require.Empty(t, s.GetTableSchema(tableName))
-			require.True(t, s.IsSchemaEmpty())
-
-			_, err := s.FetchSchemaFromWarehouse(ctx, &mockRepo)
-			if tc.wantError == nil {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err, fmt.Sprintf("got error %v, want error %v", err, tc.wantError))
-			}
-			require.Equal(t, tc.expectedSchema[tableName], s.GetTableSchema(tableName))
-			require.Equal(t, len(tc.expectedSchema[tableName]), s.GetColumnsCountInSchema(tableName))
-			if len(tc.expectedSchema) > 0 {
-				require.False(t, s.IsSchemaEmpty())
-			} else {
-				require.True(t, s.IsSchemaEmpty())
-			}
-			s.UpdateTableSchema(updatedTable, updatedSchema)
-			require.Equal(t, updatedSchema, s.GetTableSchema(updatedTable))
-			require.False(t, s.IsSchemaEmpty())
-		})
-	}
-}
-
 func TestSchema_TableSchemaDiff(t *testing.T) {
 	testCases := []struct {
 		name              string
@@ -334,12 +137,12 @@ func TestSchema_TableSchemaDiff(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := Schema{}
+			s := Schema{
+				localSchema: tc.currentSchema,
+			}
 			diff := s.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)
 		})
@@ -1358,8 +1161,6 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 		},
 	}
 	for _, tc := range testsCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

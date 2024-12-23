@@ -21,8 +21,11 @@ func (r *Router) syncRemoteSchema(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create warehouse manager: %w", err)
 		}
-
 		for _, warehouse := range warehouses {
+			err := whManager.Setup(ctx, warehouse, nil)
+			if err != nil {
+				return err
+			}
 			sh := schema.New(
 				r.db,
 				warehouse,
