@@ -51,7 +51,7 @@ jobs:
         if: ${{ failure() }}
         run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
       - name: Validate OpenAPI definition
-        uses: char0n/swagger-editor-validate@v1
+        uses: char0n/apidom-validate@v1
         with:
           definition-file: gateway/openapi.yaml
 
