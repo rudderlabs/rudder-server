@@ -108,7 +108,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, conf, log)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.BadgerEventSamplerMetricsPathName, conf, log)
 		if err != nil {
 			panic(err)
 		}
@@ -239,7 +239,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	bucketStart, bucketEnd := getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
@@ -318,7 +318,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
-	sampleEventBucket, _ := r.getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
+	sampleEventBucket, _ := getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -391,30 +391,6 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 	}
 
 	return values
-}
-
-func (*DefaultReporter) getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
-	// If interval is not a factor of 60, then the bucket start will not be aligned to hour start
-	// For example, if intervalMs is 7, and timeMs is 28891085 (6:05) then the bucket start will be 28891079 (5:59)
-	// and current bucket will contain the data of 2 different hourly buckets, which is should not have happened.
-	// To avoid this, we round the intervalMs to the nearest factor of 60.
-	if intervalMs <= 0 || 60%intervalMs != 0 {
-		factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
-		closestFactor := factors[0]
-		for _, factor := range factors {
-			if factor < intervalMs {
-				closestFactor = factor
-			} else {
-				break
-			}
-		}
-		intervalMs = closestFactor
-	}
-
-	bucketStart := timeMs - (timeMs % intervalMs)
-	bucketEnd := bucketStart + intervalMs
-
-	return bucketStart, bucketEnd
 }
 
 func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
@@ -538,7 +514,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					return err
 				}
 				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
-				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				bucketStart, bucketEnd := getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
@@ -662,63 +638,6 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 	return err
 }
 
-func isMetricPosted(status int) bool {
-	return status >= 200 && status < 300
-}
-
-func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
-	for i := range piiColumnsToExclude {
-		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
-	}
-	return piiColumnsToExclude
-}
-
-func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
-	for _, col := range piiColumns {
-		switch col {
-		case "sample_event":
-			metric.StatusDetail.SampleEvent = []byte(`{}`)
-		case "sample_response":
-			metric.StatusDetail.SampleResponse = ""
-		case "event_name":
-			metric.StatusDetail.EventName = ""
-		case "event_type":
-			metric.StatusDetail.EventType = ""
-		}
-	}
-
-	return metric
-}
-
-func (r *DefaultReporter) transformMetricWithEventSampling(metric types.PUReportedMetric, reportedAt int64) (types.PUReportedMetric, error) {
-	if r.eventSampler == nil {
-		return metric, nil
-	}
-
-	isValidSampleEvent := metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}"
-
-	if isValidSampleEvent {
-		sampleEventBucket, _ := r.getAggregationBucketMinute(reportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
-		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
-		found, err := r.eventSampler.Get(hash)
-		if err != nil {
-			return metric, err
-		}
-
-		if found {
-			metric.StatusDetail.SampleEvent = json.RawMessage(`{}`)
-			metric.StatusDetail.SampleResponse = ""
-		} else {
-			err := r.eventSampler.Put(hash)
-			if err != nil {
-				return metric, err
-			}
-		}
-	}
-	return metric, nil
-}
-
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -767,7 +686,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		}
 
 		if r.eventSamplingEnabled.Load() {
-			metric, err = r.transformMetricWithEventSampling(metric, reportedAt)
+			metric, err = transformMetricWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
 			if err != nil {
 				return err
 			}
