@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.39.3](https://github.com/rudderlabs/rudder-server/compare/v1.39.2...v1.39.3) (2024-12-23)
+
+
+### Bug Fixes
+
+* replay tracking plan bug ([#5389](https://github.com/rudderlabs/rudder-server/issues/5389)) ([74056f8](https://github.com/rudderlabs/rudder-server/commit/74056f8211b3ed5b4c3d0485753401371bc53751))
+
+## [1.39.2](https://github.com/rudderlabs/rudder-server/compare/v1.39.1...v1.39.2) (2024-12-18)
+
+
+### Miscellaneous
+
+* add error msg in the logs when gw req fails ([#5369](https://github.com/rudderlabs/rudder-server/issues/5369)) ([a0ef0f1](https://github.com/rudderlabs/rudder-server/commit/a0ef0f15ca456fc459233bf70c324cc60cfca7f0))
+
 ## [1.39.1](https://github.com/rudderlabs/rudder-server/compare/v1.39.0...v1.39.1) (2024-12-17)
 
 
@@ -67,6 +81,18 @@
 * upgrade dependencies ([#5288](https://github.com/rudderlabs/rudder-server/issues/5288)) ([1956ca4](https://github.com/rudderlabs/rudder-server/commit/1956ca4718b10ab285840bea338bf0822fb93aed))
 * upgrade major version pglock ([#5292](https://github.com/rudderlabs/rudder-server/issues/5292)) ([1f575ec](https://github.com/rudderlabs/rudder-server/commit/1f575ec2b5eac32df856ccf2d55ee2d40a516d8e))
 * webhook integration tests commandline ([#5286](https://github.com/rudderlabs/rudder-server/issues/5286)) ([1d3ac29](https://github.com/rudderlabs/rudder-server/commit/1d3ac296789c2c65753df4f65ff80d971f4c3a0b))
+
+## [1.38.4](https://github.com/rudderlabs/rudder-server/compare/v1.38.3...v1.38.4) (2024-12-04)
+
+
+### Bug Fixes
+
+* disable vacuum at startup for reporting ([#5325](https://github.com/rudderlabs/rudder-server/issues/5325)) ([d8fb8be](https://github.com/rudderlabs/rudder-server/commit/d8fb8be7a5ace45b6198579283b4f3b77cf71fbd))
+
+
+### Miscellaneous
+
+* remove full vacuum at flusher startup ([#5332](https://github.com/rudderlabs/rudder-server/issues/5332)) ([65ab23c](https://github.com/rudderlabs/rudder-server/commit/65ab23c79933d880dfef3dd8ff6e4a150f26435d))
 
 ## [1.38.3](https://github.com/rudderlabs/rudder-server/compare/v1.38.2...v1.38.3) (2024-11-20)
 

@@ -89,6 +89,10 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 			continue
 		}
 
+		transformerEvent := eventList[0]
+		destination := &transformerEvent.Destination
+		commonMetaData := makeCommonMetadataFromTransformerEvent(&transformerEvent)
+
 		validationStart := time.Now()
 		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
 		validationStat.tpValidationTime.Since(validationStart)
@@ -103,15 +107,9 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 		}
 
 		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanID, eventList[0].Metadata.TrackingPlanVersion)
-
-		transformerEvent := eventList[0]
-		destination := &transformerEvent.Destination
-		sourceID := transformerEvent.Metadata.SourceID
-		commonMetaData := makeCommonMetadataFromTransformerEvent(&transformerEvent)
-
 		// Set trackingPlanEnabledMap for the sourceID to true.
 		// This is being used to distinguish the flows in reporting service
-		trackingPlanEnabledMap[SourceIDT(sourceID)] = true
+		trackingPlanEnabledMap[sourceId] = true
 
 		var successMetrics []*types.PUReportedMetric
 		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, backendconfig.Connection{}, types.DESTINATION_FILTER, types.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
@@ -146,15 +144,16 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]trans
 func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.TransformerEvent) *transformer.Metadata {
 	metadata := transformerEvent.Metadata
 	commonMetaData := transformer.Metadata{
-		SourceID:        metadata.SourceID,
-		SourceName:      metadata.SourceName,
-		SourceType:      metadata.SourceType,
-		SourceCategory:  metadata.SourceCategory,
-		WorkspaceID:     metadata.WorkspaceID,
-		Namespace:       config.GetKubeNamespace(),
-		InstanceID:      misc.GetInstanceID(),
-		DestinationID:   metadata.DestinationID,
-		DestinationType: metadata.DestinationType,
+		SourceID:         metadata.SourceID,
+		SourceName:       metadata.SourceName,
+		SourceType:       metadata.SourceType,
+		SourceCategory:   metadata.SourceCategory,
+		WorkspaceID:      metadata.WorkspaceID,
+		Namespace:        config.GetKubeNamespace(),
+		InstanceID:       misc.GetInstanceID(),
+		DestinationID:    metadata.DestinationID,
+		DestinationType:  metadata.DestinationType,
+		OriginalSourceID: metadata.OriginalSourceID,
 	}
 	return &commonMetaData
 }
