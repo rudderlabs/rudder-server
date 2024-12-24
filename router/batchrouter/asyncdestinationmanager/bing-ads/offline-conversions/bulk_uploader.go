@@ -19,14 +19,13 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, client *Client, isHashRequired bool) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, isHashRequired bool) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
 		isHashRequired: isHashRequired,
 		destName:       destName,
 		service:        service,
 		logger:         logger.Child("BingAds").Child("BingAdsBulkUploader"),
 		statsFactory:   statsFactory,
-		client:         *client,
 		fileSizeLimit:  common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
 		eventsLimit:    common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 1000),
 	}
