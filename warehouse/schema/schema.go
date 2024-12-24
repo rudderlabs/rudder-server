@@ -246,8 +246,6 @@ func (sh *Schema) isIDResolutionEnabled() bool {
 }
 
 func (sh *Schema) UpdateLocalSchemaWithWarehouse(ctx context.Context, warehouseSchema model.Schema) error {
-	sh.localSchemaMu.RLock()
-	defer sh.localSchemaMu.RUnlock()
 	return sh.updateSchema(ctx, warehouseSchema)
 }
 

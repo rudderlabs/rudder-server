@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -22,9 +24,10 @@ func (r *Router) syncRemoteSchema(ctx context.Context) error {
 			return fmt.Errorf("failed to create warehouse manager: %w", err)
 		}
 		for _, warehouse := range warehouses {
-			err := whManager.Setup(ctx, warehouse, nil)
+			err := whManager.Setup(ctx, warehouse, warehouseutils.NewNoOpUploader())
 			if err != nil {
-				return err
+				r.logger.Errorn("failed to setup WH Manager", obskit.Error(err))
+				continue
 			}
 			sh := schema.New(
 				r.db,

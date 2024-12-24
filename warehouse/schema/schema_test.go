@@ -26,6 +26,7 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 	}
 	return m.schemas, nil
 }
+
 func TestSchema_TableSchemaDiff(t *testing.T) {
 	testCases := []struct {
 		name              string
