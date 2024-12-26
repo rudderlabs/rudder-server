@@ -799,7 +799,7 @@ func (jd *Handle) init() {
 	}
 
 	if jd.conf.payloadColumnType == 0 {
-		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetIntVar(2, 1, "JobsDB.payloadColumnType"))
+		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetIntVar(int(TEXT), 1, "JobsDB.payloadColumnType"))
 	}
 
 	if jd.stats == nil {
