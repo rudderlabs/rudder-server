@@ -2307,7 +2307,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
 		var job JobT
-		var payload Payload
+		var payload []byte
 		var jsState sql.NullString
 		var jsAttemptNum sql.NullInt64
 		var jsExecTime sql.NullTime
@@ -2323,7 +2323,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		if err != nil {
 			return JobsResult{}, false, err
 		}
-		job.EventPayload = payload.PayloadBytes()
+		job.EventPayload = payload
 		if jsState.Valid {
 			resultsetStates[jsState.String] = struct{}{}
 			job.LastJobStatus.JobState = jsState.String
@@ -2381,38 +2381,6 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		PayloadSize:   payloadSize,
 		EventsCount:   eventCount,
 	}, true, nil
-}
-
-type Payload struct {
-	S string
-	B []byte
-}
-
-func (p *Payload) PayloadBytes() []byte {
-	if p.B != nil {
-		return p.B
-	}
-	// return []byte(p.S)
-	buffer := new(bytes.Buffer)
-	if err := json.Compact(buffer, []byte(p.S)); err != nil {
-		return []byte(`{}`)
-	}
-
-	return buffer.Bytes()
-}
-
-func (p *Payload) Scan(src interface{}) error {
-	b, ok := src.([]byte)
-	if !ok {
-		s, ok := src.(string)
-		if !ok {
-			return errors.New("neither string nor bytes")
-		}
-		p.S = s
-		return nil
-	}
-	p.B = b
-	return nil
 }
 
 func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]map[string]map[ParameterFilterT]struct{}, err error) {
