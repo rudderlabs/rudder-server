@@ -10,11 +10,13 @@ import (
 )
 
 const (
-	BadgerTypeEventSampler        = "badger"
-	InMemoryCacheTypeEventSampler = "in_memory_cache"
-	BadgerEventSamplerPathName    = "/reporting-badger"
+	BadgerTypeEventSampler            = "badger"
+	InMemoryCacheTypeEventSampler     = "in_memory_cache"
+	BadgerEventSamplerMetricsPathName = "/metrics-reporting-badger"
+	BadgerEventSamplerErrorsPathName  = "/errors-reporting-badger"
 )
 
+//go:generate mockgen -destination=../../../mocks/enterprise/reporting/event_sampler/mock_event_sampler.go -package=mocks github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler EventSampler
 type EventSampler interface {
 	Put(key string) error
 	Get(key string) (bool, error)
@@ -26,18 +28,19 @@ func NewEventSampler(
 	ttl config.ValueLoader[time.Duration],
 	eventSamplerType config.ValueLoader[string],
 	eventSamplingCardinality config.ValueLoader[int],
+	badgerDBPath string,
 	conf *config.Config,
 	log logger.Logger,
 	stats stats.Stats,
 ) (es EventSampler, err error) {
 	switch eventSamplerType.Load() {
 	case BadgerTypeEventSampler:
-		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log, stats)
+		es, err = NewBadgerEventSampler(ctx, badgerDBPath, ttl, conf, log, stats)
 	case InMemoryCacheTypeEventSampler:
 		es, err = NewInMemoryCacheEventSampler(ctx, ttl, eventSamplingCardinality, stats)
 	default:
 		log.Warnf("invalid event sampler type: %s. Using default badger event sampler", eventSamplerType.Load())
-		es, err = NewBadgerEventSampler(ctx, BadgerEventSamplerPathName, ttl, conf, log, stats)
+		es, err = NewBadgerEventSampler(ctx, badgerDBPath, ttl, conf, log, stats)
 	}
 
 	if err != nil {

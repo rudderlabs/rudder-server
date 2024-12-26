@@ -27,7 +27,7 @@ func TestBadger(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -62,7 +62,7 @@ func TestBadger(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
 
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, stats.NOP)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, stats.NOP)
 		defer es.Close()
 
 		_ = es.Put("key1")
@@ -86,7 +86,7 @@ func TestInMemoryCache(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -119,7 +119,7 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not get evicted keys", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, stats.NOP)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, stats.NOP)
 		_ = es.Put("key1")
 
 		require.Eventually(t, func() bool {
@@ -133,7 +133,7 @@ func TestInMemoryCache(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -199,6 +199,7 @@ func BenchmarkEventSampler(b *testing.B) {
 				ttl,
 				eventSamplerType,
 				eventSamplingCardinality,
+				BadgerEventSamplerMetricsPathName,
 				conf,
 				log,
 				stats.NOP,
