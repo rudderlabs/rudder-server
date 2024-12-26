@@ -21,7 +21,7 @@ type StatsCollector struct {
 	putDuration stats.Measurement
 }
 
-func NewStatsCollector(eventSamplerType string, module string, statsFactory stats.Stats) *StatsCollector {
+func NewStatsCollector(eventSamplerType, module string, statsFactory stats.Stats) *StatsCollector {
 	tags := getTags(eventSamplerType, module)
 
 	return &StatsCollector{
@@ -49,6 +49,6 @@ func (sc *StatsCollector) RecordPutDuration(start time.Time) {
 	sc.putDuration.SendTiming(time.Since(start))
 }
 
-func getTags(eventSamplerType string, module string) stats.Tags {
+func getTags(eventSamplerType, module string) stats.Tags {
 	return stats.Tags{"type": eventSamplerType, "module": module}
 }
