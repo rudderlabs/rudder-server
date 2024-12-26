@@ -57,8 +57,14 @@ type StatusDetail struct {
 	EventType      string            `json:"eventType"`
 	ErrorType      string            `json:"errorType"`
 	ViolationCount int64             `json:"violationCount"`
-	StatTags       map[string]string `json:"statTags"`
+	ErrorDetails   ErrorDetails      `json:"-"`
+	StatTags       map[string]string `json:"-"`
 	FailedMessages []*FailedMessage  `json:"-"`
+}
+
+type ErrorDetails struct {
+	Code    string
+	Message string
 }
 
 type FailedMessage struct {
@@ -81,7 +87,8 @@ type InstanceDetails struct {
 }
 
 type ReportMetadata struct {
-	ReportedAt int64 `json:"reportedAt"`
+	ReportedAt        int64 `json:"reportedAt"`
+	SampleEventBucket int64 `json:"bucket"`
 }
 
 type Metric struct {
@@ -159,7 +166,7 @@ type ConnectionDetails struct {
 	SourceJobID             string `json:"sourceJobId"`
 	SourceJobRunID          string `json:"sourceJobRunId"`
 	SourceDefinitionID      string `json:"sourceDefinitionId"`
-	DestinationDefinitionID string `string:"destinationDefinitionId"`
+	DestinationDefinitionID string `json:"DestinationDefinitionId"`
 	SourceCategory          string `json:"sourceCategory"`
 	TransformationID        string `json:"transformationId"`
 	TransformationVersionID string `json:"transformationVersionId"`

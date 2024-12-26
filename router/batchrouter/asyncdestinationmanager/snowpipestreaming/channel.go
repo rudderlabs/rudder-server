@@ -65,10 +65,8 @@ func (m *Manager) addColumns(ctx context.Context, namespace, tableName string, c
 	defer func() {
 		snowflakeManager.Cleanup(ctx)
 	}()
-	for _, column := range columns {
-		if err = snowflakeManager.AddColumns(ctx, tableName, []whutils.ColumnInfo{column}); err != nil {
-			return fmt.Errorf("adding column: %w", err)
-		}
+	if err = snowflakeManager.AddColumns(ctx, tableName, columns); err != nil {
+		return fmt.Errorf("adding column: %w", err)
 	}
 	return nil
 }
