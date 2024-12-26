@@ -21,6 +21,7 @@ type InMemoryCacheEventSampler struct {
 
 func NewInMemoryCacheEventSampler(
 	ctx context.Context,
+	module string,
 	ttl config.ValueLoader[time.Duration],
 	limit config.ValueLoader[int],
 	stats stats.Stats,
@@ -35,7 +36,7 @@ func NewInMemoryCacheEventSampler(
 		ttl:    ttl,
 		limit:  limit,
 		length: 0,
-		sc:     NewStatsCollector(InMemoryCacheTypeEventSampler, stats),
+		sc:     NewStatsCollector(InMemoryCacheTypeEventSampler, module, stats),
 	}
 
 	es.cache.OnEvicted(func(key string, value bool) {

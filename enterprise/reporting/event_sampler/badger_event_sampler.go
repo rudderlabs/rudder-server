@@ -27,6 +27,10 @@ type BadgerEventSampler struct {
 	sc     *StatsCollector
 }
 
+func GetPathName(module string) string {
+	return "/" + module + "-badger"
+}
+
 func DefaultPath(pathName string) (string, error) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -37,13 +41,13 @@ func DefaultPath(pathName string) (string, error) {
 
 func NewBadgerEventSampler(
 	ctx context.Context,
-	pathName string,
+	module string,
 	ttl config.ValueLoader[time.Duration],
 	conf *config.Config,
 	log logger.Logger,
 	stats stats.Stats,
 ) (*BadgerEventSampler, error) {
-	dbPath, err := DefaultPath(pathName)
+	dbPath, err := DefaultPath(GetPathName(module))
 	if err != nil || dbPath == "" {
 		return nil, err
 	}
@@ -72,7 +76,7 @@ func NewBadgerEventSampler(
 		ctx:    ctx,
 		cancel: cancel,
 		wg:     sync.WaitGroup{},
-		sc:     NewStatsCollector(BadgerTypeEventSampler, stats),
+		sc:     NewStatsCollector(BadgerTypeEventSampler, module, stats),
 	}
 
 	if err != nil {

@@ -27,16 +27,18 @@ func TestBadger(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, MetricsReporting, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
-			"type": BadgerTypeEventSampler,
+			"type":   BadgerTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(3))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type": BadgerTypeEventSampler,
+			"type":   BadgerTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -45,10 +47,12 @@ func TestBadger(t *testing.T) {
 		val4, _ := es.Get("key4")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
-			"type": BadgerTypeEventSampler,
+			"type":   BadgerTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(4))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type": BadgerTypeEventSampler,
+			"type":   BadgerTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
@@ -62,7 +66,7 @@ func TestBadger(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
 
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, stats.NOP)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, MetricsReporting, conf, log, stats.NOP)
 		defer es.Close()
 
 		_ = es.Put("key1")
@@ -86,16 +90,18 @@ func TestInMemoryCache(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, MetricsReporting, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(3))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -104,10 +110,12 @@ func TestInMemoryCache(t *testing.T) {
 		val4, _ := es.Get("key4")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(4))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
@@ -119,7 +127,7 @@ func TestInMemoryCache(t *testing.T) {
 	t.Run("should not get evicted keys", func(t *testing.T) {
 		conf.Set("Reporting.eventSampling.durationInMinutes", 100)
 		assert.Equal(t, 100*time.Millisecond, ttl.Load())
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, stats.NOP)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, MetricsReporting, conf, log, stats.NOP)
 		_ = es.Put("key1")
 
 		require.Eventually(t, func() bool {
@@ -133,7 +141,7 @@ func TestInMemoryCache(t *testing.T) {
 		assert.Equal(t, 3000*time.Millisecond, ttl.Load())
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
-		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, BadgerEventSamplerMetricsPathName, conf, log, statsStore)
+		es, _ := NewEventSampler(ctx, ttl, eventSamplerType, eventSamplingCardinality, MetricsReporting, conf, log, statsStore)
 		_ = es.Put("key1")
 		_ = es.Put("key2")
 		_ = es.Put("key3")
@@ -141,10 +149,12 @@ func TestInMemoryCache(t *testing.T) {
 		_ = es.Put("key5")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(3))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -154,10 +164,12 @@ func TestInMemoryCache(t *testing.T) {
 		val5, _ := es.Get("key5")
 
 		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).LastValue(), float64(5))
 		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type": InMemoryCacheTypeEventSampler,
+			"type":   InMemoryCacheTypeEventSampler,
+			"module": MetricsReporting,
 		}).Durations()), 5)
 
 		assert.True(t, val1, "Expected key1 to be present")
@@ -199,7 +211,7 @@ func BenchmarkEventSampler(b *testing.B) {
 				ttl,
 				eventSamplerType,
 				eventSamplingCardinality,
-				BadgerEventSamplerMetricsPathName,
+				MetricsReporting,
 				conf,
 				log,
 				stats.NOP,
