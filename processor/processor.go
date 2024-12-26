@@ -793,7 +793,7 @@ func (proc *Handle) loadConfig() {
 	}
 
 	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
-	proc.config.disableStoreMerge = config.GetReloadableBoolVar(true, "Processor.disableStoreMerge")
+	proc.config.disableStoreMerge = config.GetReloadableBoolVar(false, "Processor.disableStoreMerge")
 	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
 	// Enable dedup of incoming events by default
