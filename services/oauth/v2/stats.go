@@ -5,9 +5,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
+
+const OAUTH_V2_STAT_PREFIX = "oauth_action"
 
 type OAuthStats struct {
 	stats           stats.Stats
@@ -50,26 +54,14 @@ func NewStatsHandlerFromOAuthStats(oauthStats *OAuthStats) OAuthStatsHandler {
 	}
 }
 
-func (m *OAuthStatsHandler) mergeTags(tags stats.Tags) stats.Tags {
-	allTags := m.defaultTags
-	for key, value := range tags {
-		allTags[key] = value
-	}
-	return allTags
-}
-
-func (m *OAuthStatsHandler) getStatName(suffix string) string {
-	return strings.Join([]string{"oauth_action", suffix}, "_")
-}
-
 func (m *OAuthStatsHandler) Increment(statSuffix string, tags stats.Tags) {
-	statName := m.getStatName(statSuffix)
-	allTags := m.mergeTags(tags)
+	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
+	allTags := lo.Assign(m.defaultTags, tags)
 	m.stats.NewTaggedStat(statName, stats.CountType, allTags).Increment()
 }
 
 func (m *OAuthStatsHandler) SendTiming(startTime time.Time, statSuffix string, tags stats.Tags) {
-	statName := m.getStatName(statSuffix)
-	allTags := m.mergeTags(tags)
+	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
+	allTags := lo.Assign(m.defaultTags, tags)
 	m.stats.NewTaggedStat(statName, stats.TimerType, allTags).SendTiming(time.Since(startTime))
 }
