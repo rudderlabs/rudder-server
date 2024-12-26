@@ -2,19 +2,24 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (r *Router) syncRemoteSchema(ctx context.Context) error {
+type syncSchemaRepo interface {
+	GetLocalSchema(ctx context.Context) (model.Schema, error)
+	UpdateLocalSchemaWithWarehouse(ctx context.Context, schema model.Schema) error
+	HasSchemaChanged(schema model.Schema) bool
+	FetchSchemaFromWarehouse(ctx context.Context, m schema.FetchSchemaRepo) (model.Schema, error)
+}
+
+func (r *Router) sync(ctx context.Context) error {
 	for {
 		r.configSubscriberLock.RLock()
 		warehouses := append([]model.Warehouse{}, r.warehouses...)
@@ -37,10 +42,12 @@ func (r *Router) syncRemoteSchema(ctx context.Context) error {
 				r.logger.Child("syncer"),
 				r.statsFactory,
 			)
-			if err := r.SyncRemoteSchema(ctx, whManager, sh); err != nil {
+			if err := r.syncRemoteSchema(ctx, whManager, sh); err != nil {
 				r.logger.Errorn("failed to sync schema", obskit.Error(err))
+				whManager.Cleanup(ctx)
 				continue
 			}
+			whManager.Cleanup(ctx)
 		}
 		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)
 		select {
@@ -52,8 +59,8 @@ func (r *Router) syncRemoteSchema(ctx context.Context) error {
 	}
 }
 
-func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *schema.Schema) error {
-	localSchema, err := sh.GetLocalSchema(ctx)
+func (r *Router) syncRemoteSchema(ctx context.Context, m schema.FetchSchemaRepo, sh syncSchemaRepo) error {
+	_, err := sh.GetLocalSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -63,9 +70,6 @@ func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *sc
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	res, _ := json.Marshal(schemaFromWarehouse)
-	res2, _ := json.Marshal(localSchema)
-	r.logger.Infof("schema from warehouse %v with local schema %v", string(res), string(res2))
 	if sh.HasSchemaChanged(schemaFromWarehouse) {
 		err := sh.UpdateLocalSchemaWithWarehouse(ctx, schemaFromWarehouse)
 		if err != nil {

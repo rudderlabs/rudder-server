@@ -40,7 +40,7 @@ type stagingFileRepo interface {
 	GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error)
 }
 
-type fetchSchemaRepo interface {
+type FetchSchemaRepo interface {
 	FetchSchema(ctx context.Context) (model.Schema, error)
 }
 
@@ -309,7 +309,7 @@ func (sh *Schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 // 1. Fetches schema from warehouse
 // 2. Removes deprecated columns from schema
 // 3. Updates local warehouse schema and unrecognized schema instance
-func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) (model.Schema, error) {
+func (sh *Schema) FetchSchemaFromWarehouse(ctx context.Context, repo FetchSchemaRepo) (model.Schema, error) {
 	warehouseSchema, err := repo.FetchSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching schema: %w", err)

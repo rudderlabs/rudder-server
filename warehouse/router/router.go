@@ -11,9 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -204,7 +203,7 @@ func (r *Router) Start(ctx context.Context) error {
 		return r.CronTracker(gCtx)
 	}))
 	g.Go(crash.NotifyWarehouse(func() error {
-		return r.syncRemoteSchema(gCtx)
+		return r.sync(gCtx)
 	}))
 	return g.Wait()
 }
