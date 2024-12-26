@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -62,8 +63,10 @@ func (r *Router) SyncRemoteSchema(ctx context.Context, m manager.Manager, sh *sc
 		return fmt.Errorf("fetching schema from warehouse: %w", err)
 	}
 
-	schemaChanged := sh.HasSchemaChanged(localSchema)
-	if schemaChanged {
+	res, _ := json.Marshal(schemaFromWarehouse)
+	res2, _ := json.Marshal(localSchema)
+	r.logger.Infof("schema from warehouse %v with local schema %v", string(res), string(res2))
+	if sh.HasSchemaChanged(schemaFromWarehouse) {
 		err := sh.UpdateLocalSchemaWithWarehouse(ctx, schemaFromWarehouse)
 		if err != nil {
 			return fmt.Errorf("updating local schema: %w", err)
