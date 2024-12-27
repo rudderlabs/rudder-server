@@ -628,7 +628,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 		`with combinedResult as (
 			select
 			(select count(*) from %[1]q) as totalJobCount,
-			(select count(*) from %[2]q where job_state = ANY($1)) as terminalJobCount,
+			(select count(*) from "v_last_%[2]s" where job_state = ANY($1)) as terminalJobCount,
 			(select created_at from %[1]q order by job_id desc limit 1) as maxCreatedAt,
 			COALESCE((select exec_time < $2 from %[2]q where job_state = ANY($1) order by id asc limit 1), false) as retentionExpired
 		)
