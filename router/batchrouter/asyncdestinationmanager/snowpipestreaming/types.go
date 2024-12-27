@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -25,6 +26,7 @@ type (
 		statsFactory        stats.Stats
 		destination         *backendconfig.DestinationT
 		requestDoer         requestDoer
+		managerCreator      func(mCtx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, mLogger logger.Logger, stats stats.Stats) (manager.Manager, error)
 		now                 func() time.Time
 		api                 api
 		channelCache        sync.Map
@@ -45,6 +47,7 @@ type (
 			instanceID        string
 			maxBufferCapacity config.ValueLoader[int64]
 		}
+		authzBackoff *authzBackoff
 
 		stats struct {
 			jobs struct {
@@ -127,6 +130,15 @@ type (
 		destination  *backendconfig.DestinationT
 		api
 	}
+
+	authzBackoff struct {
+		// time at which the an attempt was made to create a resource but it failed likely due to permission issues.
+		lastestErrorTime time.Time
+		// If lastAttemptedTime is not zero, then the next attempt to create a SF connection will be made after backoffDuration.
+		// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
+		backoffDuration        time.Duration
+		initialBackoffDuration time.Duration
+	}
 )
 
 func (d *destConfig) Decode(m map[string]interface{}) error {
@@ -148,4 +160,28 @@ func (e *event) setUUIDTimestamp(formattedTimestamp string) {
 	if _, columnExists := e.Message.Metadata.Columns[uuidTimestampColumn]; columnExists {
 		e.Message.Data[uuidTimestampColumn] = formattedTimestamp
 	}
+}
+
+func newAuthzBackoff(initialBackoffDuration time.Duration) *authzBackoff {
+	return &authzBackoff{
+		initialBackoffDuration: initialBackoffDuration,
+	}
+}
+
+func (abe *authzBackoff) set() {
+	abe.lastestErrorTime = time.Now()
+	if abe.backoffDuration == 0 {
+		abe.backoffDuration = abe.initialBackoffDuration
+	} else {
+		abe.backoffDuration = abe.backoffDuration * 2
+	}
+}
+
+func (abe *authzBackoff) reset() {
+	abe.lastestErrorTime = time.Time{}
+	abe.backoffDuration = 0
+}
+
+func (abe *authzBackoff) nextBackoffTime() time.Time {
+	return abe.lastestErrorTime.Add(abe.backoffDuration)
 }

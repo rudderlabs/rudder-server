@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -38,13 +40,13 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(
 	conf *config.Config,
-	logger logger.Logger,
+	mLogger logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 ) *Manager {
 	m := &Manager{
 		appConfig: conf,
-		logger: logger.Child("snowpipestreaming").Withn(
+		logger: mLogger.Child("snowpipestreaming").Withn(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
@@ -67,6 +69,7 @@ func New(
 	m.config.client.retryMax = conf.GetInt("SnowpipeStreaming.Client.retryMax", 5)
 	m.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
+	m.authzBackoff = newAuthzBackoff(conf.GetDuration("SnowpipeStreaming.backoffDuration", 1, time.Second))
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -100,6 +103,17 @@ func New(
 		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
+	m.managerCreator = func(mCtx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, stats stats.Stats) (manager.Manager, error) {
+		sf, err := manager.New(whutils.SnowpipeStreaming, conf, logger, stats)
+		if err != nil {
+			return nil, fmt.Errorf("creating snowflake manager: %w", err)
+		}
+		err = sf.Setup(mCtx, modelWarehouse, whutils.NewNoOpUploader())
+		if err != nil {
+			return nil, fmt.Errorf("setting up snowflake manager: %w", err)
+		}
+		return sf, nil
+	}
 	return m
 }
 
@@ -149,10 +163,23 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// backoff should be reset if authz error is not encountered for any of the tables
+	shouldResetBackoff := true
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		var authzErr *snowpipeAuthzError
+		if errors.As(err, &authzErr) {
+			// Ignoring this error so that the jobs are marked as failed and not aborted since
+			// we want these jobs to be retried the next time.
+			m.logger.Warnn("Failed to initialize channel with schema",
+				logger.NewStringField("table", discardsTable()),
+				obskit.Error(err),
+			)
+			shouldResetBackoff = false
+		} else {
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		}
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -187,6 +214,12 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
+			var authzErr *snowpipeAuthzError
+			if errors.As(err, &authzErr) {
+				if shouldResetBackoff {
+					shouldResetBackoff = false
+				}
+			}
 			m.logger.Warnn("Failed to send events to Snowpipe",
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
@@ -205,6 +238,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			discardImportInfo.Count += discardImInfo.Count
 			discardImportInfo.Offset = discardImInfo.Offset
 		}
+	}
+	if shouldResetBackoff {
+		m.authzBackoff.reset()
 	}
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
