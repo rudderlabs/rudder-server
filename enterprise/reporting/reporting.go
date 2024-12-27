@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -75,10 +76,15 @@ type DefaultReporter struct {
 	requestLatency            stats.Measurement
 	stats                     stats.Stats
 	maxReportsCountInARequest config.ValueLoader[int]
+
+	eventSamplingEnabled  config.ValueLoader[bool]
+	eventSamplingDuration config.ValueLoader[time.Duration]
+	eventSampler          event_sampler.EventSampler
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
 	var dbQueryTimeout *config.Reloadable[time.Duration]
+	var eventSampler event_sampler.EventSampler
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
@@ -90,10 +96,22 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	maxOpenConnections := config.GetIntVar(32, 1, "Reporting.maxOpenConnections")
 	dbQueryTimeout = config.GetReloadableDurationVar(60, time.Second, "Reporting.dbQueryTimeout")
 	maxReportsCountInARequest := conf.GetReloadableIntVar(10, 1, "Reporting.maxReportsCountInARequest")
+	eventSamplingEnabled := conf.GetReloadableBoolVar(false, "Reporting.eventSampling.enabled")
+	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
+	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
+	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+	}
+
+	if eventSamplingEnabled.Load() {
+		var err error
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.BadgerEventSamplerMetricsPathName, conf, log)
+		if err != nil {
+			panic(err)
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -118,6 +136,9 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		dbQueryTimeout:                       dbQueryTimeout,
 		maxReportsCountInARequest:            maxReportsCountInARequest,
 		stats:                                stats,
+		eventSamplingEnabled:                 eventSamplingEnabled,
+		eventSamplingDuration:                eventSamplingDuration,
+		eventSampler:                         eventSampler,
 	}
 }
 
@@ -164,9 +185,11 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	if !config.GetBool("Reporting.syncer.enabled", true) {
 		return func() {}
 	}
-	if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
-		r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
-		panic(err)
+	if config.GetBool("Reporting.syncer.vacuumAtStartup", false) {
+		if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
+			r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
+			panic(err)
+		}
 	}
 	return func() {
 		r.g.Go(func() error {
@@ -216,14 +239,32 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := r.getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	bucketStart, bucketEnd := getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
-	sqlStatement = fmt.Sprintf(`SELECT %s, MAX(reported_at), (ARRAY_AGG(sample_response order by id))[1], (ARRAY_AGG(sample_event order by id))[1], SUM(count), SUM(violation_count) FROM %s WHERE reported_at >= $1 and reported_at < $2 GROUP BY %s`, groupByColumns, ReportsTable, groupByColumns)
+	sqlStatement = fmt.Sprintf(`
+    SELECT 
+        %s, MAX(reported_at),
+        COALESCE(
+            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
+            ''
+        ) AS sample_response,
+        COALESCE(
+            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
+            '{}'::jsonb
+        ) AS sample_event,
+        SUM(count),
+        SUM(violation_count)
+    FROM 
+        %s
+    WHERE 
+        reported_at >= $1 and reported_at < $2
+		GROUP BY 
+        %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
@@ -277,6 +318,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
+	sampleEventBucket, _ := getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -328,7 +370,8 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 					InitialPU:  report.InitialPU,
 				},
 				ReportMetadata: types.ReportMetadata{
-					ReportedAt: report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					ReportedAt:        report.ReportedAt * 60 * 1000, // send reportedAt in milliseconds
+					SampleEventBucket: sampleEventBucket * 60 * 1000,
 				},
 			}
 			values = append(values, metricsByGroup[identifier])
@@ -348,30 +391,6 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 	}
 
 	return values
-}
-
-func (*DefaultReporter) getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
-	// If interval is not a factor of 60, then the bucket start will not be aligned to hour start
-	// For example, if intervalMs is 7, and timeMs is 28891085 (6:05) then the bucket start will be 28891079 (5:59)
-	// and current bucket will contain the data of 2 different hourly buckets, which is should not have happened.
-	// To avoid this, we round the intervalMs to the nearest factor of 60.
-	if intervalMs <= 0 || 60%intervalMs != 0 {
-		factors := []int64{1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60}
-		closestFactor := factors[0]
-		for _, factor := range factors {
-			if factor < intervalMs {
-				closestFactor = factor
-			} else {
-				break
-			}
-		}
-		intervalMs = closestFactor
-	}
-
-	bucketStart := timeMs - (timeMs % intervalMs)
-	bucketEnd := bucketStart + intervalMs
-
-	return bucketStart, bucketEnd
 }
 
 func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
@@ -495,7 +514,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					return err
 				}
 				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
-				bucketStart, bucketEnd := r.getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				bucketStart, bucketEnd := getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
@@ -619,35 +638,6 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 	return err
 }
 
-func isMetricPosted(status int) bool {
-	return status >= 200 && status < 300
-}
-
-func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
-	for i := range piiColumnsToExclude {
-		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
-	}
-	return piiColumnsToExclude
-}
-
-func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
-	for _, col := range piiColumns {
-		switch col {
-		case "sample_event":
-			metric.StatusDetail.SampleEvent = []byte(`{}`)
-		case "sample_response":
-			metric.StatusDetail.SampleResponse = ""
-		case "event_name":
-			metric.StatusDetail.EventName = ""
-		case "event_type":
-			metric.StatusDetail.EventType = ""
-		}
-	}
-
-	return metric
-}
-
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	if len(metrics) == 0 {
 		return nil
@@ -693,6 +683,13 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
+
+		if r.eventSamplingEnabled.Load() {
+			metric, err = transformMetricWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
+			if err != nil {
+				return err
+			}
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)
@@ -746,4 +743,8 @@ func (r *DefaultReporter) getTags(label string) stats.Tags {
 func (r *DefaultReporter) Stop() {
 	r.cancel()
 	_ = r.g.Wait()
+
+	if r.eventSampler != nil {
+		r.eventSampler.Close()
+	}
 }

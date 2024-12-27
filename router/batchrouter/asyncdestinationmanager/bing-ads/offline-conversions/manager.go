@@ -49,9 +49,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		TokenSource:    &token,
 	}
 	session := bingads.NewSession(sessionConfig)
-
-	clientNew := Client{}
-	bingUploader := NewBingAdsBulkUploader(logger, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), &clientNew)
+	bingUploader := NewBingAdsBulkUploader(logger, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), destConfig.IsHashRequired)
 	return bingUploader, nil
 }
 
