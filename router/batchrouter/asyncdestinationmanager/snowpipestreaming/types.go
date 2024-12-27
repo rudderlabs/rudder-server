@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -169,7 +170,7 @@ func newAuthzBackoff(initialBackoffDuration time.Duration) *authzBackoff {
 }
 
 func (abe *authzBackoff) set() {
-	abe.lastestErrorTime = time.Now()
+	abe.lastestErrorTime = timeutil.Now()
 	if abe.backoffDuration == 0 {
 		abe.backoffDuration = abe.initialBackoffDuration
 	} else {
