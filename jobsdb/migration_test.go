@@ -404,7 +404,7 @@ func TestMigration(t *testing.T) {
 		)
 		require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
 
-		jobDB.conf.payloadColumnType = 1
+		jobDB.conf.payloadColumnType = "bytea"
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
@@ -461,7 +461,7 @@ func TestMigration(t *testing.T) {
 		}
 
 		c.Set("JobsDB.maxDSSize", 100000)
-		jobDB.conf.payloadColumnType = 2
+		jobDB.conf.payloadColumnType = "text"
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // waits for last loop to finish
 
@@ -537,7 +537,7 @@ func TestPayloadLiteral(t *testing.T) {
 	byteJD := Handle{
 		config: c,
 	}
-	byteJD.conf.payloadColumnType = 1
+	byteJD.conf.payloadColumnType = "bytea"
 	require.NoError(t, byteJD.Setup(
 		ReadWrite,
 		true,
@@ -548,7 +548,7 @@ func TestPayloadLiteral(t *testing.T) {
 	jsonbJD := Handle{
 		config: c,
 	}
-	jsonbJD.conf.payloadColumnType = 0
+	jsonbJD.conf.payloadColumnType = "jsonb"
 	require.NoError(t, jsonbJD.Setup(
 		ReadWrite,
 		true,
@@ -559,7 +559,7 @@ func TestPayloadLiteral(t *testing.T) {
 	textJD := Handle{
 		config: c,
 	}
-	textJD.conf.payloadColumnType = 2
+	textJD.conf.payloadColumnType = "text"
 	require.NoError(t, textJD.Setup(
 		ReadWrite,
 		true,

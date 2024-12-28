@@ -46,7 +46,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			err := jd.doMigrateDS(timeoutCtx)
 			jd.stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 			if err != nil {
-				return fmt.Errorf("failed to migrate ds: %w", err)
+				return fmt.Errorf("migrate ds: %w", err)
 			}
 			return nil
 		}
@@ -85,7 +85,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
 			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
-				return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
+				return fmt.Errorf("acquire dsMigrationLock: %w", ctx.Err())
 			}
 			defer jd.dsMigrationLock.Unlock()
 			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
@@ -122,16 +122,16 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 
 				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
 				if err != nil {
-					return fmt.Errorf("failed to marshal journal payload: %w", err)
+					return fmt.Errorf("marshal journal payload: %w", err)
 				}
 
 				opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
 				if err != nil {
-					return fmt.Errorf("failed to mark journal start: %w", err)
+					return fmt.Errorf("mark journal start: %w", err)
 				}
 
 				if err = jd.createDSTablesInTx(ctx, tx, destination); err != nil {
-					return fmt.Errorf("failed to create dataset tables: %w", err)
+					return fmt.Errorf("create dataset tables: %w", err)
 				}
 
 				totalJobsMigrated := 0
@@ -146,7 +146,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 						)
 						noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source.ds, destination)
 						if err != nil {
-							return fmt.Errorf("failed to migrate jobs: %w", err)
+							return fmt.Errorf("migrate jobs: %w", err)
 						}
 						jd.assert(
 							noJobsMigrated == source.numJobsPending,
@@ -168,29 +168,29 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					return fmt.Errorf("create %v indices: %w", destination, err)
 				}
 				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
-					return fmt.Errorf("failed to mark journal done: %w", err)
+					return fmt.Errorf("mark journal done: %w", err)
 				}
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
 
 			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
 			if err != nil {
-				return fmt.Errorf("failed to marshal journal payload: %w", err)
+				return fmt.Errorf("marshal journal payload: %w", err)
 			}
 			opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
 			if err != nil {
-				return fmt.Errorf("failed to mark journal start: %w", err)
+				return fmt.Errorf("mark journal start: %w", err)
 			}
 			// acquire an async lock, as this needs to be released after the transaction commits
 			l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to acquire lock: %w", err)
+				return fmt.Errorf("acquire lock: %w", err)
 			}
 			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
-				return fmt.Errorf("failed to post migrate handle ds: %w", err)
+				return fmt.Errorf("post migrate handle ds: %w", err)
 			}
 			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
-				return fmt.Errorf("failed to mark journal done: %w", err)
+				return fmt.Errorf("mark journal done: %w", err)
 			}
 			return nil
 		})
@@ -200,7 +200,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		defer func() { lockChan <- l }()
 		if err == nil {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
-				return fmt.Errorf("failed to refresh ds range list: %w", err)
+				return fmt.Errorf("refresh ds range list: %w", err)
 			}
 		}
 
@@ -506,21 +506,19 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	// find colummn types first - to differentiate between `text`, `bytea` and `jsonb`
 	rows, err := tx.QueryContext(
 		ctx,
-		fmt.Sprintf(
-			`select table_name, data_type
-			from information_schema.columns
-			where table_name IN ('%[1]s', '%[2]s') and column_name='event_payload';`,
-			srcDS.JobTable, destDS.JobTable,
-		),
+		`select table_name, data_type
+		from information_schema.columns
+		where table_name IN (?, ?) and column_name='event_payload';`,
+		srcDS.JobTable, destDS.JobTable,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get column types: %w", err)
+		return 0, fmt.Errorf("get column types: %w", err)
 	}
 	defer rows.Close()
 	var jobsTable, columnType string
 	for rows.Next() {
 		if err = rows.Scan(&jobsTable, &columnType); err != nil {
-			return 0, fmt.Errorf("failed to scan column types: %w", err)
+			return 0, fmt.Errorf("scan column types: %w", err)
 		}
 		if columnType != "bytea" && columnType != "jsonb" && columnType != "text" {
 			return 0, fmt.Errorf("unsupported column type %s", columnType)
