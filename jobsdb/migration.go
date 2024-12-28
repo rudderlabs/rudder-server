@@ -508,7 +508,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		ctx,
 		`select table_name, data_type
 		from information_schema.columns
-		where table_name IN (?, ?) and column_name='event_payload';`,
+		where table_name IN ($1, $2) and column_name='event_payload';`,
 		srcDS.JobTable, destDS.JobTable,
 	)
 	if err != nil {

@@ -537,33 +537,33 @@ func TestPayloadLiteral(t *testing.T) {
 	byteJD := Handle{
 		config: c,
 	}
-	byteJD.conf.payloadColumnType = "bytea"
+	byteJD.conf.payloadColumnType = BYTEA
 	require.NoError(t, byteJD.Setup(
 		ReadWrite,
 		true,
-		"bytea",
+		string(BYTEA),
 	))
 	defer byteJD.TearDown()
 
 	jsonbJD := Handle{
 		config: c,
 	}
-	jsonbJD.conf.payloadColumnType = "jsonb"
+	jsonbJD.conf.payloadColumnType = JSONB
 	require.NoError(t, jsonbJD.Setup(
 		ReadWrite,
 		true,
-		"jsonb",
+		string(JSONB),
 	))
 	defer jsonbJD.TearDown()
 
 	textJD := Handle{
 		config: c,
 	}
-	textJD.conf.payloadColumnType = "text"
+	textJD.conf.payloadColumnType = TEXT
 	require.NoError(t, textJD.Setup(
 		ReadWrite,
 		true,
-		"text",
+		string(TEXT),
 	))
 	defer textJD.TearDown()
 
@@ -573,7 +573,7 @@ func TestPayloadLiteral(t *testing.T) {
 	require.NoError(t, textJD.Store(ctx, jobs))
 	require.NoError(t, jsonbJD.Store(ctx, jobs))
 
-	prefixes := []string{"text", "jsonb", "bytea"}
+	prefixes := []string{string(TEXT), string(JSONB), string(BYTEA)}
 	for i := range prefixes {
 		_, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %[1]s_job_status_1 DROP CONSTRAINT fk_%[1]s_job_status_1_job_id`, prefixes[i]))
 		require.NoError(t, err)
@@ -603,7 +603,7 @@ func TestPayloadLiteral(t *testing.T) {
 					Index:          "1",
 				},
 			)
-			require.NoError(t, err)
+			require.NoError(t, err, src, dest)
 		}
 	}
 	require.NoError(t, txn.Commit())

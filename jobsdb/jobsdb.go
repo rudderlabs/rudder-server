@@ -83,9 +83,9 @@ type payloadColumnType string
 
 const (
 	JSONB payloadColumnType = "jsonb"
-	BYTEA                   = "bytea"
-	TEXT                    = "text"
-	// JSON	// Explore afterwards?
+	BYTEA payloadColumnType = "bytea"
+	TEXT  payloadColumnType = "text"
+	// JSON	??
 )
 
 // QueryConditions holds jobsdb query conditions
@@ -720,13 +720,13 @@ func WithStats(s stats.Stats) OptsFunc {
 
 func WithBinaryPayload() OptsFunc {
 	return func(jd *Handle) {
-		jd.conf.payloadColumnType = "bytea"
+		jd.conf.payloadColumnType = BYTEA
 	}
 }
 
 func WithTextPayload() OptsFunc {
 	return func(jd *Handle) {
-		jd.conf.payloadColumnType = "text"
+		jd.conf.payloadColumnType = TEXT
 	}
 }
 
@@ -798,8 +798,8 @@ func (jd *Handle) init() {
 		jd.config = config.Default
 	}
 
-	if jd.conf.payloadColumnType == "" {
-		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetStringVar(TEXT, "JobsDB.payloadColumnType"))
+	if string(jd.conf.payloadColumnType) == "" {
+		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetStringVar(string(TEXT), "JobsDB.payloadColumnType"))
 	}
 
 	if jd.stats == nil {
@@ -1461,14 +1461,16 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
-	var payloadColumnType string
+	var columnType payloadColumnType
 	switch jd.conf.payloadColumnType {
 	case JSONB:
-		payloadColumnType = "JSONB"
+		columnType = JSONB
 	case BYTEA:
-		payloadColumnType = "BYTEA"
-	case TEXT:
-		payloadColumnType = "TEXT"
+		columnType = BYTEA
+	// case TEXT:
+	// 	columnType = TEXT
+	default:
+		columnType = TEXT
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
@@ -1477,7 +1479,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		user_id TEXT NOT NULL,
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
-		event_payload `+payloadColumnType+` NOT NULL,
+		event_payload `+string(columnType)+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {

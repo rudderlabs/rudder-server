@@ -1027,7 +1027,7 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 func TestJobsDB_SanitizeJSON(t *testing.T) {
 	_ = startPostgres(t)
 	conf := config.New()
-	conf.Set("JobsDB.payloadColumnType", 0)
+	conf.Set("JobsDB.payloadColumnType", "jsonb")
 	jobDB := Handle{config: conf}
 	ch := func(n int) string {
 		return strings.Repeat("�", n)
@@ -1114,7 +1114,7 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	}
 	jobDB.TearDown()
 
-	conf.Set("JobsDB.payloadColumnType", 2)
+	conf.Set("JobsDB.payloadColumnType", "text")
 	textDB := &Handle{config: conf}
 	require.NoError(t, textDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
 
@@ -1197,7 +1197,7 @@ func TestJobsDB_SanitizeJSON(t *testing.T) {
 	}
 	textDB.TearDown()
 
-	conf.Set("JobsDB.payloadColumnType", 1)
+	conf.Set("JobsDB.payloadColumnType", "bytea")
 	byteaDB := &Handle{config: conf}
 	require.NoError(t, byteaDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
 
