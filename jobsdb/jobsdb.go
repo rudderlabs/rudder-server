@@ -73,12 +73,6 @@ const (
 	pgErrorCodeTableReadonly         = "RS001"
 )
 
-var payloadTypes = map[payloadColumnType]string{
-	JSONB: "jsonb",
-	TEXT:  "text",
-	BYTEA: "bytea",
-}
-
 type payloadColumnType string
 
 const (
