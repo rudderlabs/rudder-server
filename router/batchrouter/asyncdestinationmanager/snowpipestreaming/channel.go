@@ -12,11 +12,26 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type snowpipeAuthzError struct {
-	err error
+type errCode int
+
+const (
+	errBackoff errCode = iota
+	errAuthz
+)
+
+type snowflakeConnectionErr struct {
+	code errCode
+	err  error
 }
 
-func (sae *snowpipeAuthzError) Error() string {
+func newSnowflakeConnectionErr(code errCode, err error) *snowflakeConnectionErr {
+	return &snowflakeConnectionErr{
+		code: code,
+		err:  err,
+	}
+}
+
+func (sae *snowflakeConnectionErr) Error() string {
 	return sae.err.Error()
 }
 
@@ -74,8 +89,7 @@ func (m *Manager) addColumns(ctx context.Context, namespace, tableName string, c
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err = snowflakeManager.AddColumns(ctx, tableName, columns); err != nil {
-		m.authzBackoff.set()
-		return &snowpipeAuthzError{fmt.Errorf("adding column: %w", err)}
+		return newSnowflakeConnectionErr(errAuthz, fmt.Errorf("adding column: %w", err))
 	}
 	return nil
 }
@@ -166,12 +180,10 @@ func (m *Manager) handleSchemaError(
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateSchema(ctx); err != nil {
-		m.authzBackoff.set()
-		return nil, &snowpipeAuthzError{fmt.Errorf("creating schema: %w", err)}
+		return nil, newSnowflakeConnectionErr(errAuthz, fmt.Errorf("creating schema: %w", err))
 	}
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		m.authzBackoff.set()
-		return nil, &snowpipeAuthzError{fmt.Errorf("creating table: %w", err)}
+		return nil, newSnowflakeConnectionErr(errAuthz, fmt.Errorf("creating table: %w", err))
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
@@ -196,8 +208,7 @@ func (m *Manager) handleTableError(
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		m.authzBackoff.set()
-		return nil, &snowpipeAuthzError{fmt.Errorf("creating table: %w", err)}
+		return nil, newSnowflakeConnectionErr(errAuthz, fmt.Errorf("creating table: %w", err))
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
@@ -237,8 +248,8 @@ func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string
 }
 
 func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) (manager.Manager, error) {
-	if m.now().Before(m.authzBackoff.nextBackoffTime()) {
-		return nil, &snowpipeAuthzError{fmt.Errorf("skipping snowflake manager creation due to backoff")}
+	if m.authzBackoff.isInBackoff() {
+		return nil, newSnowflakeConnectionErr(errBackoff, fmt.Errorf("skipping snowflake manager creation due to backoff"))
 	}
 	modelWarehouse := whutils.ModelWarehouse{
 		WorkspaceID: m.destination.WorkspaceID,

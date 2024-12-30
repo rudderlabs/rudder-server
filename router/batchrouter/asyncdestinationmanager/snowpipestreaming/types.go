@@ -13,7 +13,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
+	"github.com/cenkalti/backoff/v4"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -133,12 +134,12 @@ type (
 	}
 
 	authzBackoff struct {
-		// time at which the an attempt was made to create a resource but it failed likely due to permission issues.
-		lastestErrorTime time.Time
-		// If lastAttemptedTime is not zero, then the next attempt to create a SF connection will be made after backoffDuration.
+		// If an attempt was made to create a resource but it failed likely due to permission issues,
+		// then the next attempt to create a SF connection will be made after backoffDuration.
 		// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
-		backoffDuration        time.Duration
-		initialBackoffDuration time.Duration
+		backoff     *backoff.ExponentialBackOff
+		options     []backoff.ExponentialBackOffOpts
+		nextBackoff time.Duration
 	}
 )
 
@@ -163,26 +164,34 @@ func (e *event) setUUIDTimestamp(formattedTimestamp string) {
 	}
 }
 
-func newAuthzBackoff(initialBackoffDuration time.Duration) *authzBackoff {
+func newAuthzBackoff(initialInterval time.Duration, clock backoff.Clock) *authzBackoff {
 	return &authzBackoff{
-		initialBackoffDuration: initialBackoffDuration,
+		options: []backoff.ExponentialBackOffOpts{
+			backoff.WithInitialInterval(initialInterval),
+			backoff.WithMultiplier(2),
+			backoff.WithClockProvider(clock),
+			backoff.WithRandomizationFactor(0),
+			backoff.WithMaxElapsedTime(0),
+			backoff.WithMaxInterval(0),
+		},
 	}
 }
 
 func (abe *authzBackoff) set() {
-	abe.lastestErrorTime = timeutil.Now()
-	if abe.backoffDuration == 0 {
-		abe.backoffDuration = abe.initialBackoffDuration
-	} else {
-		abe.backoffDuration = abe.backoffDuration * 2
+	if abe.backoff == nil {
+		abe.backoff = backoff.NewExponentialBackOff(abe.options...)
 	}
+	// nextBackoff can't be a derived field since everytime NextBackOff is called, internal state of backoff is updated.
+	abe.nextBackoff = abe.backoff.NextBackOff()
 }
 
 func (abe *authzBackoff) reset() {
-	abe.lastestErrorTime = time.Time{}
-	abe.backoffDuration = 0
+	abe.backoff = nil
 }
 
-func (abe *authzBackoff) nextBackoffTime() time.Time {
-	return abe.lastestErrorTime.Add(abe.backoffDuration)
+func (abe *authzBackoff) isInBackoff() bool {
+	if abe.backoff == nil {
+		return false
+	}
+	return abe.backoff.GetElapsedTime() < abe.nextBackoff
 }
