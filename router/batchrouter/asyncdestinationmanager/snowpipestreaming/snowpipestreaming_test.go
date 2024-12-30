@@ -50,25 +50,29 @@ func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusR
 
 type mockManager struct {
 	manager.Manager
-	throwSchemaErr bool
+	createSchemaErr error
 }
 
-func newMockManager(m manager.Manager, throwSchemaErr bool) *mockManager {
+func newMockManager(m manager.Manager) *mockManager {
 	return &mockManager{
-		Manager:        m,
-		throwSchemaErr: throwSchemaErr,
+		Manager: m,
 	}
 }
 
 func (m *mockManager) CreateSchema(ctx context.Context) (err error) {
-	if m.throwSchemaErr {
-		return fmt.Errorf("failed to create schema")
-	}
+	return m.createSchemaErr
+}
+
+func (m *mockManager) CreateTable(ctx context.Context, tableName string, columnMap whutils.ModelTableSchema) (err error) {
 	return nil
 }
 
-func (m *mockManager) CreateTable(ctx context.Context, tableName string, columnMap manager.ModelTableSchema) (err error) {
-	return nil
+type mockClock struct {
+	nowTime time.Time
+}
+
+func (m *mockClock) Now() time.Time {
+	return m.nowTime
 }
 
 var (
@@ -358,49 +362,47 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
 			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			managerCreatorCallCount++
-			return newMockManager(sm, true), nil
+			mockManager := newMockManager(sm)
+			mockManager.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mockManager, nil
 		}
-		sm.authzBackoff = newAuthzBackoff(time.Second * 10)
+		mockClock := &mockClock{}
+		mockClock.nowTime = sm.now()
+		sm.authzBackoff = newAuthzBackoff(time.Second*10, mockClock)
 		asyncDestStruct := &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_user_records.txt",
 		}
+		require.Equal(t, false, sm.authzBackoff.isInBackoff())
 		output1 := sm.Upload(asyncDestStruct)
 		require.Equal(t, 2, output1.FailedCount)
 		require.Equal(t, 0, output1.AbortCount)
 		require.Equal(t, 1, managerCreatorCallCount)
-		require.Equal(t, time.Second*10, sm.authzBackoff.backoffDuration)
-		require.Equal(t, false, sm.authzBackoff.lastestErrorTime.IsZero())
+		require.Equal(t, true, sm.authzBackoff.isInBackoff())
 
 		sm.Upload(asyncDestStruct)
 		// client is not created again due to backoff error
 		require.Equal(t, 1, managerCreatorCallCount)
-		require.Equal(t, time.Second*10, sm.authzBackoff.backoffDuration)
-		require.Equal(t, false, sm.authzBackoff.lastestErrorTime.IsZero())
+		require.Equal(t, true, sm.authzBackoff.isInBackoff())
 
-		sm.now = func() time.Time {
-			return time.Now().UTC().Add(time.Second * 100)
-		}
+		mockClock.nowTime = sm.now().Add(time.Second * 5)
+		require.Equal(t, true, sm.authzBackoff.isInBackoff())
+		mockClock.nowTime = sm.now().Add(time.Second * 20)
+		require.Equal(t, false, sm.authzBackoff.isInBackoff())
 
 		sm.Upload(asyncDestStruct)
 		// client created again since backoff duration has been exceeded
 		require.Equal(t, 2, managerCreatorCallCount)
-		require.Equal(t, time.Second*20, sm.authzBackoff.backoffDuration)
-		require.Equal(t, false, sm.authzBackoff.lastestErrorTime.IsZero())
+		require.Equal(t, false, sm.authzBackoff.isInBackoff())
 
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
 			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			managerCreatorCallCount++
-			return newMockManager(sm, false), nil
-		}
-		sm.now = func() time.Time {
-			return time.Now().UTC().Add(time.Second * 200)
+			return newMockManager(sm), nil
 		}
 		sm.Upload(asyncDestStruct)
 		require.Equal(t, 3, managerCreatorCallCount)
-		// no error should reset the backoff config
-		require.Equal(t, time.Duration(0), sm.authzBackoff.backoffDuration)
-		require.Equal(t, true, sm.authzBackoff.lastestErrorTime.IsZero())
+		require.Equal(t, false, sm.authzBackoff.isInBackoff())
 	})
 
 	t.Run("Upload with discards table authorization error should not abort the job", func(t *testing.T) {
@@ -420,14 +422,21 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
 			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			return newMockManager(sm, true), nil
+			mockManager := newMockManager(sm)
+			mockManager.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mockManager, nil
 		}
 		output := sm.Upload(&common.AsyncDestinationStruct{
-			Destination: destination,
-			FileName:    "testdata/successful_user_records.txt",
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_user_records.txt",
 		})
-		require.Equal(t, 2, output.FailedCount)
+		require.Equal(t, 0, output.FailedCount)
 		require.Equal(t, 0, output.AbortCount)
+		require.Equal(t, 1, output.ImportingCount)
+		require.NotEmpty(t, output.FailedReason)
+		require.Empty(t, output.AbortReason)
+		require.Equal(t, true, sm.authzBackoff.isInBackoff())
 	})
 
 	t.Run("Upload insert error for all events", func(t *testing.T) {

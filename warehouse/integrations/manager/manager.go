@@ -26,9 +26,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// Creating an alias since "model.TableSchema" is defined in an internal module
-type ModelTableSchema = model.TableSchema
-
 type Manager interface {
 	Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error
 	FetchSchema(ctx context.Context) (model.Schema, error)
