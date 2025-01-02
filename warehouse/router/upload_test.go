@@ -22,7 +22,6 @@ import (
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -129,15 +128,19 @@ func TestColumnCountStat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := config.New()
 			conf.Set(fmt.Sprintf("Warehouse.%s.columnCountLimit", strings.ToLower(warehouseutils.WHDestNameMap[tc.destinationType])), tc.columnCountLimit)
-
-			j := UploadJob{
-				conf: conf,
-				upload: model.Upload{
+			uploadJobFactory := &UploadJobFactory{
+				logger:       logger.NOP,
+				statsFactory: statsStore,
+				conf:         conf,
+			}
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{
+				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
 				},
-				warehouse: model.Warehouse{
+				Warehouse: model.Warehouse{
 					Type: tc.destinationType,
 					Destination: backendconfig.DestinationT{
 						ID:   destinationID,
@@ -148,9 +151,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-				statsFactory: statsStore,
-				schemaHandle: &schema.Schema{}, // TODO use constructor
-			}
+			}, rs)
 			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
