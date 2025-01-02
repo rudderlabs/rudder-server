@@ -405,7 +405,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, false, sm.authzBackoff.isInBackoff())
 	})
 
-	t.Run("Upload with discards table authorization error should not abort the job", func(t *testing.T) {
+	t.Run("Upload with discards table authorization error should mark the job as failed", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
@@ -413,9 +413,6 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = &mockAPI{
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
 				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
-					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
-				},
-				"USERS": func() (*model.ChannelResponse, error) {
 					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
 				},
 			},
@@ -431,9 +428,8 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Destination:     destination,
 			FileName:        "testdata/successful_user_records.txt",
 		})
-		require.Equal(t, 0, output.FailedCount)
+		require.Equal(t, 1, output.FailedCount)
 		require.Equal(t, 0, output.AbortCount)
-		require.Equal(t, 1, output.ImportingCount)
 		require.NotEmpty(t, output.FailedReason)
 		require.Empty(t, output.AbortReason)
 		require.Equal(t, true, sm.authzBackoff.isInBackoff())

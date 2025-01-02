@@ -406,10 +406,10 @@ func (m *Manager) abortJobs(asyncDest *common.AsyncDestinationStruct, abortReaso
 func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedReason string) common.AsyncUploadOutput {
 	m.stats.jobs.failed.Count(len(asyncDest.ImportingJobIDs))
 	return common.AsyncUploadOutput{
-		ImportingJobIDs: asyncDest.ImportingJobIDs,
-		ImportingCount:  len(asyncDest.ImportingJobIDs),
-		FailedReason:    failedReason,
-		DestinationID:   asyncDest.Destination.ID,
+		FailedJobIDs:  asyncDest.ImportingJobIDs,
+		FailedCount:   len(asyncDest.ImportingJobIDs),
+		FailedReason:  failedReason,
+		DestinationID: asyncDest.Destination.ID,
 	}
 }
 
