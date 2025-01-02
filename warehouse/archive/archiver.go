@@ -431,18 +431,12 @@ func (a *Archiver) getStagingFilesData(
 		FROM
 		  %s
 		WHERE
-		  source_id = $1
-		  AND destination_id = $2
-		  AND id >= $3
-		  and id <= $4;`,
+		  upload_id = $1;`,
 		pq.QuoteIdentifier(warehouseutils.WarehouseStagingFilesTable),
 	)
 
 	stagingFileRows, err := txn.QueryContext(ctx, stmt,
-		u.sourceID,
-		u.destID,
-		u.startStagingFileId,
-		u.endStagingFileId,
+		u.uploadID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot query staging files data: %w", err)
