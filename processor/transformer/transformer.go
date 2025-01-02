@@ -219,7 +219,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
-	clientType := config.GetString("Transformer.Client.type", "stdlib")
+	clientType := conf.GetString("Transformer.Client.type", "stdlib")
 
 	switch clientType {
 	case "stdlib":
