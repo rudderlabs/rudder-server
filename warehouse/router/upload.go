@@ -70,7 +70,7 @@ type UploadJob struct {
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
 	whManager            manager.Manager
-	schemaHandle         *schema.Schema
+	schemaHandle         schema.SchemaHandler
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -148,6 +148,19 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
 	)
 
+	schemaHandle, err := schema.New(
+		ctx,
+		f.db,
+		dto.Warehouse,
+		f.conf,
+		f.logger.Child("warehouse"),
+		f.statsFactory,
+	)
+	if err != nil {
+		log.Errorw("failed to create schema handler", logfield.Error, err)
+		return nil
+	}
+
 	uj := &UploadJob{
 		ctx:                  ujCtx,
 		reporting:            f.reporting,
@@ -162,13 +175,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
-		schemaHandle: schema.New(
-			f.db,
-			dto.Warehouse,
-			f.conf,
-			f.logger.Child("warehouse"),
-			f.statsFactory,
-		),
+		schemaHandle:         schemaHandle,
 
 		upload:         dto.Upload,
 		warehouse:      dto.Warehouse,
