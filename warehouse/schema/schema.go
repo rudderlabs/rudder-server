@@ -101,7 +101,7 @@ func New(
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
-	if conf.GetBoolVar(false, "Warehouse.enableSyncSchema") {
+	if conf.GetBoolVar(true, "Warehouse.enableSyncSchema") {
 		schemaHandler, err := newSchemaV2(ctx, schemaV1, warehouse, log)
 		if err != nil {
 			return nil, fmt.Errorf("creating schema handler: %w", err)

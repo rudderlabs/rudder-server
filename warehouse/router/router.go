@@ -719,7 +719,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 	r.config.syncSchemaFrequency = r.conf.GetDurationVar(12, time.Hour, "Warehouse.syncSchemaFrequency")
-	r.config.enableSyncSchema = r.conf.GetBoolVar(false, "Warehouse.enableSyncSchema")
+	r.config.enableSyncSchema = r.conf.GetBoolVar(true, "Warehouse.enableSyncSchema")
 }
 
 func (r *Router) loadStats() {
