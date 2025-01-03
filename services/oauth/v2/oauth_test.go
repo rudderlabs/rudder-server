@@ -1,7 +1,9 @@
 package v2_test
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -575,6 +577,157 @@ var _ = Describe("Oauth", func() {
 			}
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
+		})
+
+		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
+			cpResponseString := `{
+				"status": 500,
+				"code": "INVALID_REFRESH_RESPONSE",
+				"body": {
+					"code": "INVALID_REFRESH_RESPONSE",
+					"message": "Missing required token fields in refresh response"
+				},
+				"access_token":"storedAccessToken",
+				"refresh_token":"dummyRefreshToken",
+				"developer_token":"dummyDeveloperToken"
+			}`
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(cpResponseString)),
+			}, nil)
+			cpConnector := controlplane.NewConnector(
+				config.Default,
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
+			)
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
+			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "INVALID_REFRESH_RESPONSE",
+				ErrorMessage: "Missing required token fields in refresh response",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: Missing required token fields in refresh response")))
+		})
+
+		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
+			cpResponseString := `{
+				"status": 500,
+				"code": "INVALID_REFRESH_RESPONSE",
+				"body": {
+					"code": "INVALID_REFRESH_RESPONSE"
+				},
+				"access_token":"storedAccessToken",
+				"refresh_token":"dummyRefreshToken",
+				"developer_token":"dummyDeveloperToken"
+			}`
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(cpResponseString)),
+			}, nil)
+			cpConnector := controlplane.NewConnector(
+				config.Default,
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
+			)
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
+			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			expectedResponse := &v2.AuthResponse{
+				Err:          "INVALID_REFRESH_RESPONSE",
+				ErrorMessage: "invalid refresh response",
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: invalid refresh response")))
+		})
+
+		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
+			refreshTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockHttpClient := mockhttpclient.NewMockHttpClient(ctrl)
+			cpResponseString := fmt.Sprintf(`{
+				"status": 500,
+				"code": "%[1]s",
+				"body": {
+					"code": "%[1]s"
+				},
+				"access_token":"storedAccessToken",
+				"refresh_token":"dummyRefreshToken",
+				"developer_token":"dummyDeveloperToken"
+			}`, common.RefTokenInvalidGrant)
+			mockHttpClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(cpResponseString)),
+			}, nil)
+			cpConnector := controlplane.NewConnector(
+				config.Default,
+				controlplane.WithClient(mockHttpClient),
+				controlplane.WithStats(stats.Default),
+			)
+
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(&testutils.BasicAuthMock{})
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(cpConnector),
+			)
+			statusCode, response, err := oauthHandler.RefreshToken(refreshTokenParams)
+			Expect(statusCode).To(Equal(http.StatusBadRequest))
+			expectedResponse := &v2.AuthResponse{
+				Err:          common.RefTokenInvalidGrant,
+				ErrorMessage: v2.ErrPermissionOrTokenRevoked.Error(),
+			}
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("invalid grant")))
 		})
 	})
 
