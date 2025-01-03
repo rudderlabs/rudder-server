@@ -721,7 +721,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 	r.config.uploadBufferTimeInMin = r.conf.GetReloadableDurationVar(180, time.Minute, "Warehouse.uploadBufferTimeInMin")
 	r.config.syncSchemaFrequency = r.conf.GetDurationVar(12, time.Hour, "Warehouse.syncSchemaFrequency")
-    r.config.enableSyncSchema = r.conf.GetBoolVar(false, "Warehouse.enableSyncSchema")
+    r.config.enableSyncSchema = r.conf.GetBoolVar(true, "Warehouse.enableSyncSchema")
 }
 
 func (r *Router) loadStats() {
