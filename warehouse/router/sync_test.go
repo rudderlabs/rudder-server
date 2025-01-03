@@ -240,9 +240,9 @@ func TestSync_SyncRemoteSchemaIntegration(t *testing.T) {
 			r.statsFactory,
 		)
 		require.Eventually(t, func() bool {
-			schema, err := sh.GetLocalSchema(ctx)
+			localSchema, err := sh.GetLocalSchema(ctx)
 			require.NoError(t, err)
-			return reflect.DeepEqual(schema, model.Schema{
+			return reflect.DeepEqual(localSchema, model.Schema{
 				"test_table": model.TableSchema{
 					"created_at":    "datetime",
 					"event_count":   "int",
