@@ -172,7 +172,7 @@ func newAuthzBackoff(initialInterval time.Duration, clock backoff.Clock) *authzB
 			backoff.WithClockProvider(clock),
 			backoff.WithRandomizationFactor(0),
 			backoff.WithMaxElapsedTime(0),
-			backoff.WithMaxInterval(0),
+			backoff.WithMaxInterval(time.Hour),
 		},
 	}
 }

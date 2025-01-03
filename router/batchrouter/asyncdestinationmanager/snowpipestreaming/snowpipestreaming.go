@@ -170,8 +170,6 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// backoff should be reset if authz error is not encountered for any of the tables
-	shouldResetBackoff := true
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
@@ -215,12 +213,14 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
 	)
+	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
+	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
 			var sfConnectionErr *snowflakeConnectionErr
 			if errors.As(err, &sfConnectionErr) {
-				if sfConnectionErr.code == errAuthz {
+				if sfConnectionErr.code == errAuthz && !isBackoffSet {
 					m.authzBackoff.set()
 				}
 				shouldResetBackoff = false
