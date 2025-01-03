@@ -96,6 +96,8 @@ type Router struct {
 		waitForWorkerSleep                time.Duration
 		uploadAllocatorSleep              time.Duration
 		uploadStatusTrackFrequency        time.Duration
+		enableSyncSchema                  bool
+		syncSchemaFrequency               time.Duration
 		shouldPopulateHistoricIdentities  bool
 		uploadFreqInS                     config.ValueLoader[int64]
 		noOfWorkers                       config.ValueLoader[int]
@@ -202,6 +204,11 @@ func (r *Router) Start(ctx context.Context) error {
 	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
 	}))
+	if r.config.enableSyncSchema {
+		g.Go(crash.NotifyWarehouse(func() error {
+			return r.sync(gCtx)
+		}))
+	}
 	return g.Wait()
 }
 
@@ -711,6 +718,8 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.enableJitterForSyncs = r.conf.GetReloadableBoolVar(false, "Warehouse.enableJitterForSyncs")
 	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
+	r.config.syncSchemaFrequency = r.conf.GetDurationVar(12, time.Hour, "Warehouse.syncSchemaFrequency")
+	r.config.enableSyncSchema = r.conf.GetBoolVar(true, "Warehouse.enableSyncSchema")
 }
 
 func (r *Router) loadStats() {

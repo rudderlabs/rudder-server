@@ -154,7 +154,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			s := Schema{
+			s := schema{
 				warehouse: model.Warehouse{
 					WorkspaceID: workspaceID,
 					Source: backendconfig.SourceT{
@@ -352,7 +352,7 @@ func TestSchema_FetchSchemaFromWarehouse(t *testing.T) {
 				err:                           tc.mockErr,
 			}
 
-			s := &Schema{
+			s := &schema{
 				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
@@ -511,7 +511,7 @@ func TestSchema_TableSchemaDiff(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := Schema{
+			s := schema{
 				schemaInWarehouse: tc.currentSchema,
 			}
 			diff := s.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
@@ -592,7 +592,7 @@ func TestSchema_HasLocalSchemaChanged(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := &Schema{
+			s := &schema{
 				warehouse: model.Warehouse{
 					Type: warehouseutils.SNOWFLAKE,
 				},
@@ -1625,7 +1625,7 @@ func TestSchema_ConsolidateStagingFilesUsingLocalSchema(t *testing.T) {
 				err:     tc.mockErr,
 			}
 
-			s := &Schema{
+			s := &schema{
 				warehouse: model.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
@@ -1668,7 +1668,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 	tableName := "test_table_name"
 
 	t.Run("should return error if unable to fetch local schema", func(t *testing.T) {
-		s := &Schema{
+		s := &schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
 					ID: sourceID,
@@ -1697,7 +1697,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.False(t, schemaChanged)
 	})
 	t.Run("should return error if unable to fetch remote schema", func(t *testing.T) {
-		s := &Schema{
+		s := &schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
 					ID: sourceID,
@@ -1766,7 +1766,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 			},
 		}
 
-		s := &Schema{
+		s := &schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
 					ID: sourceID,
@@ -1835,7 +1835,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 			},
 		}
 
-		s := &Schema{
+		s := &schema{
 			warehouse: model.Warehouse{
 				Source: backendconfig.SourceT{
 					ID: sourceID,
