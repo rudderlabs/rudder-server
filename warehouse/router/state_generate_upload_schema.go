@@ -30,6 +30,5 @@ func (job *UploadJob) generateUploadSchema() error {
 	}
 
 	job.upload.UploadSchema = uploadSchema
-
 	return nil
 }

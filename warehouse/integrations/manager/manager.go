@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -22,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -38,6 +37,7 @@ type Manager interface {
 	LoadIdentityMergeRulesTable(ctx context.Context) error
 	LoadIdentityMappingsTable(ctx context.Context) error
 	Cleanup(ctx context.Context)
+	Close()
 	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error

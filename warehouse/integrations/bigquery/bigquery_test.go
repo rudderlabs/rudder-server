@@ -607,6 +607,7 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_ENABLE_DELETE_BY_JOBS", "true")
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_SLOW_QUERY_THRESHOLD", "0s")
+				t.Setenv("RSERVER_WAREHOUSE_SYNC_SCHEMA_FREQUENCY", "1s")
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -1469,7 +1470,7 @@ func newMockUploader(
 		},
 	).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
-	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
+	mockUploader.EXPECT().GetTableSchema(tableName).Return(schemaInWarehouse).AnyTimes()
 
 	return mockUploader
 }

@@ -11,9 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -96,6 +95,7 @@ type Router struct {
 		waitForWorkerSleep                time.Duration
 		uploadAllocatorSleep              time.Duration
 		uploadStatusTrackFrequency        time.Duration
+		syncSchemaFrequency               time.Duration
 		shouldPopulateHistoricIdentities  bool
 		uploadFreqInS                     config.ValueLoader[int64]
 		noOfWorkers                       config.ValueLoader[int]
@@ -201,6 +201,9 @@ func (r *Router) Start(ctx context.Context) error {
 	}))
 	g.Go(crash.NotifyWarehouse(func() error {
 		return r.CronTracker(gCtx)
+	}))
+	g.Go(crash.NotifyWarehouse(func() error {
+		return r.sync(gCtx)
 	}))
 	return g.Wait()
 }
@@ -701,6 +704,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.waitForWorkerSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS")
 	r.config.uploadAllocatorSleep = r.conf.GetDurationVar(5, time.Second, "Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS")
 	r.config.uploadStatusTrackFrequency = r.conf.GetDurationVar(30, time.Minute, "Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin")
+	r.config.syncSchemaFrequency = r.conf.GetDurationVar(12, time.Hour, "Warehouse.syncSchemaFrequency")
 	r.config.allowMultipleSourcesForJobsPickup = r.conf.GetBoolVar(false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 	r.config.shouldPopulateHistoricIdentities = r.conf.GetBoolVar(false, "Warehouse.populateHistoricIdentities")
 	r.config.uploadFreqInS = r.conf.GetReloadableInt64Var(1800, 1, "Warehouse.uploadFreqInS")

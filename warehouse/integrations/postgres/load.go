@@ -318,7 +318,7 @@ func (pg *Postgres) LoadUserTables(ctx context.Context) map[string]error {
 
 	identifiesSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
 	usersSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)
-	usersSchemaInWarehouse := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	usersSchemaInWarehouse := pg.Uploader.GetTableSchema(warehouseutils.UsersTable)
 
 	var loadingError loadUsersTableResponse
 	_ = pg.DB.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {

@@ -905,7 +905,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		log.Infow("identifies temp table loaded")
 	}
 
-	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
+	userColMap := sf.Uploader.GetTableSchema(usersTable)
 	for colName := range userColMap {
 		if colName == "ID" {
 			continue
@@ -1413,6 +1413,9 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, error) {
 }
 
 func (sf *Snowflake) Cleanup(context.Context) {
+}
+
+func (sf *Snowflake) Close() {
 	if sf.DB != nil {
 		_ = sf.DB.Close()
 	}
