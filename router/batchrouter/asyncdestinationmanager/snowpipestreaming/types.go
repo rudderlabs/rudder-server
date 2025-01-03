@@ -14,7 +14,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 
+	"github.com/cenkalti/backoff/v4"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -25,6 +28,7 @@ type (
 		statsFactory        stats.Stats
 		destination         *backendconfig.DestinationT
 		requestDoer         requestDoer
+		managerCreator      func(mCtx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, mLogger logger.Logger, stats stats.Stats) (manager.Manager, error)
 		now                 func() time.Time
 		api                 api
 		channelCache        sync.Map
@@ -45,6 +49,7 @@ type (
 			instanceID        string
 			maxBufferCapacity config.ValueLoader[int64]
 		}
+		authzBackoff *authzBackoff
 
 		stats struct {
 			jobs struct {
@@ -127,6 +132,15 @@ type (
 		destination  *backendconfig.DestinationT
 		api
 	}
+
+	authzBackoff struct {
+		// If an attempt was made to create a resource but it failed likely due to permission issues,
+		// then the next attempt to create a SF connection will be made after backoffDuration.
+		// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
+		backoff     *backoff.ExponentialBackOff
+		options     []backoff.ExponentialBackOffOpts
+		nextBackoff time.Duration
+	}
 )
 
 func (d *destConfig) Decode(m map[string]interface{}) error {
@@ -148,4 +162,36 @@ func (e *event) setUUIDTimestamp(formattedTimestamp string) {
 	if _, columnExists := e.Message.Metadata.Columns[uuidTimestampColumn]; columnExists {
 		e.Message.Data[uuidTimestampColumn] = formattedTimestamp
 	}
+}
+
+func newAuthzBackoff(initialInterval time.Duration, clock backoff.Clock) *authzBackoff {
+	return &authzBackoff{
+		options: []backoff.ExponentialBackOffOpts{
+			backoff.WithInitialInterval(initialInterval),
+			backoff.WithMultiplier(2),
+			backoff.WithClockProvider(clock),
+			backoff.WithRandomizationFactor(0),
+			backoff.WithMaxElapsedTime(0),
+			backoff.WithMaxInterval(time.Hour),
+		},
+	}
+}
+
+func (abe *authzBackoff) set() {
+	if abe.backoff == nil {
+		abe.backoff = backoff.NewExponentialBackOff(abe.options...)
+	}
+	// nextBackoff can't be a derived field since everytime NextBackOff is called, internal state of backoff is updated.
+	abe.nextBackoff = abe.backoff.NextBackOff()
+}
+
+func (abe *authzBackoff) reset() {
+	abe.backoff = nil
+}
+
+func (abe *authzBackoff) isInBackoff() bool {
+	if abe.backoff == nil {
+		return false
+	}
+	return abe.backoff.GetElapsedTime() < abe.nextBackoff
 }

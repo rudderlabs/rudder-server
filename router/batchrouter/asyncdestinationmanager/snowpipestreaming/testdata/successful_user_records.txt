@@ -1,0 +1,2 @@
+{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"Alice","AGE":30,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}},"metadata":{"job_id":1001}}
+{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"Alice","AGE":30,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}},"metadata":{"job_id":1003}}

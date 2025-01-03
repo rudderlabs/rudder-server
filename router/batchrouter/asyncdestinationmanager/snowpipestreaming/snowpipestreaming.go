@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,27 +32,35 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
+type systemClock struct{}
+
+func (t systemClock) Now() time.Time {
+	return timeutil.Now()
+}
+
 func New(
 	conf *config.Config,
-	logger logger.Logger,
+	log logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 ) *Manager {
+	clock := systemClock{}
 	m := &Manager{
 		appConfig: conf,
-		logger: logger.Child("snowpipestreaming").Withn(
+		logger: log.Child("snowpipestreaming").Withn(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
 		),
 		statsFactory:        statsFactory,
 		destination:         destination,
-		now:                 timeutil.Now,
+		now:                 clock.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
 	}
@@ -67,6 +76,7 @@ func New(
 	m.config.client.retryMax = conf.GetInt("SnowpipeStreaming.Client.retryMax", 5)
 	m.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
+	m.authzBackoff = newAuthzBackoff(conf.GetDuration("SnowpipeStreaming.backoffDuration", 1, time.Second), clock)
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -100,6 +110,17 @@ func New(
 		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
+	m.managerCreator = func(mCtx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, stats stats.Stats) (manager.Manager, error) {
+		sf, err := manager.New(whutils.SnowpipeStreaming, conf, logger, stats)
+		if err != nil {
+			return nil, fmt.Errorf("creating snowflake manager: %w", err)
+		}
+		err = sf.Setup(mCtx, modelWarehouse, whutils.NewNoOpUploader())
+		if err != nil {
+			return nil, fmt.Errorf("setting up snowflake manager: %w", err)
+		}
+		return sf, nil
+	}
 	return m
 }
 
@@ -152,7 +173,15 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		var sfConnectionErr *snowflakeConnectionErr
+		if errors.As(err, &sfConnectionErr) {
+			if sfConnectionErr.code == errAuthz {
+				m.authzBackoff.set()
+			}
+			return m.failedJobs(asyncDest, err.Error())
+		} else {
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		}
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -184,9 +213,18 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
 	)
+	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
+	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
+			var sfConnectionErr *snowflakeConnectionErr
+			if errors.As(err, &sfConnectionErr) {
+				if sfConnectionErr.code == errAuthz && !isBackoffSet {
+					m.authzBackoff.set()
+				}
+				shouldResetBackoff = false
+			}
 			m.logger.Warnn("Failed to send events to Snowpipe",
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
@@ -205,6 +243,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			discardImportInfo.Count += discardImInfo.Count
 			discardImportInfo.Offset = discardImInfo.Offset
 		}
+	}
+	if shouldResetBackoff {
+		m.authzBackoff.reset()
 	}
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
@@ -358,6 +399,16 @@ func (m *Manager) abortJobs(asyncDest *common.AsyncDestinationStruct, abortReaso
 		AbortJobIDs:   asyncDest.ImportingJobIDs,
 		AbortCount:    len(asyncDest.ImportingJobIDs),
 		AbortReason:   abortReason,
+		DestinationID: asyncDest.Destination.ID,
+	}
+}
+
+func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedReason string) common.AsyncUploadOutput {
+	m.stats.jobs.failed.Count(len(asyncDest.ImportingJobIDs))
+	return common.AsyncUploadOutput{
+		FailedJobIDs:  asyncDest.ImportingJobIDs,
+		FailedCount:   len(asyncDest.ImportingJobIDs),
+		FailedReason:  failedReason,
 		DestinationID: asyncDest.Destination.ID,
 	}
 }
