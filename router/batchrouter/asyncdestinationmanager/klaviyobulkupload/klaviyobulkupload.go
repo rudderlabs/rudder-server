@@ -119,9 +119,10 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				pollresp, err := kbu.KlaviyoAPIService.GetUploadStatus(importId)
 				if err != nil {
 					return common.PollStatusResponse{
-						Complete:  true,
-						HasFailed: true,
-						Error:     err.Error(),
+						StatusCode: 400,
+						Complete:   true,
+						HasFailed:  true,
+						Error:      `Error during fetching upload status `+ err.Error(),
 					}
 				}
 
