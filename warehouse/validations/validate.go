@@ -248,7 +248,10 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 }
 
 func (c *connections) Validate(ctx context.Context) error {
-	defer c.manager.Cleanup(ctx)
+	defer func() {
+		c.manager.Cleanup(ctx)
+		c.manager.Close()
+	}()
 
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
@@ -257,13 +260,18 @@ func (c *connections) Validate(ctx context.Context) error {
 }
 
 func (cs *createSchema) Validate(ctx context.Context) error {
-	defer cs.manager.Cleanup(ctx)
-
+	defer func() {
+		cs.manager.Cleanup(ctx)
+		cs.manager.Close()
+	}()
 	return cs.manager.CreateSchema(ctx)
 }
 
 func (cat *createAlterTable) Validate(ctx context.Context) error {
-	defer cat.manager.Cleanup(ctx)
+	defer func() {
+		cat.manager.Cleanup(ctx)
+		cat.manager.Close()
+	}()
 
 	if err := cat.manager.CreateTable(ctx, cat.table, tableSchemaMap); err != nil {
 		return fmt.Errorf("create table: %w", err)
@@ -281,7 +289,10 @@ func (cat *createAlterTable) Validate(ctx context.Context) error {
 }
 
 func (fs *fetchSchema) Validate(ctx context.Context) error {
-	defer fs.manager.Cleanup(ctx)
+	defer func() {
+		fs.manager.Cleanup(ctx)
+		fs.manager.Close()
+	}()
 
 	if _, err := fs.manager.FetchSchema(ctx); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
@@ -299,7 +310,10 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		err          error
 	)
 
-	defer lt.manager.Cleanup(ctx)
+	defer func() {
+		lt.manager.Cleanup(ctx)
+		lt.manager.Close()
+	}()
 
 	if tempPath, err = CreateTempLoadFile(lt.destination); err != nil {
 		return fmt.Errorf("create temp load file: %w", err)

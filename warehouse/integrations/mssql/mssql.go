@@ -962,9 +962,11 @@ func (ms *MSSQL) Cleanup(ctx context.Context) {
 				logfield.Error, err,
 			)
 		}
-
-		_ = ms.DB.Close()
 	}
+}
+
+func (ms *MSSQL) Close() {
+	_ = ms.DB.Close()
 }
 
 func (*MSSQL) LoadIdentityMergeRulesTable(context.Context) (err error) {

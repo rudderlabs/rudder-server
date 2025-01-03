@@ -45,7 +45,7 @@ func (r *Router) sync(ctx context.Context) error {
 			if err := r.syncRemoteSchema(ctx, whManager, sh); err != nil {
 				r.logger.Errorn("failed to sync schema", obskit.Error(err))
 			}
-			whManager.Cleanup(ctx)
+			whManager.Close()
 		}
 		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)
 		select {

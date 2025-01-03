@@ -63,7 +63,7 @@ func (m *Manager) addColumns(ctx context.Context, namespace, tableName string, c
 		return fmt.Errorf("creating snowflake manager: %w", err)
 	}
 	defer func() {
-		snowflakeManager.Cleanup(ctx)
+		snowflakeManager.Close()
 	}()
 	if err = snowflakeManager.AddColumns(ctx, tableName, columns); err != nil {
 		return fmt.Errorf("adding column: %w", err)
@@ -154,7 +154,7 @@ func (m *Manager) handleSchemaError(
 		return nil, fmt.Errorf("creating snowflake manager: %w", err)
 	}
 	defer func() {
-		snowflakeManager.Cleanup(ctx)
+		snowflakeManager.Close()
 	}()
 	if err := snowflakeManager.CreateSchema(ctx); err != nil {
 		return nil, fmt.Errorf("creating schema: %w", err)
@@ -182,7 +182,7 @@ func (m *Manager) handleTableError(
 		return nil, fmt.Errorf("creating snowflake manager: %w", err)
 	}
 	defer func() {
-		snowflakeManager.Cleanup(ctx)
+		snowflakeManager.Close()
 	}()
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
 		return nil, fmt.Errorf("creating table: %w", err)

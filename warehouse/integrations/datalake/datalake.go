@@ -115,6 +115,8 @@ func (d *Datalake) LoadIdentityMappingsTable(context.Context) error {
 func (*Datalake) Cleanup(context.Context) {
 }
 
+func (*Datalake) Close() {}
+
 func (*Datalake) IsEmpty(context.Context, model.Warehouse) (bool, error) {
 	return false, nil
 }

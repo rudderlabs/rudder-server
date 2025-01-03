@@ -480,8 +480,10 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequ
 	if err != nil {
 		return fmt.Errorf("setting up integrations manager: %w", err)
 	}
-	defer integrationsManager.Cleanup(ctx)
-
+	defer func() {
+		integrationsManager.Cleanup(ctx)
+		integrationsManager.Close()
+	}()
 	var metadata warehouseutils.DeleteByMetaData
 	if err = json.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
 		return fmt.Errorf("unmarshalling metadata: %w", err)

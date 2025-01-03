@@ -1050,6 +1050,9 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 }
 
 func (ch *Clickhouse) Cleanup(_ context.Context) {
+}
+
+func (ch *Clickhouse) Close() {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}

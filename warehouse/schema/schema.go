@@ -393,8 +393,8 @@ func (sh *Schema) GetTableSchema(tableName string) model.TableSchema {
 }
 
 func (sh *Schema) UpdateTableSchema(tableName string, tableSchema model.TableSchema) {
-	sh.localSchemaMu.RLock()
-	defer sh.localSchemaMu.RUnlock()
+	sh.localSchemaMu.Lock()
+	defer sh.localSchemaMu.Unlock()
 	if sh.localSchema == nil {
 		sh.localSchema = make(model.Schema)
 	}

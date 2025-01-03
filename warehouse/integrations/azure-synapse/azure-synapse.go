@@ -947,8 +947,11 @@ func (as *AzureSynapse) Cleanup(ctx context.Context) {
 				logfield.Error, err,
 			)
 		}
-		_ = as.DB.Close()
 	}
+}
+
+func (as *AzureSynapse) Close() {
+	_ = as.DB.Close()
 }
 
 func (*AzureSynapse) LoadIdentityMergeRulesTable(_ context.Context) (err error) {

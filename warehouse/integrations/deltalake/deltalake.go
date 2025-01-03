@@ -1253,8 +1253,11 @@ func (d *Deltalake) Cleanup(ctx context.Context) {
 				logfield.Error, err.Error(),
 			)
 		}
-		_ = d.DB.Close()
 	}
+}
+
+func (d *Deltalake) Close() {
+	_ = d.DB.Close()
 }
 
 // IsEmpty checks if the warehouse is empty or not

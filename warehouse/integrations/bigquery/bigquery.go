@@ -1000,7 +1000,11 @@ func (bq *BigQuery) Cleanup(ctx context.Context) {
 				obskit.Error(err),
 			)
 		}
+	}
+}
 
+func (bq *BigQuery) Close() {
+	if bq.db != nil {
 		_ = bq.db.Close()
 	}
 }

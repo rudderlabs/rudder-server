@@ -439,7 +439,10 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			_, _ = job.setUploadError(err, model.Aborted)
 			return
 		}
-		defer whManager.Cleanup(ctx)
+		defer func() {
+			whManager.Cleanup(ctx)
+			whManager.Close()
+		}()
 
 		_, err = job.schemaHandle.FetchSchemaFromWarehouse(ctx, whManager)
 		if err != nil {

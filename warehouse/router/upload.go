@@ -288,7 +288,10 @@ func (job *UploadJob) run() (err error) {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
-	defer whManager.Cleanup(job.ctx)
+	defer func() {
+		whManager.Cleanup(job.ctx)
+		whManager.Close()
+	}()
 	_, err = job.schemaHandle.GetLocalSchema(job.ctx)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)

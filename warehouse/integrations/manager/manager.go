@@ -37,6 +37,7 @@ type Manager interface {
 	LoadIdentityMergeRulesTable(ctx context.Context) error
 	LoadIdentityMappingsTable(ctx context.Context) error
 	Cleanup(ctx context.Context)
+	Close()
 	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error

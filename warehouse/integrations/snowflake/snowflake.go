@@ -1413,6 +1413,9 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, error) {
 }
 
 func (sf *Snowflake) Cleanup(context.Context) {
+}
+
+func (sf *Snowflake) Close() {
 	if sf.DB != nil {
 		_ = sf.DB.Close()
 	}

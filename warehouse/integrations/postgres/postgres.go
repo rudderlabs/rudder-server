@@ -461,6 +461,9 @@ func (pg *Postgres) FetchSchema(ctx context.Context) (model.Schema, error) {
 }
 
 func (pg *Postgres) Cleanup(context.Context) {
+}
+
+func (pg *Postgres) Close() {
 	if pg.DB != nil {
 		_ = pg.DB.Close()
 	}

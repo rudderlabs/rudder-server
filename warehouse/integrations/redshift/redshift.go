@@ -1294,8 +1294,14 @@ func (rs *Redshift) Cleanup(ctx context.Context) {
 				logfield.Error, err.Error(),
 			)
 		}
-		_ = rs.DB.Close()
 	}
+}
+
+func (rs *Redshift) Close() {
+	if rs.DB == nil {
+		return
+	}
+	_ = rs.DB.Close()
 }
 
 func (*Redshift) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
