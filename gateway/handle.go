@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	internalBatchJson "github.com/rudderlabs/rudder-server/gateway/validation"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -44,8 +44,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	// dependencies
@@ -642,6 +640,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 }
 
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
+	// IMPORTANT: only use internalBatchJson instead of encoding/json in this function or any functions called from this function to be compatible with ingestion service
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
 			ctx           = r.Context()
@@ -759,7 +758,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
-	err := jsonfast.Unmarshal(body, &messages)
+	err := internalBatchJson.Unmarshal(body, &messages)
 	if err != nil {
 		stat.RequestFailed(response.InvalidJSON)
 		stat.Report(gw.stats)
@@ -878,7 +877,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			SourceCategory:  msg.Properties.SourceType,
 		}
 
-		marshalledParams, err := json.Marshal(jobsDBParams)
+		marshalledParams, err := internalBatchJson.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
 				logger.NewField("params", jobsDBParams),
@@ -915,7 +914,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			WriteKey:   writeKey,
 		}
 
-		payload, err := json.Marshal(eventBatch)
+		payload, err := internalBatchJson.Marshal(eventBatch)
 		if err != nil {
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
