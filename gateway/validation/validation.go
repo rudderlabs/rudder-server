@@ -18,7 +18,6 @@ func SanitizeJSON(input []byte) ([]byte, error) {
 	if len(v) == 0 {
 		v = []byte(`{}`)
 	}
-
 	var a stdjson.RawMessage
 	err := json.Unmarshal(v, &a)
 	if err != nil {
@@ -28,7 +27,6 @@ func SanitizeJSON(input []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return v, nil
 }
 
