@@ -32,13 +32,15 @@ func TestBadger(t *testing.T) {
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
-			"type":   BadgerTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      BadgerTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).LastValue(), float64(3))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type":   BadgerTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      BadgerTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -46,13 +48,15 @@ func TestBadger(t *testing.T) {
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
-			"type":   BadgerTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      BadgerTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).LastValue(), float64(4))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type":   BadgerTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      BadgerTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
@@ -95,13 +99,15 @@ func TestInMemoryCache(t *testing.T) {
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).LastValue(), float64(3))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -109,13 +115,15 @@ func TestInMemoryCache(t *testing.T) {
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).LastValue(), float64(4))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).Durations()), 4)
 
 		assert.True(t, val1, "Expected key1 to be present")
@@ -148,13 +156,15 @@ func TestInMemoryCache(t *testing.T) {
 		_ = es.Put("key4")
 		_ = es.Put("key5")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).LastValue(), float64(3))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerPutDuration, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "put",
 		}).Durations()), 3)
 
 		val1, _ := es.Get("key1")
@@ -163,13 +173,15 @@ func TestInMemoryCache(t *testing.T) {
 		val4, _ := es.Get("key4")
 		val5, _ := es.Get("key5")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerRequestsTotal, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).LastValue(), float64(5))
-		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerGetDuration, map[string]string{
-			"type":   InMemoryCacheTypeEventSampler,
-			"module": MetricsReporting,
+		require.Equal(t, len(statsStore.Get(StatReportingEventSamplerRequestDuration, map[string]string{
+			"type":      InMemoryCacheTypeEventSampler,
+			"module":    MetricsReporting,
+			"operation": "get",
 		}).Durations()), 5)
 
 		assert.True(t, val1, "Expected key1 to be present")

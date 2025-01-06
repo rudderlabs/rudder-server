@@ -7,10 +7,8 @@ import (
 )
 
 const (
-	StatReportingEventSamplerPutTotal    = "reporting_event_sampler_put_total"
-	StatReportingEventSamplerGetTotal    = "reporting_event_sampler_get_total"
-	StatReportingEventSamplerPutDuration = "reporting_event_sampler_put_duration_seconds"
-	StatReportingEventSamplerGetDuration = "reporting_event_sampler_get_duration_seconds"
+	StatReportingEventSamplerRequestsTotal   = "reporting_event_sampler_requests_total"
+	StatReportingEventSamplerRequestDuration = "reporting_event_sampler_request_duration_seconds"
 )
 
 type StatsCollector struct {
@@ -22,14 +20,15 @@ type StatsCollector struct {
 }
 
 func NewStatsCollector(eventSamplerType, module string, statsFactory stats.Stats) *StatsCollector {
-	tags := getTags(eventSamplerType, module)
+	getRequestTags := getTags(eventSamplerType, module, "get")
+	putRequestTags := getTags(eventSamplerType, module, "put")
 
 	return &StatsCollector{
 		stats:       statsFactory,
-		getCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerPutTotal, stats.CountType, tags),
-		putCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerGetTotal, stats.CountType, tags),
-		getDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerGetDuration, stats.TimerType, tags),
-		putDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerPutDuration, stats.TimerType, tags),
+		getCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerRequestsTotal, stats.CountType, getRequestTags),
+		putCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerRequestsTotal, stats.CountType, putRequestTags),
+		getDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerRequestDuration, stats.TimerType, getRequestTags),
+		putDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerRequestDuration, stats.TimerType, putRequestTags),
 	}
 }
 
@@ -49,6 +48,6 @@ func (sc *StatsCollector) RecordPutDuration(start time.Time) {
 	sc.putDuration.SendTiming(time.Since(start))
 }
 
-func getTags(eventSamplerType, module string) stats.Tags {
-	return stats.Tags{"type": eventSamplerType, "module": module}
+func getTags(eventSamplerType, module, operation string) stats.Tags {
+	return stats.Tags{"type": eventSamplerType, "module": module, "operation": operation}
 }
