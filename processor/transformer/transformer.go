@@ -221,38 +221,28 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	clientType := conf.GetString("Transformer.Client.type", "stdlib")
 
+	transport := &http.Transport{
+		DisableKeepAlives:   trans.config.disableKeepAlives,
+		MaxConnsPerHost:     trans.config.maxHTTPConnections,
+		MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
+		IdleConnTimeout:     trans.config.maxIdleConnDuration,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   trans.config.timeoutDuration,
+	}
+
 	switch clientType {
 	case "stdlib":
-		trans.httpClient = &http.Client{
-			Transport: &http.Transport{
-				DisableKeepAlives:   trans.config.disableKeepAlives,
-				MaxConnsPerHost:     trans.config.maxHTTPConnections,
-				MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-				IdleConnTimeout:     trans.config.maxIdleConnDuration,
-			},
-			Timeout: trans.config.timeoutDuration,
-		}
+		trans.httpClient = client
 	case "recycled":
 		trans.httpClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
-			return &http.Client{
-				Transport: &http.Transport{
-					DisableKeepAlives:   trans.config.disableKeepAlives,
-					MaxConnsPerHost:     trans.config.maxHTTPConnections,
-					MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-					IdleConnTimeout:     trans.config.maxIdleConnDuration,
-				},
-				Timeout: trans.config.timeoutDuration,
-			}
+			return client
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
 	case "httplb":
 		trans.httpClient = httplb.NewClient(
 			httplb.WithTransport("http", &HTTPLBTransport{
-				Transport: &http.Transport{
-					DisableKeepAlives:   trans.config.disableKeepAlives,
-					MaxConnsPerHost:     trans.config.maxHTTPConnections,
-					MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-					IdleConnTimeout:     trans.config.maxIdleConnDuration,
-				},
+				Transport: transport,
 			}),
 			httplb.WithResolver(
 				resolver.NewDNSResolver(
