@@ -3,25 +3,20 @@ package offline_conversions
 import (
 	"encoding/csv"
 	"encoding/json"
-	"net/http"
 
 	"github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
-type Client struct {
-	URL    string
-	client *http.Client
-}
 type BingAdsBulkUploader struct {
-	destName      string
-	service       bingads.BulkServiceI
-	logger        logger.Logger
-	statsFactory  stats.Stats
-	client        Client
-	fileSizeLimit int64
-	eventsLimit   int64
+	destName       string
+	service        bingads.BulkServiceI
+	logger         logger.Logger
+	statsFactory   stats.Stats
+	fileSizeLimit  int64
+	eventsLimit    int64
+	isHashRequired bool
 }
 type Message struct {
 	Fields json.RawMessage `json:"fields"`
@@ -41,6 +36,7 @@ type DestinationConfig struct {
 	CustomerAccountID string `json:"customerAccountId"`
 	CustomerID        string `json:"customerId"`
 	RudderAccountID   string `json:"rudderAccountId"`
+	IsHashRequired    bool   `json:"isHashRequired"`
 }
 
 type ActionFileInfo struct {
