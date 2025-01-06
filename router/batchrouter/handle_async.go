@@ -464,7 +464,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 		brt.setMultipleJobStatus(SetMultipleJobStatusParams{
 			AsyncOutput:           out,
-			Attempted:             false,
 			AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 			FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
 			OriginalJobParameters: getOriginalJobParameters(batchJobs.Jobs),
@@ -488,7 +487,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 			brt.setMultipleJobStatus(SetMultipleJobStatusParams{
 				AsyncOutput:           out,
-				Attempted:             false,
 				AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 				FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
 				OriginalJobParameters: getOriginalJobParameters(batchJobs.Jobs),
@@ -560,7 +558,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		brt.setMultipleJobStatus(
 			SetMultipleJobStatusParams{
 				AsyncOutput:           out,
-				Attempted:             false,
 				AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 				FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
 				OriginalJobParameters: getOriginalJobParameters(batchJobs.Jobs),
