@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -19,6 +18,7 @@ type schemaV2 struct {
 	stats struct {
 		schemaSize stats.Histogram
 	}
+	// caches the schema present in the repository
 	cachedSchema model.Schema
 	warehouse    model.Warehouse
 	v1           *schema
@@ -26,29 +26,50 @@ type schemaV2 struct {
 	schemaMu     sync.RWMutex
 }
 
-func SyncSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, warehouse model.Warehouse, db *sqlquerywrapper.DB, log logger.Logger) error {
+func FetchAndSaveSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, warehouse model.Warehouse, schemaRepo schemaRepo, log logger.Logger) error {
 	warehouseSchema, err := fetchSchemaRepo.FetchSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching schema: %w", err)
 	}
 	removeDeprecatedColumns(warehouseSchema, warehouse, log)
-	schemaRepo := repo.NewWHSchemas(db)
 	return writeSchema(ctx, schemaRepo, warehouse, warehouseSchema)
 }
 
-func newSchemaV2(ctx context.Context, v1 *schema, warehouse model.Warehouse, log logger.Logger) (*schemaV2, error) {
-	v2 := &schemaV2{
-		v1:        v1,
-		warehouse: warehouse,
-		log:       log,
+func newSchemaV2(ctx context.Context, v1 *schema, warehouse model.Warehouse, log logger.Logger, schemaSize stats.Histogram) *schemaV2 {
+	sh := &schemaV2{
+		v1:           v1,
+		warehouse:    warehouse,
+		log:          log,
+		cachedSchema: model.Schema{},
+		stats: struct {
+			schemaSize stats.Histogram
+		}{
+			schemaSize: schemaSize,
+		},
 	}
-	var err error
-	v2.cachedSchema, err = v1.GetLocalSchema(ctx)
-	return v2, err
+	_, err := sh.SyncRemoteSchema(ctx, nil, 0)
+	if err != nil {
+		sh.log.Errorf("error syncing remote schema: %w", err)
+	}
+	return sh
 }
 
 func (sh *schemaV2) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	// no-op since syncing of local schema with warehouse schema is being done in the background
+	whSchema, err := sh.v1.schemaRepo.GetForNamespace(
+		ctx,
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
+	)
+	if err != nil {
+		return false, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return false, nil
+	}
+	sh.schemaMu.Lock()
+	defer sh.schemaMu.Unlock()
+	sh.cachedSchema = whSchema.Schema
 	return false, nil
 }
 
@@ -85,7 +106,14 @@ func (sh *schemaV2) UpdateLocalSchema(ctx context.Context, updatedSchema model.S
 }
 
 func (sh *schemaV2) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
-	// no-op since there is no warehouse schema to update
+	sh.schemaMu.Lock()
+	defer sh.schemaMu.Unlock()
+	sh.cachedSchema[tableName] = tableSchema
+	err := writeSchema(context.TODO(), sh.v1.schemaRepo, sh.warehouse, sh.cachedSchema)
+	if err != nil {
+		// TODO - Return error to the caller
+		sh.log.Errorf("error updating warehouse schema: %v", err)
+	}
 }
 
 func (sh *schemaV2) GetColumnsCountInWarehouseSchema(tableName string) int {
@@ -129,15 +157,4 @@ func (sh *schemaV2) TableSchemaDiff(tableName string, tableSchema model.TableSch
 func (sh *schemaV2) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error {
 	// no-op since local schema and warehouse schema are supposed to be in sync
 	return nil
-}
-
-func writeSchema(ctx context.Context, schemaRepo schemaRepo, warehouse model.Warehouse, updatedSchema model.Schema) error {
-	_, err := schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        warehouse.Source.ID,
-		Namespace:       warehouse.Namespace,
-		DestinationID:   warehouse.Destination.ID,
-		DestinationType: warehouse.Type,
-		Schema:          updatedSchema,
-	})
-	return err
 }

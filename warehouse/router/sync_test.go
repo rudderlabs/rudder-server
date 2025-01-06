@@ -25,6 +25,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+type mockFetchSchemaRepo struct{}
+
+func (m mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
+
 func TestSync_SyncRemoteSchemaIntegration(t *testing.T) {
 	destinationType := warehouseutils.POSTGRES
 	bucket := "some-bucket"
@@ -124,16 +130,17 @@ func TestSync_SyncRemoteSchemaIntegration(t *testing.T) {
 
 		<-setupCh
 		r.conf.Set("Warehouse.enableSyncSchema", true)
-		sh, err := schema.New(
-			context.Background(),
+		sh := schema.New(
+			ctx,
 			r.db,
 			warehouse,
 			r.conf,
 			r.logger.Child("syncer"),
 			r.statsFactory,
 		)
-		require.NoError(t, err)
 		require.Eventually(t, func() bool {
+			_, err := sh.SyncRemoteSchema(ctx, &mockFetchSchemaRepo{}, 0)
+			require.NoError(t, err)
 			schema, err := sh.GetLocalSchema(ctx)
 			require.NoError(t, err)
 			return reflect.DeepEqual(schema, model.Schema{

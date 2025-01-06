@@ -126,12 +126,21 @@ func TestColumnCountStat(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			conf := config.New()
 			conf.Set(fmt.Sprintf("Warehouse.%s.columnCountLimit", strings.ToLower(warehouseutils.WHDestNameMap[tc.destinationType])), tc.columnCountLimit)
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := postgres.Setup(pool, t)
+			require.NoError(t, err)
+
 			uploadJobFactory := &UploadJobFactory{
 				logger:       logger.NOP,
 				statsFactory: statsStore,
 				conf:         conf,
+				db:           sqlmiddleware.New(pgResource.DB),
 			}
 			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
 			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{

@@ -84,7 +84,7 @@ func New(
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,
-) (SchemaHandler, error) {
+) SchemaHandler {
 	schemaSize := statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
 		"module":        "warehouse",
 		"workspaceId":   warehouse.WorkspaceID,
@@ -102,15 +102,10 @@ func New(
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 	}
 	if conf.GetBoolVar(true, "Warehouse.enableSyncSchema") {
-		schemaHandler, err := newSchemaV2(ctx, schemaV1, warehouse, log)
-		if err != nil {
-			return nil, fmt.Errorf("creating schema handler: %w", err)
-		}
-		schemaHandler.stats.schemaSize = schemaSize
-		return schemaHandler, nil
+		return newSchemaV2(ctx, schemaV1, warehouse, log, schemaSize)
 	}
 	schemaV1.stats.schemaSize = schemaSize
-	return schemaV1, nil
+	return schemaV1
 }
 
 // ConsolidateStagingFilesUsingLocalSchema
@@ -293,13 +288,7 @@ func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 	}
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
-	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-	})
+	err = writeSchema(ctx, sh.schemaRepo, sh.warehouse, updatedSchema)
 	if err != nil {
 		return fmt.Errorf("updating local schema: %w", err)
 	}
@@ -480,4 +469,15 @@ func removeDeprecatedColumns(schema model.Schema, warehouse model.Warehouse, log
 			}
 		}
 	}
+}
+
+func writeSchema(ctx context.Context, schemaRepo schemaRepo, warehouse model.Warehouse, updatedSchema model.Schema) error {
+	_, err := schemaRepo.Insert(ctx, &model.WHSchema{
+		SourceID:        warehouse.Source.ID,
+		Namespace:       warehouse.Namespace,
+		DestinationID:   warehouse.Destination.ID,
+		DestinationType: warehouse.Type,
+		Schema:          updatedSchema,
+	})
+	return err
 }

@@ -148,7 +148,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
 	)
 
-	schemaHandle, err := schema.New(
+	schemaHandle := schema.New(
 		ctx,
 		f.db,
 		dto.Warehouse,
@@ -156,10 +156,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		f.logger.Child("warehouse"),
 		f.statsFactory,
 	)
-	if err != nil {
-		log.Errorw("failed to create schema handler", logfield.Error, err)
-		return nil
-	}
 
 	uj := &UploadJob{
 		ctx:                  ujCtx,
