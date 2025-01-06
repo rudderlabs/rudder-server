@@ -32,7 +32,7 @@ func TestBadger(t *testing.T) {
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
 			"type":   BadgerTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(3))
@@ -46,7 +46,7 @@ func TestBadger(t *testing.T) {
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
 			"type":   BadgerTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(4))
@@ -95,7 +95,7 @@ func TestInMemoryCache(t *testing.T) {
 		_ = es.Put("key2")
 		_ = es.Put("key3")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
 			"type":   InMemoryCacheTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(3))
@@ -109,7 +109,7 @@ func TestInMemoryCache(t *testing.T) {
 		val3, _ := es.Get("key3")
 		val4, _ := es.Get("key4")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
 			"type":   InMemoryCacheTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(4))
@@ -148,7 +148,7 @@ func TestInMemoryCache(t *testing.T) {
 		_ = es.Put("key4")
 		_ = es.Put("key5")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerPutTotal, map[string]string{
 			"type":   InMemoryCacheTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(3))
@@ -163,7 +163,7 @@ func TestInMemoryCache(t *testing.T) {
 		val4, _ := es.Get("key4")
 		val5, _ := es.Get("key5")
 
-		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetCount, map[string]string{
+		require.Equal(t, statsStore.Get(StatReportingEventSamplerGetTotal, map[string]string{
 			"type":   InMemoryCacheTypeEventSampler,
 			"module": MetricsReporting,
 		}).LastValue(), float64(5))

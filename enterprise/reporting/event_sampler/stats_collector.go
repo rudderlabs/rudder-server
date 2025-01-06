@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	StatReportingEventSamplerPutCount    = "reporting_event_sampler_put_count"
-	StatReportingEventSamplerGetCount    = "reporting_event_sampler_get_count"
-	StatReportingEventSamplerPutDuration = "reporting_event_sampler_put_duration"
-	StatReportingEventSamplerGetDuration = "reporting_event_sampler_get_duration"
+	StatReportingEventSamplerPutTotal    = "reporting_event_sampler_put_total"
+	StatReportingEventSamplerGetTotal    = "reporting_event_sampler_get_total"
+	StatReportingEventSamplerPutDuration = "reporting_event_sampler_put_duration_seconds"
+	StatReportingEventSamplerGetDuration = "reporting_event_sampler_get_duration_seconds"
 )
 
 type StatsCollector struct {
@@ -26,8 +26,8 @@ func NewStatsCollector(eventSamplerType, module string, statsFactory stats.Stats
 
 	return &StatsCollector{
 		stats:       statsFactory,
-		getCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerGetCount, stats.CountType, tags),
-		putCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerPutCount, stats.CountType, tags),
+		getCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerPutTotal, stats.CountType, tags),
+		putCounter:  statsFactory.NewTaggedStat(StatReportingEventSamplerGetTotal, stats.CountType, tags),
 		getDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerGetDuration, stats.TimerType, tags),
 		putDuration: statsFactory.NewTaggedStat(StatReportingEventSamplerPutDuration, stats.TimerType, tags),
 	}
