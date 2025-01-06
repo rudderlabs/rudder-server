@@ -248,7 +248,7 @@ func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string
 }
 
 func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) (manager.Manager, error) {
-	if m.authzBackoff.isInBackoff() {
+	if m.isInBackoff() {
 		return nil, newSnowflakeConnectionErr(errBackoff, fmt.Errorf("skipping snowflake manager creation due to backoff"))
 	}
 	modelWarehouse := whutils.ModelWarehouse{

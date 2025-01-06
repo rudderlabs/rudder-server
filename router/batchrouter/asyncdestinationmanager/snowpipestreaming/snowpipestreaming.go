@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -38,19 +39,12 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-type systemClock struct{}
-
-func (t systemClock) Now() time.Time {
-	return timeutil.Now()
-}
-
 func New(
 	conf *config.Config,
 	log logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 ) *Manager {
-	clock := systemClock{}
 	m := &Manager{
 		appConfig: conf,
 		logger: log.Child("snowpipestreaming").Withn(
@@ -60,7 +54,7 @@ func New(
 		),
 		statsFactory:        statsFactory,
 		destination:         destination,
-		now:                 clock.Now,
+		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
 	}
@@ -76,7 +70,11 @@ func New(
 	m.config.client.retryMax = conf.GetInt("SnowpipeStreaming.Client.retryMax", 5)
 	m.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
-	m.authzBackoff = newAuthzBackoff(conf.GetDuration("SnowpipeStreaming.backoffDuration", 1, time.Second), clock)
+	m.config.backoff.randomizationFactor = conf.GetReloadableFloat64Var(0.0, "SnowpipeStreaming.backoffRandomizationFactor")
+	m.config.backoff.maxElapsedTime = conf.GetReloadableDurationVar(0, time.Second, "SnowpipeStreaming.backoffMaxElapsedTime")
+	m.config.backoff.multiplier = conf.GetReloadableFloat64Var(2.0, "SnowpipeStreaming.backoffMultiplier")
+	m.config.backoff.initialInterval = conf.GetReloadableDurationVar(1, time.Second, "SnowpipeStreaming.backoffInitialInterval")
+	m.config.backoff.maxInterval = conf.GetReloadableDurationVar(1, time.Hour, "SnowpipeStreaming.backoffMaxInterval")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -176,7 +174,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		var sfConnectionErr *snowflakeConnectionErr
 		if errors.As(err, &sfConnectionErr) {
 			if sfConnectionErr.code == errAuthz {
-				m.authzBackoff.set()
+				m.backoff.next = m.nextBackOff()
 			}
 			return m.failedJobs(asyncDest, err.Error())
 		} else {
@@ -221,7 +219,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			var sfConnectionErr *snowflakeConnectionErr
 			if errors.As(err, &sfConnectionErr) {
 				if sfConnectionErr.code == errAuthz && !isBackoffSet {
-					m.authzBackoff.set()
+					m.backoff.next = m.nextBackOff()
 				}
 				shouldResetBackoff = false
 			}
@@ -245,7 +243,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		}
 	}
 	if shouldResetBackoff {
-		m.authzBackoff.reset()
+		m.resetBackoff()
 	}
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
@@ -599,4 +597,40 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 			SucceededKeys: succeededJobIDs,
 		},
 	}
+}
+
+func (m *Manager) Now() time.Time {
+	return m.now()
+}
+
+func (m *Manager) isInBackoff() bool {
+	if m.backoff.next.IsZero() {
+		return false
+	}
+	return m.now().Before(m.backoff.next)
+}
+
+func (m *Manager) resetBackoff() {
+	m.backoff.next = time.Time{}
+	m.backoff.attempts = 0
+}
+
+func (m *Manager) nextBackOff() time.Time {
+	b := backoff.NewExponentialBackOff(
+		backoff.WithRandomizationFactor(m.config.backoff.randomizationFactor.Load()),
+		backoff.WithMaxElapsedTime(m.config.backoff.maxElapsedTime.Load()),
+		backoff.WithMultiplier(m.config.backoff.multiplier.Load()),
+		backoff.WithClockProvider(m),
+		backoff.WithInitialInterval(m.config.backoff.initialInterval.Load()),
+		backoff.WithMaxInterval(m.config.backoff.maxInterval.Load()),
+	)
+	b.Reset()
+
+	m.backoff.attempts++
+
+	var d time.Duration
+	for index := int64(0); index < int64(m.backoff.attempts); index++ {
+		d = b.NextBackOff()
+	}
+	return m.now().Add(d)
 }
