@@ -50,6 +50,10 @@ var (
 		"reporting_client_get_aggregated_reports_count": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
 		},
+		"reporting_event_sampler_request_duration_seconds": {
+			// 1ms, 5ms, 10ms, 25ms, 50ms, 100ms
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1,
+		},
 		"csv_file_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
