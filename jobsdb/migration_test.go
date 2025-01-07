@@ -103,7 +103,7 @@ func TestMigration(t *testing.T) {
 		require.EqualValues(t, 3, jobDB.GetMaxDSIndex())
 
 		// last DS
-		// should have enough statuses for a clean up to be triggered
+		// should have enough statuses for a cleanup to be triggered
 		// all non-terminal
 		require.NoError(t, jobDB.Store(context.Background(), jobs[20:30]))
 		for i := 0; i < 10; i++ {
@@ -140,7 +140,7 @@ func TestMigration(t *testing.T) {
 		triggerMigrateDS <- time.Now() // waits for last loop to finish
 
 		// we should see that in the three DSs we have,
-		// the first one should only have non-terminal jobs left now(with only the last status) in an jobs_1_1
+		// the first one should only have non-terminal jobs left now(with only the last status) in jobs_1_1
 		// the second one should have all jobs
 		// the third DS should have all jobs with only the last status per job
 
@@ -434,7 +434,7 @@ func TestMigration(t *testing.T) {
 		require.EqualValues(t, "bytea", payloadType)
 
 		// last DS
-		// should have enough statuses for a clean up to be triggered
+		// should have enough statuses for a cleanup to be triggered
 		// all non-terminal
 		require.NoError(t, jobDB.Store(context.Background(), jobs[20:30]))
 		for i := 0; i < 10; i++ {
@@ -468,7 +468,7 @@ func TestMigration(t *testing.T) {
 		// data moved from both jsonb and bytea columns to a text column
 
 		// we should see that in the three DSs we have,
-		// the first one should only have non-terminal jobs left now(with only the last status) in an jobs_1_1
+		// the first one should only have non-terminal jobs left now(with only the last status) in jobs_1_1
 		// the second one should have all jobs
 		// the third DS should have all jobs with only the last status per job
 

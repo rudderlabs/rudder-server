@@ -1207,6 +1207,113 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 	}
 }
 
+// Fuzzer represents a test fuzzer for analytics events
+type Fuzzer struct {
+	testData []string
+}
+
+// NewFuzzer creates a new Fuzzer instance
+func NewFuzzer() *Fuzzer {
+	return &Fuzzer{
+		testData: make([]string, 0),
+	}
+}
+
+// Add adds a test case to the fuzzer
+func (f *Fuzzer) Add(data string) {
+	f.testData = append(f.testData, data)
+}
+
+// TestFuzzCorpus is the main test function that sets up the test corpus
+func GenerateFuzzCorpus() []string {
+	f := NewFuzzer()
+
+	// Basic event types
+	f.Add(`{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+	f.Add(`{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`)
+
+	// Add page views
+	f.Add(`{"type":"page","name":"Home","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+
+	// Add screen views
+	f.Add(`{"type":"screen","name":"Main","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+
+	// Add group events
+	f.Add(`{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+
+	// Add track events
+	f.Add(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+
+	// Test column names with special characters and edge cases
+	columnNames := []string{
+		// SQL keywords
+		"select", "from", "where", "and", "or", "not", "insert", "update", "delete",
+		// Special characters
+		"column name", "column-name", "column.name", "column@name", "column#name",
+		// Unicode characters
+		"columnñame", "colûmnname", "columnнаме", "列名", "カラム名",
+		// Very long names
+		"this_is_a_very_long_column_name_that_exceeds_the_maximum_allowed_length",
+	}
+
+	for _, columnName := range columnNames {
+		f.Add(fmt.Sprintf(`{"type":"track","messageId":"messageId","userId":"userId","event":"test","properties":{"%s":"test_value"}}`, columnName))
+	}
+
+	// Test event names with special cases
+	eventNames := []string{
+		"omega", "omega v2 ", "9mega", "mega&", "ome$ga",
+		"select", "drop", "create", "alter", "index",
+		"name with spaces", "name@with@special@chars",
+		"序列化", "テーブル", "таблица",
+	}
+
+	for _, eventName := range eventNames {
+		f.Add(fmt.Sprintf(`{"type":"track","messageId":"messageId","userId":"userId","event":"%s","properties":{"test":"value"}}`, eventName))
+	}
+
+	// Add merge events
+	f.Add(`{"type":"merge","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`)
+	f.Add(`{"type":"merge"}`)
+	f.Add(`{"type":"merge", "mergeProperties": "invalid"}`)
+
+	// Add identify events
+	f.Add(`{"type":"identify","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2}}`)
+
+	// Add extract events
+	f.Add(`{"type":"extract","recordId":"recordID","event":"event","receivedAt":"2021-09-01T00:00:00.000Z","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`)
+	return f.testData
+}
+
+func Test_FuzzTestStore(t *testing.T) {
+	_ = startPostgres(t)
+	conf := config.New()
+	columnTypes := []string{"jsonb", "text", "bytea"}
+	for _, column := range columnTypes {
+		t.Run(fmt.Sprintf("Store with %s column type", column), func(t *testing.T) {
+			conf.Set("JobsDB.payloadColumnType", column)
+			jobDB := Handle{config: conf}
+			err := jobDB.Setup(ReadWrite, true, column+"_"+strings.ToLower(rand.String(5)))
+			require.NoError(t, err)
+			testPayloads := GenerateFuzzCorpus()
+			for i, payload := range testPayloads {
+				jobs := []*JobT{{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(payload),
+					UserID:       uuid.New().String(),
+					UUID:         uuid.New(),
+					CustomVal:    fmt.Sprintf("TEST_%d", i),
+					WorkspaceId:  defaultWorkspaceID,
+					EventCount:   1,
+				}}
+				err := jobDB.Store(context.Background(), jobs)
+				require.NoError(t, err)
+			}
+			jobDB.TearDown()
+		})
+	}
+}
+
 // BenchmarkJobsdb takes time... keep waiting
 func BenchmarkJobsdb(b *testing.B) {
 	// We are intentionally not using b.N, since we want to have a testbench for stress testing jobsdb's behaviour for longer periods of time (5-15 seconds)
