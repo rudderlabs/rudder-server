@@ -12,24 +12,20 @@ import (
 	"sync"
 	"time"
 
-	internalBatchJson "github.com/rudderlabs/rudder-server/gateway/validation"
-
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
@@ -37,6 +33,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
+	"github.com/rudderlabs/rudder-server/gateway/validation"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -640,7 +637,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 }
 
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
-	// IMPORTANT: only use internalBatchJson instead of encoding/json in this function or any functions called from this function to be compatible with ingestion service
+	// IMPORTANT: only use validation instead of encoding/json in this function or any functions called from this function to be compatible with ingestion service
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
 			ctx           = r.Context()
@@ -758,7 +755,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
-	err := internalBatchJson.Unmarshal(body, &messages)
+	err := validation.Unmarshal(body, &messages)
 	if err != nil {
 		stat.RequestFailed(response.InvalidJSON)
 		stat.Report(gw.stats)
@@ -877,7 +874,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			SourceCategory:  msg.Properties.SourceType,
 		}
 
-		marshalledParams, err := internalBatchJson.Marshal(jobsDBParams)
+		marshalledParams, err := validation.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
 				logger.NewField("params", jobsDBParams),
@@ -914,7 +911,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			WriteKey:   writeKey,
 		}
 
-		payload, err := internalBatchJson.Marshal(eventBatch)
+		payload, err := validation.Marshal(eventBatch)
 		if err != nil {
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
