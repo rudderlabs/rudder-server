@@ -17,6 +17,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -50,7 +51,7 @@ func TestRouter_CronTrack(t *testing.T) {
 		r := Router{
 			conf:         config.New(),
 			destType:     whutils.POSTGRES,
-			now:          time.Now,
+			now:          timeutil.Now,
 			statsFactory: statsStore,
 			logger:       logger.NOP,
 		}
@@ -136,7 +137,7 @@ func TestRouter_CronTrack(t *testing.T) {
 		r := Router{
 			conf:         config.New(),
 			destType:     whutils.POSTGRES,
-			now:          time.Now,
+			now:          timeutil.Now,
 			statsFactory: statsStore,
 			db:           db,
 			logger:       logger.NOP,

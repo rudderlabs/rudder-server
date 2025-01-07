@@ -617,7 +617,7 @@ func (r *Router) handlePriorityForWaitingUploads(ctx context.Context, warehouse 
 
 func (r *Router) uploadStartAfterTime() time.Time {
 	if r.config.enableJitterForSyncs.Load() {
-		return timeutil.Now().Add(time.Duration(rand.Intn(15)) * time.Second)
+		return r.now().Add(time.Duration(rand.Intn(15)) * time.Second)
 	}
 	return r.now()
 }

@@ -23,7 +23,7 @@ import (
 // If the upload has not reached the terminal state, then we send a gauge metric with value 1 else 0
 func (r *Router) cronTracker(ctx context.Context) error {
 	for {
-		execTime := time.Now()
+		execTime := r.now()
 		r.stats.cronTrackerExecTimestamp.Gauge(execTime.Unix())
 
 		for _, warehouse := range r.copyWarehouses() {
