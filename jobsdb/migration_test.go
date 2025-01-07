@@ -647,3 +647,40 @@ func TestPayloadLiteral(t *testing.T) {
 		)
 	}
 }
+
+func Test_GetColumnConversion(t *testing.T) {
+	t.Run("bytea to text", func(t *testing.T) {
+		res, err := getColumnConversion(string(BYTEA), string(TEXT))
+		require.NoError(t, err)
+		require.Equal(t, `convert_from(j.event_payload, 'UTF8')`, res)
+	})
+	t.Run("bytea to jsonb", func(t *testing.T) {
+		res, err := getColumnConversion(string(BYTEA), string(JSONB))
+		require.NoError(t, err)
+		require.Equal(t, `convert_from(j.event_payload, 'UTF8')::jsonb`, res)
+	})
+	t.Run("text to bytea", func(t *testing.T) {
+		res, err := getColumnConversion(string(TEXT), string(BYTEA))
+		require.NoError(t, err)
+		require.Equal(t, `convert_to(j.event_payload, 'UTF8')`, res)
+	})
+	t.Run("text to jsonb", func(t *testing.T) {
+		res, err := getColumnConversion(string(TEXT), string(JSONB))
+		require.NoError(t, err)
+		require.Equal(t, `j.event_payload::jsonb`, res)
+	})
+	t.Run("jsonb to bytea", func(t *testing.T) {
+		res, err := getColumnConversion(string(JSONB), string(BYTEA))
+		require.NoError(t, err)
+		require.Equal(t, `convert_to(j.event_payload::TEXT, 'UTF8')`, res)
+	})
+	t.Run("jsonb to text", func(t *testing.T) {
+		res, err := getColumnConversion(string(JSONB), string(TEXT))
+		require.NoError(t, err)
+		require.Equal(t, `j.event_payload::TEXT`, res)
+	})
+	t.Run("invalid conversion", func(t *testing.T) {
+		_, err := getColumnConversion(string(JSONB), "random")
+		require.Error(t, err)
+	})
+}

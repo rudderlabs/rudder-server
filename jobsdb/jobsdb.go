@@ -36,31 +36,26 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/lib/pq"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	jsoniter "github.com/json-iterator/go"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/utils/crash"
-	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/google/uuid"
-	"github.com/lib/pq"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 var (
@@ -79,7 +74,6 @@ const (
 	JSONB payloadColumnType = "jsonb"
 	BYTEA payloadColumnType = "bytea"
 	TEXT  payloadColumnType = "text"
-	// JSON	??
 )
 
 // QueryConditions holds jobsdb query conditions
@@ -681,7 +675,7 @@ func init() {
 
 type OptsFunc func(jd *Handle)
 
-// WithClearDB, if set to true it will remove all existing tables
+// WithClearDB if set to true it will remove all existing tables
 func WithClearDB(clearDB bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.clearAll = clearDB
@@ -709,18 +703,6 @@ func WithConfig(c *config.Config) OptsFunc {
 func WithStats(s stats.Stats) OptsFunc {
 	return func(jd *Handle) {
 		jd.stats = s
-	}
-}
-
-func WithBinaryPayload() OptsFunc {
-	return func(jd *Handle) {
-		jd.conf.payloadColumnType = BYTEA
-	}
-}
-
-func WithTextPayload() OptsFunc {
-	return func(jd *Handle) {
-		jd.conf.payloadColumnType = TEXT
 	}
 }
 
@@ -1461,10 +1443,10 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		columnType = JSONB
 	case BYTEA:
 		columnType = BYTEA
-	// case TEXT:
-	// 	columnType = TEXT
-	default:
+	case TEXT:
 		columnType = TEXT
+	default:
+		columnType = JSONB
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
