@@ -637,7 +637,8 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 }
 
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
-	// IMPORTANT: only use validation instead of encoding/json in this function or any functions called from this function to be compatible with ingestion service
+	// IMPORTANT: only use the "validation" package for all kinds of validation here to avoid
+	// any differences with the ingestion service.
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
 			ctx           = r.Context()
