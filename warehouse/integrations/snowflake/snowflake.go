@@ -1303,11 +1303,6 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 	return nil
 }
 
-func (*Snowflake) CrashRecover(context.Context) error {
-	// no-op: snowflake does not need crash recovery
-	return nil
-}
-
 func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (empty bool, err error) {
 	empty = true
 
@@ -1368,9 +1363,8 @@ func (sf *Snowflake) TestConnection(ctx context.Context, _ model.Warehouse) erro
 }
 
 // FetchSchema queries the snowflake database and returns the schema
-func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schema, error) {
+func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, error) {
 	schema := make(model.Schema)
-	unrecognizedSchema := make(model.Schema)
 
 	sqlStatement := `
         SELECT
@@ -1386,10 +1380,10 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 
 	rows, err := sf.DB.QueryContext(ctx, sqlStatement, sf.Namespace)
 	if errors.Is(err, sql.ErrNoRows) {
-		return schema, unrecognizedSchema, nil
+		return schema, nil
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -1398,29 +1392,24 @@ func (sf *Snowflake) FetchSchema(ctx context.Context) (model.Schema, model.Schem
 		var numericScale sql.NullInt64
 
 		if err := rows.Scan(&tableName, &columnName, &columnType, &numericScale); err != nil {
-			return nil, nil, fmt.Errorf("scanning schema: %w", err)
+			return nil, fmt.Errorf("scanning schema: %w", err)
 		}
 
 		if _, ok := schema[tableName]; !ok {
 			schema[tableName] = make(map[string]string)
 		}
 
-		if datatype, ok := calculateDataType(columnType, numericScale); ok {
+		if datatype, ok := CalculateDataType(columnType, numericScale.Int64); ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			if _, ok := unrecognizedSchema[tableName]; !ok {
-				unrecognizedSchema[tableName] = make(map[string]string)
-			}
-			unrecognizedSchema[tableName][columnName] = whutils.MissingDatatype
-
 			whutils.WHCounterStat(sf.stats, whutils.RudderMissingDatatype, &sf.Warehouse, whutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return schema, unrecognizedSchema, nil
+	return schema, nil
 }
 
 func (sf *Snowflake) Cleanup(context.Context) {

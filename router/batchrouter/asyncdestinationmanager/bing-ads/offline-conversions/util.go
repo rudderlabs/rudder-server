@@ -3,8 +3,10 @@ package offline_conversions
 import (
 	"archive/zip"
 	"bufio"
+	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
+	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -434,7 +436,7 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 // GetUploadStats Related utils
 
 // get the list of unique error messages for a particular jobId.
-func getFailedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
+func getAbortedReasons(clientIDErrors map[int64]map[string]struct{}) map[int64]string {
 	reasons := make(map[int64]string)
 	for key, errors := range clientIDErrors {
 		reasons[key] = strings.Join(lo.Keys(errors), commaSeparator)
@@ -465,4 +467,44 @@ func validateField(fields map[string]interface{}, field string) error {
 		return fmt.Errorf("%v field is either not string or an empty string", field)
 	}
 	return nil
+}
+
+func calculateHashCode(data string) string {
+	// Join the strings into a single string with a separator
+	hash := sha256.New()
+	hash.Write([]byte(data))
+	hashBytes := hash.Sum(nil)
+	hashCode := fmt.Sprintf("%x", hashBytes)
+
+	return hashCode
+}
+
+func hashFields(input map[string]interface{}) (stdjson.RawMessage, error) {
+	// Create a new map to hold the hashed fields
+	hashedMap := make(map[string]interface{})
+
+	// Iterate over the input map
+	for key, value := range input {
+		// Check if the key is "email" or "phone"
+		if key == "email" || key == "phone" {
+			// Ensure the value is a string before hashing
+			if strVal, ok := value.(string); ok {
+				hashedMap[key] = calculateHashCode(strVal)
+			} else {
+				// If not a string, preserve the original value
+				hashedMap[key] = value
+			}
+		} else {
+			// Preserve other fields unchanged
+			hashedMap[key] = value
+		}
+	}
+
+	// Convert the resulting map to JSON RawMessage
+	result, err := json.Marshal(hashedMap)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(result), nil
 }

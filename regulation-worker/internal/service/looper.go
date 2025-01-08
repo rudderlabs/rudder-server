@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -34,7 +35,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 
 		err := l.Svc.JobSvc(ctx)
 
-		if err == model.ErrNoRunnableJob {
+		if errors.Is(err, model.ErrNoRunnableJob) {
 			pkgLogger.Debugf("no runnable job found... sleeping")
 			if err := misc.SleepCtx(ctx, time.Duration(interval)*time.Minute); err != nil {
 				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
@@ -43,7 +44,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 			continue
 		}
 		// this is to make sure that we don't panic when any of the API call fails with deadline exceeded error.
-		if err == model.ErrRequestTimeout {
+		if errors.Is(err, model.ErrRequestTimeout) {
 			pkgLogger.Errorf("context deadline exceeded... retrying after %d minute(s): %v", retryDelay, err)
 			if err := misc.SleepCtx(ctx, time.Duration(retryDelay)*time.Second); err != nil {
 				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)

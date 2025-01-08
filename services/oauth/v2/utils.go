@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,8 +22,8 @@ func GetOAuthActionStatName(stat string) string {
 	return fmt.Sprintf("oauth_action_%v", stat)
 }
 
-func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, stats *OAuthStats) bool {
-	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, stats) {
+func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, statsHandler OAuthStatsHandler) bool {
+	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, &statsHandler) {
 		return true
 	}
 	if !routerutils.IsNotEmptyString(string(oldSecret)) {
@@ -31,12 +32,12 @@ func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiry
 	return bytes.Equal(secret.Secret, oldSecret)
 }
 
-func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, stats *OAuthStats) bool {
+func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, statsHandler *OAuthStatsHandler) bool {
 	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
 	if err != nil {
-		stats.errorMessage = "parsing failed"
-		stats.statName = GetOAuthActionStatName("proactive_token_refresh")
-		stats.SendCountStat()
+		statsHandler.Increment("proactive_token_refresh", stats.Tags{
+			"errorMessage": "parsing failed",
+		})
 		return false
 	}
 	return date.Before(time.Now().Add(expirationTimeDiff))

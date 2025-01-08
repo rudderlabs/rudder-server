@@ -43,6 +43,7 @@ import (
 func TestApp(t *testing.T) {
 	admin.Init()
 	misc.Init()
+	conf := config.New()
 
 	const (
 		workspaceID              = "test_workspace_id"
@@ -57,7 +58,7 @@ func TestApp(t *testing.T) {
 	require.NoError(t, err)
 
 	report := &reporting.Factory{}
-	report.Setup(context.Background(), &bcConfig.NOOP{})
+	report.Setup(context.Background(), conf, &bcConfig.NOOP{})
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
