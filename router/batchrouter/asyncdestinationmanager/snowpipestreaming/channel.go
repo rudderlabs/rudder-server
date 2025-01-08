@@ -2,6 +2,7 @@ package snowpipestreaming
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -10,6 +11,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+var (
+	errAuthz   = errors.New("snowpipe authorization error")
+	errBackoff = errors.New("snowpipe backoff error")
 )
 
 // initializeChannelWithSchema creates a new channel for the given table if it doesn't exist.
@@ -66,7 +72,7 @@ func (m *Manager) addColumns(ctx context.Context, namespace, tableName string, c
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err = snowflakeManager.AddColumns(ctx, tableName, columns); err != nil {
-		return fmt.Errorf("adding column: %w", err)
+		return fmt.Errorf("adding column: %w, %w", errAuthz, err)
 	}
 	return nil
 }
@@ -157,10 +163,10 @@ func (m *Manager) handleSchemaError(
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateSchema(ctx); err != nil {
-		return nil, fmt.Errorf("creating schema: %w", err)
+		return nil, fmt.Errorf("creating schema: %w, %w", errAuthz, err)
 	}
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		return nil, fmt.Errorf("creating table: %w", err)
+		return nil, fmt.Errorf("creating table: %w, %w", errAuthz, err)
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
@@ -185,7 +191,7 @@ func (m *Manager) handleTableError(
 		snowflakeManager.Cleanup(ctx)
 	}()
 	if err := snowflakeManager.CreateTable(ctx, channelReq.TableConfig.Table, eventSchema); err != nil {
-		return nil, fmt.Errorf("creating table: %w", err)
+		return nil, fmt.Errorf("creating table: %w, %w", errAuthz, err)
 	}
 	return m.api.CreateChannel(ctx, channelReq)
 }
@@ -225,6 +231,9 @@ func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string
 }
 
 func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) (manager.Manager, error) {
+	if m.isInBackoff() {
+		return nil, fmt.Errorf("skipping snowflake manager creation due to backoff: %w", errBackoff)
+	}
 	modelWarehouse := whutils.ModelWarehouse{
 		WorkspaceID: m.destination.WorkspaceID,
 		Destination: *m.destination,
@@ -234,13 +243,5 @@ func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) 
 	}
 	modelWarehouse.Destination.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
 
-	sf, err := manager.New(whutils.SnowpipeStreaming, m.appConfig, m.logger, m.statsFactory)
-	if err != nil {
-		return nil, fmt.Errorf("creating snowflake manager: %w", err)
-	}
-	err = sf.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
-	if err != nil {
-		return nil, fmt.Errorf("setting up snowflake manager: %w", err)
-	}
-	return sf, nil
+	return m.managerCreator(ctx, modelWarehouse, m.appConfig, m.logger, m.statsFactory)
 }
