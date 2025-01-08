@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -292,9 +291,6 @@ func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error)
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
-			res, _ := json.Marshal(job.GetTableSchemaInUpload(tName))
-			schema, _ := json.Marshal(job.schemaHandle.GetTableSchema(tName))
-			job.logger.Errorf("Error updating schema for table %s in namespace %s of destination %s:%s, error: %v, schema: %v, schema2: %v", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err, string(res), string(schema))
 			return
 		}
 
@@ -309,8 +305,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 	if tableSchemaDiff.TableToBeCreated {
 		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
-			res, _ := json.Marshal(tableSchemaDiff)
-			job.logger.Errorf("Error creating table %s on namespace: %s, error: %v, tableSchemaDiff: %v", tName, job.warehouse.Namespace, err, string(res))
 			return err
 		}
 		job.stats.tablesAdded.Increment()

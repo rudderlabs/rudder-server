@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -51,11 +50,7 @@ func schemaKey(sourceID, destinationID, namespace string) string {
 }
 
 func (m *mockSyncSchemaRepo) GetLocalSchema(_ context.Context) (model.Schema, error) {
-	if m.getLocalSchemaerr != nil {
-		return model.Schema{}, m.getLocalSchemaerr
-	}
-
-	return model.Schema{}, nil
+	return model.Schema{}, m.getLocalSchemaerr
 }
 
 func (m *mockSyncSchemaRepo) UpdateLocalSchemaWithWarehouse(_ context.Context, _ model.Schema) error {
@@ -88,7 +83,7 @@ func TestSync_SyncRemoteSchema(t *testing.T) {
 		}
 		err := r.syncRemoteSchema(context.Background(), mockFetchSchema, mock)
 		require.Error(t, err)
-		require.True(t, errors.Is(err, mock.getLocalSchemaerr))
+		require.ErrorIs(t, err, mock.getLocalSchemaerr)
 	})
 	t.Run("fetching schema from warehouse fails", func(t *testing.T) {
 		mock := &mockSyncSchemaRepo{
@@ -100,7 +95,7 @@ func TestSync_SyncRemoteSchema(t *testing.T) {
 		}
 		err := r.syncRemoteSchema(context.Background(), mockFetchSchema, mock)
 		require.Error(t, err)
-		require.True(t, errors.Is(err, mock.fetchSchemaErr))
+		require.ErrorIs(t, err, mock.fetchSchemaErr)
 	})
 	t.Run("schema has changed and updating errors", func(t *testing.T) {
 		mock := &mockSyncSchemaRepo{
@@ -114,7 +109,7 @@ func TestSync_SyncRemoteSchema(t *testing.T) {
 		err := r.syncRemoteSchema(context.Background(), mockFetchSchema, mock)
 		require.Error(t, err)
 	})
-	t.Run("schema has changed and updating errors", func(t *testing.T) {
+	t.Run("schema has not changed and updating errors", func(t *testing.T) {
 		mock := &mockSyncSchemaRepo{
 			hasChanged:           false,
 			updateLocalSchemaErr: fmt.Errorf("error updating local schema"),
@@ -204,6 +199,7 @@ func TestSync_SyncRemoteSchemaIntegration(t *testing.T) {
 		warehouses:   []model.Warehouse{warehouse},
 		destType:     warehouseutils.POSTGRES,
 		statsFactory: stats.NOP,
+		now:          time.Now,
 	}
 
 	setupCh := make(chan struct{})
