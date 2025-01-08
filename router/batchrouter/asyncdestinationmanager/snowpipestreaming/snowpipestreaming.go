@@ -173,13 +173,15 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
-		if errors.Is(err, errAuthz) || errors.Is(err, errBackoff) {
-			if errors.Is(err, errAuthz) {
-				m.setBackOff()
-			}
+		switch {
+		case errors.Is(err, errAuthz):
+			m.setBackOff()
 			return m.failedJobs(asyncDest, err.Error())
+		case errors.Is(err, errBackoff):
+			return m.failedJobs(asyncDest, err.Error())
+		default:
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 		}
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -216,11 +218,15 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
-			if errors.Is(err, errAuthz) || errors.Is(err, errBackoff) {
+			switch {
+			case errors.Is(err, errAuthz):
 				shouldResetBackoff = false
-				if errors.Is(err, errAuthz) && !isBackoffSet {
+				if !isBackoffSet {
+					isBackoffSet = true
 					m.setBackOff()
 				}
+			case errors.Is(err, errBackoff):
+				shouldResetBackoff = false
 			}
 			m.logger.Warnn("Failed to send events to Snowpipe",
 				logger.NewStringField("table", info.tableName),

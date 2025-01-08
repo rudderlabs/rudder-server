@@ -353,11 +353,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 		managerCreatorCallCount := 0
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			managerCreatorCallCount++
-			mockManager := newMockManager(sm)
-			mockManager.createSchemaErr = fmt.Errorf("failed to create schema")
-			return mockManager, nil
+			mm := newMockManager(sf)
+			mm.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mm, nil
 		}
 		sm.config.backoff.initialInterval = config.SingleValueLoader(time.Second * 10)
 		asyncDestStruct := &common.AsyncDestinationStruct{
@@ -390,9 +390,9 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.True(t, sm.isInBackoff())
 
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			managerCreatorCallCount++
-			return newMockManager(sm), nil
+			return newMockManager(sf), nil
 		}
 		sm.now = func() time.Time {
 			return timeutil.Now().Add(time.Second * 50)
@@ -415,10 +415,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 			},
 		}
 		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			mockManager := newMockManager(sm)
-			mockManager.createSchemaErr = fmt.Errorf("failed to create schema")
-			return mockManager, nil
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			mm := newMockManager(sf)
+			mm.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mm, nil
 		}
 		output := sm.Upload(&common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
