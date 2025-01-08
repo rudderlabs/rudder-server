@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -31,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -38,13 +41,13 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(
 	conf *config.Config,
-	logger logger.Logger,
+	log logger.Logger,
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 ) *Manager {
 	m := &Manager{
 		appConfig: conf,
-		logger: logger.Child("snowpipestreaming").Withn(
+		logger: log.Child("snowpipestreaming").Withn(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
@@ -67,6 +70,9 @@ func New(
 	m.config.client.retryMax = conf.GetInt("SnowpipeStreaming.Client.retryMax", 5)
 	m.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
+	m.config.backoff.initialInterval = conf.GetReloadableDurationVar(1, time.Second, "SnowpipeStreaming.backoffInitialIntervalInSeconds")
+	m.config.backoff.multiplier = conf.GetReloadableFloat64Var(2.0, "SnowpipeStreaming.backoffMultiplier")
+	m.config.backoff.maxInterval = conf.GetReloadableDurationVar(1, time.Hour, "SnowpipeStreaming.backoffMaxIntervalInHours")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -100,6 +106,17 @@ func New(
 		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
+	m.managerCreator = func(ctx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, statsFactory stats.Stats) (manager.Manager, error) {
+		sf, err := manager.New(whutils.SnowpipeStreaming, conf, logger, statsFactory)
+		if err != nil {
+			return nil, fmt.Errorf("creating snowflake manager: %w", err)
+		}
+		err = sf.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
+		if err != nil {
+			return nil, fmt.Errorf("setting up snowflake manager: %w", err)
+		}
+		return sf, nil
+	}
 	return m
 }
 
@@ -119,6 +136,10 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 	client.RetryWaitMax = m.config.client.retryWaitMax
 	client.RetryMax = m.config.client.retryMax
 	return client
+}
+
+func (m *Manager) Now() time.Time {
+	return m.now()
 }
 
 func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
@@ -152,7 +173,15 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		switch {
+		case errors.Is(err, errAuthz):
+			m.setBackOff()
+			return m.failedJobs(asyncDest, err.Error())
+		case errors.Is(err, errBackoff):
+			return m.failedJobs(asyncDest, err.Error())
+		default:
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		}
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -184,9 +213,21 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
 	)
+	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
+	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
+			switch {
+			case errors.Is(err, errAuthz):
+				shouldResetBackoff = false
+				if !isBackoffSet {
+					isBackoffSet = true
+					m.setBackOff()
+				}
+			case errors.Is(err, errBackoff):
+				shouldResetBackoff = false
+			}
 			m.logger.Warnn("Failed to send events to Snowpipe",
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
@@ -205,6 +246,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			discardImportInfo.Count += discardImInfo.Count
 			discardImportInfo.Offset = discardImInfo.Offset
 		}
+	}
+	if shouldResetBackoff {
+		m.resetBackoff()
 	}
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
@@ -245,7 +289,7 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 
 	events := make([]*event, 0, eventsCount)
 
-	formattedTS := m.now().Format(misc.RFC3339Milli)
+	formattedTS := m.Now().Format(misc.RFC3339Milli)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, int(m.config.maxBufferCapacity.Load()))
 
@@ -289,7 +333,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	}
 	log.Infon("Prepared channel", logger.NewStringField("channelID", channelResponse.ChannelID))
 
-	formattedTS := m.now().Format(misc.RFC3339Milli)
+	formattedTS := m.Now().Format(misc.RFC3339Milli)
 	var discardInfos []discardInfo
 	for _, tableEvent := range info.events {
 		discardInfos = append(discardInfos, getDiscardedRecordsFromEvent(tableEvent, channelResponse.SnowpipeSchema, info.tableName, formattedTS)...)
@@ -358,6 +402,16 @@ func (m *Manager) abortJobs(asyncDest *common.AsyncDestinationStruct, abortReaso
 		AbortJobIDs:   asyncDest.ImportingJobIDs,
 		AbortCount:    len(asyncDest.ImportingJobIDs),
 		AbortReason:   abortReason,
+		DestinationID: asyncDest.Destination.ID,
+	}
+}
+
+func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedReason string) common.AsyncUploadOutput {
+	m.stats.jobs.failed.Count(len(asyncDest.ImportingJobIDs))
+	return common.AsyncUploadOutput{
+		FailedJobIDs:  asyncDest.ImportingJobIDs,
+		FailedCount:   len(asyncDest.ImportingJobIDs),
+		FailedReason:  failedReason,
 		DestinationID: asyncDest.Destination.ID,
 	}
 }
@@ -548,4 +602,35 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 			SucceededKeys: succeededJobIDs,
 		},
 	}
+}
+
+func (m *Manager) isInBackoff() bool {
+	if m.backoff.next.IsZero() {
+		return false
+	}
+	return m.Now().Before(m.backoff.next)
+}
+
+func (m *Manager) resetBackoff() {
+	m.backoff.next = time.Time{}
+	m.backoff.attempts = 0
+}
+
+func (m *Manager) setBackOff() {
+	b := backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(m.config.backoff.initialInterval.Load()),
+		backoff.WithMultiplier(m.config.backoff.multiplier.Load()),
+		backoff.WithClockProvider(m),
+		backoff.WithRandomizationFactor(0),
+		backoff.WithMaxElapsedTime(0),
+		backoff.WithMaxInterval(m.config.backoff.maxInterval.Load()),
+	)
+	b.Reset()
+	m.backoff.attempts++
+
+	var d time.Duration
+	for index := int64(0); index < int64(m.backoff.attempts); index++ {
+		d = b.NextBackOff()
+	}
+	m.backoff.next = m.Now().Add(d)
 }

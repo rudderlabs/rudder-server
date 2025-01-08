@@ -2,8 +2,10 @@ package snowpipestreaming
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +18,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	internalapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -41,6 +47,25 @@ func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertReq
 
 func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
 	return m.getStatusOutputMap[channelID]()
+}
+
+type mockManager struct {
+	manager.Manager
+	createSchemaErr error
+}
+
+func newMockManager(m manager.Manager) *mockManager {
+	return &mockManager{
+		Manager: m,
+	}
+}
+
+func (m *mockManager) CreateSchema(context.Context) error {
+	return m.createSchemaErr
+}
+
+func (m *mockManager) CreateTable(context.Context, string, whutils.ModelTableSchema) error {
+	return nil
 }
 
 var (
@@ -77,6 +102,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "SNOWPIPE_STREAMING",
 		},
+		Config: make(map[string]interface{}),
 	}
 
 	t.Run("Upload with invalid file path", func(t *testing.T) {
@@ -100,6 +126,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "aborted",
 		}).LastValue())
 	})
+
 	t.Run("Upload with invalid record in file", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -310,6 +337,101 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
+	t.Run("Upload with unauthorized schema error should add backoff", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
+				},
+			},
+		}
+		managerCreatorCallCount := 0
+		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			managerCreatorCallCount++
+			mm := newMockManager(sf)
+			mm.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mm, nil
+		}
+		sm.config.backoff.initialInterval = config.SingleValueLoader(time.Second * 10)
+		asyncDestStruct := &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_user_records.txt",
+		}
+		require.False(t, sm.isInBackoff())
+		output1 := sm.Upload(asyncDestStruct)
+		require.Equal(t, 2, output1.FailedCount)
+		require.Equal(t, 0, output1.AbortCount)
+		require.Equal(t, 1, managerCreatorCallCount)
+		require.True(t, sm.isInBackoff())
+
+		sm.Upload(asyncDestStruct)
+		// client is not created again due to backoff error
+		require.Equal(t, 1, managerCreatorCallCount)
+		require.True(t, sm.isInBackoff())
+
+		sm.now = func() time.Time {
+			return timeutil.Now().Add(time.Second * 5)
+		}
+		require.True(t, sm.isInBackoff())
+		sm.now = func() time.Time {
+			return timeutil.Now().Add(time.Second * 20)
+		}
+		require.False(t, sm.isInBackoff())
+		sm.Upload(asyncDestStruct)
+		// client created again since backoff duration has been exceeded
+		require.Equal(t, 2, managerCreatorCallCount)
+		require.True(t, sm.isInBackoff())
+
+		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			managerCreatorCallCount++
+			return newMockManager(sf), nil
+		}
+		sm.now = func() time.Time {
+			return timeutil.Now().Add(time.Second * 50)
+		}
+		sm.Upload(asyncDestStruct)
+		require.Equal(t, 3, managerCreatorCallCount)
+		require.False(t, sm.isInBackoff())
+	})
+
+	t.Run("Upload with discards table authorization error should mark the job as failed", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
+				},
+			},
+		}
+		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
+			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+			mm := newMockManager(sf)
+			mm.createSchemaErr = fmt.Errorf("failed to create schema")
+			return mm, nil
+		}
+		output := sm.Upload(&common.AsyncDestinationStruct{
+			ImportingJobIDs: []int64{1},
+			Destination:     destination,
+			FileName:        "testdata/successful_user_records.txt",
+		})
+		require.Equal(t, 1, output.FailedCount)
+		require.Equal(t, 0, output.AbortCount)
+		require.NotEmpty(t, output.FailedReason)
+		require.Empty(t, output.AbortReason)
+		require.Equal(t, true, sm.isInBackoff())
+	})
+
 	t.Run("Upload insert error for all events", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
