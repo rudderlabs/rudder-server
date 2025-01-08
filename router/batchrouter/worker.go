@@ -140,7 +140,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			if err != nil {
 				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 			}
-			reportMetrics := brt.getReportMetrics(GetReportMetricsParams{
+			reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 				StatusList:    drainList,
 				ParametersMap: brt.getParamertsFromJobs(drainJobList),
 			})

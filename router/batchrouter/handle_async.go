@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -43,7 +44,7 @@ func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, l
 }
 
 func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, allJobs, completedJobs []*jobsdb.JobT, statusList []*jobsdb.JobStatusT) error {
-	reportMetrics := brt.getReportMetrics(GetReportMetricsParams{
+	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 		StatusList:    statusList,
 		ParametersMap: brt.getParamertsFromJobs(allJobs),
 		JobsList:      allJobs,
@@ -368,7 +369,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
 					}
-					brt.setMultipleJobStatus(SetMultipleJobStatusParams{
+					brt.setMultipleJobStatus(setMultipleJobStatusParams{
 						AsyncOutput:           uploadResponse,
 						Attempted:             true,
 						AttemptNums:           brt.asyncDestinationStruct[destinationID].AttemptNums,
@@ -462,7 +463,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error()) // skipcq: GO-R4002
 		}
 
-		brt.setMultipleJobStatus(SetMultipleJobStatusParams{
+		brt.setMultipleJobStatus(setMultipleJobStatusParams{
 			AsyncOutput:           out,
 			AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 			FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
@@ -485,7 +486,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 				out.FailedReason = `Jobs flowed over the prescribed limit`
 			}
 
-			brt.setMultipleJobStatus(SetMultipleJobStatusParams{
+			brt.setMultipleJobStatus(setMultipleJobStatusParams{
 				AsyncOutput:           out,
 				AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 				FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
@@ -556,7 +557,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		}
 
 		brt.setMultipleJobStatus(
-			SetMultipleJobStatusParams{
+			setMultipleJobStatusParams{
 				AsyncOutput:           out,
 				AttemptNums:           getAttemptNumbers(batchJobs.Jobs),
 				FirstAttemptedAts:     getFirstAttemptAts(batchJobs.Jobs),
@@ -590,22 +591,15 @@ func (brt *Handle) createFakeJob(jobID int64, parameters stdjson.RawMessage) *jo
 	}
 }
 
-type GetReportMetricsParams struct {
-	StatusList    []*jobsdb.JobStatusT
-	ParametersMap map[int64]stdjson.RawMessage
-	JobsList      []*jobsdb.JobT
-}
-
-func (brt *Handle) getReportMetrics(params GetReportMetricsParams) []*utilTypes.PUReportedMetric {
+func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.PUReportedMetric {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
-	jobsMap := make(map[int64]*jobsdb.JobT)
-	for _, job := range params.JobsList {
-		jobsMap[job.JobID] = job
-	}
+	jobsMap := lo.SliceToMap(params.JobsList, func(j *jobsdb.JobT) (int64, *jobsdb.JobT) {
+		return j.JobID, j
+	})
 	for _, status := range params.StatusList {
 		var parameters routerutils.JobParameters
 		err := json.Unmarshal(params.ParametersMap[status.JobID], &parameters)
@@ -690,16 +684,7 @@ func (brt *Handle) getReportMetrics(params GetReportMetricsParams) []*utilTypes.
 	return reportMetrics
 }
 
-type SetMultipleJobStatusParams struct {
-	AsyncOutput           common.AsyncUploadOutput
-	Attempted             bool
-	AttemptNums           map[int64]int
-	FirstAttemptedAts     map[int64]time.Time
-	OriginalJobParameters map[int64]stdjson.RawMessage
-	JobsList              []*jobsdb.JobT
-}
-
-func (brt *Handle) setMultipleJobStatus(params SetMultipleJobStatusParams) {
+func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	workspaceID := brt.GetWorkspaceIDForDestID(params.AsyncOutput.DestinationID)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
@@ -812,7 +797,7 @@ func (brt *Handle) setMultipleJobStatus(params SetMultipleJobStatusParams) {
 		},
 	}
 
-	reportMetrics := brt.getReportMetrics(GetReportMetricsParams{
+	reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 		StatusList:    statusList,
 		ParametersMap: params.OriginalJobParameters,
 		JobsList:      params.JobsList,
