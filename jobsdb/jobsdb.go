@@ -36,31 +36,26 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/lib/pq"
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	jsoniter "github.com/json-iterator/go"
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
-	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/utils/crash"
-	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/google/uuid"
-	"github.com/lib/pq"
+	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
 var (
@@ -71,6 +66,14 @@ var (
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
 	pgErrorCodeTableReadonly         = "RS001"
+)
+
+type payloadColumnType string
+
+const (
+	JSONB payloadColumnType = "jsonb"
+	BYTEA payloadColumnType = "bytea"
+	TEXT  payloadColumnType = "text"
 )
 
 // QueryConditions holds jobsdb query conditions
@@ -499,6 +502,7 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
+		payloadColumnType              payloadColumnType
 		maxTableSize                   config.ValueLoader[int64]
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
@@ -671,7 +675,7 @@ func init() {
 
 type OptsFunc func(jd *Handle)
 
-// WithClearDB, if set to true it will remove all existing tables
+// WithClearDB if set to true it will remove all existing tables
 func WithClearDB(clearDB bool) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.clearAll = clearDB
@@ -768,6 +772,10 @@ func (jd *Handle) init() {
 
 	if jd.config == nil {
 		jd.config = config.Default
+	}
+
+	if string(jd.conf.payloadColumnType) == "" {
+		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetStringVar(string(JSONB), "JobsDB.payloadColumnType"))
 	}
 
 	if jd.stats == nil {
@@ -1429,6 +1437,17 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 }
 
 func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
+	var columnType payloadColumnType
+	switch jd.conf.payloadColumnType {
+	case JSONB:
+		columnType = JSONB
+	case BYTEA:
+		columnType = BYTEA
+	case TEXT:
+		columnType = TEXT
+	default:
+		columnType = JSONB
+	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		job_id BIGSERIAL PRIMARY KEY,
 		workspace_id TEXT NOT NULL DEFAULT '',
@@ -1436,7 +1455,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		user_id TEXT NOT NULL,
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
-		event_payload JSONB NOT NULL,
+		event_payload `+string(columnType)+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
@@ -2215,6 +2234,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
 		var job JobT
+		var payload []byte
 		var jsState sql.NullString
 		var jsAttemptNum sql.NullInt64
 		var jsExecTime sql.NullTime
@@ -2223,13 +2243,14 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
 		if err != nil {
 			return JobsResult{}, false, err
 		}
+		job.EventPayload = payload
 		if jsState.Valid {
 			resultsetStates[jsState.String] = struct{}{}
 			job.LastJobStatus.JobState = jsState.String
