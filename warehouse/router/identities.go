@@ -18,7 +18,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -309,7 +308,7 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 	RETURNING id
 	`, warehouseutils.WarehouseUploadsTable)
 
-	now := timeutil.Now()
+	now := r.now()
 	row := r.db.QueryRow(
 		sqlStatement,
 		warehouse.Source.ID,

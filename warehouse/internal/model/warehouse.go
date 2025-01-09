@@ -62,3 +62,7 @@ func (w *Warehouse) GetPreferAppendSetting() bool {
 	}
 	return value
 }
+
+func (w *Warehouse) IsEnabled() bool {
+	return w.Source.Enabled && w.Destination.Enabled
+}
