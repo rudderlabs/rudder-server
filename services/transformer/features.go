@@ -16,6 +16,7 @@ import (
 const (
 	V0 = "v0"
 	V1 = "v1"
+	V2 = "v2"
 )
 
 type FeaturesServiceOptions struct {
@@ -39,6 +40,7 @@ var defaultTransformerFeatures = `{
 	},
 	"regulations": ["AM"],
 	"supportSourceTransformV1": true,
+	"upgradedToSourceTransformV2": false,
   }`
 
 func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
@@ -74,8 +76,8 @@ func (*noopService) Regulations() []string {
 }
 
 func (*noopService) SourceTransformerVersion() string {
-	// v0 is deprecated
-	return V1
+	// v0 is deprecated and upgrading to v2
+	return V2
 }
 
 func (*noopService) TransformerProxyVersion() string {

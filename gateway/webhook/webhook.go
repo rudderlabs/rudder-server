@@ -9,7 +9,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -28,6 +26,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 type webhookT struct {
@@ -277,29 +276,6 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-func prepareRequestBody(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
-	defer func() {
-		_ = req.Body.Close()
-	}()
-
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, errors.New(response.RequestBodyReadFailed)
-	}
-
-	if len(body) == 0 {
-		body = []byte("{}") // If body is empty, set it to an empty JSON object
-	}
-
-	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
-		queryParams := req.URL.Query()
-
-		return sjson.SetBytes(body, "query_parameters", queryParams)
-	}
-
-	return body, nil
-}
-
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
@@ -333,15 +309,22 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			var payload []byte
-			body, err := prepareRequestBody(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
-			if err == nil && !json.Valid(body) {
+			var eventRequest []byte
+
+			if sourceTransformAdapter.getAdapterVersion() == transformer.V1 {
+				eventRequest, err = prepareTransformerEventRequestV1(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
+			} else {
+				eventRequest, err = prepareTransformerEventRequestV2(req.request)
+			}
+
+			if err == nil && !json.Valid(eventRequest) {
 				err = errors.New(response.InvalidJSON)
 			}
-			if err == nil && len(body) > bt.webhook.config.maxReqSize.Load() {
+			if err == nil && len(eventRequest) > bt.webhook.config.maxReqSize.Load() {
 				err = errors.New(response.RequestBodyTooLarge)
 			}
 			if err == nil {
-				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, body)
+				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
 			}
 
 			if err != nil {
