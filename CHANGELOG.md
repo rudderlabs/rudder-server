@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.1](https://github.com/rudderlabs/rudder-server/compare/v1.40.0...v1.40.1) (2025-01-08)
+
+
+### Bug Fixes
+
+* warehouse router tracker ([#5407](https://github.com/rudderlabs/rudder-server/issues/5407)) ([8e314b6](https://github.com/rudderlabs/rudder-server/commit/8e314b6160c37283fbbe889f1dbad86f994943b1))
+
 ## [1.40.0](https://github.com/rudderlabs/rudder-server/compare/v1.39.0...v1.40.0) (2025-01-06)
 
 

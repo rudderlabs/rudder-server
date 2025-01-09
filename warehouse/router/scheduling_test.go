@@ -18,6 +18,7 @@ import (
 
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -235,7 +236,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
 
-				now := time.Now()
+				now := timeutil.Now()
 
 				r := Router{}
 				r.conf = config.New()
@@ -260,7 +261,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 					Identifier: "test_identifier_upload_frequency_exceeded",
 				}
 
-				now := time.Now()
+				now := timeutil.Now()
 
 				r := Router{}
 				r.conf = config.New()
@@ -316,7 +317,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 			}
 
-			now := time.Now()
+			now := timeutil.Now()
 
 			r := Router{}
 			r.conf = config.New()
@@ -344,7 +345,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 			}
 
-			now := time.Now()
+			now := timeutil.Now()
 
 			r := Router{}
 			r.conf = config.New()
@@ -453,7 +454,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 						return tc.now
 					}
 
-					r.updateCreateJobMarker(w, time.Now())
+					r.updateCreateJobMarker(w, now)
 
 					err := r.canCreateUpload(context.Background(), w)
 					if tc.wantErr != nil {
