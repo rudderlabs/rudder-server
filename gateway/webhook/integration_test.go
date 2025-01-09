@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -44,6 +45,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 
+	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
 
@@ -321,19 +323,46 @@ func TestIntegrationWebhook(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
-				errPayload, err := json.Marshal(struct {
-					Event  json.RawMessage       `json:"event"`
-					Source backendconfig.SourceT `json:"source"`
-				}{
-					Source: sConfig,
-					Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
-				})
+				var errPayload []byte
+				// expected error payload stored in errDB is dependant on the webhook transformation version
+				if webhookVersion == "v1" {
+					errPayload, err = json.Marshal(struct {
+						Event  json.RawMessage       `json:"event"`
+						Source backendconfig.SourceT `json:"source"`
+					}{
+						Source: sConfig,
+						Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
+					})
+				} else {
+					var requestPayload *requesttojson.RequestJSON
+					var requestPayloadBytes []byte
+
+					// set defaults assigned by go http client
+					req.Body = io.NopCloser(bytes.NewReader(p))
+					req.Method = "POST"
+					req.Proto = "HTTP/1.1"
+					req.Header.Set("Accept-Encoding", "gzip")
+					req.Header.Set("Content-Length", strconv.Itoa(len(p)))
+					req.Header.Set("User-Agent", "Go-http-client/1.1")
+
+					requestPayload, err = requesttojson.RequestToJSON(req, "{}")
+					requestPayloadBytes, err = json.Marshal(requestPayload)
+
+					errPayload, err = json.Marshal(struct {
+						Request json.RawMessage       `json:"request"`
+						Source  backendconfig.SourceT `json:"source"`
+					}{
+						Source: sConfig,
+						// Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
+						Request: requestPayloadBytes,
+					})
+				}
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
 
 				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value()
-				if errPayloadWriteKey != nil {
+				if errPayloadWriteKey != nil && webhookVersion == "v1" {
 					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
 					require.NoError(t, err)
 				}
