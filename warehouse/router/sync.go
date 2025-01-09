@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -31,11 +33,23 @@ func (r *Router) sync(ctx context.Context) error {
 			whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
 			if err != nil {
 				log.Warnn("create warehouse manager: %w", obskit.Error(err))
+				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+					"reason":        "manager_creation_error",
+					"sourceId":      warehouse.Source.ID,
+					"destinationId": warehouse.Destination.ID,
+					"workspaceId":   warehouse.WorkspaceID,
+				}).Increment()
 				continue
 			}
 			err = whManager.Setup(ctx, warehouse, warehouseutils.NewNoOpUploader())
 			if err != nil {
 				log.Warnn("failed to setup WH Manager", obskit.Error(err))
+				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+					"reason":        "manager_setup_error",
+					"sourceId":      warehouse.Source.ID,
+					"destinationId": warehouse.Destination.ID,
+					"workspaceId":   warehouse.WorkspaceID,
+				}).Increment()
 				continue
 			}
 			sh := schema.New(
@@ -45,9 +59,22 @@ func (r *Router) sync(ctx context.Context) error {
 				r.logger.Child("syncer"),
 				r.statsFactory,
 			)
+			timerStat := stats.Default.NewTaggedStat("sync_remote_schema_time", stats.TimerType, map[string]string{
+				"sourceId":      warehouse.Source.ID,
+				"destinationId": warehouse.Destination.ID,
+				"workspaceId":   warehouse.WorkspaceID,
+			})
+			startTime := r.now()
 			if err := r.syncRemoteSchema(ctx, whManager, sh); err != nil {
 				log.Warnn("failed to sync schema", obskit.Error(err))
+				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+					"reason":        "sync_remote_schema_error",
+					"sourceId":      warehouse.Source.ID,
+					"destinationId": warehouse.Destination.ID,
+					"workspaceId":   warehouse.WorkspaceID,
+				}).Increment()
 			}
+			timerStat.Since(startTime)
 			whManager.Close()
 		}
 		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)
