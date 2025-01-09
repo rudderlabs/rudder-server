@@ -413,7 +413,6 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 				log.Warnw("mismatch in datatype",
 					logfield.ColumnType, valueType,
 					logfield.ColumnName, sortedColumnKeys[index],
-					logfield.ColumnValue, value,
 					logfield.Error, err,
 				)
 				finalColumnValues = append(finalColumnValues, nil)
