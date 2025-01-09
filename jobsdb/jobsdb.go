@@ -531,6 +531,8 @@ type Handle struct {
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
 		}
+		// skipRunAlways determines whether to skip running the "always" changesets
+		skipRunAlways config.ValueLoader[bool]
 	}
 }
 
@@ -853,14 +855,17 @@ func (jd *Handle) init() {
 					jd.setupDatabaseTables(templateData)
 				}
 
-				// Run changesets that should always run for both writer and reader jobsdbs.
-				//
-				// When running separate gw and processor instances we cannot control the order of execution
-				// and we cannot guarantee that after a gw migration completes, processor
-				// will not create new tables using the old schema.
-				//
-				// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
-				jd.runAlwaysChangesets(templateData)
+				// Only run the always changesets if skipRunAlways is false
+				if !jd.conf.skipRunAlways.Load() {
+					// Run changesets that should always run for both writer and reader jobsdbs.
+					//
+					// When running separate gw and processor instances we cannot control the order of execution
+					// and we cannot guarantee that after a gw migration completes, processor
+					// will not create new tables using the old schema.
+					//
+					// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
+					jd.runAlwaysChangesets(templateData)
+				}
 
 				// finally refresh the dataset list to make sure [datasetList] field is populated
 				err := jd.doRefreshDSRangeList(l)
@@ -955,6 +960,12 @@ func (jd *Handle) loadConfig() {
 	// masterBackupEnabled = true => all the jobsdb are eligible for backup
 	jd.conf.backup.masterBackupEnabled = jd.config.GetReloadableBoolVar(
 		true, "JobsDB.backup.enabled",
+	)
+
+	// skipRunAlways determines whether to skip running the "always" changesets
+	// Default to false to maintain backward compatibility
+	jd.conf.skipRunAlways = jd.config.GetReloadableBoolVar(
+		true, "JobsDB.skipRunAlways",
 	)
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
