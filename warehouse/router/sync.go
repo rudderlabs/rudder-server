@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -29,54 +30,63 @@ func (r *Router) sync(ctx context.Context) error {
 		execTime := r.now()
 		log := r.logger.Child("syncer")
 
+		var wg sync.WaitGroup
+		ch := make(chan int, r.conf.GetInt("Warehouse.syncer.concurrency", 10))
+
 		for _, warehouse := range warehouses {
-			whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
-			if err != nil {
-				log.Warnn("create warehouse manager: %w", obskit.Error(err))
-				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
-					"reason":        "manager_creation_error",
+			wg.Add(1)
+			ch <- 1
+			go func() {
+				defer func() { wg.Done(); <-ch }()
+				whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
+				if err != nil {
+					log.Warnn("create warehouse manager: %w", obskit.Error(err))
+					r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+						"reason":        "manager_creation_error",
+						"sourceId":      warehouse.Source.ID,
+						"destinationId": warehouse.Destination.ID,
+						"workspaceId":   warehouse.WorkspaceID,
+					}).Increment()
+					return
+				}
+				err = whManager.Setup(ctx, warehouse, warehouseutils.NewNoOpUploader())
+				if err != nil {
+					log.Warnn("failed to setup WH Manager", obskit.Error(err))
+					r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+						"reason":        "manager_setup_error",
+						"sourceId":      warehouse.Source.ID,
+						"destinationId": warehouse.Destination.ID,
+						"workspaceId":   warehouse.WorkspaceID,
+					}).Increment()
+					return
+				}
+				sh := schema.New(
+					r.db,
+					warehouse,
+					r.conf,
+					r.logger.Child("syncer"),
+					r.statsFactory,
+				)
+				timerStat := stats.Default.NewTaggedStat("sync_remote_schema_time", stats.TimerType, map[string]string{
 					"sourceId":      warehouse.Source.ID,
 					"destinationId": warehouse.Destination.ID,
 					"workspaceId":   warehouse.WorkspaceID,
-				}).Increment()
-				continue
-			}
-			err = whManager.Setup(ctx, warehouse, warehouseutils.NewNoOpUploader())
-			if err != nil {
-				log.Warnn("failed to setup WH Manager", obskit.Error(err))
-				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
-					"reason":        "manager_setup_error",
-					"sourceId":      warehouse.Source.ID,
-					"destinationId": warehouse.Destination.ID,
-					"workspaceId":   warehouse.WorkspaceID,
-				}).Increment()
-				continue
-			}
-			sh := schema.New(
-				r.db,
-				warehouse,
-				r.conf,
-				r.logger.Child("syncer"),
-				r.statsFactory,
-			)
-			timerStat := stats.Default.NewTaggedStat("sync_remote_schema_time", stats.TimerType, map[string]string{
-				"sourceId":      warehouse.Source.ID,
-				"destinationId": warehouse.Destination.ID,
-				"workspaceId":   warehouse.WorkspaceID,
-			})
-			startTime := r.now()
-			if err := r.syncRemoteSchema(ctx, whManager, sh); err != nil {
-				log.Warnn("failed to sync schema", obskit.Error(err))
-				r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
-					"reason":        "sync_remote_schema_error",
-					"sourceId":      warehouse.Source.ID,
-					"destinationId": warehouse.Destination.ID,
-					"workspaceId":   warehouse.WorkspaceID,
-				}).Increment()
-			}
-			timerStat.Since(startTime)
-			whManager.Close()
+				})
+				startTime := r.now()
+				if err := r.syncRemoteSchema(ctx, whManager, sh); err != nil {
+					log.Warnn("failed to sync schema", obskit.Error(err))
+					r.statsFactory.NewTaggedStat("schema_sync_error", stats.CountType, map[string]string{
+						"reason":        "sync_remote_schema_error",
+						"sourceId":      warehouse.Source.ID,
+						"destinationId": warehouse.Destination.ID,
+						"workspaceId":   warehouse.WorkspaceID,
+					}).Increment()
+				}
+				timerStat.Since(startTime)
+				whManager.Close()
+			}()
 		}
+		wg.Wait()
 		nextExecTime := execTime.Add(r.config.syncSchemaFrequency)
 		select {
 		case <-ctx.Done():
