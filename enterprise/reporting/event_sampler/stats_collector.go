@@ -9,7 +9,7 @@ import (
 const (
 	StatReportingEventSamplerRequestsTotal   = "reporting_event_sampler_requests_total"
 	StatReportingEventSamplerRequestDuration = "reporting_event_sampler_request_duration_seconds"
-	StatReportingBadgerDBSize                = "reporting_badger_db_size"
+	StatReportingBadgerDBSize                = "reporting_badger_db_size_bytes"
 )
 
 type StatsCollector struct {
