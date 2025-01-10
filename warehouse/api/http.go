@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -200,7 +199,7 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if mode.IsMaster(a.mode) {
-		if !checkHealth(ctx, a.db.DB) {
+		if !a.checkDbHealth(ctx) {
 			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
 			return
 		}
@@ -224,16 +223,17 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(healthVal))
 }
 
-func checkHealth(ctx context.Context, db *sql.DB) bool {
-	if db == nil {
+func (a *Api) checkDbHealth(ctx context.Context) bool {
+	if a.db.DB == nil {
 		return false
 	}
 
 	healthCheckMsg := "Rudder Warehouse DB Health Check"
 	msg := ""
 
-	err := db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
+	err := a.db.DB.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
 	if err != nil {
+		a.logger.Errorf("Failed to check health: %v", err)
 		return false
 	}
 

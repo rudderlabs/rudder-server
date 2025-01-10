@@ -328,6 +328,7 @@ func (n *Notifier) CheckHealth(ctx context.Context) bool {
 
 	err := n.db.QueryRowContext(ctx, `SELECT '`+healthCheckMsg+`'::text as message;`).Scan(&msg)
 	if err != nil {
+		n.logger.Errorf("Failed to check health: %v", err)
 		return false
 	}
 
