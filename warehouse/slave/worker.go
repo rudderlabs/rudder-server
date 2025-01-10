@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -262,7 +263,10 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 		)
 
 		if err := json.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
-			jr.logger.Errorf("Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			jr.logger.Warnn("Failed to unmarshal line from staging file to BatchRouterEvent",
+				logger.NewIntField("stagingFileID", job.StagingFileID),
+				obskit.Error(err),
+			)
 			continue
 		}
 

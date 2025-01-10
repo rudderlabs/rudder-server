@@ -20,7 +20,6 @@ const (
 	TableName                  = "tableName"
 	ColumnName                 = "columnName"
 	ColumnType                 = "columnType"
-	ColumnValue                = "columnValue"
 	Priority                   = "priority"
 	Retried                    = "retried"
 	Attempt                    = "attempt"
