@@ -101,6 +101,9 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
+// Dehydrate removes the connection and credentials from the event
+// along with pruning the destination to only include the transformation versionID
+// before sending it to the transformer thereby reducing the payload size
 func (e *TransformerEvent) Dehydrate() *TransformerEvent {
 	tmCopy := *e
 	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
