@@ -22,7 +22,6 @@ import (
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -127,17 +126,30 @@ func TestColumnCountStat(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			conf := config.New()
 			conf.Set(fmt.Sprintf("Warehouse.%s.columnCountLimit", strings.ToLower(warehouseutils.WHDestNameMap[tc.destinationType])), tc.columnCountLimit)
 
-			j := UploadJob{
-				conf: conf,
-				upload: model.Upload{
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := postgres.Setup(pool, t)
+			require.NoError(t, err)
+
+			uploadJobFactory := &UploadJobFactory{
+				logger:       logger.NOP,
+				statsFactory: statsStore,
+				conf:         conf,
+				db:           sqlmiddleware.New(pgResource.DB),
+			}
+			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{
+				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
 				},
-				warehouse: model.Warehouse{
+				Warehouse: model.Warehouse{
 					Type: tc.destinationType,
 					Destination: backendconfig.DestinationT{
 						ID:   destinationID,
@@ -148,9 +160,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-				statsFactory: statsStore,
-				schemaHandle: &schema.Schema{}, // TODO use constructor
-			}
+			}, rs)
 			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
