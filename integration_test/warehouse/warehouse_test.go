@@ -81,7 +81,9 @@ func TestMain(m *testing.M) {
 
 func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil, nil)
+		db, minioResource, whClient, bcConfig := setupServer(t, false, func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
+			m[workspaceID].Sources[0].Destinations[0].Config["cleanupObjectStorageFiles"] = true
+		}, nil)
 
 		var (
 			ctx    = context.Background()
@@ -95,6 +97,7 @@ func TestUploads(t *testing.T) {
 				uuid.New().String(),
 			)
 		}), "\n")
+		useRudderStorage := false
 
 		require.NoError(t, whClient.Process(ctx, whclient.StagingFile{
 			WorkspaceID:           workspaceID,
@@ -104,7 +107,7 @@ func TestUploads(t *testing.T) {
 			TotalEvents:           events,
 			FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
-			UseRudderStorage:      false,
+			UseRudderStorage:      useRudderStorage,
 			DestinationRevisionID: destinationID,
 			Schema: map[string]map[string]any{
 				"tracks": {
@@ -132,9 +135,11 @@ func TestUploads(t *testing.T) {
 			{A: "status", B: exportedData},
 		}...)
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+		// All the files should be deleted from the object storage since cleanupObjectStorageFiles is set to true
+		requireObjectStorageCount(t, ctx, bcConfig, useRudderStorage, 0)
 	})
 	t.Run("user and identifies loading", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil, nil)
+		db, minioResource, whClient, bcConfig := setupServer(t, false, nil, nil)
 
 		ctx := context.Background()
 		events := 100
@@ -153,6 +158,7 @@ func TestUploads(t *testing.T) {
 		})
 		eventsPayload := strings.Join(append(append([]string{}, userEvents...), identifyEvents...), "\n")
 
+		useRudderStorage := false
 		require.NoError(t, whClient.Process(ctx, whclient.StagingFile{
 			WorkspaceID:           workspaceID,
 			SourceID:              sourceID,
@@ -161,7 +167,7 @@ func TestUploads(t *testing.T) {
 			TotalEvents:           events,
 			FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
-			UseRudderStorage:      false,
+			UseRudderStorage:      useRudderStorage,
 			DestinationRevisionID: destinationID,
 			Schema: map[string]map[string]any{
 				"users": {
@@ -194,10 +200,13 @@ func TestUploads(t *testing.T) {
 		}...)
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "users"), events)
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "identifies"), events)
+		// Files should not be deleted from the object storage since cleanupObjectStorageFiles is not set to true
+		// 1 staging file + 2 load files (users and identifies)
+		requireObjectStorageCount(t, ctx, bcConfig, useRudderStorage, 3)
 	})
 	t.Run("schema change", func(t *testing.T) {
 		t.Run("add columns", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, false, nil, nil)
+			db, minioResource, whClient, _ := setupServer(t, false, nil, nil)
 
 			ctx := context.Background()
 			events := 100
@@ -607,7 +616,7 @@ func TestUploads(t *testing.T) {
 	})
 	t.Run("reports", func(t *testing.T) {
 		t.Run("succeeded", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, false, nil, nil)
+			db, minioResource, whClient, _ := setupServer(t, false, nil, nil)
 
 			ctx := context.Background()
 			events := 100
@@ -668,7 +677,7 @@ func TestUploads(t *testing.T) {
 			}...)
 		})
 		t.Run("aborted", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, false,
+			db, minioResource, whClient, _ := setupServer(t, false,
 				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].Destinations[0].Config["port"] = "5432"
 				},
@@ -740,7 +749,7 @@ func TestUploads(t *testing.T) {
 		})
 	})
 	t.Run("retries then aborts", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false,
+		db, minioResource, whClient, _ := setupServer(t, false,
 			func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 				m[workspaceID].Sources[0].Destinations[0].Config["port"] = "5432"
 			},
@@ -797,7 +806,7 @@ func TestUploads(t *testing.T) {
 		}...)
 	})
 	t.Run("discards", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil, nil)
+		db, minioResource, whClient, _ := setupServer(t, false, nil, nil)
 
 		ctx := context.Background()
 		events := 100
@@ -856,7 +865,7 @@ func TestUploads(t *testing.T) {
 		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "rudder_discards"), events/2)
 	})
 	t.Run("archiver", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil,
+		db, minioResource, whClient, _ := setupServer(t, false, nil,
 			func(minioResource *minio.Resource) []lo.Tuple2[string, any] {
 				return []lo.Tuple2[string, any]{
 					{A: "Warehouse.archiveUploadRelatedRecords", B: true},
@@ -923,7 +932,7 @@ func TestUploads(t *testing.T) {
 	})
 	t.Run("sync behaviour", func(t *testing.T) {
 		t.Run("default behaviour", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, false, nil, nil)
+			db, minioResource, whClient, _ := setupServer(t, false, nil, nil)
 
 			ctx := context.Background()
 			events := 100
@@ -998,7 +1007,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 		})
 		t.Run("allowMerge=false,preferAppend=false", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, false, nil,
+			db, minioResource, whClient, _ := setupServer(t, false, nil,
 				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
@@ -1079,7 +1088,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 		})
 		t.Run("allowMerge=true,preferAppend=true", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, true, nil,
+			db, minioResource, whClient, _ := setupServer(t, true, nil,
 				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: true},
@@ -1160,7 +1169,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 		})
 		t.Run("allowMerge=false,preferAppend=true", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, true, nil,
+			db, minioResource, whClient, _ := setupServer(t, true, nil,
 				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
@@ -1241,7 +1250,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 		})
 		t.Run("allowMerge=false,preferAppend=true,isSourceETL=true", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, true, nil,
+			db, minioResource, whClient, _ := setupServer(t, true, nil,
 				func(_ *minio.Resource) []lo.Tuple2[string, any] {
 					return []lo.Tuple2[string, any]{
 						{A: "Warehouse.postgres.allowMerge", B: false},
@@ -1325,7 +1334,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 		})
 		t.Run("allowMerge=false,preferAppend=true,IsReplaySource=true", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, true,
+			db, minioResource, whClient, _ := setupServer(t, true,
 				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].OriginalID = sourceID
 				},
@@ -1409,7 +1418,7 @@ func TestUploads(t *testing.T) {
 			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
 		})
 		t.Run("allowMerge=false,preferAppend=true,sourceCategory=cloud", func(t *testing.T) {
-			db, minioResource, whClient := setupServer(t, true,
+			db, minioResource, whClient, _ := setupServer(t, true,
 				func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
 					m[workspaceID].Sources[0].SourceDefinition.Category = "cloud"
 				},
@@ -1494,7 +1503,7 @@ func TestUploads(t *testing.T) {
 		})
 	})
 	t.Run("id resolution", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil, nil)
+		db, minioResource, whClient, _ := setupServer(t, false, nil, nil)
 
 		ctx := context.Background()
 		events := 100
@@ -2330,6 +2339,26 @@ func requireDownstreamEventsCount(
 	)
 }
 
+func requireObjectStorageCount(t testing.TB, ctx context.Context, bcConfig map[string]backendconfig.ConfigT, useRudderStorage bool, expectedCount int) {
+	destination := bcConfig[workspaceID].Sources[0].Destinations[0]
+	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, useRudderStorage)
+	fm, err := filemanager.New(&filemanager.Settings{Provider: storageProvider, Config: destination.Config})
+	require.NoError(t, err)
+	fileIter := fm.ListFilesWithPrefix(ctx, "", fm.Prefix(), 1000)
+	files := make([]string, 0)
+	for {
+		fileInfo, err := fileIter.Next()
+		require.NoError(t, err)
+		if len(fileInfo) == 0 {
+			break
+		}
+		for _, file := range fileInfo {
+			files = append(files, file.Key)
+		}
+	}
+	require.Len(t, files, expectedCount)
+}
+
 func requireReportsCount(
 	t testing.TB,
 	ctx context.Context,
@@ -2372,6 +2401,7 @@ func setupServer(
 	*sqlmw.DB,
 	*minio.Resource,
 	*whclient.Warehouse,
+	map[string]backendconfig.ConfigT,
 ) {
 	t.Helper()
 
@@ -2411,5 +2441,5 @@ func setupServer(
 	serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 	health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL)
+	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL), bcConfig
 }

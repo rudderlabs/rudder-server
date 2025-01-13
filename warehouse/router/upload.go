@@ -13,6 +13,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -363,6 +364,9 @@ func (job *UploadJob) run() (err error) {
 			if err = job.exportData(); err != nil {
 				break
 			}
+			if err = job.cleanupObjectStorageFiles(); err != nil {
+				break
+			}
 			newStatus = nextUploadState.completed
 
 		default:
@@ -424,6 +428,37 @@ func (job *UploadJob) run() (err error) {
 		return fmt.Errorf("upload Job failed: %w", err)
 	}
 
+	return nil
+}
+
+func (job *UploadJob) cleanupObjectStorageFiles() error {
+	destination := job.warehouse.Destination
+	cleanupObjectStorageFiles, _ := destination.Config["cleanupObjectStorageFiles"].(bool)
+	if cleanupObjectStorageFiles {
+		storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
+		fm, err := filemanager.New(&filemanager.Settings{Provider: storageProvider, Config: destination.Config})
+		if err != nil {
+			return err
+		}
+		stagingFileKeys := make([]string, len(job.stagingFiles))
+		for i, file := range job.stagingFiles {
+			stagingFileKeys[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
+		}
+		if err = fm.Delete(job.ctx, stagingFileKeys); err != nil {
+			return err
+		}
+		loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
+		if err != nil {
+			return err
+		}
+		loadingFileKeys := make([]string, len(loadingFiles))
+		for i, file := range loadingFiles {
+			loadingFileKeys[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
+		}
+		if err = fm.Delete(job.ctx, loadingFileKeys); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
