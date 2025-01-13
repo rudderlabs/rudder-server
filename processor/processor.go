@@ -13,16 +13,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,14 +24,19 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/internal/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/trackingplan_validation"
+	"github.com/rudderlabs/rudder-server/processor/internal/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -86,10 +85,11 @@ type trackedUsersReporter interface {
 
 // Handle is a handle to the processor module
 type Handle struct {
-	conf          *config.Config
-	tracer        stats.Tracer
-	backendConfig backendconfig.BackendConfig
-	transformer   transformer.Transformer
+	conf               *config.Config
+	tracer             stats.Tracer
+	backendConfig      backendconfig.BackendConfig
+	transformer        transformer.Transformer
+	transformerManager *transformer.CommunicationManager
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -396,6 +396,10 @@ func (proc *Handle) Setup(
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
+	proc.transformerManager = transformer.NewCommunicationManager()
+	proc.transformerManager.RegisterService("user_transformer", &user_transformer.UserTransformer{})
+	proc.transformerManager.RegisterService("destination_transformer", &destination_transformer.DestTransformer{})
+	proc.transformerManager.RegisterService("trackingplan_validation", &trackingplan_validation.TPValidator{})
 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
