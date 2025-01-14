@@ -164,11 +164,23 @@ func WithClient(client HTTPDoer) Opt {
 	}
 }
 
+type UserTransformer interface {
+	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
+type DestinationTransformer interface {
+	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
+type TrackingPlanValidator interface {
+	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+	UserTransformer
+	DestinationTransformer
+	TrackingPlanValidator
 }
 
 type HTTPDoer interface {
@@ -591,7 +603,7 @@ func (trans *handle) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", trans.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
 		case warehouseutils.RS:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -603,7 +615,7 @@ func (trans *handle) destTransformURL(destType string) string {
 		}
 	}
 	if destType == warehouseutils.SnowpipeStreaming {
-		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, trans.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
 }

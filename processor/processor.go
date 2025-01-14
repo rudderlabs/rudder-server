@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -12,9 +13,13 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"golang.org/x/sync/errgroup"
 
@@ -57,6 +62,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
+	wtrans "github.com/rudderlabs/rudder-server/warehouse/transformer"
 )
 
 const (
@@ -84,12 +90,18 @@ type trackedUsersReporter interface {
 	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
 }
 
+type warehouseTransformation interface {
+	transformer.DestinationTransformer
+	Log(events []types.SingularEventT, metadata *transformer.Metadata) error
+}
+
 // Handle is a handle to the processor module
 type Handle struct {
-	conf          *config.Config
-	tracer        stats.Tracer
-	backendConfig backendconfig.BackendConfig
-	transformer   transformer.Transformer
+	conf                 *config.Config
+	tracer               stats.Tracer
+	backendConfig        backendconfig.BackendConfig
+	transformer          transformer.Transformer
+	warehouseTransformer warehouseTransformation
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -158,6 +170,13 @@ type Handle struct {
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
 		nonEventStreamSources           map[string]bool
+		enableWarehouseTransformations  config.ValueLoader[bool]
+	}
+
+	warehouseTransformerStats struct {
+		responseTime stats.Timer
+		mismatches   stats.Counter
+		logTime      stats.Timer
 	}
 
 	drainConfig struct {
@@ -617,6 +636,12 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+
+	proc.warehouseTransformer = wtrans.New(proc.conf, proc.logger, proc.statsFactory)
+	proc.warehouseTransformerStats.responseTime = proc.statsFactory.NewStat("proc_warehouse_transformations_time", stats.TimerType)
+	proc.warehouseTransformerStats.mismatches = proc.statsFactory.NewStat("proc_warehouse_transformations_mismatches", stats.CountType)
+	proc.warehouseTransformerStats.logTime = proc.statsFactory.NewStat("proc_warehouse_transformations_log_time", stats.TimerType)
+
 	if proc.config.enableDedup {
 		var err error
 		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
@@ -817,6 +842,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
+	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 }
 
 type connection struct {
@@ -2902,6 +2928,7 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
 			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			proc.handleResponseForWarehouseTransformation(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3058,6 +3085,68 @@ func (proc *Handle) transformSrcDest(
 		routerDestIDs:   routerDestIDs,
 		droppedJobs:     droppedJobs,
 	}
+}
+
+func (proc *Handle) handleResponseForWarehouseTransformation(
+	ctx context.Context,
+	eventsToTransform []transformer.TransformerEvent,
+	pResponse transformer.Response,
+	commonMetaData *transformer.Metadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+) {
+	if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
+		return
+	}
+	if len(eventsToTransform) == 0 || !proc.config.enableWarehouseTransformations.Load() {
+		return
+	}
+
+	transformStartAt := timeutil.Now()
+	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+	proc.warehouseTransformerStats.responseTime.Since(transformStartAt)
+
+	logStartAt := timeutil.Now()
+	differingEvents := proc.warehouseTransDifferEvents(eventsToTransform, pResponse, wResponse, eventsByMessageID)
+	if err := proc.warehouseTransformer.Log(differingEvents, commonMetaData); err != nil {
+		proc.logger.Warnn("Failed to log events for warehouse transformation debugging", obskit.Error(err))
+	}
+	proc.warehouseTransformerStats.logTime.Since(logStartAt)
+}
+
+func (proc *Handle) warehouseTransDifferEvents(
+	eventsToTransform []transformer.TransformerEvent,
+	pResponse, wResponse transformer.Response,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+) []types.SingularEventT {
+	// If the event counts differ, return all events in the transformation
+	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
+		events := lo.Map(eventsToTransform, func(e transformer.TransformerEvent, _ int) types.SingularEventT {
+			return eventsByMessageID[e.Metadata.MessageID].SingularEvent
+		})
+		proc.warehouseTransformerStats.mismatches.Count(len(events))
+		return events
+	}
+
+	var (
+		differedSampleEvents []types.SingularEventT
+		differedEventsCount  int
+	)
+
+	for i := range pResponse.Events {
+		if reflect.DeepEqual(pResponse.Events[i], wResponse.Events[i]) {
+			continue
+		}
+
+		differedEventsCount++
+		if len(differedSampleEvents) != 0 {
+			// Collect the mismatched messages and break (sample only)
+			differedSampleEvents = append(differedSampleEvents, lo.Map(pResponse.Events[i].Metadata.GetMessagesIDs(), func(msgID string, _ int) types.SingularEventT {
+				return eventsByMessageID[msgID].SingularEvent
+			})...)
+		}
+	}
+	proc.warehouseTransformerStats.mismatches.Count(differedEventsCount)
+	return differedSampleEvents
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
