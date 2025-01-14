@@ -1025,6 +1025,8 @@ func TestIntegration(t *testing.T) {
 
 			err = d.CreateTable(ctx, tableName, schemaInWarehouse)
 			require.NoError(t, err)
+			metadata := tableMetadata(t, d.DB.DB, namespace, tableName)
+			require.Equal(t, "MANAGED", metadata["Type"])
 
 			loadTableStat, err := d.LoadTable(ctx, tableName)
 			require.NoError(t, err)
@@ -1173,6 +1175,34 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, records, whth.SampleTestRecords())
 			})
 		})
+		t.Run("external tables", func(t *testing.T) {
+			tableName := "external_tables"
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv, false, false)
+
+			externalWarehouse := th.Clone(t, warehouse)
+			externalWarehouse.Destination.Config["enableExternalLocation"] = true
+			externalWarehouse.Destination.Config["externalLocation"] = "/path/to/delta/table"
+
+			d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, d.Setup(ctx, externalWarehouse, mockUploader))
+			require.NoError(t, d.CreateSchema(ctx))
+			t.Cleanup(func() {
+				dropSchema(t, d.DB.DB, namespace)
+			})
+
+			require.NoError(t, d.CreateTable(ctx, tableName, schemaInWarehouse))
+			metadata := tableMetadata(t, d.DB.DB, namespace, tableName)
+			require.Equal(t, "EXTERNAL", metadata["Type"])
+			require.Equal(t, "dbfs:/path/to/delta/table/"+namespace+"/"+tableName, metadata["Location"])
+
+			loadTableStat, err := d.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+		})
 	})
 
 	t.Run("Fetch Schema", func(t *testing.T) {
@@ -1289,6 +1319,26 @@ func TestIntegration(t *testing.T) {
 			}
 		})
 	})
+}
+
+func tableMetadata(t *testing.T, db *sql.DB, namespace, tableName string) map[string]string {
+	t.Helper()
+	t.Log("table metadata for", namespace, tableName)
+
+	var database, table, isTemporary, information string
+	err := db.QueryRowContext(context.Background(), fmt.Sprintf("SHOW TABLE EXTENDED IN %s LIKE '%s'", namespace, tableName)).Scan(&database, &table, &isTemporary, &information)
+	require.NoError(t, err)
+
+	metadataMap := make(map[string]string)
+	for _, line := range strings.Split(information, "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) >= 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			metadataMap[key] = value
+		}
+	}
+	return metadataMap
 }
 
 func dropSchema(t *testing.T, db *sql.DB, namespace string) {

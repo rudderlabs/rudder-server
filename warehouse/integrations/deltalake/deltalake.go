@@ -517,7 +517,7 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 	enableExternalLocation := d.Warehouse.GetBoolDestinationConfig(model.EnableExternalLocationSetting)
 	externalLocation := d.Warehouse.GetStringDestinationConfig(d.conf, model.ExternalLocationSetting)
 
-	if enableExternalLocation || externalLocation == "" {
+	if !enableExternalLocation || externalLocation == "" {
 		return ""
 	}
 
