@@ -1,0 +1,4 @@
+go test fuzz v1
+string("RS")
+string("{}")
+string("{\"type\":\"screen\",\"messageId\":\"d\",\"receivedAt\":\"2021-09-01T00:00:00Z\",\"properties\":{\"np\":\"4\"}\"")
