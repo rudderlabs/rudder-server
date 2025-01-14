@@ -368,6 +368,9 @@ func (job *UploadJob) run() (err error) {
 			}
 			newStatus = nextUploadState.completed
 			if job.config.cleanupStorageFiles {
+				if true {
+					panic("cleanupStorageFiles is not implemented")
+				}
 				warehouse := job.warehouse
 				storageProvider := whutils.ObjectStorageType(warehouse.Destination.DestinationDefinition.Name, warehouse.Destination.Config, job.upload.UseRudderStorage)
 				fm, err := filemanager.New(&filemanager.Settings{Provider: storageProvider, Config: warehouse.Destination.Config})
