@@ -13,46 +13,45 @@ import (
 	"testing"
 	"time"
 
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"go.uber.org/mock/gomock"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type fakeTransformer struct {
-	requests [][]TransformerEvent
+	requests [][]types.TransformerEvent
 	t        testing.TB
 }
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(t.t, json.NewDecoder(r.Body).Decode(&reqBody))
 
 	t.requests = append(t.requests, reqBody)
 
-	responses := make([]TransformerResponse, len(reqBody))
+	responses := make([]types.TransformerResponse, len(reqBody))
 
 	for i := range reqBody {
 		statusCode := int(reqBody[i].Message["forceStatusCode"].(float64))
 		delete(reqBody[i].Message, "forceStatusCode")
 		reqBody[i].Message["echo-key-1"] = reqBody[i].Message["src-key-1"]
 
-		responses[i] = TransformerResponse{
+		responses[i] = types.TransformerResponse{
 			Output:     reqBody[i].Message,
 			Metadata:   reqBody[i].Metadata,
 			StatusCode: statusCode,
@@ -62,7 +61,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(types.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
 
 	require.NoError(t.t, json.NewEncoder(w).Encode(responses))
 }
@@ -83,10 +82,10 @@ type endlessLoopTransformer struct {
 func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	elt.retryCount++
 
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(elt.t, json.NewDecoder(r.Body).Decode(&reqBody))
 
-	responses := make([]TransformerResponse, len(reqBody))
+	responses := make([]types.TransformerResponse, len(reqBody))
 
 	if elt.retryCount < elt.maxRetryCount {
 		http.Error(w, response.MakeResponse(elt.statusError), elt.statusCode)
@@ -94,7 +93,7 @@ func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	}
 
 	for i := range reqBody {
-		responses[i] = TransformerResponse{
+		responses[i] = types.TransformerResponse{
 			Output:     reqBody[i].Message,
 			Metadata:   reqBody[i].Metadata,
 			StatusCode: http.StatusOK,
@@ -122,13 +121,13 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(et.t, json.NewDecoder(r.Body).Decode(&reqBody))
 
-	responses := make([]TransformerResponse, len(reqBody))
+	responses := make([]types.TransformerResponse, len(reqBody))
 
 	for i := range reqBody {
-		responses[i] = TransformerResponse{
+		responses[i] = types.TransformerResponse{
 			Output:     reqBody[i].Message,
 			Metadata:   reqBody[i].Metadata,
 			StatusCode: http.StatusOK,
@@ -136,7 +135,7 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(types.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
 
 	require.NoError(et.t, json.NewEncoder(w).Encode(responses))
 }
@@ -194,15 +193,15 @@ func TestTransformer(t *testing.T) {
 					eventsCount := tt.eventsCount
 					failEvery := tt.failEvery
 
-					events := make([]TransformerEvent, eventsCount)
-					expectedResponse := Response{}
+					events := make([]types.TransformerEvent, eventsCount)
+					expectedResponse := types.Response{}
 
 					transformationID := rand.String(10)
 
 					destinationConfig := backendconfigtest.NewDestinationBuilder("WEBHOOK").
 						WithUserTransformation(transformationID, rand.String(10)).Build()
 
-					metadata := Metadata{
+					Metadata := types.Metadata{
 						DestinationType:  destinationConfig.DestinationDefinition.Name,
 						SourceID:         rand.String(10),
 						DestinationID:    destinationConfig.ID,
@@ -217,17 +216,17 @@ func TestTransformer(t *testing.T) {
 							statusCode = http.StatusBadRequest
 						}
 
-						metadata := metadata
-						metadata.MessageID = msgID
+						Metadata := Metadata
+						Metadata.MessageID = msgID
 
-						events[i] = TransformerEvent{
-							Metadata: metadata,
+						events[i] = types.TransformerEvent{
+							Metadata: Metadata,
 							Message: map[string]interface{}{
 								"src-key-1":       msgID,
 								"forceStatusCode": statusCode,
 							},
 							Destination: destinationConfig,
-							Credentials: []Credential{
+							Credentials: []types.Credential{
 								{
 									ID:       "test-credential",
 									Key:      "test-key",
@@ -237,8 +236,8 @@ func TestTransformer(t *testing.T) {
 							},
 						}
 
-						tResp := TransformerResponse{
-							Metadata:   metadata,
+						tResp := types.TransformerResponse{
+							Metadata:   Metadata,
 							StatusCode: statusCode,
 							Output: map[string]interface{}{
 								"src-key-1":  msgID,
@@ -263,7 +262,7 @@ func TestTransformer(t *testing.T) {
 						for _, m := range metrics {
 							require.Equal(t, stats.Tags{
 								"stage":            "test-stage",
-								"sourceId":         metadata.SourceID,
+								"sourceId":         Metadata.SourceID,
 								"destinationType":  destinationConfig.DestinationDefinition.Name,
 								"destinationId":    destinationConfig.ID,
 								"transformationId": destinationConfig.Transformations[0].ID,
@@ -271,7 +270,7 @@ func TestTransformer(t *testing.T) {
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,
 								"dest_id":   destinationConfig.ID,
-								"src_id":    metadata.SourceID,
+								"src_id":    Metadata.SourceID,
 							}, m.Tags)
 						}
 					}
@@ -280,14 +279,14 @@ func TestTransformer(t *testing.T) {
 
 			t.Run("timeout", func(t *testing.T) {
 				msgID := "messageID-0"
-				events := append([]TransformerEvent{}, TransformerEvent{
-					Metadata: Metadata{
+				events := append([]types.TransformerEvent{}, types.TransformerEvent{
+					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
 					Message: map[string]interface{}{
 						"src-key-1": msgID,
 					},
-					Credentials: []Credential{
+					Credentials: []types.Credential{
 						{
 							ID:       "test-credential",
 							Key:      "test-key",
@@ -303,7 +302,7 @@ func TestTransformer(t *testing.T) {
 					expectedRetries            int
 					expectPanic                bool
 					stage                      string
-					expectedResponse           []TransformerResponse
+					expectedResponse           []types.TransformerResponse
 					failOnUserTransformTimeout bool
 				}{
 					{
@@ -318,9 +317,9 @@ func TestTransformer(t *testing.T) {
 						retries:     3,
 						stage:       userTransformerStage,
 						expectPanic: false,
-						expectedResponse: []TransformerResponse{
+						expectedResponse: []types.TransformerResponse{
 							{
-								Metadata: Metadata{
+								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
 								StatusCode: TransformerRequestTimeout,
@@ -385,7 +384,7 @@ func TestTransformer(t *testing.T) {
 						rsp := tr.request(context.TODO(), srv.URL, tc.stage, events)
 						require.Len(t, rsp, 1)
 						require.Equal(t, rsp[0].StatusCode, TransformerRequestTimeout)
-						require.Equal(t, rsp[0].Metadata, Metadata{
+						require.Equal(t, rsp[0].Metadata, types.Metadata{
 							MessageID: msgID,
 						})
 						require.Contains(t, rsp[0].Error, "transformer request timed out:")
@@ -396,14 +395,14 @@ func TestTransformer(t *testing.T) {
 
 			t.Run("endless retries in case of control plane down", func(t *testing.T) {
 				msgID := "messageID-0"
-				events := append([]TransformerEvent{}, TransformerEvent{
-					Metadata: Metadata{
+				events := append([]types.TransformerEvent{}, types.TransformerEvent{
+					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
 					Message: map[string]interface{}{
 						"src-key-1": msgID,
 					},
-					Credentials: []Credential{
+					Credentials: []types.Credential{
 						{
 							ID:       "test-credential",
 							Key:      "test-key",
@@ -417,7 +416,7 @@ func TestTransformer(t *testing.T) {
 					maxRetryCount: 3,
 					statusCode:    StatusCPDown,
 					statusError:   "control plane not reachable",
-					apiVersion:    types.SupportedTransformerApiVersion,
+					apiVersion:    reportingTypes.SupportedTransformerApiVersion,
 					t:             t,
 				}
 
@@ -436,9 +435,9 @@ func TestTransformer(t *testing.T) {
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
 				rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
-				require.Equal(t, rsp, []TransformerResponse{
+				require.Equal(t, rsp, []types.TransformerResponse{
 					{
-						Metadata: Metadata{
+						Metadata: types.Metadata{
 							MessageID: msgID,
 						},
 						StatusCode: http.StatusOK,
@@ -452,8 +451,8 @@ func TestTransformer(t *testing.T) {
 
 			t.Run("retries", func(t *testing.T) {
 				msgID := "messageID-0"
-				events := append([]TransformerEvent{}, TransformerEvent{
-					Metadata: Metadata{
+				events := append([]types.TransformerEvent{}, types.TransformerEvent{
+					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
 					Message: map[string]interface{}{
@@ -467,7 +466,7 @@ func TestTransformer(t *testing.T) {
 							},
 						},
 					},
-					Credentials: []Credential{
+					Credentials: []types.Credential{
 						{
 							ID:       "test-credential",
 							Key:      "test-key",
@@ -485,7 +484,7 @@ func TestTransformer(t *testing.T) {
 					statusError      string
 					expectedRetries  int
 					expectPanic      bool
-					expectedResponse []TransformerResponse
+					expectedResponse []types.TransformerResponse
 					failOnError      bool
 				}{
 					{
@@ -506,9 +505,9 @@ func TestTransformer(t *testing.T) {
 						statusError:     "too many requests",
 						expectedRetries: 4,
 						expectPanic:     false,
-						expectedResponse: []TransformerResponse{
+						expectedResponse: []types.TransformerResponse{
 							{
-								Metadata: Metadata{
+								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
 								StatusCode: TransformerRequestFailure,
@@ -525,9 +524,9 @@ func TestTransformer(t *testing.T) {
 						statusError:     "control plane not reachable",
 						expectedRetries: 3,
 						expectPanic:     false,
-						expectedResponse: []TransformerResponse{
+						expectedResponse: []types.TransformerResponse{
 							{
-								Metadata: Metadata{
+								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
 								StatusCode: http.StatusOK,
@@ -548,7 +547,7 @@ func TestTransformer(t *testing.T) {
 							maxRetryCount: tc.maxRetryCount,
 							statusCode:    tc.statusCode,
 							statusError:   tc.statusError,
-							apiVersion:    types.SupportedTransformerApiVersion,
+							apiVersion:    reportingTypes.SupportedTransformerApiVersion,
 							t:             t,
 						}
 
@@ -584,8 +583,8 @@ func TestTransformer(t *testing.T) {
 
 			t.Run("version compatibility", func(t *testing.T) {
 				msgID := "messageID-0"
-				events := append([]TransformerEvent{}, TransformerEvent{
-					Metadata: Metadata{
+				events := append([]types.TransformerEvent{}, types.TransformerEvent{
+					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
 					Message: map[string]interface{}{
@@ -599,7 +598,7 @@ func TestTransformer(t *testing.T) {
 							},
 						},
 					},
-					Credentials: []Credential{
+					Credentials: []types.Credential{
 						{
 							ID:       "test-credential",
 							Key:      "test-key",
@@ -614,15 +613,15 @@ func TestTransformer(t *testing.T) {
 					apiVersion       int
 					skipApiVersion   bool
 					expectPanic      bool
-					expectedResponse []TransformerResponse
+					expectedResponse []types.TransformerResponse
 				}{
 					{
 						name:        "compatible api version",
-						apiVersion:  types.SupportedTransformerApiVersion,
+						apiVersion:  reportingTypes.SupportedTransformerApiVersion,
 						expectPanic: false,
-						expectedResponse: []TransformerResponse{
+						expectedResponse: []types.TransformerResponse{
 							{
-								Metadata: Metadata{
+								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
 								StatusCode: http.StatusOK,
@@ -683,21 +682,21 @@ func TestTransformer(t *testing.T) {
 
 			t.Run("endpoints", func(t *testing.T) {
 				msgID := "messageID-0"
-				expectedResponse := Response{
-					Events: []TransformerResponse{
+				expectedResponse := types.Response{
+					Events: []types.TransformerResponse{
 						{
 							Output: map[string]interface{}{
 								"src-key-1": msgID,
 							},
-							Metadata: Metadata{
+							Metadata: types.Metadata{
 								MessageID: msgID,
 							},
 							StatusCode: http.StatusOK,
 						},
 					},
 				}
-				events := append([]TransformerEvent{}, TransformerEvent{
-					Metadata: Metadata{
+				events := append([]types.TransformerEvent{}, types.TransformerEvent{
+					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
 					Message: map[string]interface{}{
@@ -714,7 +713,7 @@ func TestTransformer(t *testing.T) {
 							},
 						},
 					},
-					Credentials: []Credential{
+					Credentials: []types.Credential{
 						{
 							ID:       "test-credential",
 							Key:      "test-key",
@@ -779,8 +778,8 @@ func TestTransformer(t *testing.T) {
 
 							tr := NewTransformer(c, logger.NOP, stats.Default, WithClient(srv.Client()))
 
-							events := append([]TransformerEvent{}, TransformerEvent{
-								Metadata: Metadata{
+							events := append([]types.TransformerEvent{}, types.TransformerEvent{
+								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
 								Message: map[string]interface{}{
@@ -797,7 +796,7 @@ func TestTransformer(t *testing.T) {
 										},
 									},
 								},
-								Credentials: []Credential{
+								Credentials: []types.Credential{
 									{
 										ID:       "test-credential",
 										Key:      "test-key",

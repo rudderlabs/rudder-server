@@ -1,9 +1,14 @@
 package transformer
 
-import "errors"
+import (
+	"context"
+	"errors"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
+)
 
 type ServiceClient interface {
-	SendRequest(data interface{}) (response interface{}, err error)
+	SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
 }
 
 type CommunicationManager struct {

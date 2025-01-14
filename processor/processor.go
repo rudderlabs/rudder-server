@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -54,7 +55,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
-	"github.com/rudderlabs/rudder-server/utils/types"
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -75,7 +76,7 @@ func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 }
 
 type sourceObserver interface {
-	ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent)
+	ObserveSourceEvents(source *backendconfig.SourceT, events []types.TransformerEvent)
 }
 
 type trackedUsersReporter interface {
@@ -101,7 +102,7 @@ type Handle struct {
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
-	reporting                  types.Reporting
+	reporting                  reportingTypes.Reporting
 	reportingEnabled           bool
 	backgroundWait             func() error
 	backgroundCancel           context.CancelFunc
@@ -157,7 +158,7 @@ type Handle struct {
 		enableParallelScan              bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
-		credentialsMap                  map[string][]transformer.Credential
+		credentialsMap                  map[string][]types.Credential
 		nonEventStreamSources           map[string]bool
 	}
 
@@ -260,10 +261,10 @@ type MetricMetadata struct {
 
 type NonSuccessfulTransformationMetrics struct {
 	failedJobs       []*jobsdb.JobT
-	failedMetrics    []*types.PUReportedMetric
+	failedMetrics    []*reportingTypes.PUReportedMetric
 	failedCountMap   map[string]int64
 	filteredJobs     []*jobsdb.JobT
-	filteredMetrics  []*types.PUReportedMetric
+	filteredMetrics  []*reportingTypes.PUReportedMetric
 	filteredCountMap map[string]int64
 }
 
@@ -376,7 +377,7 @@ func (proc *Handle) Setup(
 	gatewayDB, routerDB, batchRouterDB,
 	readErrorDB, writeErrorDB,
 	eventSchemaDB, archivalDB jobsdb.JobsDB,
-	reporting types.Reporting,
+	reporting reportingTypes.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
@@ -389,7 +390,7 @@ func (proc *Handle) Setup(
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
-	proc.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	proc.reportingEnabled = config.GetBoolVar(reportingTypes.DefaultReportingEnabled, "Reporting.enabled")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -844,7 +845,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
 			eventAuditEnabled               = make(map[string]bool)
-			credentialsMap                  = make(map[string][]transformer.Credential)
+			credentialsMap                  = make(map[string][]types.Credential)
 			nonEventStreamSources           = make(map[string]bool)
 			connectionConfigMap             = make(map[connection]backendconfig.Connection)
 		)
@@ -875,8 +876,8 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 			}
 			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 			eventAuditEnabled[workspaceID] = wConfig.Settings.EventAuditEnabled
-			credentialsMap[workspaceID] = lo.MapToSlice(wConfig.Credentials, func(key string, value backendconfig.Credential) transformer.Credential {
-				return transformer.Credential{
+			credentialsMap[workspaceID] = lo.MapToSlice(wConfig.Credentials, func(key string, value backendconfig.Credential) types.Credential {
+				return types.Credential{
 					ID:       key,
 					Key:      value.Key,
 					Value:    value.Value,
@@ -968,7 +969,7 @@ func getTimestampFromEvent(event types.SingularEventT, field string, defaultTime
 	return timestamp
 }
 
-func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
+func enhanceWithTimeFields(event *types.TransformerEvent, singularEvent types.SingularEventT, receivedAt time.Time) {
 	// set timestamp skew based on timestamp fields from SDKs
 	originalTimestamp := getTimestampFromEvent(singularEvent, "originalTimestamp", receivedAt)
 	sentAt := getTimestampFromEvent(singularEvent, "sentAt", receivedAt)
@@ -989,8 +990,8 @@ func enhanceWithTimeFields(event *transformer.TransformerEvent, singularEvent ty
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, userID string, jobId int64, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *transformer.Metadata {
-	commonMetadata := transformer.Metadata{}
+func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, userID string, jobId int64, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *types.Metadata {
+	commonMetadata := types.Metadata{}
 	commonMetadata.SourceID = source.ID
 	commonMetadata.SourceName = source.Name
 	commonMetadata.OriginalSourceID = source.OriginalID
@@ -1020,8 +1021,8 @@ func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.Sing
 }
 
 // add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(commonMetadata *transformer.Metadata, event *transformer.TransformerEvent, destination *backendconfig.DestinationT) {
-	metadata := transformer.Metadata{}
+func enhanceWithMetadata(commonMetadata *types.Metadata, event *types.TransformerEvent, destination *backendconfig.DestinationT) {
+	metadata := types.Metadata{}
 	metadata.SourceType = commonMetadata.SourceType
 	metadata.SourceCategory = commonMetadata.SourceCategory
 	metadata.SourceID = commonMetadata.SourceID
@@ -1113,24 +1114,24 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 }
 
 func (proc *Handle) getTransformerEvents(
-	response transformer.Response,
-	commonMetaData *transformer.Metadata,
+	response types.Response,
+	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	destination *backendconfig.DestinationT,
 	connection backendconfig.Connection,
 	inPU, pu string,
 ) (
-	[]transformer.TransformerEvent,
-	[]*types.PUReportedMetric,
+	[]types.TransformerEvent,
+	[]*reportingTypes.PUReportedMetric,
 	map[string]int64,
 	map[string]MetricMetadata,
 ) {
-	successMetrics := make([]*types.PUReportedMetric, 0)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+	successMetrics := make([]*reportingTypes.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 	successCountMap := make(map[string]int64)
 	successCountMetadataMap := make(map[string]MetricMetadata)
-	var eventsToTransform []transformer.TransformerEvent
+	var eventsToTransform []types.TransformerEvent
 	for i := range response.Events {
 		// Update metrics maps
 		userTransformedEvent := &response.Events[i]
@@ -1143,7 +1144,7 @@ func (proc *Handle) getTransformerEvents(
 
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
-				if pu != types.TRACKINGPLAN_VALIDATOR {
+				if pu != reportingTypes.TRACKINGPLAN_VALIDATOR {
 					return []byte(`{}`)
 				}
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
@@ -1176,7 +1177,7 @@ func (proc *Handle) getTransformerEvents(
 		eventMetadata.DestinationDefinitionID = userTransformedEvent.Metadata.DestinationDefinitionID
 		eventMetadata.SourceCategory = userTransformedEvent.Metadata.SourceCategory
 		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
-		updatedEvent := transformer.TransformerEvent{
+		updatedEvent := types.TransformerEvent{
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
 			Destination: *destination,
@@ -1188,13 +1189,13 @@ func (proc *Handle) getTransformerEvents(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		reportingTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 		for k, cd := range connectionDetailsMap {
 			for _, sd := range statusDetailsMap[k] {
-				m := &types.PUReportedMetric{
+				m := &reportingTypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+					PUDetails:         *reportingTypes.CreatePUDetails(inPU, pu, false, false),
 					StatusDetail:      sd,
 				}
 				successMetrics = append(successMetrics, m)
@@ -1209,9 +1210,9 @@ func (proc *Handle) getTransformerEvents(
 func (proc *Handle) updateMetricMaps(
 	countMetadataMap map[string]MetricMetadata,
 	countMap map[string]int64,
-	connectionDetailsMap map[string]*types.ConnectionDetails,
-	statusDetailsMap map[string]map[string]*types.StatusDetail,
-	event *transformer.TransformerResponse,
+	connectionDetailsMap map[string]*reportingTypes.ConnectionDetails,
+	statusDetailsMap map[string]map[string]*reportingTypes.StatusDetail,
+	event *types.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
@@ -1264,7 +1265,7 @@ func (proc *Handle) updateMetricMaps(
 	)
 
 	if _, ok := connectionDetailsMap[key]; !ok {
-		connectionDetailsMap[key] = &types.ConnectionDetails{
+		connectionDetailsMap[key] = &reportingTypes.ConnectionDetails{
 			SourceID:                event.Metadata.SourceID,
 			SourceTaskRunID:         event.Metadata.SourceTaskRunID,
 			SourceJobID:             event.Metadata.SourceJobID,
@@ -1281,16 +1282,16 @@ func (proc *Handle) updateMetricMaps(
 	}
 
 	if _, ok := statusDetailsMap[key]; !ok {
-		statusDetailsMap[key] = make(map[string]*types.StatusDetail)
+		statusDetailsMap[key] = make(map[string]*reportingTypes.StatusDetail)
 	}
 	// create status details for each validation error
 	// single event can have multiple validation errors of same type
 	veCount := len(event.ValidationErrors)
-	if stage == types.TRACKINGPLAN_VALIDATOR && status == jobsdb.Succeeded.State {
+	if stage == reportingTypes.TRACKINGPLAN_VALIDATOR && status == jobsdb.Succeeded.State {
 		if veCount > 0 {
-			status = types.SUCCEEDED_WITH_VIOLATIONS
+			status = reportingTypes.SUCCEEDED_WITH_VIOLATIONS
 		} else {
-			status = types.SUCCEEDED_WITHOUT_VIOLATIONS
+			status = reportingTypes.SUCCEEDED_WITHOUT_VIOLATIONS
 		}
 	}
 	sdkeySet := map[string]struct{}{}
@@ -1300,7 +1301,7 @@ func (proc *Handle) updateMetricMaps(
 
 		sd, ok := statusDetailsMap[key][sdkey]
 		if !ok {
-			sd = &types.StatusDetail{
+			sd = &reportingTypes.StatusDetail{
 				Status:         status,
 				StatusCode:     event.StatusCode,
 				SampleResponse: event.Error,
@@ -1322,7 +1323,7 @@ func (proc *Handle) updateMetricMaps(
 	sdkey := fmt.Sprintf("%s:%d:%s:%s:%s", status, event.StatusCode, eventName, eventType, "")
 	sd, ok := statusDetailsMap[key][sdkey]
 	if !ok {
-		sd = &types.StatusDetail{
+		sd = &reportingTypes.StatusDetail{
 			Status:         status,
 			StatusCode:     event.StatusCode,
 			SampleResponse: event.Error,
@@ -1339,15 +1340,15 @@ func (proc *Handle) updateMetricMaps(
 		messageIDs := lo.Uniq(event.Metadata.GetMessagesIDs()) // this is called defensive programming... :(
 		for _, messageID := range messageIDs {
 			receivedAt := eventsByMessageID[messageID].ReceivedAt
-			sd.FailedMessages = append(sd.FailedMessages, &types.FailedMessage{MessageID: messageID, ReceivedAt: receivedAt})
+			sd.FailedMessages = append(sd.FailedMessages, &reportingTypes.FailedMessage{MessageID: messageID, ReceivedAt: receivedAt})
 		}
 	}
 	sd.ViolationCount += int64(veCount)
 }
 
 func (proc *Handle) getNonSuccessfulMetrics(
-	response transformer.Response,
-	commonMetaData *transformer.Metadata,
+	response types.Response,
+	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
 ) *NonSuccessfulTransformationMetrics {
@@ -1355,8 +1356,8 @@ func (proc *Handle) getNonSuccessfulMetrics(
 
 	grouped := lo.GroupBy(
 		response.FailedEvents,
-		func(event transformer.TransformerResponse) bool {
-			return event.StatusCode == types.FilterEventCode
+		func(event types.TransformerResponse) bool {
+			return event.StatusCode == reportingTypes.FilterEventCode
 		},
 	)
 	filtered, failed := grouped[true], grouped[false]
@@ -1407,15 +1408,15 @@ func procErrorCountsStat(destType, pu, statusCode string) {
 }
 
 func (proc *Handle) getTransformationMetrics(
-	transformerResponses []transformer.TransformerResponse,
+	transformerResponses []types.TransformerResponse,
 	state string,
-	commonMetaData *transformer.Metadata,
+	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
-) ([]*jobsdb.JobT, []*types.PUReportedMetric, map[string]int64) {
-	metrics := make([]*types.PUReportedMetric, 0)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+) ([]*jobsdb.JobT, []*reportingTypes.PUReportedMetric, map[string]int64) {
+	metrics := make([]*reportingTypes.PUReportedMetric, 0)
+	connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 	countMap := make(map[string]int64)
 	var jobs []*jobsdb.JobT
 	statFunc := procErrorCountsStat
@@ -1501,12 +1502,12 @@ func (proc *Handle) getTransformationMetrics(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+		reportingTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 		for k, cd := range connectionDetailsMap {
 			for _, sd := range statusDetailsMap[k] {
-				m := &types.PUReportedMetric{
+				m := &reportingTypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
+					PUDetails:         *reportingTypes.CreatePUDetails(inPU, pu, false, false),
 					StatusDetail:      sd,
 				}
 				metrics = append(metrics, m)
@@ -1566,10 +1567,10 @@ func getDiffMetrics(
 	inCountMetadataMap map[string]MetricMetadata,
 	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
 	statFactory stats.Stats,
-) []*types.PUReportedMetric {
+) []*reportingTypes.PUReportedMetric {
 	// Calculate diff and append to reportMetrics
 	// diff = successCount + abortCount - inCount
-	diffMetrics := make([]*types.PUReportedMetric, 0)
+	diffMetrics := make([]*reportingTypes.PUReportedMetric, 0)
 	for key, inCount := range inCountMap {
 		var eventName, eventType string
 		splitKey := strings.Split(key, MetricKeyDelimiter)
@@ -1586,8 +1587,8 @@ func getDiffMetrics(
 		diff := successCount + failedCount + filteredCount - inCount
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
-			metric := &types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
+			metric := &reportingTypes.PUReportedMetric{
+				ConnectionDetails: reportingTypes.ConnectionDetails{
 					SourceID:                metricMetadata.sourceID,
 					DestinationID:           metricMetadata.destinationID,
 					SourceTaskRunID:         metricMetadata.sourceTaskRunID,
@@ -1601,12 +1602,12 @@ func getDiffMetrics(
 					TrackingPlanID:          metricMetadata.trackingPlanID,
 					TrackingPlanVersion:     metricMetadata.trackingPlanVersion,
 				},
-				PUDetails: types.PUDetails{
+				PUDetails: reportingTypes.PUDetails{
 					InPU: inPU,
 					PU:   pu,
 				},
-				StatusDetail: &types.StatusDetail{
-					Status:      types.DiffStatus,
+				StatusDetail: &reportingTypes.StatusDetail{
+					Status:      reportingTypes.DiffStatus,
 					Count:       diff,
 					SampleEvent: []byte(`{}`),
 					EventName:   eventName,
@@ -1644,20 +1645,20 @@ type preTransformationMessage struct {
 	subJobs                      subJob
 	eventSchemaJobs              []*jobsdb.JobT
 	archivalJobs                 []*jobsdb.JobT
-	connectionDetailsMap         map[string]*types.ConnectionDetails
-	statusDetailsMap             map[string]map[string]*types.StatusDetail
-	reportMetrics                []*types.PUReportedMetric
-	destFilterStatusDetailMap    map[string]map[string]*types.StatusDetail
+	connectionDetailsMap         map[string]*reportingTypes.ConnectionDetails
+	statusDetailsMap             map[string]map[string]*reportingTypes.StatusDetail
+	reportMetrics                []*reportingTypes.PUReportedMetric
+	destFilterStatusDetailMap    map[string]map[string]*reportingTypes.StatusDetail
 	inCountMetadataMap           map[string]MetricMetadata
 	inCountMap                   map[string]int64
 	outCountMap                  map[string]int64
 	totalEvents                  int
 	marshalStart                 time.Time
-	groupedEventsBySourceId      map[SourceIDT][]transformer.TransformerEvent
+	groupedEventsBySourceId      map[SourceIDT][]types.TransformerEvent
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	procErrorJobs                []*jobsdb.JobT
 	jobIDToSpecificDestMapOnly   map[int64]string
-	groupedEvents                map[string][]transformer.TransformerEvent
+	groupedEvents                map[string][]types.TransformerEvent
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	statusList                   []*jobsdb.JobStatusT
 	jobList                      []*jobsdb.JobT
@@ -1677,8 +1678,8 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
-	groupedEvents := make(map[string][]transformer.TransformerEvent)
-	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
+	groupedEvents := make(map[string][]types.TransformerEvent)
+	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
@@ -1701,14 +1702,14 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[dupStatKey]int)
 
-	reportMetrics := make([]*types.PUReportedMetric, 0)
+	reportMetrics := make([]*reportingTypes.PUReportedMetric, 0)
 	inCountMap := make(map[string]int64)
 	inCountMetadataMap := make(map[string]MetricMetadata)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+	connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 
 	outCountMap := make(map[string]int64) // destinations enabled
-	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
+	destFilterStatusDetailMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -1922,7 +1923,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		}
 		// REPORTING - GATEWAY metrics - START
 		// dummy event for metrics purposes only
-		transformerEvent := &transformer.TransformerResponse{}
+		transformerEvent := &types.TransformerResponse{}
 		if proc.isReportingEnabled() {
 			transformerEvent.Metadata = *commonMetadataFromSingularEvent
 			proc.updateMetricMaps(
@@ -1932,7 +1933,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 				statusDetailsMap,
 				transformerEvent,
 				jobsdb.Succeeded.State,
-				types.GATEWAY,
+				reportingTypes.GATEWAY,
 				func() json.RawMessage {
 					if sourceIsTransient {
 						return []byte(`{}`)
@@ -1955,9 +1956,9 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		}
 
 		if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
-			groupedEventsBySourceId[SourceIDT(sourceId)] = make([]transformer.TransformerEvent, 0)
+			groupedEventsBySourceId[SourceIDT(sourceId)] = make([]types.TransformerEvent, 0)
 		}
-		shallowEventCopy := transformer.TransformerEvent{}
+		shallowEventCopy := types.TransformerEvent{}
 		shallowEventCopy.Message = event.singularEvent
 		shallowEventCopy.Message["request_ip"] = event.requestIP
 		enhanceWithTimeFields(&shallowEventCopy, event.singularEvent, event.recievedAt)
@@ -1983,7 +1984,7 @@ func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*tra
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingTypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
 		}
 	}
 
@@ -2075,21 +2076,21 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 
 	// REPORTING - GATEWAY metrics - START
 	if proc.isReportingEnabled() {
-		types.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
+		reportingTypes.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
 		for k, cd := range preTrans.connectionDetailsMap {
 			for _, sd := range preTrans.statusDetailsMap[k] {
-				m := &types.PUReportedMetric{
+				m := &reportingTypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *types.CreatePUDetails("", types.GATEWAY, false, true),
+					PUDetails:         *reportingTypes.CreatePUDetails("", reportingTypes.GATEWAY, false, true),
 					StatusDetail:      sd,
 				}
 				preTrans.reportMetrics = append(preTrans.reportMetrics, m)
 			}
 
 			for _, dsd := range preTrans.destFilterStatusDetailMap[k] {
-				destFilterMetric := &types.PUReportedMetric{
+				destFilterMetric := &reportingTypes.PUReportedMetric{
 					ConnectionDetails: *cd,
-					PUDetails:         *types.CreatePUDetails(types.GATEWAY, types.DESTINATION_FILTER, false, false),
+					PUDetails:         *reportingTypes.CreatePUDetails(reportingTypes.GATEWAY, reportingTypes.DESTINATION_FILTER, false, false),
 					StatusDetail:      dsd,
 				}
 				preTrans.reportMetrics = append(preTrans.reportMetrics, destFilterMetric)
@@ -2098,8 +2099,8 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 		// empty failedCountMap because no failures,
 		// events are just dropped at this point if no destination is found to route the events
 		diffMetrics := getDiffMetrics(
-			types.GATEWAY,
-			types.DESTINATION_FILTER,
+			reportingTypes.GATEWAY,
+			reportingTypes.DESTINATION_FILTER,
 			preTrans.inCountMetadataMap,
 			preTrans.inCountMap,
 			preTrans.outCountMap,
@@ -2171,7 +2172,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
-					shallowEventCopy := transformer.TransformerEvent{}
+					shallowEventCopy := types.TransformerEvent{}
 					shallowEventCopy.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
 					shallowEventCopy.Message = singularEvent
 					shallowEventCopy.Destination = *destination
@@ -2197,7 +2198,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 					// We have at-least one event so marking it good
 					_, ok := preTrans.groupedEvents[srcAndDestKey]
 					if !ok {
-						preTrans.groupedEvents[srcAndDestKey] = make([]transformer.TransformerEvent, 0)
+						preTrans.groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
 					}
 					preTrans.groupedEvents[srcAndDestKey] = append(preTrans.groupedEvents[srcAndDestKey],
 						shallowEventCopy)
@@ -2249,8 +2250,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
-	groupedEvents := make(map[string][]transformer.TransformerEvent)
-	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
+	groupedEvents := make(map[string][]types.TransformerEvent)
+	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
@@ -2273,14 +2274,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[dupStatKey]int)
 
-	reportMetrics := make([]*types.PUReportedMetric, 0)
+	reportMetrics := make([]*reportingTypes.PUReportedMetric, 0)
 	inCountMap := make(map[string]int64)
 	inCountMetadataMap := make(map[string]MetricMetadata)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+	connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
+	statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 
 	outCountMap := make(map[string]int64) // destinations enabled
-	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
+	destFilterStatusDetailMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -2448,7 +2449,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 
 			// REPORTING - GATEWAY metrics - START
 			// dummy event for metrics purposes only
-			event := &transformer.TransformerResponse{}
+			event := &types.TransformerResponse{}
 			if proc.isReportingEnabled() {
 				event.Metadata = *commonMetadataFromSingularEvent
 				proc.updateMetricMaps(
@@ -2458,7 +2459,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 					statusDetailsMap,
 					event,
 					jobsdb.Succeeded.State,
-					types.GATEWAY,
+					reportingTypes.GATEWAY,
 					func() json.RawMessage {
 						if sourceIsTransient {
 							return []byte(`{}`)
@@ -2482,9 +2483,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			}
 
 			if _, ok := groupedEventsBySourceId[SourceIDT(sourceID)]; !ok {
-				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]transformer.TransformerEvent, 0)
+				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]types.TransformerEvent, 0)
 			}
-			shallowEventCopy := transformer.TransformerEvent{}
+			shallowEventCopy := types.TransformerEvent{}
 			shallowEventCopy.Message = singularEvent
 			shallowEventCopy.Message["request_ip"] = requestIP
 			enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
@@ -2511,7 +2512,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 			groupedEventsBySourceId[SourceIDT(sourceID)] = append(groupedEventsBySourceId[SourceIDT(sourceID)], shallowEventCopy)
 
 			if proc.isReportingEnabled() {
-				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, reportingTypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
 			}
 		}
 	}
@@ -2550,12 +2551,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 }
 
 type transformationMessage struct {
-	groupedEvents map[string][]transformer.TransformerEvent
+	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
-	reportMetrics                []*types.PUReportedMetric
+	reportMetrics                []*reportingTypes.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
 	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[dupStatKey]int
@@ -2694,7 +2695,7 @@ type storeMessage struct {
 	procErrorJobs         []*jobsdb.JobT
 	routerDestIDs         []string
 
-	reportMetrics  []*types.PUReportedMetric
+	reportMetrics  []*reportingTypes.PUReportedMetric
 	sourceDupStats map[dupStatKey]int
 	dedupKeys      map[string]struct{}
 
@@ -2950,7 +2951,7 @@ func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]
 }
 
 type transformSrcDestOutput struct {
-	reportMetrics   []*types.PUReportedMetric
+	reportMetrics   []*reportingTypes.PUReportedMetric
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
 	errorsPerDestID map[string][]*jobsdb.JobT
@@ -2962,7 +2963,7 @@ func (proc *Handle) transformSrcDest(
 	ctx context.Context,
 	partition string,
 	// main inputs
-	srcAndDestKey string, eventList []transformer.TransformerEvent,
+	srcAndDestKey string, eventList []types.TransformerEvent,
 
 	// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
@@ -2977,7 +2978,7 @@ func (proc *Handle) transformSrcDest(
 	connection := eventList[0].Connection
 	workspaceID := eventList[0].Metadata.WorkspaceID
 	destType := destination.DestinationDefinition.Name
-	commonMetaData := &transformer.Metadata{
+	commonMetaData := &types.Metadata{
 		SourceID:             sourceID,
 		SourceName:           sourceName,
 		OriginalSourceID:     eventList[0].Metadata.OriginalSourceID,
@@ -2991,7 +2992,7 @@ func (proc *Handle) transformSrcDest(
 		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
 	}
 
-	reportMetrics := make([]*types.PUReportedMetric, 0)
+	reportMetrics := make([]*reportingTypes.PUReportedMetric, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
 	destJobs := make([]*jobsdb.JobT, 0)
 	routerDestIDs := make(map[string]struct{})
@@ -3045,13 +3046,13 @@ func (proc *Handle) transformSrcDest(
 	}
 	// REPORTING - END
 
-	var response transformer.Response
-	var eventsToTransform []transformer.TransformerEvent
+	var response types.Response
+	var eventsToTransform []types.TransformerEvent
 	var inPU string
 	if trackingPlanEnabled {
-		inPU = types.TRACKINGPLAN_VALIDATOR
+		inPU = reportingTypes.TRACKINGPLAN_VALIDATOR
 	} else {
-		inPU = types.DESTINATION_FILTER
+		inPU = reportingTypes.DESTINATION_FILTER
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
@@ -3065,11 +3066,11 @@ func (proc *Handle) transformSrcDest(
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
 
-			var successMetrics []*types.PUReportedMetric
+			var successMetrics []*reportingTypes.PUReportedMetric
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
-			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, types.USER_TRANSFORMER)
-			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, types.USER_TRANSFORMER)
+			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingTypes.USER_TRANSFORMER)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingTypes.USER_TRANSFORMER)
 			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -3086,8 +3087,8 @@ func (proc *Handle) transformSrcDest(
 			// REPORTING - START
 			if proc.isReportingEnabled() {
 				diffMetrics := getDiffMetrics(
-					types.DESTINATION_FILTER,
-					types.USER_TRANSFORMER,
+					reportingTypes.DESTINATION_FILTER,
+					reportingTypes.USER_TRANSFORMER,
 					inCountMetadataMap,
 					inCountMap,
 					successCountMap,
@@ -3105,7 +3106,7 @@ func (proc *Handle) transformSrcDest(
 				inCountMetadataMap = successCountMetadataMap
 			}
 			// REPORTING - END
-			inPU = types.USER_TRANSFORMER // for the next step in the pipeline
+			inPU = reportingTypes.USER_TRANSFORMER // for the next step in the pipeline
 		})
 	} else {
 		proc.logger.Debug("No custom transformation")
@@ -3141,7 +3142,7 @@ func (proc *Handle) transformSrcDest(
 	response = ConvertToFilteredTransformerResponse(
 		eventsToTransform,
 		transformAt != "none",
-		func(event transformer.TransformerEvent) (bool, string) {
+		func(event types.TransformerEvent) (bool, string) {
 			if event.Metadata.SourceJobRunID != "" &&
 				slices.Contains(
 					proc.drainConfig.jobRunIDs.Load(),
@@ -3156,23 +3157,23 @@ func (proc *Handle) transformSrcDest(
 			return false, ""
 		},
 	)
-	var successMetrics []*types.PUReportedMetric
+	var successMetrics []*reportingTypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, types.EVENT_FILTER)
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingTypes.EVENT_FILTER)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
 	}
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
-	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, types.EVENT_FILTER)
+	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingTypes.EVENT_FILTER)
 	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
 		diffMetrics := getDiffMetrics(
 			inPU,
-			types.EVENT_FILTER,
+			reportingTypes.EVENT_FILTER,
 			inCountMetadataMap,
 			inCountMap,
 			successCountMap,
@@ -3231,7 +3232,7 @@ func (proc *Handle) transformSrcDest(
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
 				response, commonMetaData, eventsByMessageID,
-				types.EVENT_FILTER, types.DEST_TRANSFORMER,
+				reportingTypes.EVENT_FILTER, reportingTypes.DEST_TRANSFORMER,
 			)
 			destTransformationStat.numEvents.Count(len(eventsToTransform))
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
@@ -3246,21 +3247,21 @@ func (proc *Handle) transformSrcDest(
 
 			// REPORTING - PROCESSOR metrics - START
 			if proc.isReportingEnabled() {
-				successMetrics := make([]*types.PUReportedMetric, 0)
-				connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-				statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+				successMetrics := make([]*reportingTypes.PUReportedMetric, 0)
+				connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
+				statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, types.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingTypes.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
 				}
-				types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
+				reportingTypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
 				for k, cd := range connectionDetailsMap {
 					for _, sd := range statusDetailsMap[k] {
-						m := &types.PUReportedMetric{
+						m := &reportingTypes.PUReportedMetric{
 							ConnectionDetails: *cd,
-							PUDetails:         *types.CreatePUDetails(types.EVENT_FILTER, types.DEST_TRANSFORMER, false, false),
+							PUDetails:         *reportingTypes.CreatePUDetails(reportingTypes.EVENT_FILTER, reportingTypes.DEST_TRANSFORMER, false, false),
 							StatusDetail:      sd,
 						}
 						successMetrics = append(successMetrics, m)
@@ -3268,8 +3269,8 @@ func (proc *Handle) transformSrcDest(
 				}
 
 				diffMetrics := getDiffMetrics(
-					types.EVENT_FILTER,
-					types.DEST_TRANSFORMER,
+					reportingTypes.EVENT_FILTER,
+					reportingTypes.DEST_TRANSFORMER,
 					inCountMetadataMap,
 					inCountMap,
 					successCountMap,
@@ -3395,12 +3396,12 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 }
 
 func ConvertToFilteredTransformerResponse(
-	events []transformer.TransformerEvent,
+	events []types.TransformerEvent,
 	filter bool,
-	drainFunc func(transformer.TransformerEvent) (bool, string),
-) transformer.Response {
-	var responses []transformer.TransformerResponse
-	var failedEvents []transformer.TransformerResponse
+	drainFunc func(types.TransformerEvent) (bool, string),
+) types.Response {
+	var responses []types.TransformerResponse
+	var failedEvents []types.TransformerResponse
 
 	type cacheValue struct {
 		values []string
@@ -3417,9 +3418,9 @@ func ConvertToFilteredTransformerResponse(
 		if drain, reason := drainFunc(*event); drain {
 			failedEvents = append(
 				failedEvents,
-				transformer.TransformerResponse{
+				types.TransformerResponse{
 					Output:     event.Message,
-					StatusCode: types.DrainEventCode,
+					StatusCode: reportingTypes.DrainEventCode,
 					Metadata:   event.Metadata,
 					Error:      reason,
 				},
@@ -3458,7 +3459,7 @@ func ConvertToFilteredTransformerResponse(
 					// add to FailedEvents
 					failedEvents = append(
 						failedEvents,
-						transformer.TransformerResponse{
+						types.TransformerResponse{
 							Output:     event.Message,
 							StatusCode: 400,
 							Metadata:   event.Metadata,
@@ -3470,9 +3471,9 @@ func ConvertToFilteredTransformerResponse(
 				if !slices.Contains(supportedEvents.values, messageEvent) {
 					failedEvents = append(
 						failedEvents,
-						transformer.TransformerResponse{
+						types.TransformerResponse{
 							Output:     event.Message,
-							StatusCode: types.FilterEventCode,
+							StatusCode: reportingTypes.FilterEventCode,
 							Metadata:   event.Metadata,
 							Error:      "Event not supported",
 						},
@@ -3485,7 +3486,7 @@ func ConvertToFilteredTransformerResponse(
 		// allow event
 		responses = append(
 			responses,
-			transformer.TransformerResponse{
+			types.TransformerResponse{
 				Output:     event.Message,
 				StatusCode: 200,
 				Metadata:   event.Metadata,
@@ -3493,7 +3494,7 @@ func ConvertToFilteredTransformerResponse(
 		)
 	}
 
-	return transformer.Response{Events: responses, FailedEvents: failedEvents}
+	return types.Response{Events: responses, FailedEvents: failedEvents}
 }
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
@@ -3680,7 +3681,7 @@ func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Stor
 	return err
 }
 
-func filterConfig(eventCopy *transformer.TransformerEvent) {
+func filterConfig(eventCopy *types.TransformerEvent) {
 	if configsToFilterI, ok := eventCopy.Destination.DestinationDefinition.Config["configFilters"]; ok {
 		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
 			omitKeys := lo.FilterMap(configsToFilter, func(configKey interface{}, _ int) (string, bool) {

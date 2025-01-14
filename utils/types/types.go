@@ -4,7 +4,6 @@ package types
 
 import (
 	"context"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -15,29 +14,6 @@ const (
 	SuppressEventCode = 299
 	DrainEventCode    = 410
 )
-
-// SingularEventT single event structure
-type SingularEventT map[string]interface{}
-
-type SingularEventWithReceivedAt struct {
-	SingularEvent SingularEventT
-	ReceivedAt    time.Time
-}
-
-// GatewayBatchRequest batch request structure
-type GatewayBatchRequest struct {
-	Batch      []SingularEventT `json:"batch"`
-	RequestIP  string           `json:"requestIP"`
-	ReceivedAt time.Time        `json:"receivedAt"`
-}
-
-type EventParams struct {
-	SourceJobRunId  string `json:"source_job_run_id"`
-	SourceId        string `json:"source_id"`
-	SourceTaskRunId string `json:"source_task_run_id"`
-	TraceParent     string `json:"traceparent"`
-	DestinationID   string `json:"destination_id"`
-}
 
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {

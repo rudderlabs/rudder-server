@@ -7,11 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/router/types"
-
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	processorTypes "github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/router/types"
 )
 
 // NewBuilder returns a new test transformer Builder
@@ -151,7 +150,7 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var request []transformer.TransformerEvent
+		var request []processorTypes.TransformerEvent
 		if err := json.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
