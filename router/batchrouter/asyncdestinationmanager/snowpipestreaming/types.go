@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -25,6 +26,7 @@ type (
 		statsFactory        stats.Stats
 		destination         *backendconfig.DestinationT
 		requestDoer         requestDoer
+		managerCreator      func(ctx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, statsFactory stats.Stats) (manager.Manager, error)
 		now                 func() time.Time
 		api                 api
 		channelCache        sync.Map
@@ -44,6 +46,18 @@ type (
 			}
 			instanceID        string
 			maxBufferCapacity config.ValueLoader[int64]
+			backoff           struct {
+				multiplier      config.ValueLoader[float64]
+				initialInterval config.ValueLoader[time.Duration]
+				maxInterval     config.ValueLoader[time.Duration]
+			}
+		}
+		backoff struct {
+			// If an attempt was made to create a resource but it failed likely due to permission issues,
+			// then the next attempt to create a SF connection will be made after "next".
+			// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
+			attempts int
+			next     time.Time
 		}
 
 		stats struct {
