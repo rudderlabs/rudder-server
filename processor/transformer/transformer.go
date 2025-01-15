@@ -101,10 +101,10 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
-// Dehydrate removes the connection and credentials from the event
+// GetVersionsOnly removes the connection and credentials from the event
 // along with pruning the destination to only include the transformation versionID
 // before sending it to the transformer thereby reducing the payload size
-func (e *TransformerEvent) Dehydrate() *TransformerEvent {
+func (e *TransformerEvent) GetVersionsOnly() *TransformerEvent {
 	tmCopy := *e
 	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
 	for _, t := range e.Destination.Transformations {
@@ -290,7 +290,7 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	var dehydratedClientEvents []TransformerEvent
 	for _, clientEvent := range clientEvents {
-		dehydratedClientEvent := clientEvent.Dehydrate()
+		dehydratedClientEvent := clientEvent.GetVersionsOnly()
 		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
 	}
 
