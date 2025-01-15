@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.40.2](https://github.com/rudderlabs/rudder-server/compare/v1.40.1...v1.40.2) (2025-01-14)
+
+
+### Bug Fixes
+
+* databricks external location ([#5429](https://github.com/rudderlabs/rudder-server/issues/5429)) ([7a2bcf9](https://github.com/rudderlabs/rudder-server/commit/7a2bcf9e877a901ffcb309fb56fadcf35ff15952))
+
+
 ## [1.40.1](https://github.com/rudderlabs/rudder-server/compare/v1.40.0...v1.40.1) (2025-01-08)
 
 
