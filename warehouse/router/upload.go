@@ -13,6 +13,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -99,6 +100,7 @@ type UploadJob struct {
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
+		cleanupStorageFiles                 bool
 	}
 
 	errorHandler    ErrorHandler
@@ -198,6 +200,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
+	uj.config.cleanupStorageFiles = f.conf.GetBool("Warehouse.cleanupStorageFiles", true)
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -364,6 +367,35 @@ func (job *UploadJob) run() (err error) {
 				break
 			}
 			newStatus = nextUploadState.completed
+			if job.config.cleanupStorageFiles {
+				if true {
+					panic("cleanupStorageFiles is not implemented")
+				}
+				warehouse := job.warehouse
+				storageProvider := whutils.ObjectStorageType(warehouse.Destination.DestinationDefinition.Name, warehouse.Destination.Config, job.upload.UseRudderStorage)
+				fm, err := filemanager.New(&filemanager.Settings{Provider: storageProvider, Config: warehouse.Destination.Config})
+				if err != nil {
+					break
+				}
+				stagingFileIds := make([]string, len(job.stagingFileIDs))
+				for i, num := range job.stagingFileIDs {
+					stagingFileIds[i] = strconv.FormatInt(num, 10)
+				}
+				if err = fm.Delete(job.ctx, stagingFileIds); err != nil {
+					break
+				}
+				loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
+				if err != nil {
+					break
+				}
+				loadingFileIds := make([]string, len(loadingFiles))
+				for i, loadingFile := range loadingFiles {
+					loadingFileIds[i] = strconv.FormatInt(loadingFile.ID, 10)
+				}
+				if err = fm.Delete(job.ctx, loadingFileIds); err != nil {
+					break
+				}
+			}
 
 		default:
 			// If unknown state, start again
