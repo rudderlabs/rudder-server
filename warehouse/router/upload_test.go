@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -142,7 +143,8 @@ func TestColumnCountStat(t *testing.T) {
 				conf:         conf,
 				db:           sqlmiddleware.New(pgResource.DB),
 			}
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
+			whManager, err := manager.New(warehouseutils.POSTGRES, conf, logger.NOP, statsStore)
+			require.NoError(t, err)
 			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{
 				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
@@ -160,7 +162,7 @@ func TestColumnCountStat(t *testing.T) {
 						Name: sourceName,
 					},
 				},
-			}, rs)
+			}, whManager)
 			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",

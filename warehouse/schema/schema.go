@@ -45,7 +45,7 @@ type fetchSchemaRepo interface {
 	FetchSchema(ctx context.Context) (model.Schema, error)
 }
 
-type SchemaHandler interface {
+type Handler interface {
 	SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error)
 	IsWarehouseSchemaEmpty() bool
 	GetTableSchemaInWarehouse(tableName string) model.TableSchema
@@ -83,7 +83,7 @@ func New(
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,
-) SchemaHandler {
+) Handler {
 	s := &schema{
 		warehouse:                        warehouse,
 		schemaRepo:                       repo.NewWHSchemas(db),
