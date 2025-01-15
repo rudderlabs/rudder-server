@@ -12,25 +12,21 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -488,8 +484,10 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequ
 	if err != nil {
 		return fmt.Errorf("setting up integrations manager: %w", err)
 	}
-	defer integrationsManager.Cleanup(ctx)
-
+	defer func() {
+		integrationsManager.Cleanup(ctx)
+		integrationsManager.Close()
+	}()
 	var metadata warehouseutils.DeleteByMetaData
 	if err = json.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
 		return fmt.Errorf("unmarshalling metadata: %w", err)

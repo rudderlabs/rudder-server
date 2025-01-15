@@ -9,19 +9,16 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
+	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Manager struct {
@@ -284,7 +281,7 @@ func (m *Manager) markFailed(ctx context.Context, ids []int64, failError error) 
 
 type Uploader struct{}
 
-func (*Uploader) IsWarehouseSchemaEmpty() bool                                      { return true }
+func (*Uploader) IsSchemaEmpty() bool                                               { return true }
 func (*Uploader) UpdateLocalSchema(context.Context, model.Schema) error             { return nil }
 func (*Uploader) GetTableSchemaInUpload(string) model.TableSchema                   { return model.TableSchema{} }
 func (*Uploader) ShouldOnDedupUseNewRecord() bool                                   { return false }
@@ -292,7 +289,7 @@ func (*Uploader) UseRudderStorage() bool                                        
 func (*Uploader) CanAppend() bool                                                   { return false }
 func (*Uploader) GetLoadFileType() string                                           { return "" }
 func (*Uploader) GetLocalSchema(context.Context) (model.Schema, error)              { return model.Schema{}, nil }
-func (*Uploader) GetTableSchemaInWarehouse(string) model.TableSchema                { return model.TableSchema{} }
+func (*Uploader) GetTableSchema(string) model.TableSchema                           { return model.TableSchema{} }
 func (*Uploader) GetSampleLoadFileLocation(context.Context, string) (string, error) { return "", nil }
 func (*Uploader) GetLoadFilesMetadata(context.Context, whutils.GetLoadFilesOptions) ([]whutils.LoadFile, error) {
 	return []whutils.LoadFile{}, nil

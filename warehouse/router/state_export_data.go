@@ -279,10 +279,9 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	}
 
 	errorMap := job.whManager.LoadUserTables(job.ctx)
-
 	if alteredIdentitySchema || alteredUserSchema {
 		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx)
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx)
 	}
 	return job.processLoadTableResponse(errorMap)
 }
@@ -295,7 +294,7 @@ func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error)
 			return
 		}
 
-		job.schemaHandle.UpdateWarehouseTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+		job.schemaHandle.UpdateTableSchema(tName, tableSchemaDiff.UpdatedSchema)
 		alteredSchema = true
 	}
 	return
@@ -306,7 +305,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 	if tableSchemaDiff.TableToBeCreated {
 		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
-			job.logger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
 			return err
 		}
 		job.stats.tablesAdded.Increment()
@@ -498,7 +496,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			return job.processLoadTableResponse(errorMap)
 		}
 	}
-
 	var alteredSchema bool
 	for _, tableName := range identityTables {
 		if _, loaded := currentJobSucceededTables[tableName]; loaded {
@@ -520,7 +517,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 				errorMap := map[string]error{tableName: err}
 				return job.processLoadTableResponse(errorMap)
 			}
-			job.schemaHandle.UpdateWarehouseTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			job.schemaHandle.UpdateTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
 
 			status := model.TableUploadUpdatedSchema
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
@@ -552,12 +549,10 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			break
 		}
 	}
-
 	if alteredSchema {
 		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx) // TODO check error
 	}
-
 	return job.processLoadTableResponse(errorMap)
 }
 
@@ -638,7 +633,6 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
-
 	var alteredSchemaInAtLeastOneTable atomic.Bool
 	concurrencyGuard := make(chan struct{}, parallelLoads)
 
@@ -698,9 +692,8 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	if alteredSchemaInAtLeastOneTable.Load() {
 		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
+		_ = job.schemaHandle.UpdateLocalSchema(job.ctx) // TODO check error
 	}
-
 	return loadErrors
 }
 
@@ -795,7 +788,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: whutils.TableNameForStats(tableName)},
 	}
-	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
+	currentColumnsCount := job.schemaHandle.GetColumnsCountInSchema(tableName)
 
 	job.gaugeStat(`warehouse_load_table_column_count`, tags...).Gauge(currentColumnsCount)
 	job.gaugeStat(`warehouse_load_table_column_limit`, tags...).Gauge(columnCountLimit)

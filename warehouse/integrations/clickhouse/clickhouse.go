@@ -895,7 +895,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 }
 
 func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
-	if !ch.Uploader.IsWarehouseSchemaEmpty() {
+	if !ch.Uploader.IsSchemaEmpty() {
 		return nil
 	}
 
@@ -1050,6 +1050,9 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 }
 
 func (ch *Clickhouse) Cleanup(_ context.Context) {
+}
+
+func (ch *Clickhouse) Close() {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}

@@ -628,7 +628,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	defer ms.dropStagingTable(ctx, unionStagingTableName)
 	defer ms.dropStagingTable(ctx, identifyStagingTable)
 
-	userColMap := ms.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := ms.Uploader.GetTableSchema(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -961,9 +961,11 @@ func (ms *MSSQL) Cleanup(ctx context.Context) {
 				logfield.Error, err,
 			)
 		}
-
-		_ = ms.DB.Close()
 	}
+}
+
+func (ms *MSSQL) Close() {
+	_ = ms.DB.Close()
 }
 
 func (*MSSQL) LoadIdentityMergeRulesTable(context.Context) (err error) {
