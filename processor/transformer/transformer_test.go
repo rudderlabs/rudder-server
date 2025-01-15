@@ -13,11 +13,9 @@ import (
 	"testing"
 	"time"
 
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
-
-	"go.uber.org/mock/gomock"
-
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -30,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -887,4 +886,130 @@ func TestLongRunningTransformation(t *testing.T) {
 		}
 		cancel()
 	})
+}
+
+func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
+	testCases := []struct {
+		name     string
+		event    *types.TransformerEvent
+		expected *types.TransformerEvent
+	}{
+		{
+			name: "remove connections",
+			event: &types.TransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
+				Connection: backendconfig.Connection{
+					SourceID:      "source-id",
+					DestinationID: "destination-id",
+				},
+				Destination: backendconfig.DestinationT{
+					Transformations: make([]backendconfig.TransformationT, 0),
+				},
+			},
+			expected: &types.TransformerEvent{
+				Metadata:   types.Metadata{},
+				Message:    map[string]interface{}{},
+				Connection: backendconfig.Connection{},
+				Destination: backendconfig.DestinationT{
+					Transformations: make([]backendconfig.TransformationT, 0),
+				},
+			},
+		},
+		{
+			name: "remove everything except transformations in destination",
+			event: &types.TransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
+				Connection: backendconfig.Connection{
+					SourceID:      "source-id",
+					DestinationID: "destination-id",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:              "destination-id",
+					Transformations: make([]backendconfig.TransformationT, 0),
+					Name:            "destination-name",
+					Config: map[string]interface{}{
+						"key": "value",
+						"key2": map[string]interface{}{
+							"key": "value",
+						},
+						"key3": []interface{}{"value"},
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name:          "destination-definition-name",
+						Config:        map[string]interface{}{},
+						ResponseRules: map[string]interface{}{},
+					},
+				},
+			},
+			expected: &types.TransformerEvent{
+				Metadata:   types.Metadata{},
+				Message:    map[string]interface{}{},
+				Connection: backendconfig.Connection{},
+				Destination: backendconfig.DestinationT{
+					Transformations: make([]backendconfig.TransformationT, 0),
+				},
+			},
+		},
+		{
+			name: "remove everything except transformations in destination with multiple transformer versions",
+			event: &types.TransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
+				Connection: backendconfig.Connection{
+					SourceID:      "source-id",
+					DestinationID: "destination-id",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "destination-id",
+					Transformations: []backendconfig.TransformationT{
+						{
+							ID:        "transformation-id",
+							VersionID: "version-id",
+							Config:    map[string]interface{}{},
+						},
+						{
+							ID:        "transformation-id-2",
+							VersionID: "version-id-2",
+							Config:    map[string]interface{}{},
+						},
+					},
+					Name: "destination-name",
+					Config: map[string]interface{}{
+						"key": "value",
+						"key2": map[string]interface{}{
+							"key": "value",
+						},
+						"key3": []interface{}{"value"},
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name:          "destination-definition-name",
+						Config:        map[string]interface{}{},
+						ResponseRules: map[string]interface{}{},
+					},
+				},
+			},
+			expected: &types.TransformerEvent{
+				Metadata:   types.Metadata{},
+				Message:    map[string]interface{}{},
+				Connection: backendconfig.Connection{},
+				Destination: backendconfig.DestinationT{
+					Transformations: []backendconfig.TransformationT{
+						{
+							VersionID: "version-id",
+						},
+						{
+							VersionID: "version-id-2",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, tc.event.GetVersionsOnly())
+		})
+	}
 }

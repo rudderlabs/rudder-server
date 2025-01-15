@@ -39,6 +39,24 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
+// GetVersionsOnly removes the connection and credentials from the event
+// along with pruning the destination to only include the transformation versionID
+// before sending it to the transformer thereby reducing the payload size
+func (e *TransformerEvent) GetVersionsOnly() *TransformerEvent {
+	tmCopy := *e
+	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
+	for _, t := range e.Destination.Transformations {
+		transformations = append(transformations, backendconfig.TransformationT{
+			VersionID: t.VersionID,
+		})
+	}
+	tmCopy.Destination = backendconfig.DestinationT{
+		Transformations: transformations,
+	}
+	tmCopy.Connection = backendconfig.Connection{}
+	return &tmCopy
+}
+
 type Credential struct {
 	ID       string `json:"id"`
 	Key      string `json:"key"`

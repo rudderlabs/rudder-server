@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
-
 	"github.com/bufbuild/httplb"
 	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff"
@@ -32,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -188,7 +187,13 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []types.Transfo
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
-	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
+	var dehydratedClientEvents []types.TransformerEvent
+	for _, clientEvent := range clientEvents {
+		dehydratedClientEvent := clientEvent.GetVersionsOnly()
+		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
+	}
+
+	return trans.transform(ctx, dehydratedClientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
 }
 
 // Validate function is used to invoke tracking plan validation API
