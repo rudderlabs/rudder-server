@@ -17,6 +17,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/google/uuid"
@@ -1589,14 +1591,14 @@ func TestDestinationTransformation(t *testing.T) {
 		testcases := []struct {
 			name           string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name: "with allowUsersContextTraits=true",
 				configOverride: map[string]any{
 					"allowUsersContextTraits": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1625,7 +1627,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1652,7 +1654,7 @@ func TestDestinationTransformation(t *testing.T) {
 			{
 				name:           "without allowUsersContextTraits",
 				configOverride: map[string]any{},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1719,7 +1721,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
@@ -1735,14 +1737,14 @@ func TestDestinationTransformation(t *testing.T) {
 		testcases := []struct {
 			name           string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name: "with underscoreDivideNumbers=true",
 				configOverride: map[string]any{
 					"underscoreDivideNumbers": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1767,7 +1769,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"underscoreDivideNumbers": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1790,7 +1792,7 @@ func TestDestinationTransformation(t *testing.T) {
 			{
 				name:           "without underscoreDivideNumbers",
 				configOverride: map[string]any{},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1850,7 +1852,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
@@ -1867,7 +1869,7 @@ func TestDestinationTransformation(t *testing.T) {
 			name           string
 			destType       string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name:     "for non-datalake destinations should be present",
@@ -1875,7 +1877,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1905,7 +1907,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1975,7 +1977,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 

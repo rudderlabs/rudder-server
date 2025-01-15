@@ -26,11 +26,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
-	"github.com/rudderlabs/rudder-server/utils/types"
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -48,112 +48,11 @@ const (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-type Metadata struct {
-	SourceID            string                            `json:"sourceId"`
-	SourceName          string                            `json:"sourceName"`
-	OriginalSourceID    string                            `json:"originalSourceId"`
-	WorkspaceID         string                            `json:"workspaceId"`
-	Namespace           string                            `json:"namespace"`
-	InstanceID          string                            `json:"instanceId"`
-	SourceType          string                            `json:"sourceType"`
-	SourceCategory      string                            `json:"sourceCategory"`
-	TrackingPlanID      string                            `json:"trackingPlanId"`
-	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
-	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
-	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
-	DestinationID       string                            `json:"destinationId"`
-	JobID               int64                             `json:"jobId"`
-	SourceJobID         string                            `json:"sourceJobId"`
-	SourceJobRunID      string                            `json:"sourceJobRunId"`
-	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
-	RecordID            interface{}                       `json:"recordId"`
-	DestinationType     string                            `json:"destinationType"`
-	DestinationName     string                            `json:"destinationName"`
-	MessageID           string                            `json:"messageId"`
-	OAuthAccessToken    string                            `json:"oauthAccessToken"`
-	TraceParent         string                            `json:"traceparent"`
-	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs              []string `json:"messageIds"`
-	RudderID                string   `json:"rudderId"`
-	ReceivedAt              string   `json:"receivedAt"`
-	EventName               string   `json:"eventName"`
-	EventType               string   `json:"eventType"`
-	SourceDefinitionID      string   `json:"sourceDefinitionId"`
-	DestinationDefinitionID string   `json:"destinationDefinitionId"`
-	TransformationID        string   `json:"transformationId"`
-	TransformationVersionID string   `json:"transformationVersionId"`
-	SourceDefinitionType    string   `json:"-"`
-}
-
-func (m Metadata) GetMessagesIDs() []string {
-	if len(m.MessageIDs) > 0 {
-		return m.MessageIDs
-	}
-	return []string{m.MessageID}
-}
-
-type TransformerEvent struct {
-	Message     types.SingularEventT       `json:"message"`
-	Metadata    Metadata                   `json:"metadata"`
-	Destination backendconfig.DestinationT `json:"destination"`
-	Connection  backendconfig.Connection   `json:"connection"`
-	Libraries   []backendconfig.LibraryT   `json:"libraries"`
-	Credentials []Credential               `json:"credentials"`
-}
-
-// GetVersionsOnly removes the connection and credentials from the event
-// along with pruning the destination to only include the transformation versionID
-// before sending it to the transformer thereby reducing the payload size
-func (e *TransformerEvent) GetVersionsOnly() *TransformerEvent {
-	tmCopy := *e
-	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
-	for _, t := range e.Destination.Transformations {
-		transformations = append(transformations, backendconfig.TransformationT{
-			VersionID: t.VersionID,
-		})
-	}
-	tmCopy.Destination = backendconfig.DestinationT{
-		Transformations: transformations,
-	}
-	tmCopy.Connection = backendconfig.Connection{}
-	return &tmCopy
-}
-
-type Credential struct {
-	ID       string `json:"id"`
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	IsSecret bool   `json:"isSecret"`
-}
-
 func isJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
 		return false
 	}
 	return status >= http.StatusOK && status < http.StatusInternalServerError
-}
-
-type TransformerResponse struct {
-	// Not marking this Singular Event, since this not a RudderEvent
-	Output           map[string]interface{} `json:"output"`
-	Metadata         Metadata               `json:"metadata"`
-	StatusCode       int                    `json:"statusCode"`
-	Error            string                 `json:"error"`
-	ValidationErrors []ValidationError      `json:"validationErrors"`
-	StatTags         map[string]string      `json:"statTags"`
-}
-
-type ValidationError struct {
-	Type     string            `json:"type"`
-	Message  string            `json:"message"`
-	Meta     map[string]string `json:"meta"`
-	Property string            `json:"property"`
-}
-
-// Response represents a Transformer response
-type Response struct {
-	Events       []TransformerResponse
-	FailedEvents []TransformerResponse
 }
 
 type Opt func(*handle)
@@ -166,9 +65,9 @@ func WithClient(client HTTPDoer) Opt {
 
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+	Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+	UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+	Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
 }
 
 type HTTPDoer interface {
@@ -282,13 +181,13 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 }
 
 // Transform function is used to invoke destination transformer API
-func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
+func (trans *handle) Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	return trans.transform(ctx, clientEvents, trans.destTransformURL(clientEvents[0].Destination.DestinationDefinition.Name), batchSize, destTransformerStage)
 }
 
 // UserTransform function is used to invoke user transformer API
-func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	var dehydratedClientEvents []TransformerEvent
+func (trans *handle) UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
+	var dehydratedClientEvents []types.TransformerEvent
 	for _, clientEvent := range clientEvents {
 		dehydratedClientEvent := clientEvent.GetVersionsOnly()
 		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
@@ -298,7 +197,7 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 }
 
 // Validate function is used to invoke tracking plan validation API
-func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
+func (trans *handle) Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
 }
 
@@ -312,13 +211,13 @@ func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.T
 
 func (trans *handle) transform(
 	ctx context.Context,
-	clientEvents []TransformerEvent,
+	clientEvents []types.TransformerEvent,
 	url string,
 	batchSize int,
 	stage string,
-) Response {
+) types.Response {
 	if len(clientEvents) == 0 {
-		return Response{}
+		return types.Response{}
 	}
 	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
 	// flip back afterwards
@@ -358,14 +257,14 @@ func (trans *handle) transform(
 	).Observe(float64(len(batches)))
 	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
-	transformResponse := make([][]TransformerResponse, len(batches))
+	transformResponse := make([][]types.TransformerResponse, len(batches))
 
 	var wg sync.WaitGroup
 	wg.Add(len(batches))
 
 	lo.ForEach(
 		batches,
-		func(batch []TransformerEvent, i int) {
+		func(batch []types.TransformerEvent, i int) {
 			trans.guardConcurrency <- struct{}{}
 			go func() {
 				trace.WithRegion(ctx, "request", func() {
@@ -378,8 +277,8 @@ func (trans *handle) transform(
 	)
 	wg.Wait()
 
-	var outClientEvents []TransformerResponse
-	var failedEvents []TransformerResponse
+	var outClientEvents []types.TransformerResponse
+	var failedEvents []types.TransformerResponse
 
 	for _, batch := range transformResponse {
 		// Transform is one to many mapping so returned
@@ -400,13 +299,13 @@ func (trans *handle) transform(
 	trans.sentStat.Count(len(clientEvents))
 	trans.receivedStat.Count(len(outClientEvents))
 
-	return Response{
+	return types.Response{
 		Events:       outClientEvents,
 		FailedEvents: failedEvents,
 	}
 }
 
-func (trans *handle) request(ctx context.Context, url, stage string, data []TransformerEvent) []TransformerResponse {
+func (trans *handle) request(ctx context.Context, url, stage string, data []types.TransformerEvent) []types.TransformerResponse {
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -486,7 +385,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	}
 
-	var transformerResponses []TransformerResponse
+	var transformerResponses []types.TransformerResponse
 	switch statusCode {
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
@@ -505,7 +404,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	default:
 		for i := range data {
 			transformEvent := &data[i]
-			resp := TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
+			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
 	}
@@ -578,8 +477,8 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
-		if types.SupportedTransformerApiVersion != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", types.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
+		if reportingTypes.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingTypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

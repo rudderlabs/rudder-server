@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func TestFilterEventsForHybridMode(t *testing.T) {
@@ -458,19 +458,19 @@ func TestConvertToArrayOfType(t *testing.T) {
 func TestAllowEventToDestTransformation(t *testing.T) {
 	type testCaseT struct {
 		caseName          string
-		transformerEvent  *transformer.TransformerEvent
+		transformerEvent  *types.TransformerEvent
 		expected          bool
 		supportedMsgTypes []string
-		expectedResp      *transformer.TransformerResponse
+		expectedResp      *types.TransformerResponse
 	}
 
 	testCases := []testCaseT{
 		{
 			caseName:          "if message type is invalid, return false with statusCode 400",
-			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": ""}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": ""}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
-			expectedResp: &transformer.TransformerResponse{
+			expectedResp: &types.TransformerResponse{
 				Output:     map[string]interface{}{"type": ""},
 				StatusCode: 400,
 				Error:      "Invalid message type. Type assertion failed",
@@ -478,10 +478,10 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 		},
 		{
 			caseName:          "if message type is unsupported, return false with statusCode 298",
-			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "identify"}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "identify"}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
-			expectedResp: &transformer.TransformerResponse{
+			expectedResp: &types.TransformerResponse{
 				Output:     map[string]interface{}{"type": "identify"},
 				StatusCode: 298,
 				Error:      "Message type not supported",
@@ -489,10 +489,10 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 		},
 		{
 			caseName:          "if event is filtered due to FilterEventsForHybridMode, return statusCode 298",
-			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Metadata: transformer.Metadata{}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Metadata: types.Metadata{}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
-			expectedResp: &transformer.TransformerResponse{
+			expectedResp: &types.TransformerResponse{
 				Output:     map[string]interface{}{"type": "track"},
 				StatusCode: 298,
 				Error:      "Filtering event based on hybridModeFilter",
@@ -500,7 +500,7 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 		},
 		{
 			caseName:          "if event is legit, return true with nil response",
-			transformerEvent:  &transformer.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Destination: backendconfig.DestinationT{IsProcessorEnabled: true}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Destination: backendconfig.DestinationT{IsProcessorEnabled: true}},
 			expected:          true,
 			supportedMsgTypes: []string{"track"},
 			expectedResp:      nil,
