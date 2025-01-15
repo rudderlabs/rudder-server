@@ -244,7 +244,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			require.Equal(t, int64(1), statuses[0].JobID)
 			require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
 			require.Empty(t, statuses[0].ErrorCode)
-			require.Equal(t, "poll failed with status code 400", gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
+			require.Equal(t, "", gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 			require.JSONEq(t, `{}`, string(statuses[0].Parameters))
 			require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
 			cancel()
