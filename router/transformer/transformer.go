@@ -583,7 +583,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	} else if resp.StatusCode == http.StatusNotFound {
 		// Actually Router wouldn't send any destination to proxy unless it already exists
 		// But if accidentally such a request is sent, failing instead of aborting
-		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
+		notFoundErr := fmt.Errorf(`Transformer returned status code: %v | post "%s" not found`, http.StatusNotFound, req.URL)
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[2]v`, destName, notFoundErr)
 		return httpProxyResponse{
 			respData:   []byte{},
