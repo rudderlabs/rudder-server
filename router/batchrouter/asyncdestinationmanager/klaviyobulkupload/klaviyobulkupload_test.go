@@ -315,7 +315,7 @@ func TestPoll(t *testing.T) {
 		assert.Equal(t, true, jobStatus.HasFailed)
 		assert.Equal(t, false, jobStatus.HasWarning)
 		assert.Empty(t, jobStatus.WarningJobParameters)
-		assert.Equal(t, "The import job failed", jobStatus.Error)
+		assert.Equal(t, "Error during fetching upload status The import job failed", jobStatus.Error)
 	})
 }
 
