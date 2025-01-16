@@ -480,7 +480,6 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	switch statusCode {
 	case http.StatusOK,
 		http.StatusBadRequest,
-		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
 	default:
 		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
