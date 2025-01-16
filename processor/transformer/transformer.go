@@ -502,6 +502,9 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 			panic(err)
 		}
 	default:
+		if statusCode == http.StatusNotFound {
+			statusCode = http.StatusInternalServerError
+		}
 		for i := range data {
 			transformEvent := &data[i]
 			resp := TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
