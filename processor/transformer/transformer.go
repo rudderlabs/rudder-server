@@ -561,6 +561,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			trans.logger.Warnn(
 				"JS HTTP connection error",
 				logger.NewErrorField(err),
+				logger.NewStringField("stage", stage),
 				logger.NewIntField("attempts", int64(retryCount)),
 			)
 		},
