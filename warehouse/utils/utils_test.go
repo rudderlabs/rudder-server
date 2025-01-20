@@ -405,24 +405,6 @@ func TestGetGCSLocationFolder(t *testing.T) {
 	}
 }
 
-func TestGetGCSLocations(t *testing.T) {
-	inputs := []LoadFile{
-		{Location: "https://storage.googleapis.com/test-bucket/test-object.csv"},
-		{Location: "https://storage.googleapis.com/my.test-bucket/test-object.csv"},
-		{Location: "https://storage.googleapis.com/my.test-bucket2/test-object.csv"},
-		{Location: "https://storage.googleapis.com/my.test-bucket/test-object2.csv"},
-	}
-	outputs := []string{
-		"gs://test-bucket/test-object.csv",
-		"gs://my.test-bucket/test-object.csv",
-		"gs://my.test-bucket2/test-object.csv",
-		"gs://my.test-bucket/test-object2.csv",
-	}
-
-	gcsLocations := GetGCSLocations(inputs, GCSLocationOptions{})
-	require.Equal(t, gcsLocations, outputs)
-}
-
 func TestGetAzureBlobLocation(t *testing.T) {
 	inputs := []struct {
 		location       string
@@ -1191,14 +1173,6 @@ var _ = Describe("Utils", func() {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
 		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), model.Schema{"k1": {"k2": "v2"}}),
-	)
-
-	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
-		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
-	},
-		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
-		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
-		Entry("No days", nil, nil, "2006-01-02", nil),
 	)
 
 	DescribeTable("Staging table prefix", func(provider string) {

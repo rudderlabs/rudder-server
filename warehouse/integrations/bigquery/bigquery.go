@@ -61,7 +61,7 @@ const (
 	tableNameLimit = 127
 )
 
-// maps datatype stored in rudder to datatype in bigquery
+// dataTypesMap maps datatype stored in rudder to datatype in bigquery
 var dataTypesMap = map[string]bigquery.FieldType{
 	"boolean":  bigquery.BooleanFieldType,
 	"int":      bigquery.IntegerFieldType,
@@ -70,7 +70,7 @@ var dataTypesMap = map[string]bigquery.FieldType{
 	"datetime": bigquery.TimestampFieldType,
 }
 
-// maps datatype in bigquery to datatype stored in rudder
+// dataTypesMapToRudder maps datatype in bigquery to datatype stored in rudder
 var dataTypesMapToRudder = map[bigquery.FieldType]string{
 	"BOOLEAN":   "boolean",
 	"BOOL":      "boolean",
@@ -140,10 +140,8 @@ func getTableSchema(tableSchema model.TableSchema) []*bigquery.FieldSchema {
 	})
 }
 
-func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) (err error) {
-	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err = tableRef.Delete(ctx)
-	return
+func (bq *BigQuery) DeleteTable(ctx context.Context, tableName string) error {
+	return bq.db.Dataset(bq.namespace).Table(tableName).Delete(ctx)
 }
 
 // CreateTable creates a table in BigQuery with the provided schema
@@ -216,13 +214,6 @@ func (bq *BigQuery) CreateTable(ctx context.Context, tableName string, columnMap
 		return fmt.Errorf("create view: %w", err)
 	}
 	return nil
-}
-
-func (bq *BigQuery) DropTable(ctx context.Context, tableName string) error {
-	if err := bq.DeleteTable(ctx, tableName); err != nil {
-		return err
-	}
-	return bq.DeleteTable(ctx, tableName+"_view")
 }
 
 // createTableView creates a view for the table to deduplicate the data
@@ -301,6 +292,13 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	}
 
 	return bq.db.Dataset(bq.namespace).Table(tableName+"_view").Create(ctx, metaData)
+}
+
+func (bq *BigQuery) DropTable(ctx context.Context, tableName string) error {
+	if err := bq.DeleteTable(ctx, tableName); err != nil {
+		return err
+	}
+	return bq.DeleteTable(ctx, tableName+"_view")
 }
 
 func (bq *BigQuery) schemaExists(ctx context.Context, _, _ string) (exists bool, err error) {
@@ -443,15 +441,12 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	)
 	log.Infon("started loading")
 
-	loadFileLocations, err := bq.loadFileLocations(ctx, tableName)
+	loadFileLocation, err := bq.loadFileLocation(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting load file locations: %w", err)
+		return nil, nil, fmt.Errorf("getting load file location: %w", err)
 	}
 
-	gcsRef := bigquery.NewGCSReference(warehouseutils.GetGCSLocations(
-		loadFileLocations,
-		warehouseutils.GCSLocationOptions{},
-	)...)
+	gcsRef := bigquery.NewGCSReference(loadFileLocation)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
@@ -459,10 +454,10 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	return bq.loadTableByAppend(ctx, tableName, gcsRef, log)
 }
 
-func (bq *BigQuery) loadFileLocations(
+func (bq *BigQuery) loadFileLocation(
 	ctx context.Context,
 	tableName string,
-) ([]warehouseutils.LoadFile, error) {
+) (string, error) {
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
 		loadfile, err := bq.uploader.GetSingleLoadFile(
@@ -470,14 +465,17 @@ func (bq *BigQuery) loadFileLocations(
 			tableName,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("getting single load file for table %s: %w", tableName, err)
+			return "", fmt.Errorf("getting single load file for table %s: %w", tableName, err)
 		}
-		return []warehouseutils.LoadFile{loadfile}, nil
+		return loadfile.Location, nil
 	default:
-		return bq.uploader.GetLoadFilesMetadata(
-			ctx,
-			warehouseutils.GetLoadFilesOptions{Table: tableName},
-		)
+		objectLocation, err := bq.uploader.GetSampleLoadFileLocation(ctx, tableName)
+		if err != nil {
+			return "", fmt.Errorf("getting sample load file location for table %s: %w", tableName, err)
+		}
+		gcsLocation := warehouseutils.GetGCSLocation(objectLocation, warehouseutils.GCSLocationOptions{})
+
+		return loadFolder(gcsLocation), nil
 	}
 }
 
@@ -692,15 +690,12 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 }
 
 func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingTable string) error {
-	loadFileLocations, err := bq.loadFileLocations(ctx, warehouseutils.UsersTable)
+	loadFileLocation, err := bq.loadFileLocation(ctx, warehouseutils.UsersTable)
 	if err != nil {
-		return fmt.Errorf("getting load file locations: %w", err)
+		return fmt.Errorf("getting load file location: %w", err)
 	}
 
-	gcsRef := bigquery.NewGCSReference(warehouseutils.GetGCSLocations(
-		loadFileLocations,
-		warehouseutils.GCSLocationOptions{},
-	)...)
+	gcsRef := bigquery.NewGCSReference(loadFileLocation)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
@@ -1178,9 +1173,9 @@ func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 }
 
 func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) error {
-	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
+	gcsLocation := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 
-	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
+	gcsRef := bigquery.NewGCSReference(loadFolder(gcsLocation))
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
@@ -1211,6 +1206,10 @@ func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName strin
 		return fmt.Errorf("status for test data load job: %w", status.Err())
 	}
 	return nil
+}
+
+func loadFolder(objectLocation string) string {
+	return warehouseutils.GetLocationFolder(objectLocation) + "/*"
 }
 
 func (*BigQuery) SetConnectionTimeout(_ time.Duration) {
