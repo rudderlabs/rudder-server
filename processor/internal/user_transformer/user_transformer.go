@@ -12,12 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
+
 	"github.com/cenkalti/backoff/v4"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -302,13 +303,12 @@ func (u *UserTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 
 				resp, reqErr = u.client.Do(req)
+				defer func() { httputil.CloseResponse(resp) }()
 			})
 			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr
 			}
-
-			defer func() { httputil.CloseResponse(resp) }()
 
 			if !transformer_utils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformer_utils.StatusCPDown {
 				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
