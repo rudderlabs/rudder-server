@@ -74,13 +74,6 @@ func (d *DestTransformer) transform(
 	if len(clientEvents) == 0 {
 		return types.Response{}
 	}
-	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
-	// flip back afterward
-	for i := range clientEvents {
-		if clientEvents[i].Metadata.OriginalSourceID != "" {
-			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
-		}
-	}
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
 		"dest_id":   clientEvents[0].Destination.ID,
@@ -139,9 +132,6 @@ func (d *DestTransformer) transform(
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
-			if transformerResponse.Metadata.OriginalSourceID != "" {
-				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
-			}
 			switch transformerResponse.StatusCode {
 			case http.StatusOK:
 				outClientEvents = append(outClientEvents, transformerResponse)
@@ -295,11 +285,6 @@ func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 			if reqErr != nil {
 				return reqErr
 			}
-
-			if !transformer_utils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformer_utils.StatusCPDown {
-				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
-			}
-
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},

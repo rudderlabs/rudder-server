@@ -15,18 +15,16 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
-
-	"github.com/rudderlabs/rudder-server/processor/types"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/internal/http_client"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
+	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type TPValidator struct {
@@ -74,18 +72,11 @@ func (t *TPValidator) transform(
 	if len(clientEvents) == 0 {
 		return types.Response{}
 	}
-	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
-	// flip back afterward
-	for i := range clientEvents {
-		if clientEvents[i].Metadata.OriginalSourceID != "" {
-			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
-		}
-	}
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
 		"dest_id":   clientEvents[0].Destination.ID,
 		"src_id":    clientEvents[0].Metadata.SourceID,
-		"stage":     "dest_transformer",
+		"stage":     "trackingPlan_validation",
 	}
 
 	var trackWg sync.WaitGroup
@@ -99,7 +90,7 @@ func (t *TPValidator) transform(
 		for k, v := range sTags {
 			loggerCtx = append(loggerCtx, k, v)
 		}
-		transformer_utils.TrackLongRunningTransformation(ctx, "dest_transformer", t.config.timeoutDuration, t.log.With(loggerCtx...))
+		transformer_utils.TrackLongRunningTransformation(ctx, "trackingPlan_validation", t.config.timeoutDuration, t.log.With(loggerCtx...))
 		trackWg.Done()
 	}()
 
@@ -123,7 +114,7 @@ func (t *TPValidator) transform(
 			t.guardConcurrency <- struct{}{}
 			go func() {
 				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = t.request(ctx, url, "dest_transformer", batch)
+					transformResponse[i] = t.request(ctx, url, "trackingPlan_validation", batch)
 				})
 				<-t.guardConcurrency
 				wg.Done()
@@ -139,9 +130,6 @@ func (t *TPValidator) transform(
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
 		for _, transformerResponse := range batch {
-			if transformerResponse.Metadata.OriginalSourceID != "" {
-				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
-			}
 			switch transformerResponse.StatusCode {
 			case http.StatusOK:
 				outClientEvents = append(outClientEvents, transformerResponse)
@@ -209,6 +197,11 @@ func (t *TPValidator) request(ctx context.Context, url, stage string, data []typ
 				"dest_id":   data[0].Destination.ID,
 				"src_id":    data[0].Metadata.SourceID,
 			})
+			if statusCode == transformer_utils.StatusCPDown {
+				t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
+				return fmt.Errorf("control plane not reachable")
+			}
+			t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
