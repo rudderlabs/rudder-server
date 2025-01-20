@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.41.0](https://github.com/rudderlabs/rudder-server/compare/v1.40.0...v1.41.0) (2025-01-20)
+
+
+### Features
+
+* implement backoff for snowpipe streaming authorization errors ([#5399](https://github.com/rudderlabs/rudder-server/issues/5399)) ([4be15cb](https://github.com/rudderlabs/rudder-server/commit/4be15cb1bcb59daf91638f1e2a4f8471822c705d))
+* remove unnecessary fields from UT payload ([#5422](https://github.com/rudderlabs/rudder-server/issues/5422)) ([441f765](https://github.com/rudderlabs/rudder-server/commit/441f7658ee8181ccbe87479df672bf0375a9ade9))
+* webhook v2 spec upgrade ([#5224](https://github.com/rudderlabs/rudder-server/issues/5224)) ([92ba9ce](https://github.com/rudderlabs/rudder-server/commit/92ba9ce2af58ed9f1b0f297799436682403697f5))
+
+
+### Bug Fixes
+
+* add missing statuscode for poll call, update error string ([#5404](https://github.com/rudderlabs/rudder-server/issues/5404)) ([ef1e202](https://github.com/rudderlabs/rudder-server/commit/ef1e2028fba59e99dee97bc31b320f5956f5d09c))
+* databricks external location ([#5429](https://github.com/rudderlabs/rudder-server/issues/5429)) ([ce9bd79](https://github.com/rudderlabs/rudder-server/commit/ce9bd79017a7f06a13e8bc81f852c80210807d5b))
+* invalid error response handling during oauth refresh flow ([#5401](https://github.com/rudderlabs/rudder-server/issues/5401)) ([6c67e4a](https://github.com/rudderlabs/rudder-server/commit/6c67e4a4034e46aaab6ade1051f682e81ef07f2e))
+* warehouse router tracker ([#5407](https://github.com/rudderlabs/rudder-server/issues/5407)) ([ce9bd79](https://github.com/rudderlabs/rudder-server/commit/ce9bd79017a7f06a13e8bc81f852c80210807d5b))
+* warehouse router tracker ([#5407](https://github.com/rudderlabs/rudder-server/issues/5407)) ([ddf04ff](https://github.com/rudderlabs/rudder-server/commit/ddf04ffb010a62bd001abe654fc8fcdb4715cbdd))
+* wrong terminal counts calculated during migration check ([#5400](https://github.com/rudderlabs/rudder-server/issues/5400)) ([2541b1c](https://github.com/rudderlabs/rudder-server/commit/2541b1cb64ca54fb998776e423305698cd1b6971))
+
+
+### Miscellaneous
+
+* **deps:** bump cloud.google.com/go/storage from 1.49.0 to 1.50.0 in the frequent group ([#5424](https://github.com/rudderlabs/rudder-server/issues/5424)) ([24a47ca](https://github.com/rudderlabs/rudder-server/commit/24a47ca199d9f7895b93b9686859f97e9016b4af))
+* **deps:** bump github.com/aws/aws-sdk-go from 1.55.5 to 1.55.6 in the frequent group ([#5438](https://github.com/rudderlabs/rudder-server/issues/5438)) ([e41bc03](https://github.com/rudderlabs/rudder-server/commit/e41bc037858e2a4b38eca3ae71b21e9a91e8609c))
+* **deps:** bump github.com/docker/docker from 27.4.1+incompatible to 27.5.0+incompatible in the go-deps group ([#5432](https://github.com/rudderlabs/rudder-server/issues/5432)) ([5fd9fba](https://github.com/rudderlabs/rudder-server/commit/5fd9fba33a426e61517329d61314ce0fc841613f))
+* **deps:** bump github.com/linkedin/goavro/v2 from 2.13.0 to 2.13.1 in the go-deps group ([#5427](https://github.com/rudderlabs/rudder-server/issues/5427)) ([7bb084e](https://github.com/rudderlabs/rudder-server/commit/7bb084e4a986d226d6a58cc69a6390b774c77478))
+* **deps:** bump github.com/trinodb/trino-go-client from 0.320.0 to 0.321.0 in the go-deps group ([#5425](https://github.com/rudderlabs/rudder-server/issues/5425)) ([e1b756b](https://github.com/rudderlabs/rudder-server/commit/e1b756baa145b92c03203528036103bcccbb6b8d))
+* **deps:** bump google.golang.org/api from 0.214.0 to 0.215.0 in the frequent group ([#5415](https://github.com/rudderlabs/rudder-server/issues/5415)) ([b51605a](https://github.com/rudderlabs/rudder-server/commit/b51605af528cda22c1158f4daeae2675d92ee50a))
+* **deps:** bump the go-deps group across 1 directory with 5 updates ([#5417](https://github.com/rudderlabs/rudder-server/issues/5417)) ([5ad01b1](https://github.com/rudderlabs/rudder-server/commit/5ad01b1ebebd3c32db2abb95f4d08baa185b95e1))
+* **deps:** bump the go-deps group with 2 updates ([#5412](https://github.com/rudderlabs/rudder-server/issues/5412)) ([6c67e4a](https://github.com/rudderlabs/rudder-server/commit/6c67e4a4034e46aaab6ade1051f682e81ef07f2e))
+* **deps:** bump the go-deps group with 2 updates ([#5435](https://github.com/rudderlabs/rudder-server/issues/5435)) ([3c7106e](https://github.com/rudderlabs/rudder-server/commit/3c7106ee0e380d49fb46a9a0bda4ecbbcf7054c4))
+* **deps:** bump the go-deps group with 2 updates ([#5439](https://github.com/rudderlabs/rudder-server/issues/5439)) ([3258e9d](https://github.com/rudderlabs/rudder-server/commit/3258e9dc936570bdf010a75954703d9216e909b0))
+* event_payload column can be JSONB or TEXT ([#5372](https://github.com/rudderlabs/rudder-server/issues/5372)) ([b282c33](https://github.com/rudderlabs/rudder-server/commit/b282c330dcdfabeba25318289308e636f2bd5c26))
+* remove customer payloads from warehouse logs ([#5420](https://github.com/rudderlabs/rudder-server/issues/5420)) ([f182738](https://github.com/rudderlabs/rudder-server/commit/f182738df3c92eccbb2b2ee3078de6e11765a6f8))
+* replace schema struct with interface to enable feature flagging ([#5426](https://github.com/rudderlabs/rudder-server/issues/5426)) ([cd4a7e1](https://github.com/rudderlabs/rudder-server/commit/cd4a7e1551a2bb42be29f4ffe222f278d4cfe63b))
+* return error when json marshal fails ([#5436](https://github.com/rudderlabs/rudder-server/issues/5436)) ([06f02dc](https://github.com/rudderlabs/rudder-server/commit/06f02dcfb92daf42cb6afaa9266389f1be5344b8))
+* send sample event to reporting in async destinations ([#5396](https://github.com/rudderlabs/rudder-server/issues/5396)) ([688262e](https://github.com/rudderlabs/rudder-server/commit/688262e8e85692ed0656679d6ad54dfa5fd3c258))
+* stat for reporting badger db size ([#5423](https://github.com/rudderlabs/rudder-server/issues/5423)) ([e3ce16a](https://github.com/rudderlabs/rudder-server/commit/e3ce16ada5237bf0b346b5639c391d92f0fa2678))
+* transformer 404 error logs ([#5437](https://github.com/rudderlabs/rudder-server/issues/5437)) ([886008a](https://github.com/rudderlabs/rudder-server/commit/886008ac2fa5a17fd16f70a204a0bf6571b8a827))
+
 ## [1.40.2](https://github.com/rudderlabs/rudder-server/compare/v1.40.1...v1.40.2) (2025-01-14)
 
 
