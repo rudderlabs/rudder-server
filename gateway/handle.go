@@ -498,7 +498,8 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 			payload, err = json.Marshal(singularEventBatch)
 			if err != nil {
-				panic(err)
+				err = errors.New(response.InvalidJSON)
+				return
 			}
 			eventCount = len(userEvent.events)
 		}
