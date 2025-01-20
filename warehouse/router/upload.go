@@ -70,7 +70,7 @@ type UploadJob struct {
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
 	whManager            manager.Manager
-	schemaHandle         *schema.Schema
+	schemaHandle         schema.Handler
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
