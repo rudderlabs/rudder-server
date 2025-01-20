@@ -209,11 +209,6 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 				"dest_id":   data[0].Destination.ID,
 				"src_id":    data[0].Metadata.SourceID,
 			})
-			if statusCode == transformer_utils.StatusCPDown {
-				d.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
-				return fmt.Errorf("control plane not reachable")
-			}
-			d.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
