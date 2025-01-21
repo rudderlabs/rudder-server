@@ -221,7 +221,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
-		dest, err = m.processJobsForDest(partition, subJob)
+		dest, err = m.generateTransformationMessage(m.processJobsForDest(partition, subJob))
 		if err != nil {
 			return false
 		}
@@ -311,7 +311,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
+func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) *preTransformationMessage {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin("")()
 	}
@@ -323,9 +323,16 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 	m.partitionStats[partition] = s
 	m.log.Infof("processJobsForDest partition: %s stats: %+v", partition, s)
 
-	return &transformationMessage{
+	return &preTransformationMessage{
 		totalEvents: len(subJobs.subJobs),
-		hasMore:     subJobs.hasMore,
+		subJobs:     subJobs,
+	}
+}
+
+func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMessage) (*transformationMessage, error) {
+	return &transformationMessage{
+		totalEvents: in.totalEvents,
+		hasMore:     in.subJobs.hasMore,
 		trackedUsersReports: []*trackedusers.UsersReport{
 			{WorkspaceID: sampleWorkspaceID},
 		},
