@@ -606,11 +606,10 @@ func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	payload, err := io.ReadAll(r.Body)
 	_ = r.Body.Close()
 	if err != nil {
-		gw.logger.Errorf(
-			"Error reading request body, 'Content-Length': %s, partial payload:\n\t%s\n:%v",
-			r.Header.Get("Content-Length"),
-			string(payload),
-			err,
+		gw.logger.Errorn(
+			"Error reading request body",
+			logger.NewStringField("Content-Length", r.Header.Get("Content-Length")),
+			logger.NewErrorField(err),
 		)
 		return payload, errors.New((response.RequestBodyReadFailed))
 	}
