@@ -433,31 +433,36 @@ func (job *UploadJob) run() (err error) {
 
 func (job *UploadJob) cleanupObjectStorageFiles() error {
 	destination := job.warehouse.Destination
-	cleanupObjectStorageFiles, _ := destination.Config["cleanupObjectStorageFiles"].(bool)
-	if cleanupObjectStorageFiles {
-		storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
-		fm, err := filemanager.New(&filemanager.Settings{Provider: storageProvider, Config: destination.Config})
-		if err != nil {
-			return err
-		}
-		stagingFileKeys := make([]string, len(job.stagingFiles))
-		for i, file := range job.stagingFiles {
-			stagingFileKeys[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
-		}
-		if err = fm.Delete(job.ctx, stagingFileKeys); err != nil {
-			return err
-		}
-		loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
-		if err != nil {
-			return err
-		}
-		loadingFileKeys := make([]string, len(loadingFiles))
-		for i, file := range loadingFiles {
-			loadingFileKeys[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
-		}
-		if err = fm.Delete(job.ctx, loadingFileKeys); err != nil {
-			return err
-		}
+	cleanupObjectStorageFiles := job.warehouse.GetBoolDestinationConfig(model.CleanupObjectStorageFilesSetting)
+	if !cleanupObjectStorageFiles {
+		return nil
+	}
+	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           destination.Config,
+			UseRudderStorage: job.upload.UseRudderStorage,
+			WorkspaceID:      job.upload.WorkspaceID,
+		}),
+	})
+	if err != nil {
+		return fmt.Errorf("creating file manager: %w", err)
+	}
+	loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
+	if err != nil {
+		return fmt.Errorf("fetching loading files: %w", err)
+	}
+	filesToDelete := make([]string, len(job.stagingFiles)+len(loadingFiles))
+	for i, file := range job.stagingFiles {
+		filesToDelete[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
+	}
+	for i, file := range loadingFiles {
+		filesToDelete[i+len(job.stagingFiles)] = fm.GetDownloadKeyFromFileLocation(file.Location)
+	}
+	if err = fm.Delete(job.ctx, filesToDelete); err != nil {
+		return fmt.Errorf("deleting files from object storage: %w", err)
 	}
 	return nil
 }
