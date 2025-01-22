@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -432,11 +433,11 @@ func (job *UploadJob) run() (err error) {
 }
 
 func (job *UploadJob) cleanupObjectStorageFiles() error {
-	destination := job.warehouse.Destination
 	cleanupObjectStorageFiles := job.warehouse.GetBoolDestinationConfig(model.CleanupObjectStorageFilesSetting)
 	if !cleanupObjectStorageFiles {
 		return nil
 	}
+	destination := job.warehouse.Destination
 	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
@@ -454,14 +455,13 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	if err != nil {
 		return fmt.Errorf("fetching loading files: %w", err)
 	}
-	filesToDelete := make([]string, len(job.stagingFiles)+len(loadingFiles))
-	for i, file := range job.stagingFiles {
-		filesToDelete[i] = fm.GetDownloadKeyFromFileLocation(file.Location)
-	}
-	for i, file := range loadingFiles {
-		filesToDelete[i+len(job.stagingFiles)] = fm.GetDownloadKeyFromFileLocation(file.Location)
-	}
-	if err = fm.Delete(job.ctx, filesToDelete); err != nil {
+	stagingKeysToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
+		return fm.GetDownloadKeyFromFileLocation(file.Location)
+	})
+	loadingKeysToDel := lo.Map(loadingFiles, func(file model.LoadFile, _ int) string {
+		return fm.GetDownloadKeyFromFileLocation(file.Location)
+	})
+	if err = fm.Delete(job.ctx, append(stagingKeysToDel, loadingKeysToDel...)); err != nil {
 		return fmt.Errorf("deleting files from object storage: %w", err)
 	}
 	return nil

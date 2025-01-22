@@ -1571,14 +1571,17 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		testcases := []struct {
 			name                      string
 			cleanupObjectStorageFiles bool
+			expectedFileCount         int
 		}{
 			{
 				name:                      "should delete files",
 				cleanupObjectStorageFiles: true,
+				expectedFileCount:         0,
 			},
 			{
 				name:                      "should not delete files",
 				cleanupObjectStorageFiles: false,
+				expectedFileCount:         2,
 			},
 		}
 		for _, tc := range testcases {
@@ -1611,14 +1614,15 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 					},
 				},
 			}))
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireUploadJobsCount(t, ctx, db, 1, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
 			files, err := minioResource.Contents(ctx, "")
 			require.NoError(t, err)
-			if tc.cleanupObjectStorageFiles {
-				require.Len(t, files, 0)
-			} else {
-				require.Len(t, files, 2)
-			}
+			require.Len(t, files, tc.expectedFileCount)
 		}
 	})
 }
