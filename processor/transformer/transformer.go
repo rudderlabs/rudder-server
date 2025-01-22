@@ -17,6 +17,9 @@ import (
 	"time"
 
 	"github.com/bufbuild/httplb"
+	"github.com/bufbuild/httplb/conn"
+	"github.com/bufbuild/httplb/health"
+	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
@@ -259,9 +262,11 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
 	case "httplb":
 		trans.httpClient = httplb.NewClient(
+			httplb.WithPicker(getPicker(conf)),
 			httplb.WithTransport("http", &HTTPLBTransport{
 				Transport: transport,
 			}),
+			httplb.WithHealthChecks(getChecker(conf, trans.config.userTransformationURL)),
 			httplb.WithResolver(
 				resolver.NewDNSResolver(
 					net.DefaultResolver,
@@ -308,6 +313,39 @@ type HTTPLBTransport struct {
 
 func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
 	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
+}
+
+func getPicker(conf *config.Config) func(prev picker.Picker, allConns conn.Conns) picker.Picker {
+	pickerType := conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two")
+	switch pickerType {
+	case "power_of_two":
+		return picker.NewPowerOfTwo
+	case "round_robin":
+		return picker.NewRoundRobin
+	case "least_loaded_random":
+		return picker.NewLeastLoadedRandom
+	case "least_loaded_round_robin":
+		return picker.NewLeastLoadedRoundRobin
+	case "random":
+		return picker.NewRandom
+	default:
+		panic(fmt.Sprintf("unknown picker type: %s", pickerType))
+	}
+}
+
+func getChecker(conf *config.Config, url string) health.Checker {
+	checkerType := conf.GetString("Transformer.Client.httplb.checkerType", "nop")
+	switch checkerType {
+	case "nop":
+		return health.NopChecker
+	case "polling":
+		return health.NewPollingChecker(
+			health.PollingCheckerConfig{},
+			health.NewSimpleProber(url),
+		)
+	default:
+		panic(fmt.Sprintf("unknown checker type: %s", checkerType))
+	}
 }
 
 func (trans *handle) transform(
