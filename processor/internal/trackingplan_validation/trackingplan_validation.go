@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -101,7 +100,6 @@ func (t *TPValidator) transform(
 		stats.HistogramType,
 		sTags,
 	).Observe(float64(len(batches)))
-	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
 
@@ -113,9 +111,7 @@ func (t *TPValidator) transform(
 		func(batch []types.TransformerEvent, i int) {
 			t.guardConcurrency <- struct{}{}
 			go func() {
-				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = t.request(ctx, url, "trackingPlan_validation", batch)
-				})
+				transformResponse[i] = t.request(ctx, url, "trackingPlan_validation", batch)
 				<-t.guardConcurrency
 				wg.Done()
 			}()
@@ -155,10 +151,7 @@ func (t *TPValidator) request(ctx context.Context, url, stage string, data []typ
 		err     error
 	)
 
-	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
-	})
-	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
+	rawJSON, err = json.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -191,11 +184,6 @@ func (t *TPValidator) request(ctx context.Context, url, stage string, data []typ
 				"sourceId":         data[0].Metadata.SourceID,
 				"transformationId": transformationID,
 				"stage":            stage,
-
-				// Legacy tags: to be removed
-				"dest_type": data[0].Destination.DestinationDefinition.Name,
-				"dest_id":   data[0].Destination.ID,
-				"src_id":    data[0].Metadata.SourceID,
 			})
 			if statusCode == transformer_utils.StatusCPDown {
 				t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
@@ -232,11 +220,7 @@ func (t *TPValidator) request(ctx context.Context, url, stage string, data []typ
 	switch statusCode {
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
-
-		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
-		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = json.Unmarshal(respData, &transformerResponses)
-		})
+		err = json.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
@@ -269,21 +253,19 @@ func (t *TPValidator) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			var reqErr error
 			requestStartTime := time.Now()
 
-			trace.WithRegion(ctx, "request/post", func() {
-				var req *http.Request
-				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
-				if reqErr != nil {
-					return
-				}
+			var req *http.Request
+			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			if reqErr != nil {
+				return reqErr
+			}
 
-				req.Header.Set("Content-Type", "application/json; charset=utf-8")
-				req.Header.Set("X-Feature-Gzip-Support", "?1")
-				// Header to let transformer know that the client understands event filter code
-				req.Header.Set("X-Feature-Filter-Code", "?1")
+			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			req.Header.Set("X-Feature-Gzip-Support", "?1")
+			// Header to let transformer know that the client understands event filter code
+			req.Header.Set("X-Feature-Filter-Code", "?1")
 
-				resp, reqErr = t.client.Do(req)
-				defer func() { httputil.CloseResponse(resp) }()
-			})
+			resp, reqErr = t.client.Do(req)
+			defer func() { httputil.CloseResponse(resp) }()
 			t.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr

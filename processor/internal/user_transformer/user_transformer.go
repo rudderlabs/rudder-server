@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"runtime/trace"
 	"strconv"
 	"sync"
 	"time"
@@ -119,7 +118,6 @@ func (u *UserTransformer) transform(
 		stats.HistogramType,
 		sTags,
 	).Observe(float64(len(batches)))
-	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
 
@@ -131,9 +129,7 @@ func (u *UserTransformer) transform(
 		func(batch []types.TransformerEvent, i int) {
 			u.guardConcurrency <- struct{}{}
 			go func() {
-				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = u.request(ctx, url, "user_transformer", batch)
-				})
+				transformResponse[i] = u.request(ctx, url, "user_transformer", batch)
 				<-u.guardConcurrency
 				wg.Done()
 			}()
@@ -176,10 +172,7 @@ func (u *UserTransformer) request(ctx context.Context, url, stage string, data [
 		err     error
 	)
 
-	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
-	})
-	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
+	rawJSON, err = json.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -253,11 +246,7 @@ func (u *UserTransformer) request(ctx context.Context, url, stage string, data [
 	switch statusCode {
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
-
-		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
-		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = json.Unmarshal(respData, &transformerResponses)
-		})
+		err = json.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
@@ -290,21 +279,19 @@ func (u *UserTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 			var reqErr error
 			requestStartTime := time.Now()
 
-			trace.WithRegion(ctx, "request/post", func() {
-				var req *http.Request
-				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
-				if reqErr != nil {
-					return
-				}
+			var req *http.Request
+			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			if reqErr != nil {
+				return reqErr
+			}
 
-				req.Header.Set("Content-Type", "application/json; charset=utf-8")
-				req.Header.Set("X-Feature-Gzip-Support", "?1")
-				// Header to let transformer know that the client understands event filter code
-				req.Header.Set("X-Feature-Filter-Code", "?1")
+			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			req.Header.Set("X-Feature-Gzip-Support", "?1")
+			// Header to let transformer know that the client understands event filter code
+			req.Header.Set("X-Feature-Filter-Code", "?1")
 
-				resp, reqErr = u.client.Do(req)
-				defer func() { httputil.CloseResponse(resp) }()
-			})
+			resp, reqErr = u.client.Do(req)
+			defer func() { httputil.CloseResponse(resp) }()
 			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime/trace"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,7 +102,6 @@ func (d *DestTransformer) transform(
 		stats.HistogramType,
 		sTags,
 	).Observe(float64(len(batches)))
-	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
 
@@ -115,9 +113,7 @@ func (d *DestTransformer) transform(
 		func(batch []types.TransformerEvent, i int) {
 			d.guardConcurrency <- struct{}{}
 			go func() {
-				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = d.request(ctx, url, "dest_transformer", batch)
-				})
+				transformResponse[i] = d.request(ctx, url, "dest_transformer", batch)
 				<-d.guardConcurrency
 				wg.Done()
 			}()
@@ -157,10 +153,7 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 		err     error
 	)
 
-	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
-	})
-	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
+	rawJSON, err = json.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -174,47 +167,12 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 		statusCode int
 	)
 
-	// endless retry if transformer-control plane connection is down
-	endlessBackoff := backoff.NewExponentialBackOff()
-	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
-	endlessBackoff.MaxInterval = d.config.maxRetryBackoffInterval.Load()
-
-	// endless backoff loop, only nil error or panics inside
-	_ = backoff.RetryNotify(
-		func() error {
-			transformationID := ""
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-			}
-
-			respData, statusCode = d.doPost(ctx, rawJSON, url, stats.Tags{
-				"destinationType":  data[0].Destination.DestinationDefinition.Name,
-				"destinationId":    data[0].Destination.ID,
-				"sourceId":         data[0].Metadata.SourceID,
-				"transformationId": transformationID,
-				"stage":            stage,
-
-				// Legacy tags: to be removed
-				"dest_type": data[0].Destination.DestinationDefinition.Name,
-				"dest_id":   data[0].Destination.ID,
-				"src_id":    data[0].Metadata.SourceID,
-			})
-			return nil
-		},
-		endlessBackoff,
-		func(err error, t time.Duration) {
-			var transformationID, transformationVersionID string
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-				transformationVersionID = data[0].Destination.Transformations[0].VersionID
-			}
-			d.log.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s, transformationID: %s, transformationVersionID: %s",
-				url, err, data[0].Metadata.WorkspaceID, data[0].Metadata.SourceID, data[0].Metadata.DestinationID,
-				transformationID, transformationVersionID,
-			)
-		},
-	)
-	// control plane back up
+	respData, statusCode = d.doPost(ctx, rawJSON, url, stats.Tags{
+		"destinationType": data[0].Destination.DestinationDefinition.Name,
+		"destinationId":   data[0].Destination.ID,
+		"sourceId":        data[0].Metadata.SourceID,
+		"stage":           stage,
+	})
 
 	switch statusCode {
 	case http.StatusOK,
@@ -230,15 +188,10 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
 
-		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
-		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = json.Unmarshal(respData, &transformerResponses)
-		})
+		err = json.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
-			d.log.Errorf("Data sent to transformer : %v", string(rawJSON))
-			d.log.Errorf("Transformer returned : %v", string(respData))
 			panic(err)
 		}
 	default:
@@ -266,21 +219,19 @@ func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 			var reqErr error
 			requestStartTime := time.Now()
 
-			trace.WithRegion(ctx, "request/post", func() {
-				var req *http.Request
-				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
-				if reqErr != nil {
-					return
-				}
+			var req *http.Request
+			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			if reqErr != nil {
+				return reqErr
+			}
 
-				req.Header.Set("Content-Type", "application/json; charset=utf-8")
-				req.Header.Set("X-Feature-Gzip-Support", "?1")
-				// Header to let transformer know that the client understands event filter code
-				req.Header.Set("X-Feature-Filter-Code", "?1")
+			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			req.Header.Set("X-Feature-Gzip-Support", "?1")
+			// Header to let transformer know that the client understands event filter code
+			req.Header.Set("X-Feature-Filter-Code", "?1")
 
-				resp, reqErr = d.client.Do(req)
-				defer func() { httputil.CloseResponse(resp) }()
-			})
+			resp, reqErr = d.client.Do(req)
+			defer func() { httputil.CloseResponse(resp) }()
 			d.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr

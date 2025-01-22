@@ -95,7 +95,17 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		commonMetaData := makeCommonMetadataFromTransformerEvent(&transformerEvent)
 
 		validationStart := time.Now()
-		response := proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
+		var response types.Response
+		if proc.config.enableTransformationV2 {
+			response = proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
+		} else {
+			client, err := proc.transformerManager.GetServiceClient("trackingplan_validation")
+			if err != nil {
+				proc.logger.Error("Error getting trackingplan_validation client", err.Error())
+				panic(err)
+			}
+			response = client.SendRequest(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
+		}
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
