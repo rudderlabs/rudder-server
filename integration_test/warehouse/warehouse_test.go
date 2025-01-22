@@ -1614,12 +1614,24 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 					},
 				},
 			}))
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
 			requireUploadJobsCount(t, ctx, db, 1, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
 			files, err := minioResource.Contents(ctx, "")
 			require.NoError(t, err)
 			require.Len(t, files, tc.expectedFileCount)
