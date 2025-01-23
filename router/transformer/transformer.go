@@ -137,7 +137,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
 	}
-	trans.logger.Debugf("[Router Transformer] :: input payload : %s", string(rawJSON))
 
 	retryCount := 0
 	var resp *http.Response
@@ -242,8 +241,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
-		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
-
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonfast.Unmarshal(respData, &destinationJobs)
@@ -291,7 +288,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		if invalidResponseReason != "" {
 
-			trans.logger.Error(invalidResponseError)
+			// trans.logger.Error(invalidResponseError)
 			stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
 				"destType": transformMessage.DestType,
 				"reason":   invalidResponseReason,
@@ -435,7 +432,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
-	trans.logger.Debugf("ProxyResponseData: %s\n", string(respData))
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 
@@ -532,7 +528,6 @@ type httpProxyResponse struct {
 func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
 	var respData []byte
 	destName := proxyReqParams.DestName
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, err.Error())
@@ -595,7 +590,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	// error handling if body is missing
 	if resp.Body == nil {
 		errStr := "empty response body"
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusInternalServerError, string(respData))
+		trans.logger.Errorn(`[TransformerProxy] empty response body`, logger.NewIntField("statusCode", http.StatusInternalServerError))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
@@ -608,15 +603,13 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	// error handling while reading from resp.Body
 	if err != nil {
 		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusBadRequest, string(respData))
+		trans.logger.Errorn(`[TransformerProxy] Failure`, logger.NewIntField("statusCode", http.StatusBadRequest), logger.NewErrorField(err))
 		return httpProxyResponse{
 			respData:   []byte{}, // sending this as it is not getting sent at all
 			statusCode: http.StatusInternalServerError,
 			err:        err,
 		}
 	}
-
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request response - %[2]s`, destName, string(respData))
 
 	return httpProxyResponse{
 		respData:   respData,
