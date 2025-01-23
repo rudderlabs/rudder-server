@@ -1566,6 +1566,79 @@ func TestUploads(t *testing.T) {
 	})
 }
 
+func TestCleanupObjectStorageFiles(t *testing.T) {
+	t.Run("object storage files cleanup", func(t *testing.T) {
+		testcases := []struct {
+			name                      string
+			cleanupObjectStorageFiles bool
+			expectedFileCount         int
+		}{
+			{
+				name:                      "should delete files",
+				cleanupObjectStorageFiles: true,
+				expectedFileCount:         0,
+			},
+			{
+				name:                      "should not delete files",
+				cleanupObjectStorageFiles: false,
+				expectedFileCount:         2,
+			},
+		}
+		for _, tc := range testcases {
+			db, minioResource, whClient := setupServer(t, false, func(m map[string]backendconfig.ConfigT, _ *minio.Resource) {
+				m[workspaceID].Sources[0].Destinations[0].Config["cleanupObjectStorageFiles"] = tc.cleanupObjectStorageFiles
+			}, nil)
+			ctx := context.Background()
+			events := 100
+			eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					uuid.New().String(),
+					uuid.New().String(),
+				)
+			}), "\n")
+			require.NoError(t, whClient.Process(ctx, whclient.StagingFile{
+				WorkspaceID:           workspaceID,
+				SourceID:              sourceID,
+				DestinationID:         destinationID,
+				Location:              prepareStagingFile(t, ctx, minioResource, eventsPayload).ObjectName,
+				TotalEvents:           events,
+				FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
+				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+				UseRudderStorage:      false,
+				DestinationRevisionID: destinationID,
+				Schema: map[string]map[string]any{
+					"tracks": {
+						"id":          "string",
+						"user_id":     "string",
+						"received_at": "datetime",
+					},
+				},
+			}))
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, 1, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			files, err := minioResource.Contents(ctx, "")
+			require.NoError(t, err)
+			require.Len(t, files, tc.expectedFileCount)
+		}
+	})
+}
+
 func TestDestinationTransformation(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
