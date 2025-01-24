@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"runtime/trace"
@@ -16,11 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bufbuild/httplb"
-	"github.com/bufbuild/httplb/conn"
-	"github.com/bufbuild/httplb/health"
-	"github.com/bufbuild/httplb/picker"
-	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -30,9 +24,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -240,44 +234,21 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
-	clientType := conf.GetString("Transformer.Client.type", "stdlib")
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: trans.config.timeoutDuration,
+		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 120, time.Second),
+		ClientType:    conf.GetString("Transformer.Client.type", "stdlib"),
+		PickerType:    conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
+		CheckerType:   conf.GetString("Transformer.Client.httplb.checkerType", "nop"),
 
-	transport := &http.Transport{
-		DisableKeepAlives:   trans.config.disableKeepAlives,
-		MaxConnsPerHost:     trans.config.maxHTTPConnections,
-		MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-		IdleConnTimeout:     trans.config.maxIdleConnDuration,
+		// for now no health checks - can be implemented when there are different clients for UT, DT, TPV
+		// CheckURL: trans.config.userTransformationURL,
 	}
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   trans.config.timeoutDuration,
-	}
-
-	switch clientType {
-	case "stdlib":
-		trans.httpClient = client
-	case "recycled":
-		trans.httpClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
-			return client
-		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
-	case "httplb":
-		trans.httpClient = httplb.NewClient(
-			httplb.WithPicker(getPicker(conf)),
-			httplb.WithTransport("http", &HTTPLBTransport{
-				Transport: transport,
-			}),
-			httplb.WithHealthChecks(getChecker(conf, trans.config.userTransformationURL)),
-			httplb.WithResolver(
-				resolver.NewDNSResolver(
-					net.DefaultResolver,
-					resolver.PreferIPv6,
-					config.GetDuration("Transformer.Client.ttl", 120, time.Second), // TTL value
-				),
-			),
-		)
-	default:
-		panic(fmt.Sprintf("unknown transformer client type: %s", clientType))
-	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = trans.config.maxHTTPIdleConnections
+	transformerClientConfig.TransportConfig.IdleConnTimeout = trans.config.maxIdleConnDuration
+	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
 
 	for _, opt := range opts {
 		opt(&trans)
@@ -305,47 +276,6 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
-}
-
-type HTTPLBTransport struct {
-	*http.Transport
-}
-
-func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
-	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
-}
-
-func getPicker(conf *config.Config) func(prev picker.Picker, allConns conn.Conns) picker.Picker {
-	pickerType := conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two")
-	switch pickerType {
-	case "power_of_two":
-		return picker.NewPowerOfTwo
-	case "round_robin":
-		return picker.NewRoundRobin
-	case "least_loaded_random":
-		return picker.NewLeastLoadedRandom
-	case "least_loaded_round_robin":
-		return picker.NewLeastLoadedRoundRobin
-	case "random":
-		return picker.NewRandom
-	default:
-		panic(fmt.Sprintf("unknown picker type: %s", pickerType))
-	}
-}
-
-func getChecker(conf *config.Config, url string) health.Checker {
-	checkerType := conf.GetString("Transformer.Client.httplb.checkerType", "nop")
-	switch checkerType {
-	case "nop":
-		return health.NopChecker
-	case "polling":
-		return health.NewPollingChecker(
-			health.PollingCheckerConfig{},
-			health.NewSimpleProber(url),
-		)
-	default:
-		panic(fmt.Sprintf("unknown checker type: %s", checkerType))
-	}
 }
 
 func (trans *handle) transform(
