@@ -1,6 +1,7 @@
 package transformerclient
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"time"
@@ -87,10 +88,8 @@ func NewClient(config *ClientConfig) Client {
 			checkerType = "nop"
 		}
 		return httplb.NewClient(
+			httplb.WithRootContext(context.TODO()),
 			httplb.WithPicker(getPicker(config.PickerType)),
-			httplb.WithTransport("http", &HTTPLBTransport{
-				Transport: transport,
-			}),
 			httplb.WithHealthChecks(getChecker(checkerType, config.CheckURL)),
 			httplb.WithResolver(
 				resolver.NewDNSResolver(
@@ -99,6 +98,10 @@ func NewClient(config *ClientConfig) Client {
 					clientTTL,
 				),
 			),
+			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
+			httplb.WithRequestTimeout(client.Timeout),
+			httplb.WithRoundTripperMaxLifetime(clientTTL),
+			httplb.WithIdleTransportTimeout(2*clientTTL),
 		)
 	default:
 		return client
