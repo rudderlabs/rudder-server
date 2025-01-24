@@ -154,7 +154,6 @@ type Handle struct {
 		GWCustomVal                     string
 		asyncInit                       *misc.AsyncInit
 		eventSchemaV2Enabled            bool
-		enableParallelScan              bool
 		archivalEnabled                 config.ValueLoader[bool]
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
@@ -801,7 +800,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.enableParallelScan = config.GetBoolVar(false, "Dedup.enableParallelScan")
 
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
@@ -1660,7 +1658,7 @@ type preTransformationMessage struct {
 	dedupKeys                    map[string]struct{}
 }
 
-func (proc *Handle) processJobsForDestV2(partition string, subJobs subJob) (*transformationMessage, error) {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -2230,317 +2228,6 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
 	}, nil
-}
-
-func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
-	if proc.limiter.preprocess != nil {
-		defer proc.limiter.preprocess.BeginWithPriority("", proc.getLimiterPriority(partition))()
-	}
-
-	jobList := subJobs.subJobs
-	start := time.Now()
-
-	proc.stats.statNumRequests(partition).Count(len(jobList))
-
-	var statusList []*jobsdb.JobStatusT
-	groupedEvents := make(map[string][]transformer.TransformerEvent)
-	groupedEventsBySourceId := make(map[SourceIDT][]transformer.TransformerEvent)
-	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
-	var procErrorJobs []*jobsdb.JobT
-	eventSchemaJobs := make([]*jobsdb.JobT, 0)
-	archivalJobs := make([]*jobsdb.JobT, 0)
-
-	// Each block we receive from a client has a bunch of
-	// requests. We parse the block and take out individual
-	// requests, call the destination specific transformation
-	// function and create jobs for them.
-	// Transformation is called for a batch of jobs at a time
-	// to speed-up execution.
-
-	// Event count for performance stat monitoring
-	totalEvents := 0
-
-	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
-
-	marshalStart := time.Now()
-	dedupKeys := make(map[string]struct{})
-	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
-	sourceDupStats := make(map[dupStatKey]int)
-
-	reportMetrics := make([]*types.PUReportedMetric, 0)
-	inCountMap := make(map[string]int64)
-	inCountMetadataMap := make(map[string]MetricMetadata)
-	connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-	statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
-
-	outCountMap := make(map[string]int64) // destinations enabled
-	destFilterStatusDetailMap := make(map[string]map[string]*types.StatusDetail)
-	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
-	jobIDToSpecificDestMapOnly := make(map[int64]string)
-
-	spans := make([]stats.TraceSpan, 0, len(jobList))
-	defer func() {
-		for _, span := range spans {
-			span.End()
-		}
-	}()
-
-	for _, batchEvent := range jobList {
-		var eventParams types.EventParams
-		if err := jsonfast.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
-			return nil, err
-		}
-
-		sourceID := eventParams.SourceId
-		traceParent := eventParams.TraceParent
-		destinationID := eventParams.DestinationID
-		if destinationID != "" {
-			jobIDToSpecificDestMapOnly[batchEvent.JobID] = destinationID
-		}
-
-		var span stats.TraceSpan
-		if traceParent == "" {
-			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
-		} else {
-			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-				"workspaceId": batchEvent.WorkspaceId,
-				"sourceId":    sourceID,
-			}))
-			spans = append(spans, span)
-		}
-
-		var gatewayBatchEvent types.GatewayBatchRequest
-		if err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent); err != nil {
-			if span != nil {
-				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
-			}
-			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
-			gatewayBatchEvent.Batch = []types.SingularEventT{}
-		}
-
-		requestIP := gatewayBatchEvent.RequestIP
-		receivedAt := gatewayBatchEvent.ReceivedAt
-
-		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
-			"sourceId":    sourceID,
-			"workspaceId": batchEvent.WorkspaceId,
-		}).Since(receivedAt)
-
-		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
-			JobState:      jobsdb.Succeeded.State,
-			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "200",
-			ErrorResponse: []byte(`{"success":"OK"}`),
-			Parameters:    []byte(`{}`),
-			JobParameters: batchEvent.Parameters,
-			WorkspaceId:   batchEvent.WorkspaceId,
-		}
-		statusList = append(statusList, &newStatus)
-
-		source, err := proc.getSourceBySourceID(sourceID)
-		if err != nil {
-			if span != nil {
-				span.SetStatus(stats.SpanStatusError, "source not found for sourceId")
-			}
-			continue
-		}
-
-		for _, enricher := range proc.enrichers {
-			if err := enricher.Enrich(source, &gatewayBatchEvent); err != nil {
-				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
-			}
-		}
-
-		// Iterate through all the events in the batch
-		for _, singularEvent := range gatewayBatchEvent.Batch {
-			messageId := stringify.Any(singularEvent["messageId"])
-
-			payloadFunc := ro.Memoize(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
-					return nil
-				}
-				return payloadBytes
-			})
-
-			if proc.config.enableDedup {
-				dedupKey := fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId)
-				ok, err := proc.dedup.Get(dedupTypes.KeyValue{Key: dedupKey, WorkspaceID: batchEvent.WorkspaceId})
-				if err != nil {
-					return nil, err
-				}
-				if !ok {
-					proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey)
-					sourceDupStats[dupStatKey{sourceID: source.ID}] += 1
-					continue
-				}
-				dedupKeys[dedupKey] = struct{}{}
-			}
-
-			proc.updateSourceEventStatsDetailed(singularEvent, sourceID)
-
-			// We count this as one, not destination specific ones
-			totalEvents++
-			eventsByMessageID[messageId] = types.SingularEventWithReceivedAt{
-				SingularEvent: singularEvent,
-				ReceivedAt:    receivedAt,
-			}
-
-			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
-				singularEvent,
-				batchEvent.UserID,
-				batchEvent.JobID,
-				receivedAt,
-				source,
-				eventParams,
-			)
-
-			sourceIsTransient := proc.transientSources.Apply(source.ID)
-			if proc.config.eventSchemaV2Enabled && // schemas enabled
-				proc.eventAuditEnabled(batchEvent.WorkspaceId) &&
-				// TODO: could use source.SourceDefinition.Category instead?
-				commonMetadataFromSingularEvent.SourceJobRunID == "" &&
-				!sourceIsTransient {
-				if eventPayload := payloadFunc(); eventPayload != nil {
-					eventSchemaJobs = append(eventSchemaJobs,
-						&jobsdb.JobT{
-							UUID:         batchEvent.UUID,
-							UserID:       batchEvent.UserID,
-							Parameters:   batchEvent.Parameters,
-							CustomVal:    batchEvent.CustomVal,
-							EventPayload: eventPayload,
-							CreatedAt:    time.Now(),
-							ExpireAt:     time.Now(),
-							WorkspaceId:  batchEvent.WorkspaceId,
-						},
-					)
-				}
-			}
-
-			if proc.config.archivalEnabled.Load() &&
-				commonMetadataFromSingularEvent.SourceJobRunID == "" && // archival enabled&&
-				!sourceIsTransient {
-				if eventPayload := payloadFunc(); eventPayload != nil {
-					archivalJobs = append(archivalJobs,
-						&jobsdb.JobT{
-							UUID:         batchEvent.UUID,
-							UserID:       batchEvent.UserID,
-							Parameters:   batchEvent.Parameters,
-							CustomVal:    batchEvent.CustomVal,
-							EventPayload: eventPayload,
-							CreatedAt:    time.Now(),
-							ExpireAt:     time.Now(),
-							WorkspaceId:  batchEvent.WorkspaceId,
-						},
-					)
-				}
-			}
-
-			// REPORTING - GATEWAY metrics - START
-			// dummy event for metrics purposes only
-			event := &transformer.TransformerResponse{}
-			if proc.isReportingEnabled() {
-				event.Metadata = *commonMetadataFromSingularEvent
-				proc.updateMetricMaps(
-					inCountMetadataMap,
-					inCountMap,
-					connectionDetailsMap,
-					statusDetailsMap,
-					event,
-					jobsdb.Succeeded.State,
-					types.GATEWAY,
-					func() json.RawMessage {
-						if sourceIsTransient {
-							return []byte(`{}`)
-						}
-						if payload := payloadFunc(); payload != nil {
-							return payload
-						}
-						return []byte("{}")
-					},
-					nil,
-				)
-			}
-			// REPORTING - GATEWAY metrics - END
-
-			// Getting all the destinations which are enabled for this event.
-			// Event will be dropped if no valid destination is present
-			// if empty destinationID is passed in this fn all the destinations for the source are validated
-			// else only passed destinationID will be validated
-			if !proc.isDestinationAvailable(singularEvent, sourceID, destinationID) {
-				continue
-			}
-
-			if _, ok := groupedEventsBySourceId[SourceIDT(sourceID)]; !ok {
-				groupedEventsBySourceId[SourceIDT(sourceID)] = make([]transformer.TransformerEvent, 0)
-			}
-			shallowEventCopy := transformer.TransformerEvent{}
-			shallowEventCopy.Message = singularEvent
-			shallowEventCopy.Message["request_ip"] = requestIP
-			enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
-			enhanceWithMetadata(
-				commonMetadataFromSingularEvent,
-				&shallowEventCopy,
-				&backendconfig.DestinationT{},
-			)
-
-			trackingPlanID := source.DgSourceTrackingPlanConfig.TrackingPlan.Id
-			trackingPlanVersion := source.DgSourceTrackingPlanConfig.TrackingPlan.Version
-			rudderTyperTPID := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanId")
-			rudderTyperTPVersion := misc.MapLookup(singularEvent, "context", "ruddertyper", "trackingPlanVersion")
-			if rudderTyperTPID != nil && rudderTyperTPVersion != nil && rudderTyperTPID == trackingPlanID {
-				if version, ok := rudderTyperTPVersion.(float64); ok && version > 0 {
-					trackingPlanVersion = int(version)
-				}
-			}
-			shallowEventCopy.Metadata.TrackingPlanID = trackingPlanID
-			shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
-			shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-			shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
-
-			groupedEventsBySourceId[SourceIDT(sourceID)] = append(groupedEventsBySourceId[SourceIDT(sourceID)], shallowEventCopy)
-
-			if proc.isReportingEnabled() {
-				proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, types.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
-			}
-		}
-	}
-
-	if len(statusList) != len(jobList) {
-		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
-	}
-
-	return proc.generateTransformationMessage(
-		&preTransformationMessage{
-			partition:                    partition,
-			subJobs:                      subJobs,
-			eventSchemaJobs:              eventSchemaJobs,
-			archivalJobs:                 archivalJobs,
-			connectionDetailsMap:         connectionDetailsMap,
-			statusDetailsMap:             statusDetailsMap,
-			reportMetrics:                reportMetrics,
-			destFilterStatusDetailMap:    destFilterStatusDetailMap,
-			inCountMetadataMap:           inCountMetadataMap,
-			inCountMap:                   inCountMap,
-			outCountMap:                  outCountMap,
-			totalEvents:                  totalEvents,
-			marshalStart:                 marshalStart,
-			groupedEventsBySourceId:      groupedEventsBySourceId,
-			eventsByMessageID:            eventsByMessageID,
-			procErrorJobs:                procErrorJobs,
-			jobIDToSpecificDestMapOnly:   jobIDToSpecificDestMapOnly,
-			groupedEvents:                groupedEvents,
-			uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
-			statusList:                   statusList,
-			jobList:                      jobList,
-			start:                        start,
-			sourceDupStats:               sourceDupStats,
-			dedupKeys:                    dedupKeys,
-		})
 }
 
 type transformationMessage struct {
@@ -3596,20 +3283,11 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 
 	var transMessage *transformationMessage
 	var err error
-	if !proc.config.enableParallelScan {
-		transMessage, err = proc.processJobsForDest(partition, subJob{
-			subJobs:       unprocessedList.Jobs,
-			hasMore:       false,
-			rsourcesStats: rsourcesStats,
-		})
-	} else {
-		transMessage, err = proc.processJobsForDestV2(partition, subJob{
-			subJobs:       unprocessedList.Jobs,
-			hasMore:       false,
-			rsourcesStats: rsourcesStats,
-		})
-	}
-
+	transMessage, err = proc.processJobsForDest(partition, subJob{
+		subJobs:       unprocessedList.Jobs,
+		hasMore:       false,
+		rsourcesStats: rsourcesStats,
+	})
 	if err != nil {
 		panic(err)
 	}
