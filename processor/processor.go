@@ -3288,7 +3288,6 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 		hasMore:       false,
 		rsourcesStats: rsourcesStats,
 	})
-
 	if err != nil {
 		panic(err)
 	}
