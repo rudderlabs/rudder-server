@@ -685,8 +685,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
+		var sampleEvent json.RawMessage
+		var sampleResponse string
 		if r.eventSamplingEnabled.Load() {
-			metric, err = transformMetricWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
+			sampleEvent, sampleResponse, err = getSampleWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
 			if err != nil {
 				return err
 			}
@@ -717,7 +719,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
 			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
 			metric.StatusDetail.StatusCode,
-			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
+			sampleResponse, string(sampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorType,
 		)

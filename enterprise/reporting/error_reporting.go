@@ -266,8 +266,10 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
 
+		var sampleEvent json.RawMessage
+		var sampleResponse string
 		if edr.eventSamplingEnabled.Load() {
-			metric, err = transformMetricWithEventSampling(metric, reportedAt, edr.eventSampler, int64(edr.eventSamplingDuration.Load().Minutes()))
+			sampleEvent, sampleResponse, err = getSampleWithEventSampling(metric, reportedAt, edr.eventSampler, int64(edr.eventSamplingDuration.Load().Minutes()))
 			if err != nil {
 				return err
 			}
@@ -289,8 +291,8 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorDetails.Code,
 			metric.StatusDetail.ErrorDetails.Message,
-			metric.StatusDetail.SampleResponse,
-			string(metric.StatusDetail.SampleEvent),
+			sampleResponse,
+			string(sampleEvent),
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
