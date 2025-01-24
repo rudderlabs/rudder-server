@@ -10,6 +10,7 @@ import (
 	"github.com/bufbuild/httplb/health"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
+
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
@@ -129,7 +130,7 @@ func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.T
 	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
 }
 
-func getChecker(checkerType string, url string) health.Checker {
+func getChecker(checkerType, url string) health.Checker {
 	switch checkerType {
 	case "nop":
 		return health.NopChecker
