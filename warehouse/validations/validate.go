@@ -56,10 +56,6 @@ type loadTable struct {
 	table       string
 }
 
-type objectStorageDelete struct {
-	destination *backendconfig.DestinationT
-}
-
 type DestinationValidator interface {
 	Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse
 }
@@ -224,10 +220,6 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			manager:     operations,
 			table:       getTable(dest),
 		}, nil
-	case model.VerifyingObjectStorageDelete:
-		return &objectStorageDelete{
-			destination: dest,
-		}, nil
 	}
 
 	return nil, fmt.Errorf("invalid step: %s", step)
@@ -250,6 +242,13 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 
 	if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
 		return fmt.Errorf("download file: %w", err)
+	}
+
+	cleanupObjectStorageFiles, _ := os.destination.Config[model.CleanupObjectStorageFilesSetting.String()].(bool)
+	if cleanupObjectStorageFiles {
+		if err = deleteFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
+			return fmt.Errorf("delete file: %w. Ensure that delete permissions are granted because the option to delete files after a successful sync is enabled.", err)
+		}
 	}
 
 	return nil
@@ -327,24 +326,6 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		return fmt.Errorf("load test table: %w", err)
 	}
 
-	return nil
-}
-
-func (osd *objectStorageDelete) Validate(ctx context.Context) error {
-	var (
-		tempPath     string
-		err          error
-		uploadObject filemanager.UploadedFile
-	)
-	if tempPath, err = CreateTempLoadFile(osd.destination); err != nil {
-		return fmt.Errorf("creating temp load file: %w", err)
-	}
-	if uploadObject, err = uploadFile(ctx, osd.destination, tempPath); err != nil {
-		return fmt.Errorf("upload file: %w", err)
-	}
-	if err = deleteFile(ctx, osd.destination, uploadObject.ObjectName); err != nil {
-		return fmt.Errorf("delete file: %w", err)
-	}
 	return nil
 }
 

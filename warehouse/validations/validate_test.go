@@ -50,25 +50,43 @@ func TestValidator(t *testing.T) {
 
 	t.Run("Object Storage", func(t *testing.T) {
 		t.Run("Non Datalakes", func(t *testing.T) {
-			v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, &backendconfig.DestinationT{
-				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.POSTGRES,
+			testCases := []struct {
+				name                      string
+				cleanupObjectStorageFiles bool
+			}{
+				{
+					name:                      "check delete permissions",
+					cleanupObjectStorageFiles: true,
 				},
-				Config: map[string]interface{}{
-					"host":            pgResource.Host,
-					"port":            pgResource.Port,
-					"database":        pgResource.Database,
-					"user":            pgResource.User,
-					"password":        pgResource.Password,
-					"bucketProvider":  provider,
-					"bucketName":      minioResource.BucketName,
-					"accessKeyID":     minioResource.AccessKeyID,
-					"secretAccessKey": minioResource.AccessKeySecret,
-					"endPoint":        minioResource.Endpoint,
+				{
+					name:                      "check delete permissions",
+					cleanupObjectStorageFiles: false,
 				},
-			})
-			require.NoError(t, err)
-			require.NoError(t, v.Validate(ctx))
+			}
+
+			for _, tc := range testCases {
+				destination := &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.POSTGRES,
+					},
+					Config: map[string]interface{}{
+						"host":            pgResource.Host,
+						"port":            pgResource.Port,
+						"database":        pgResource.Database,
+						"user":            pgResource.User,
+						"password":        pgResource.Password,
+						"bucketProvider":  provider,
+						"bucketName":      minioResource.BucketName,
+						"accessKeyID":     minioResource.AccessKeyID,
+						"secretAccessKey": minioResource.AccessKeySecret,
+						"endPoint":        minioResource.Endpoint,
+					},
+				}
+				destination.Config[model.CleanupObjectStorageFilesSetting.String()] = tc.cleanupObjectStorageFiles
+				v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, destination)
+				require.NoError(t, err)
+				require.NoError(t, v.Validate(ctx))
+			}
 		})
 
 		t.Run("Datalakes", func(t *testing.T) {
@@ -92,23 +110,6 @@ func TestValidator(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, v.Validate(ctx))
 		})
-	})
-
-	t.Run("Object Storage Delete", func(t *testing.T) {
-		v, err := validations.NewValidator(ctx, model.VerifyingObjectStorageDelete, &backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: warehouseutils.POSTGRES,
-			},
-			Config: map[string]interface{}{
-				"bucketProvider":  provider,
-				"bucketName":      bucket,
-				"accessKeyID":     minioResource.AccessKeyID,
-				"secretAccessKey": minioResource.AccessKeySecret,
-				"endPoint":        minioResource.Endpoint,
-			},
-		})
-		require.NoError(t, err)
-		require.NoError(t, v.Validate(ctx))
 	})
 
 	t.Run("Connections", func(t *testing.T) {
