@@ -49,6 +49,7 @@ type BigQuery struct {
 		enableDeleteByJobs                    bool
 		customPartitionsEnabledWorkspaceIDs   []string
 		slowQueryThreshold                    time.Duration
+		loadByFolderPath                      bool
 	}
 }
 
@@ -130,6 +131,7 @@ func New(conf *config.Config, log logger.Logger) *BigQuery {
 	bq.config.enableDeleteByJobs = conf.GetBool("Warehouse.bigquery.enableDeleteByJobs", false)
 	bq.config.customPartitionsEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", nil)
 	bq.config.slowQueryThreshold = conf.GetDuration("Warehouse.bigquery.slowQueryThreshold", 5, time.Minute)
+	bq.config.loadByFolderPath = conf.GetBool("Warehouse.bigquery.loadByFolderPath", false)
 
 	return bq
 }
@@ -441,12 +443,12 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	)
 	log.Infon("started loading")
 
-	loadFileLocation, err := bq.loadFileLocation(ctx, tableName)
+	gcsReferences, err := bq.gcsReferences(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting load file location: %w", err)
+		return nil, nil, fmt.Errorf("getting gcs references: %w", err)
 	}
 
-	gcsRef := bigquery.NewGCSReference(loadFileLocation)
+	gcsRef := bigquery.NewGCSReference(gcsReferences...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
@@ -454,10 +456,10 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	return bq.loadTableByAppend(ctx, tableName, gcsRef, log)
 }
 
-func (bq *BigQuery) loadFileLocation(
+func (bq *BigQuery) gcsReferences(
 	ctx context.Context,
 	tableName string,
-) (string, error) {
+) ([]string, error) {
 	switch tableName {
 	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
 		loadfile, err := bq.uploader.GetSingleLoadFile(
@@ -465,17 +467,33 @@ func (bq *BigQuery) loadFileLocation(
 			tableName,
 		)
 		if err != nil {
-			return "", fmt.Errorf("getting single load file for table %s: %w", tableName, err)
+			return nil, fmt.Errorf("getting single load file for table %s: %w", tableName, err)
 		}
-		return loadfile.Location, nil
-	default:
-		objectLocation, err := bq.uploader.GetSampleLoadFileLocation(ctx, tableName)
-		if err != nil {
-			return "", fmt.Errorf("getting sample load file location for table %s: %w", tableName, err)
-		}
-		gcsLocation := warehouseutils.GetGCSLocation(objectLocation, warehouseutils.GCSLocationOptions{})
 
-		return loadFolder(gcsLocation), nil
+		locations := warehouseutils.GetGCSLocations([]warehouseutils.LoadFile{loadfile}, warehouseutils.GCSLocationOptions{})
+		return locations, nil
+	default:
+		if bq.config.loadByFolderPath {
+			objectLocation, err := bq.uploader.GetSampleLoadFileLocation(ctx, tableName)
+			if err != nil {
+				return nil, fmt.Errorf("getting sample load file location for table %s: %w", tableName, err)
+			}
+			gcsLocation := warehouseutils.GetGCSLocation(objectLocation, warehouseutils.GCSLocationOptions{})
+			gcsLocationFolder := loadFolder(gcsLocation)
+
+			return []string{gcsLocationFolder}, nil
+		} else {
+			loadFilesMetadata, err := bq.uploader.GetLoadFilesMetadata(
+				ctx,
+				warehouseutils.GetLoadFilesOptions{Table: tableName},
+			)
+			if err != nil {
+				return nil, fmt.Errorf("getting load files metadata for table %s: %w", tableName, err)
+			}
+
+			locations := warehouseutils.GetGCSLocations(loadFilesMetadata, warehouseutils.GCSLocationOptions{})
+			return locations, nil
+		}
 	}
 }
 
@@ -690,12 +708,12 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 }
 
 func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingTable string) error {
-	loadFileLocation, err := bq.loadFileLocation(ctx, warehouseutils.UsersTable)
+	gcsReferences, err := bq.gcsReferences(ctx, warehouseutils.UsersTable)
 	if err != nil {
-		return fmt.Errorf("getting load file location: %w", err)
+		return fmt.Errorf("getting gcs references: %w", err)
 	}
 
-	gcsRef := bigquery.NewGCSReference(loadFileLocation)
+	gcsRef := bigquery.NewGCSReference(gcsReferences...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
@@ -1175,7 +1193,14 @@ func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) error {
 	gcsLocation := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 
-	gcsRef := bigquery.NewGCSReference(loadFolder(gcsLocation))
+	var gcsReference string
+	if bq.config.loadByFolderPath {
+		gcsReference = loadFolder(gcsLocation)
+	} else {
+		gcsReference = gcsLocation
+	}
+
+	gcsRef := bigquery.NewGCSReference(gcsReference)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false

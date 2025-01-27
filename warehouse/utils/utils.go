@@ -413,6 +413,13 @@ func GetGCSLocationFolder(location string, options GCSLocationOptions) string {
 	return GetLocationFolder(GetGCSLocation(location, options))
 }
 
+func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocations []string) {
+	for _, loadFile := range loadFiles {
+		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
+	}
+	return
+}
+
 func GetLocationFolder(location string) string {
 	return location[:strings.LastIndex(location, "/")]
 }

@@ -405,6 +405,24 @@ func TestGetGCSLocationFolder(t *testing.T) {
 	}
 }
 
+func TestGetGCSLocations(t *testing.T) {
+	inputs := []LoadFile{
+		{Location: "https://storage.googleapis.com/test-bucket/test-object.csv"},
+		{Location: "https://storage.googleapis.com/my.test-bucket/test-object.csv"},
+		{Location: "https://storage.googleapis.com/my.test-bucket2/test-object.csv"},
+		{Location: "https://storage.googleapis.com/my.test-bucket/test-object2.csv"},
+	}
+	outputs := []string{
+		"gs://test-bucket/test-object.csv",
+		"gs://my.test-bucket/test-object.csv",
+		"gs://my.test-bucket2/test-object.csv",
+		"gs://my.test-bucket/test-object2.csv",
+	}
+
+	gcsLocations := GetGCSLocations(inputs, GCSLocationOptions{})
+	require.Equal(t, gcsLocations, outputs)
+}
+
 func TestGetAzureBlobLocation(t *testing.T) {
 	inputs := []struct {
 		location       string

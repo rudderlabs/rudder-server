@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1098,47 +1099,59 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, records, whth.SampleTestRecords())
 		})
 		t.Run("multiple files", func(t *testing.T) {
-			tableName := "multiple_files_test_table"
-			repeat := 10
-			loadObjectFolder := "rudder-warehouse-load-objects"
-			sourceID := "test_source_id"
+			testCases := []struct {
+				name             string
+				loadByFolderPath bool
+			}{
+				{name: "loadByFolderPath = false", loadByFolderPath: false},
+				{name: "loadByFolderPath = true", loadByFolderPath: true},
+			}
+			for i, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					tableName := "multiple_files_test_table" + strconv.Itoa(i)
+					repeat := 10
+					loadObjectFolder := "rudder-warehouse-load-objects"
+					sourceID := "test_source_id"
 
-			prefixes := []string{loadObjectFolder, tableName, sourceID, uuid.New().String() + "-" + tableName}
+					prefixes := []string{loadObjectFolder, tableName, sourceID, uuid.New().String() + "-" + tableName}
 
-			loadFiles := lo.RepeatBy(repeat, func(int) whutils.LoadFile {
-				sourceFile, err := os.Open("../testdata/load.json.gz")
-				require.NoError(t, err)
-				defer func() { _ = sourceFile.Close() }()
+					loadFiles := lo.RepeatBy(repeat, func(int) whutils.LoadFile {
+						sourceFile, err := os.Open("../testdata/load.json.gz")
+						require.NoError(t, err)
+						defer func() { _ = sourceFile.Close() }()
 
-				tempFile, err := os.CreateTemp("", "clone_*.json.gz")
-				require.NoError(t, err)
-				defer func() { _ = tempFile.Close() }()
+						tempFile, err := os.CreateTemp("", "clone_*.json.gz")
+						require.NoError(t, err)
+						defer func() { _ = tempFile.Close() }()
 
-				_, err = io.Copy(tempFile, sourceFile)
-				require.NoError(t, err)
+						_, err = io.Copy(tempFile, sourceFile)
+						require.NoError(t, err)
 
-				f, err := os.Open(tempFile.Name())
-				require.NoError(t, err)
-				defer func() { _ = f.Close() }()
+						f, err := os.Open(tempFile.Name())
+						require.NoError(t, err)
+						defer func() { _ = f.Close() }()
 
-				uploadOutput, err := fm.Upload(context.Background(), f, prefixes...)
-				require.NoError(t, err)
-				return whutils.LoadFile{Location: uploadOutput.Location}
-			})
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+						uploadOutput, err := fm.Upload(context.Background(), f, prefixes...)
+						require.NoError(t, err)
+						return whutils.LoadFile{Location: uploadOutput.Location}
+					})
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
 
-			bq := whbigquery.New(config.New(), logger.NOP)
-			require.NoError(t, bq.Setup(ctx, warehouse, mockUploader))
-			require.NoError(t, bq.CreateSchema(ctx))
-			require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse))
+					c := config.New()
+					c.Set("Warehouse.redshift.loadByFolderPath", tc.loadByFolderPath)
 
-			loadTableStat, err := bq.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(repeat*14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+					bq := whbigquery.New(c, logger.NOP)
+					require.NoError(t, bq.Setup(ctx, warehouse, mockUploader))
+					require.NoError(t, bq.CreateSchema(ctx))
+					require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse))
 
-			records := bqhelper.RetrieveRecordsFromWarehouse(t, db,
-				fmt.Sprintf(`
+					loadTableStat, err := bq.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(repeat*14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					records := bqhelper.RetrieveRecordsFromWarehouse(t, db,
+						fmt.Sprintf(`
 					SELECT
 					  id,
 					  received_at,
@@ -1150,17 +1163,19 @@ func TestIntegration(t *testing.T) {
 					FROM %s.%s
 					WHERE _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
 					ORDER BY id;`,
-					namespace,
-					tableName,
-					time.Now().Add(-24*time.Hour).Format("2006-01-02"),
-					time.Now().Add(+24*time.Hour).Format("2006-01-02"),
-				),
-			)
-			expectedRecords := make([][]string, 0, repeat)
-			for i := 0; i < repeat; i++ {
-				expectedRecords = append(expectedRecords, whth.SampleTestRecords()...)
+							namespace,
+							tableName,
+							time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+							time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+						),
+					)
+					expectedRecords := make([][]string, 0, repeat)
+					for i := 0; i < repeat; i++ {
+						expectedRecords = append(expectedRecords, whth.SampleTestRecords()...)
+					}
+					require.ElementsMatch(t, expectedRecords, records)
+				})
 			}
-			require.ElementsMatch(t, expectedRecords, records)
 		})
 	})
 
