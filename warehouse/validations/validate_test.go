@@ -59,33 +59,35 @@ func TestValidator(t *testing.T) {
 					cleanupObjectStorageFiles: true,
 				},
 				{
-					name:                      "check delete permissions",
+					name:                      "skip checking delete permissions",
 					cleanupObjectStorageFiles: false,
 				},
 			}
 
 			for _, tc := range testCases {
-				destination := &backendconfig.DestinationT{
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: warehouseutils.POSTGRES,
-					},
-					Config: map[string]interface{}{
-						"host":            pgResource.Host,
-						"port":            pgResource.Port,
-						"database":        pgResource.Database,
-						"user":            pgResource.User,
-						"password":        pgResource.Password,
-						"bucketProvider":  provider,
-						"bucketName":      minioResource.BucketName,
-						"accessKeyID":     minioResource.AccessKeyID,
-						"secretAccessKey": minioResource.AccessKeySecret,
-						"endPoint":        minioResource.Endpoint,
-					},
-				}
-				destination.Config[model.CleanupObjectStorageFilesSetting.String()] = tc.cleanupObjectStorageFiles
-				v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, destination)
-				require.NoError(t, err)
-				require.NoError(t, v.Validate(ctx))
+				t.Run(tc.name, func(t *testing.T) {
+					destination := &backendconfig.DestinationT{
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: warehouseutils.POSTGRES,
+						},
+						Config: map[string]interface{}{
+							"host":            pgResource.Host,
+							"port":            pgResource.Port,
+							"database":        pgResource.Database,
+							"user":            pgResource.User,
+							"password":        pgResource.Password,
+							"bucketProvider":  provider,
+							"bucketName":      minioResource.BucketName,
+							"accessKeyID":     minioResource.AccessKeyID,
+							"secretAccessKey": minioResource.AccessKeySecret,
+							"endPoint":        minioResource.Endpoint,
+						},
+					}
+					destination.Config[model.CleanupObjectStorageFilesSetting.String()] = tc.cleanupObjectStorageFiles
+					v, err := validations.NewValidator(ctx, model.VerifyingObjectStorage, destination)
+					require.NoError(t, err)
+					require.NoError(t, v.Validate(ctx))
+				})
 			}
 		})
 

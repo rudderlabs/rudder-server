@@ -247,7 +247,7 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 	cleanupObjectStorageFiles, _ := os.destination.Config[model.CleanupObjectStorageFilesSetting.String()].(bool)
 	if cleanupObjectStorageFiles {
 		if err = deleteFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
-			return fmt.Errorf("delete file: %w. Ensure that delete permissions are granted because the option to delete files after a successful sync is enabled.", err)
+			return fmt.Errorf("delete file: %w. Ensure that delete permissions are granted because the option to delete files after a successful sync is enabled", err)
 		}
 	}
 
