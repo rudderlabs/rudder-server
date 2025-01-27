@@ -1136,9 +1136,14 @@ func TestIntegration(t *testing.T) {
 						return whutils.LoadFile{Location: uploadOutput.Location}
 					})
 					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+					if tc.loadByFolderPath {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Return(loadFiles[0].Location, nil).Times(1)
+					} else {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Times(0)
+					}
 
 					c := config.New()
-					c.Set("Warehouse.redshift.loadByFolderPath", tc.loadByFolderPath)
+					c.Set("Warehouse.bigquery.loadByFolderPath", tc.loadByFolderPath)
 
 					bq := whbigquery.New(c, logger.NOP)
 					require.NoError(t, bq.Setup(ctx, warehouse, mockUploader))
@@ -1539,7 +1544,7 @@ func newMockUploader(
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
-) whutils.Uploader {
+) *mockuploader.MockUploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
@@ -1552,7 +1557,6 @@ func newMockUploader(
 	).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInUpload(tableName).Return(schemaInUpload).AnyTimes()
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
-	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Return(loadFiles[0].Location, nil).AnyTimes()
 
 	return mockUploader
 }
