@@ -2,7 +2,6 @@ package transformerclient
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/health"
 	"github.com/bufbuild/httplb/picker"
-	"github.com/bufbuild/httplb/resolver"
 
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -91,13 +89,6 @@ func NewClient(config *ClientConfig) Client {
 			httplb.WithRootContext(context.TODO()),
 			httplb.WithPicker(getPicker(config.PickerType)),
 			httplb.WithHealthChecks(getChecker(checkerType, config.CheckURL)),
-			httplb.WithResolver(
-				resolver.NewDNSResolver(
-					net.DefaultResolver,
-					resolver.PreferIPv6,
-					clientTTL,
-				),
-			),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
 			httplb.WithRoundTripperMaxLifetime(clientTTL),
