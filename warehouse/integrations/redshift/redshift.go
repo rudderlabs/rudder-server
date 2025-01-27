@@ -563,12 +563,7 @@ func (rs *Redshift) copyIntoLoadTable(
 		return fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
 
-	var manifestSQL string
-	if !rs.config.loadByFolderPath {
-		manifestSQL = "MANIFEST"
-	}
-
-	var s3Location, region string
+	var manifestSQL, s3Location, region string
 	if rs.config.loadByFolderPath {
 		objectLocation, err := rs.Uploader.GetSampleLoadFileLocation(ctx, tableName)
 		if err != nil {
@@ -581,6 +576,8 @@ func (rs *Redshift) copyIntoLoadTable(
 		}
 		s3Location = warehouseutils.GetLocationFolder(s3Location)
 	} else {
+		manifestSQL = "MANIFEST"
+
 		manifestLocation, err := rs.generateManifest(ctx, tableName)
 		if err != nil {
 			return fmt.Errorf("generating manifest: %w", err)

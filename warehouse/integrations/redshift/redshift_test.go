@@ -1379,6 +1379,11 @@ func TestIntegration(t *testing.T) {
 						return whutils.LoadFile{Location: uploadOutput.Location}
 					})
 					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
+					if tc.loadByFolderPath {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Return(loadFiles[0].Location, nil).Times(1)
+					} else {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Times(0)
+					}
 
 					c := config.New()
 					c.Set("Warehouse.redshift.loadByFolderPath", tc.loadByFolderPath)
@@ -1763,7 +1768,7 @@ func newMockUploader(
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
 	loadFileType string,
-) whutils.Uploader {
+) *mockuploader.MockUploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 
@@ -1778,7 +1783,6 @@ func newMockUploader(
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 	mockUploader.EXPECT().GetLoadFileType().Return(loadFileType).AnyTimes()
 	mockUploader.EXPECT().CanAppend().Return(true).AnyTimes()
-	mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Return(loadFiles[0].Location, nil).AnyTimes()
 
 	return mockUploader
 }
