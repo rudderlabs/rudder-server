@@ -438,6 +438,13 @@ func GetAzureBlobLocationFolder(location string) string {
 	return GetLocationFolder(GetAzureBlobLocation(location))
 }
 
+func GetS3Locations(loadFiles []LoadFile) []LoadFile {
+	for idx, loadFile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
+	}
+	return loadFiles
+}
+
 func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
 	schema := make(model.Schema)
 	err := json.Unmarshal(rawMsg, &schema)

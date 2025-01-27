@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1355,34 +1356,47 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, records, whth.SampleTestRecords())
 		})
 		t.Run("multiple files", func(t *testing.T) {
-			ctx := context.Background()
-			tableName := "multiple_files_test_table"
-			repeat := 10
-			loadObjectFolder := "rudder-warehouse-load-objects"
-			sourceID := "test_source_id"
+			testCases := []struct {
+				name             string
+				loadByFolderPath bool
+			}{
+				{name: "loadByFolderPath = false", loadByFolderPath: false},
+				{name: "loadByFolderPath = true", loadByFolderPath: true},
+			}
 
-			prefixes := []string{loadObjectFolder, tableName, sourceID, uuid.New().String() + "-" + tableName}
+			for i, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					ctx := context.Background()
+					tableName := "multiple_files_test_table_" + strconv.Itoa(i)
+					repeat := 10
+					loadObjectFolder := "rudder-warehouse-load-objects"
+					sourceID := "test_source_id"
 
-			loadFiles := lo.RepeatBy(repeat, func(index int) whutils.LoadFile {
-				uploadOutput := whth.UploadSampleTestRecordsTemplateLoadFile(t, fm, prefixes, index+1)
-				return whutils.LoadFile{Location: uploadOutput.Location}
-			})
-			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
+					prefixes := []string{loadObjectFolder, tableName, sourceID, uuid.New().String() + "-" + tableName}
 
-			rs := redshift.New(config.New(), logger.NOP, stats.NOP)
-			require.NoError(t, rs.Setup(ctx, warehouse, mockUploader))
-			require.NoError(t, rs.CreateSchema(ctx))
-			require.NoError(t, rs.CreateTable(ctx, tableName, schemaInWarehouse))
+					loadFiles := lo.RepeatBy(repeat, func(index int) whutils.LoadFile {
+						uploadOutput := whth.UploadSampleTestRecordsTemplateLoadFile(t, fm, prefixes, index+1)
+						return whutils.LoadFile{Location: uploadOutput.Location}
+					})
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse, whutils.LoadFileTypeCsv)
 
-			loadTableStat, err := rs.LoadTable(ctx, tableName)
-			require.NoError(t, err)
-			require.Equal(t, int64(repeat*14), loadTableStat.RowsInserted)
-			require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+					c := config.New()
+					c.Set("Warehouse.redshift.loadByFolderPath", tc.loadByFolderPath)
 
-			records := whth.RetrieveRecordsFromWarehouse(
-				t,
-				rs.DB.DB,
-				fmt.Sprintf(`
+					rs := redshift.New(c, logger.NOP, stats.NOP)
+					require.NoError(t, rs.Setup(ctx, warehouse, mockUploader))
+					require.NoError(t, rs.CreateSchema(ctx))
+					require.NoError(t, rs.CreateTable(ctx, tableName, schemaInWarehouse))
+
+					loadTableStat, err := rs.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, int64(repeat*14), loadTableStat.RowsInserted)
+					require.Equal(t, int64(0), loadTableStat.RowsUpdated)
+
+					records := whth.RetrieveRecordsFromWarehouse(
+						t,
+						rs.DB.DB,
+						fmt.Sprintf(`
 							SELECT
 							  id,
 							  received_at,
@@ -1396,15 +1410,17 @@ func TestIntegration(t *testing.T) {
 							ORDER BY
 							  id;
 						`,
-					warehouse.Namespace,
-					tableName,
-				),
-			)
-			expectedRecords := make([][]string, 0, repeat)
-			for i := 0; i < repeat; i++ {
-				expectedRecords = append(expectedRecords, whth.SampleTestRecordsTemplate(i+1)...)
+							warehouse.Namespace,
+							tableName,
+						),
+					)
+					expectedRecords := make([][]string, 0, repeat)
+					for i := 0; i < repeat; i++ {
+						expectedRecords = append(expectedRecords, whth.SampleTestRecordsTemplate(i+1)...)
+					}
+					require.ElementsMatch(t, expectedRecords, records)
+				})
 			}
-			require.ElementsMatch(t, expectedRecords, records)
 		})
 	})
 

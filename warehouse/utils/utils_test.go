@@ -334,6 +334,24 @@ func TestGetS3LocationFolder(t *testing.T) {
 	}
 }
 
+func TestGetS3Locations(t *testing.T) {
+	inputs := []LoadFile{
+		{Location: "https://test-bucket.s3.amazonaws.com/test-object.csv"},
+		{Location: "https://test-bucket.s3.eu-west-1.amazonaws.com/test-object.csv"},
+		{Location: "https://my.test-bucket.s3.amazonaws.com/test-object.csv"},
+		{Location: "https://my.test-bucket.s3.us-west-1.amazonaws.com/test-object.csv"},
+	}
+	outputs := []LoadFile{
+		{Location: "s3://test-bucket/test-object.csv"},
+		{Location: "s3://test-bucket/test-object.csv"},
+		{Location: "s3://my.test-bucket/test-object.csv"},
+		{Location: "s3://my.test-bucket/test-object.csv"},
+	}
+
+	s3Locations := GetS3Locations(inputs)
+	require.Equal(t, s3Locations, outputs)
+}
+
 func TestGetGCSLocation(t *testing.T) {
 	inputs := []struct {
 		location    string
