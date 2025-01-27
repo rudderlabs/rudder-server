@@ -4,6 +4,7 @@ import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 const (
 	VerifyingObjectStorage       = "Verifying Object Storage"
+	VerifyingObjectStorageDelete = "Verifying delete permissions in object storage"
 	VerifyingConnections         = "Verifying Connections"
 	VerifyingCreateSchema        = "Verifying Create Schema"
 	VerifyingCreateAndAlterTable = "Verifying Create and Alter Table"

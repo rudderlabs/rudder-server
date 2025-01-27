@@ -24,6 +24,13 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 		ID:   len(steps) + 1,
 		Name: model.VerifyingObjectStorage,
 	}}
+	cleanupObjectStorageFiles, _ := dest.Config[model.CleanupObjectStorageFilesSetting.String()].(bool)
+	if cleanupObjectStorageFiles {
+		steps = append(steps, &model.Step{
+			ID:   len(steps) + 1,
+			Name: model.VerifyingObjectStorageDelete,
+		})
+	}
 
 	switch destType {
 	case warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:

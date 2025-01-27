@@ -56,6 +56,10 @@ type loadTable struct {
 	table       string
 }
 
+type objectStorageDelete struct {
+	destination *backendconfig.DestinationT
+}
+
 type DestinationValidator interface {
 	Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse
 }
@@ -220,6 +224,10 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			manager:     operations,
 			table:       getTable(dest),
 		}, nil
+	case model.VerifyingObjectStorageDelete:
+		return &objectStorageDelete{
+			destination: dest,
+		}, nil
 	}
 
 	return nil, fmt.Errorf("invalid step: %s", step)
@@ -322,6 +330,24 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 	return nil
 }
 
+func (osd *objectStorageDelete) Validate(ctx context.Context) error {
+	var (
+		tempPath     string
+		err          error
+		uploadObject filemanager.UploadedFile
+	)
+	if tempPath, err = CreateTempLoadFile(osd.destination); err != nil {
+		return fmt.Errorf("creating temp load file: %w", err)
+	}
+	if uploadObject, err = uploadFile(ctx, osd.destination, tempPath); err != nil {
+		return fmt.Errorf("upload file: %w", err)
+	}
+	if err = deleteFile(ctx, osd.destination, uploadObject.ObjectName); err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	return nil
+}
+
 // CreateTempLoadFile creates a temporary load file
 func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 	var (
@@ -400,6 +426,20 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 	}
 
 	return output, nil
+}
+
+func deleteFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {
+	var (
+		err error
+		fm  filemanager.FileManager
+	)
+	if fm, err = createFileManager(dest); err != nil {
+		return fmt.Errorf("create file manager: %w", err)
+	}
+	if err = fm.Delete(ctx, []string{location}); err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	return nil
 }
 
 func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {

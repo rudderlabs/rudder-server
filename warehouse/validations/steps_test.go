@@ -27,8 +27,26 @@ func TestValidationSteps(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.GCSDatalake,
 				},
+				Config: map[string]interface{}{
+					model.CleanupObjectStorageFilesSetting.String(): false,
+				},
 			},
 			steps: []string{model.VerifyingObjectStorage},
+		},
+		{
+			name: "GCS with cleanup enabled",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.GCSDatalake,
+				},
+				Config: map[string]interface{}{
+					model.CleanupObjectStorageFilesSetting.String(): true,
+				},
+			},
+			steps: []string{
+				model.VerifyingObjectStorage,
+				model.VerifyingObjectStorageDelete,
+			},
 		},
 		{
 			name: "Azure",
@@ -76,6 +94,26 @@ func TestValidationSteps(t *testing.T) {
 			},
 			steps: []string{
 				model.VerifyingObjectStorage,
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+				model.VerifyingLoadTable,
+			},
+		},
+		{
+			name: "RS with cleanup enabled",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.RS,
+				},
+				Config: map[string]interface{}{
+					model.CleanupObjectStorageFilesSetting.String(): true,
+				},
+			},
+			steps: []string{
+				model.VerifyingObjectStorage,
+				model.VerifyingObjectStorageDelete,
 				model.VerifyingConnections,
 				model.VerifyingCreateSchema,
 				model.VerifyingCreateAndAlterTable,

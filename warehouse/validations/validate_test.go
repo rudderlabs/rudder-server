@@ -94,6 +94,23 @@ func TestValidator(t *testing.T) {
 		})
 	})
 
+	t.Run("Object Storage Delete", func(t *testing.T) {
+		v, err := validations.NewValidator(ctx, model.VerifyingObjectStorageDelete, &backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Name: warehouseutils.POSTGRES,
+			},
+			Config: map[string]interface{}{
+				"bucketProvider":  provider,
+				"bucketName":      bucket,
+				"accessKeyID":     minioResource.AccessKeyID,
+				"secretAccessKey": minioResource.AccessKeySecret,
+				"endPoint":        minioResource.Endpoint,
+			},
+		})
+		require.NoError(t, err)
+		require.NoError(t, v.Validate(ctx))
+	})
+
 	t.Run("Connections", func(t *testing.T) {
 		testCases := []struct {
 			name      string
