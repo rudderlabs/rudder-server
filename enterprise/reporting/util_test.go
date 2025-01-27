@@ -234,7 +234,7 @@ func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
 			SampleResponse: inputSampleResponse,
 		},
 	}
-	outputSampleEvent, outputSampleResponse, err := getSampleWithEventSampling(metric, 1234567890, nil, 60)
+	outputSampleEvent, outputSampleResponse, err := getSampleWithEventSampling(metric, 1234567890, nil, false, 60)
 	require.NoError(t, err)
 	require.Equal(t, inputSampleEvent, outputSampleEvent)
 	require.Equal(t, inputSampleResponse, outputSampleResponse)
@@ -392,7 +392,7 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 				mockEventSampler.EXPECT().Put(gomock.Any()).Return(tt.putError)
 			}
 
-			sampleEvent, sampleResponse, err := getSampleWithEventSampling(tt.metric, 1234567890, mockEventSampler, 60)
+			sampleEvent, sampleResponse, err := getSampleWithEventSampling(tt.metric, 1234567890, mockEventSampler, true, 60)
 			if tt.getError != nil || tt.putError != nil {
 				require.Error(t, err)
 			} else {

@@ -45,11 +45,11 @@ func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	return bucketStart, bucketEnd
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
-	if eventSampler == nil {
+	if !eventSamplingEnabled || eventSampler == nil {
 		return sampleEvent, sampleResponse, nil
 	}
 
