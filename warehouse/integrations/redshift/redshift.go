@@ -15,20 +15,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
 
 	"github.com/lib/pq"
-	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -160,6 +160,7 @@ type Redshift struct {
 		skipDedupDestinationIDs       []string
 		skipComputingUserLatestTraits bool
 		enableDeleteByJobs            bool
+		loadByFolderPath              bool
 	}
 }
 
@@ -191,6 +192,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.skipComputingUserLatestTraits = conf.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
+	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
 
 	return rs
 }
@@ -455,12 +457,6 @@ func (rs *Redshift) loadTable(
 	)
 	log.Infow("started loading")
 
-	manifestLocation, err := rs.generateManifest(ctx, tableName)
-	if err != nil {
-		return nil, "", fmt.Errorf("generating manifest: %w", err)
-	}
-	log.Debugw("generated manifest", "manifestLocation", manifestLocation)
-
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
 		tableName,
@@ -473,7 +469,7 @@ func (rs *Redshift) loadTable(
 		stagingTableName,
 		tableName,
 	)
-	if _, err = rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -498,8 +494,8 @@ func (rs *Redshift) loadTable(
 
 	log.Infow("loading data into staging table")
 	err = rs.copyIntoLoadTable(
-		ctx, txn, stagingTableName,
-		manifestLocation, strKeys,
+		ctx, txn, tableName, stagingTableName,
+		strKeys,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("loading data into staging table: %w", err)
@@ -558,8 +554,8 @@ func (rs *Redshift) loadTable(
 func (rs *Redshift) copyIntoLoadTable(
 	ctx context.Context,
 	txn *sqlmiddleware.Tx,
+	tableName string,
 	stagingTableName string,
-	manifestLocation string,
 	strKeys []string,
 ) error {
 	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
@@ -567,9 +563,29 @@ func (rs *Redshift) copyIntoLoadTable(
 		return fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
 
-	manifestS3Location, region := warehouseutils.GetS3Location(manifestLocation)
-	if region == "" {
-		region = "us-east-1"
+	var manifestSQL, s3Location, region string
+	if rs.config.loadByFolderPath {
+		objectLocation, err := rs.Uploader.GetSampleLoadFileLocation(ctx, tableName)
+		if err != nil {
+			return fmt.Errorf("getting sample load file location: %w", err)
+		}
+
+		s3Location, region = warehouseutils.GetS3Location(objectLocation)
+		if region == "" {
+			region = "us-east-1"
+		}
+		s3Location = warehouseutils.GetLocationFolder(s3Location)
+	} else {
+		manifestSQL = "MANIFEST"
+
+		manifestLocation, err := rs.generateManifest(ctx, tableName)
+		if err != nil {
+			return fmt.Errorf("generating manifest: %w", err)
+		}
+		s3Location, region = warehouseutils.GetS3Location(manifestLocation)
+		if region == "" {
+			region = "us-east-1"
+		}
 	}
 
 	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
@@ -584,12 +600,13 @@ func (rs *Redshift) copyIntoLoadTable(
 			ACCESS_KEY_ID '%s'
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
-			MANIFEST FORMAT PARQUET;`,
+			%s FORMAT PARQUET;`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
-			manifestS3Location,
+			s3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
+			manifestSQL,
 		)
 	} else {
 		copyStmt = fmt.Sprintf(
@@ -602,16 +619,17 @@ func (rs *Redshift) copyIntoLoadTable(
 			REGION '%s'
 			DATEFORMAT 'auto'
 			TIMEFORMAT 'auto'
-			MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS
+			%s TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS
 			COMPUPDATE OFF
 			STATUPDATE OFF;`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
 			sortedColumnNames,
-			manifestS3Location,
+			s3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
 			region,
+			manifestSQL,
 		)
 	}
 
@@ -1347,9 +1365,18 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 		return
 	}
 
-	manifestS3Location, region := warehouseutils.GetS3Location(location)
-	if region == "" {
-		region = "us-east-1"
+	var s3Location, region string
+	if rs.config.loadByFolderPath {
+		s3Location, region = warehouseutils.GetS3Location(location)
+		if region == "" {
+			region = "us-east-1"
+		}
+		s3Location = warehouseutils.GetLocationFolder(s3Location)
+	} else {
+		s3Location, region = warehouseutils.GetS3Location(location)
+		if region == "" {
+			region = "us-east-1"
+		}
 	}
 
 	var sqlStatement string
@@ -1357,7 +1384,7 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
-			manifestS3Location,
+			s3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
@@ -1367,7 +1394,7 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
 			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
 			fmt.Sprintf(`%q, %q`, "id", "val"),
-			manifestS3Location,
+			s3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
 			token,
