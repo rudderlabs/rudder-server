@@ -95,7 +95,6 @@ const (
 const (
 	WAREHOUSE             = "warehouse"
 	RudderMissingDatatype = "warehouse_rudder_missing_datatype"
-	MissingDatatype       = "<missing_datatype>"
 )
 
 const (
@@ -815,16 +814,6 @@ func GetLoadFileFormat(loadFileType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
-	if (start == time.Time{} || end == time.Time{}) {
-		return
-	}
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-		dateRange = append(dateRange, d.Format(dateFormat))
-	}
-	return
 }
 
 func StagingTablePrefix(provider string) string {
