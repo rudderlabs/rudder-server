@@ -242,6 +242,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
 	config.Set("DB.host", postgresContainer.Host)
+	config.Set("enableStats", false)
 
 	config.Set("Warehouse.mode", "off")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
@@ -358,7 +359,14 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	}
 
 	var minExecTime, maxExecTime time.Time
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',20)").Scan(&minExecTime, &maxExecTime), "it should be able to query the min and max execution times")
+	require.NoError(
+		t,
+		postgresContainer.DB.QueryRowContext(
+			ctx,
+			"SELECT min(exec_time), max(exec_time) FROM unionjobsdbmetadata('batch_rt',20)",
+		).Scan(&minExecTime, &maxExecTime),
+		"it should be able to query the min and max execution times",
+	)
 	overallDuration = maxExecTime.Sub(minExecTime)
 
 	cancel()
@@ -384,60 +392,9 @@ type brtIsolationJobSpec struct {
 func (jobSpec *brtIsolationJobSpec) payload() []byte {
 	var template string
 	if jobSpec.destType == "MINIO" {
-		template = `{
-			"userId": %[1]q,
-			"anonymousId": %[2]q,
-			"testJobId": %[3]d,
-			"workspaceID": %[4]q,
-			"destType": %[6]q,
-			"type": "identify",
-			"context":
-			{
-				"traits":
-				{
-					"trait1": "new-val"
-				},
-				"ip": "14.5.67.21",
-				"library":
-				{
-					"name": "http"
-				}
-			},
-			"timestamp": "2020-02-02T00:23:09.544Z",
-			"receivedAt": %[5]q
-		}`
+		template = `{"userId": %[1]q,"anonymousId": %[2]q,"testJobId": %[3]d,"workspaceID": %[4]q,"destType": %[6]q,"type": "identify","context":{"traits":{"trait1": "new-val"},"ip": "14.5.67.21","library":{"name": "http"}},"timestamp": "2020-02-02T00:23:09.544Z","receivedAt": %[5]q}`
 	} else {
-		template = `{
-			"data": {
-				"userId": %[1]q,
-				"anonymousId": %[2]q,
-				"testJobId": %[3]d,
-				"workspaceID": %[4]q,
-				"destType": %[6]q,
-				"type": "identify",
-				"context_traits_trait1": "new-val",
-				"context_ip": "14.5.67.21",
-				"context_library_name": "http",
-				"timestamp": "2020-02-02T00:23:09.544Z"
-			},
-			"userId": %[1]q,
-			"metadata": {
-				"table": "pages",
-				"columns": {
-					"userId": "string",
-					"anonymousId": "string",
-					"testJobId": "int",
-					"workspaceID": "string",
-					"destType": "string",
-					"type": "string",
-					"context_traits_trait1": "string",
-					"context_ip": "string",
-					"context_library_name": "string",
-					"timestamp": "string"
-				},
-				"receivedAt": %[5]q
-			}
-		}`
+		template = `{"data": {"userId": %[1]q,"anonymousId": %[2]q,"testJobId": %[3]d,"workspaceID": %[4]q,"destType": %[6]q,"type": "identify","context_traits_trait1": "new-val","context_ip": "14.5.67.21","context_library_name": "http","timestamp": "2020-02-02T00:23:09.544Z"},"userId": %[1]q,"metadata": {"table": "pages","columns": {"userId": "string","anonymousId": "string","testJobId": "int","workspaceID": "string","destType": "string","type": "string","context_traits_trait1": "string","context_ip": "string","context_library_name": "string","timestamp": "string"},"receivedAt": %[5]q}}`
 	}
 	return []byte(fmt.Sprintf(template, jobSpec.userID, jobSpec.userID, jobSpec.id, jobSpec.workspaceID, time.Now().Format(misc.RFC3339Milli), jobSpec.destType))
 }

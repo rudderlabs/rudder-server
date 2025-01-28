@@ -276,7 +276,7 @@ func (brt *Handle) updatePollStatusToDB(
 			}
 		}
 	} else if pollResp.StatusCode == http.StatusBadRequest {
-		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", "poll failed with status code 400")}, sourceID, destinationID)
+		statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Aborted.State, ErrorResponse: misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", pollResp.Error)}, sourceID, destinationID)
 		if err := brt.updateJobStatuses(ctx, destinationID, importingList, importingList, statusList); err != nil {
 			brt.logger.Errorf("[Batch Router] Failed to update job status for Dest Type %v with error %v", brt.destType, err)
 			return statusList, err

@@ -210,13 +210,6 @@ func setDisableDedupFeature(proc *Handle, b bool) bool {
 	return prev
 }
 
-// SetEnableParallelScan overrides SetEnableParallelScan configuration and returns previous value
-func setEnableParallelScan(proc *Handle, b bool) bool {
-	prev := proc.config.enableParallelScan
-	proc.config.enableParallelScan = b
-	return prev
-}
-
 func setMainLoopTimeout(proc *Handle, timeout time.Duration) {
 	proc.config.mainLoopTimeout = timeout
 }
@@ -963,7 +956,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformer)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1038,7 +1031,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformer)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1294,7 +1287,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1465,7 +1458,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1650,7 +1643,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1807,7 +1800,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -1958,7 +1951,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -2272,7 +2265,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -2556,7 +2549,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -2958,7 +2951,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation", func() {
@@ -3183,121 +3176,10 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-some-id-1": {
-					id:                        "some-id",
-					jobid:                     2010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-some-id-2": {
-					id:                        "some-id",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-				"message-some-id-3": {
-					id:                        "some-id",
-					jobid:                     3010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-			}
-
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabled,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-some-id-2"],
-							messages["message-some-id-1"],
-						},
-						createMessagePayloadWithSameMessageId,
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabled,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-some-id-3"],
-						},
-						createMessagePayloadWithSameMessageId,
-					),
-					EventCount: 1,
-					Parameters: createBatchParameters(SourceIDEnabled),
-				},
-			}
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, nil).After(callUnprocessed).AnyTimes()
-			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
-
-			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
-			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
-			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
-
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
-			}).Return(nil)
-
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				AnyTimes()
-
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-				_ = f(jobsdb.EmptyUpdateSafeTx())
-			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
-
-			Setup(processor, c, true, false, false)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-
-			processor.dedup = c.MockDedup
-			handlePendingGatewayJobs(processor)
-		})
-
-		It("should process unprocessed jobs to destination without user transformation with enabled Dedup and parallelScan", func() {
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-some-id-1": {
@@ -3401,7 +3283,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, true, true, false)
+			Setup(processor, c, true, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -3663,7 +3545,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, true, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation and parallelScan", func() {
@@ -3888,7 +3770,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, true, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -4027,7 +3909,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -4165,7 +4047,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages that the destination doesn't support", func() {
@@ -4247,7 +4129,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages where jobRunID is cancelled", func() {
@@ -4354,7 +4236,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -4549,7 +4431,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -4631,7 +4513,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -4798,7 +4680,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -4890,7 +4772,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, true)
+			Setup(processor, c, false, true)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -6424,8 +6306,8 @@ func assertDestinationTransform(
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *Handle, enableParallelScan bool, c *testContext) {
-	Setup(processor, c, false, enableParallelScan, false)
+func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
+	Setup(processor, c, false, false)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -6433,9 +6315,8 @@ func processorSetupAndAssertJobHandling(processor *Handle, enableParallelScan bo
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *Handle, c *testContext, enableDedup, enableParallelScan, enableReporting bool) {
+func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
 	setDisableDedupFeature(processor, enableDedup)
-	setEnableParallelScan(processor, enableParallelScan)
 	err := processor.Setup(
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,

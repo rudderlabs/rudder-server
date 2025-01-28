@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -118,10 +119,12 @@ func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStat
 				allComplete = false
 				pollresp, err := kbu.KlaviyoAPIService.GetUploadStatus(importId)
 				if err != nil {
+					kbu.Logger.Errorn("Error during fetching Klaviyo Bulk Upload status", obskit.Error(err))
 					return common.PollStatusResponse{
-						Complete:  true,
-						HasFailed: true,
-						Error:     err.Error(),
+						StatusCode: 500,
+						Complete:   true,
+						HasFailed:  true,
+						Error:      `Error during fetching upload status ` + err.Error(),
 					}
 				}
 

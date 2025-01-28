@@ -101,6 +101,24 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
+// GetVersionsOnly removes the connection and credentials from the event
+// along with pruning the destination to only include the transformation versionID
+// before sending it to the transformer thereby reducing the payload size
+func (e *TransformerEvent) GetVersionsOnly() *TransformerEvent {
+	tmCopy := *e
+	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
+	for _, t := range e.Destination.Transformations {
+		transformations = append(transformations, backendconfig.TransformationT{
+			VersionID: t.VersionID,
+		})
+	}
+	tmCopy.Destination = backendconfig.DestinationT{
+		Transformations: transformations,
+	}
+	tmCopy.Connection = backendconfig.Connection{}
+	return &tmCopy
+}
+
 type Credential struct {
 	ID       string `json:"id"`
 	Key      string `json:"key"`
@@ -270,7 +288,13 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
-	return trans.transform(ctx, clientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
+	var dehydratedClientEvents []TransformerEvent
+	for _, clientEvent := range clientEvents {
+		dehydratedClientEvent := clientEvent.GetVersionsOnly()
+		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
+	}
+
+	return trans.transform(ctx, dehydratedClientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
 }
 
 // Validate function is used to invoke tracking plan validation API
@@ -456,7 +480,6 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 	switch statusCode {
 	case http.StatusOK,
 		http.StatusBadRequest,
-		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
 	default:
 		trans.logger.Errorf("Transformer returned status code: %v", statusCode)

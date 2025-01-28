@@ -19,10 +19,13 @@ import (
 
 type BadgerEventSampler struct {
 	db     *badger.DB
+	dbPath string
+	module string
 	mu     sync.Mutex
 	ttl    config.ValueLoader[time.Duration]
 	ctx    context.Context
 	cancel context.CancelFunc
+	logger badgerLogger
 	wg     sync.WaitGroup
 	sc     *StatsCollector
 }
@@ -72,9 +75,12 @@ func NewBadgerEventSampler(
 
 	es := &BadgerEventSampler{
 		db:     db,
+		dbPath: dbPath,
+		module: module,
 		ttl:    ttl,
 		ctx:    ctx,
 		cancel: cancel,
+		logger: badgerLogger{log},
 		wg:     sync.WaitGroup{},
 		sc:     NewStatsCollector(BadgerTypeEventSampler, module, stats),
 	}
@@ -152,6 +158,15 @@ func (es *BadgerEventSampler) gcLoop() {
 		if err == nil {
 			goto again
 		}
+
+		lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(es.dbPath)
+		if err != nil {
+			es.logger.Errorf("Error while getting %s BadgerDB usage: %v", es.module, err)
+			continue
+		}
+		es.sc.RecordBadgerDBSize("lsm", lsmSize)
+		es.sc.RecordBadgerDBSize("vlog", vlogSize)
+		es.sc.RecordBadgerDBSize("total", totSize)
 	}
 }
 

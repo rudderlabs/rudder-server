@@ -23,7 +23,6 @@ func (h *workerHandleAdapter) config() workerHandleConfig {
 		subJobSize:            h.Handle.config.subJobSize,
 		readLoopSleep:         h.Handle.config.readLoopSleep,
 		maxLoopSleep:          h.Handle.config.maxLoopSleep,
-		enableParallelScan:    h.Handle.config.enableParallelScan,
 	}
 }
 
