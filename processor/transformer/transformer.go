@@ -243,8 +243,6 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 		// for now no health checks - can be implemented when there are different clients for UT, DT, TPV
 		// CheckURL: trans.config.userTransformationURL,
-		ResolverType:     conf.GetString("Transformer.Client.httplb.resolverType", ""),
-		ResolverMinConns: conf.GetInt("Transformer.Client.httplb.minConns", 64),
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections

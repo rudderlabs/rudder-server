@@ -2,7 +2,6 @@ package transformerclient
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/health"
 	"github.com/bufbuild/httplb/picker"
-	httplbResolver "github.com/bufbuild/httplb/resolver"
 
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -32,9 +30,6 @@ type ClientConfig struct {
 
 	CheckerType string // nop, polling
 	CheckURL    string
-
-	ResolverType     string //	minConns, default
-	ResolverMinConns int    //	64
 }
 
 type Client interface {
@@ -90,14 +85,6 @@ func NewClient(config *ClientConfig) Client {
 		if config.CheckURL == "" {
 			checkerType = "nop"
 		}
-		res := defaultReasolver(clientTTL)
-		if config.ResolverType == "minConns" {
-			minConns := 64
-			if config.ResolverMinConns != 0 {
-				minConns = config.ResolverMinConns
-			}
-			res = minConnsResolver(clientTTL, minConns)
-		}
 		return httplb.NewClient(
 			httplb.WithRootContext(context.TODO()),
 			httplb.WithPicker(getPicker(config.PickerType)),
@@ -106,7 +93,6 @@ func NewClient(config *ClientConfig) Client {
 			httplb.WithRequestTimeout(client.Timeout),
 			httplb.WithRoundTripperMaxLifetime(clientTTL),
 			httplb.WithIdleTransportTimeout(2*clientTTL),
-			httplb.WithResolver(res),
 		)
 	default:
 		return client
@@ -150,12 +136,4 @@ func getChecker(checkerType, url string) health.Checker {
 	default:
 		return health.NopChecker
 	}
-}
-
-func minConnsResolver(ttl time.Duration, minConns int) httplbResolver.Resolver {
-	return httplbResolver.MinConnections(defaultReasolver(ttl), minConns)
-}
-
-func defaultReasolver(ttl time.Duration) httplbResolver.Resolver {
-	return httplbResolver.NewDNSResolver(net.DefaultResolver, httplbResolver.PreferIPv4, ttl)
 }
