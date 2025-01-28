@@ -522,9 +522,9 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				newTags["instanceWorker"] = instanceWorker
 				trans.stat.NewTaggedStat("processor_transformer_instance_event_count", stats.CountType, newTags).Count(numEvents)
 				dur := time.Since(requestStartTime).Milliseconds()
-				headerTime, err := strconv.Atoi(headerResponseTime)
+				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
 				if err == nil {
-					diff := dur - int64(headerTime)
+					diff := float64(dur) - headerTime
 					trans.stat.NewTaggedStat("processor_tranform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
 				}
 			}
