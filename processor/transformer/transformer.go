@@ -411,7 +411,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 				transformationID = data[0].Destination.Transformations[0].ID
 			}
 
-			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, stats.Tags{
+			respData, statusCode = trans.doPost(context.WithValue(ctx, "numEvents", len(data)), rawJSON, url, stage, stats.Tags{
 				"destinationType":  data[0].Destination.DestinationDefinition.Name,
 				"destinationId":    data[0].Destination.ID,
 				"sourceId":         data[0].Metadata.SourceID,
@@ -484,6 +484,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		retryCount int
 		resp       *http.Response
 		respData   []byte
+		numEvents  = ctx.Value("numEvents").(int)
 	)
 	retryStrategy := backoff.NewExponentialBackOff()
 	// MaxInterval caps the RetryInterval
@@ -507,10 +508,25 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 
 				resp, reqErr = trans.httpClient.Do(req)
+
 			})
 			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr
+			}
+			// TODO: cleanup and adjust for cardinality of X-Instance-ID header
+			headerResponseTime := resp.Header.Get("X-Response-Time")
+			instanceWorker := resp.Header.Get("X-Instance-ID")
+			if instanceWorker != "" {
+				newTags := lo.Assign(tags)
+				newTags["instanceWorker"] = instanceWorker
+				trans.stat.NewTaggedStat("processor_transformer_instance_event_count", stats.CountType, newTags).Count(numEvents)
+				dur := time.Since(requestStartTime).Milliseconds()
+				headerTime, err := strconv.Atoi(headerResponseTime)
+				if err == nil {
+					diff := dur - int64(headerTime)
+					trans.stat.NewTaggedStat("processor_tranform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
+				}
 			}
 
 			defer func() { httputil.CloseResponse(resp) }()
