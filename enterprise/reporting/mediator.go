@@ -57,15 +57,15 @@ func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.L
 		return nil
 	})
 
-	// default reporting implementation
-	defaultReporter := NewDefaultReporter(rm.ctx, conf, rm.log, configSubscriber, rm.stats)
-	rm.reporters = append(rm.reporters, defaultReporter)
-
 	// error reporting implementation
 	if config.GetBool("Reporting.errorReporting.enabled", false) {
 		errorReporter := NewErrorDetailReporter(rm.ctx, configSubscriber, rm.stats, config.Default)
 		rm.reporters = append(rm.reporters, errorReporter)
 	}
+
+	// default reporting implementation
+	defaultReporter := NewDefaultReporter(rm.ctx, conf, rm.log, configSubscriber, rm.stats)
+	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error index reporting implementation
 	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
