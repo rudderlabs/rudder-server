@@ -29,4 +29,5 @@ type WHSchema struct {
 	Schema          Schema
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	ExpiresAt       time.Time
 }

@@ -288,14 +288,20 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 }
 
 func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tName, job.GetTableSchemaInUpload(tName))
+	tableSchemaDiff, err := job.schemaHandle.TableSchemaDiff(job.ctx, tName, job.GetTableSchemaInUpload(tName))
+	if err != nil {
+		return false, fmt.Errorf("table schema diff: %w", err)
+	}
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
 			return
 		}
 
-		job.schemaHandle.UpdateWarehouseTableSchema(tName, tableSchemaDiff.UpdatedSchema)
+		err = job.schemaHandle.UpdateWarehouseTableSchema(job.ctx, tName, tableSchemaDiff.UpdatedSchema)
+		if err != nil {
+			return false, fmt.Errorf("update warehouse table schema: %w", err)
+		}
 		alteredSchema = true
 	}
 	return
@@ -507,7 +513,10 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 
 		errorMap[tableName] = nil
 
-		tableSchemaDiff := job.schemaHandle.TableSchemaDiff(tableName, job.GetTableSchemaInUpload(tableName))
+		tableSchemaDiff, err := job.schemaHandle.TableSchemaDiff(job.ctx, tableName, job.GetTableSchemaInUpload(tableName))
+		if err != nil {
+			return nil, fmt.Errorf("table schema diff: %w", err)
+		}
 		if tableSchemaDiff.Exists {
 			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
@@ -520,7 +529,10 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 				errorMap := map[string]error{tableName: err}
 				return job.processLoadTableResponse(errorMap)
 			}
-			job.schemaHandle.UpdateWarehouseTableSchema(tableName, tableSchemaDiff.UpdatedSchema)
+			err = job.schemaHandle.UpdateWarehouseTableSchema(job.ctx, tableName, tableSchemaDiff.UpdatedSchema)
+			if err != nil {
+				return nil, fmt.Errorf("update warehouse table schema: %w", err)
+			}
 
 			status := model.TableUploadUpdatedSchema
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
@@ -795,7 +807,11 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: whutils.TableNameForStats(tableName)},
 	}
-	currentColumnsCount := job.schemaHandle.GetColumnsCountInWarehouseSchema(tableName)
+	currentColumnsCount, err := job.schemaHandle.GetColumnsCountInWarehouseSchema(job.ctx, tableName)
+	if err != nil {
+		job.logger.Errorf("error getting column count for table %s: %v", tableName, err)
+		return
+	}
 
 	job.gaugeStat(`warehouse_load_table_column_count`, tags...).Gauge(currentColumnsCount)
 	job.gaugeStat(`warehouse_load_table_column_limit`, tags...).Gauge(columnCountLimit)
