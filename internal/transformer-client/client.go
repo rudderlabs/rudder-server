@@ -2,6 +2,8 @@ package transformerclient
 
 import (
 	"context"
+	"github.com/bufbuild/httplb/resolver"
+	"net"
 	"net/http"
 	"time"
 
@@ -91,8 +93,9 @@ func NewClient(config *ClientConfig) Client {
 			httplb.WithHealthChecks(getChecker(checkerType, config.CheckURL)),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
-			httplb.WithRoundTripperMaxLifetime(clientTTL),
-			httplb.WithIdleTransportTimeout(2*clientTTL),
+			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),
+			httplb.WithIdleTransportTimeout(2*transport.IdleConnTimeout),
+			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
 		)
 	default:
 		return client

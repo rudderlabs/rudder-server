@@ -241,8 +241,8 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		PickerType:    conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
 		CheckerType:   conf.GetString("Transformer.Client.httplb.checkerType", "nop"),
 
-		// for now no health checks - can be implemented when there are different clients for UT, DT, TPV
-		// CheckURL: trans.config.userTransformationURL,
+		//for now no health checks - can be implemented when there are different clients for UT, DT, TPV
+		CheckURL: trans.config.userTransformationURL,
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections
@@ -508,7 +508,6 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				req.Header.Set("X-Feature-Filter-Code", "?1")
 
 				resp, reqErr = trans.httpClient.Do(req)
-
 			})
 			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
