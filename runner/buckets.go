@@ -141,5 +141,9 @@ var (
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
 		},
+		"throttling": {
+			// 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+		},
 	}
 )
