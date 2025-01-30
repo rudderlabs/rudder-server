@@ -9,17 +9,20 @@ import (
 func extractJSONPathInfo(jsonPaths []string) jsonPathInfo {
 	keysMap, legacyKeysMap := make(map[string]int), make(map[string]int)
 	for _, jsonPath := range jsonPaths {
-		if trimmedJSONPath := strings.TrimSpace(jsonPath); trimmedJSONPath != "" {
-			splitPaths := strings.Split(jsonPath, ".")
-			key := strings.Join(splitPaths, "_")
-			pos := len(splitPaths) - 1
-
-			if utils.HasJSONPathPrefix(jsonPath) {
-				keysMap[key] = pos
-				continue
-			}
-			legacyKeysMap[key] = pos
+		trimmedJSONPath := strings.TrimSpace(jsonPath)
+		if trimmedJSONPath == "" {
+			continue
 		}
+
+		splitPaths := strings.Split(trimmedJSONPath, ".")
+		key := strings.Join(splitPaths, "_")
+		pos := len(splitPaths) - 1
+
+		if utils.HasJSONPathPrefix(trimmedJSONPath) {
+			keysMap[key] = pos
+			continue
+		}
+		legacyKeysMap[key] = pos
 	}
 	return jsonPathInfo{keysMap, legacyKeysMap}
 }

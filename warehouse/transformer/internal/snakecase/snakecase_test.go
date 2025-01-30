@@ -101,7 +101,7 @@ func TestToSnakeCase(t *testing.T) {
 			}
 		})
 	})
-	t.Run("extractWords", func(t *testing.T) {
+	t.Run("extractWordsWithNumbers", func(t *testing.T) {
 		t.Run("should match words containing Latin Unicode letters", func(t *testing.T) {
 			for _, letter := range burredLetters {
 				require.Equal(t, []string{string(letter)}, extractWordsWithNumbers(string(letter)))

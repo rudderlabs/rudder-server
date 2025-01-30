@@ -30,7 +30,7 @@ func TestGetDataType(t *testing.T) {
 		{"Redshift JSON Key", whutils.RS, "someKey", "someValue", true, "json"},
 
 		// Redshift with text and string types
-		{"Redshift Text Type", whutils.RS, "someKey", string(make([]byte, 513)), false, "text"},
+		{"Redshift Text Type", whutils.RS, "someKey", make([]byte, 513), false, "text"},
 		{"Redshift String Type", whutils.RS, "someKey", "shortValue", false, "string"},
 		{"Redshift String Type", whutils.RS, "someKey", nil, false, "string"},
 

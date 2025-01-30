@@ -36,6 +36,9 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		loggedFileName: generateLogFileName(),
 	}
 
+	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.CountType)
+	t.stats.comparisionTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
+
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
@@ -180,10 +183,7 @@ func (t *Transformer) getColumns(
 
 	// uuid_ts and loaded_at datatypes are passed from here to create appropriate columns.
 	// Corresponding values are inserted when loading into the warehouse
-	uuidTS := "uuid_ts"
-	if destType == whutils.SNOWFLAKE || destType == whutils.SnowpipeStreaming {
-		uuidTS = "UUID_TS"
-	}
+	uuidTS := whutils.ToProviderCase(destType, "uuid_ts")
 	columns[uuidTS] = "datetime"
 
 	if destType == whutils.BQ {

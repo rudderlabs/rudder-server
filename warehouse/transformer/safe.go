@@ -17,6 +17,10 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	postgresMaxIdentifierLength = 63
+)
+
 var (
 	reLeadingUnderscores           = regexp.MustCompile(`^_*`)
 	reNonAlphanumericOrDollar      = regexp.MustCompile(`[^a-zA-Z0-9\\$]`)
@@ -142,7 +146,7 @@ func safeName(destType string, intrOpts *intrOptions, name string) string {
 	case whutils.SNOWFLAKE, whutils.SnowpipeStreaming:
 		name = strings.ToUpper(name)
 	case whutils.POSTGRES:
-		name = misc.TruncateStr(name, 63)
+		name = misc.TruncateStr(name, postgresMaxIdentifierLength)
 		name = strings.ToLower(name)
 	default:
 		name = strings.ToLower(name)
@@ -245,7 +249,7 @@ func transformColumnName(destType string, intrOpts *intrOptions, destOpts *destO
 		name = "_" + name
 	}
 	if destType == whutils.POSTGRES {
-		name = misc.TruncateStr(name, 63)
+		name = misc.TruncateStr(name, postgresMaxIdentifierLength)
 	}
 	return name
 }
@@ -259,7 +263,7 @@ func startsWithDigit(name string) bool {
 
 // transformNameToBlendoCase converts the input string into Blendo case format by replacing non-alphanumeric characters with underscores.
 // If the name does not start with a letter or underscore, it adds a leading underscore.
-// The name is truncated to 63 characters for Postgres, and the result is converted to lowercase.
+// The name is truncated to postgresMaxIdentifierLength characters for Postgres, and the result is converted to lowercase.
 func transformNameToBlendoCase(destType, name string) string {
 	key := reNonAlphanumericOrDollar.ReplaceAllString(name, "_")
 
@@ -267,7 +271,7 @@ func transformNameToBlendoCase(destType, name string) string {
 		key = "_" + key
 	}
 	if destType == whutils.POSTGRES {
-		key = misc.TruncateStr(name, 63)
+		key = misc.TruncateStr(name, postgresMaxIdentifierLength)
 	}
 	return strings.ToLower(key)
 }

@@ -9,65 +9,65 @@ import (
 
 const (
 	// Used to compose unicode character classes.
-	rsAstralRange               = "\\ud800-\\udfff"
-	rsComboMarksRange           = "\\u0300-\\u036f"
-	reComboHalfMarksRange       = "\\ufe20-\\ufe2f"
-	rsComboSymbolsRange         = "\\u20d0-\\u20ff"
-	rsComboMarksExtendedRange   = "\\u1ab0-\\u1aff"
-	rsComboMarksSupplementRange = "\\u1dc0-\\u1dff"
-	rsComboRange                = rsComboMarksRange + reComboHalfMarksRange + rsComboSymbolsRange + rsComboMarksExtendedRange + rsComboMarksSupplementRange
-	rsDingbatRange              = "\\u2700-\\u27bf"
-	rsLowerRange                = "a-z\\xdf-\\xf6\\xf8-\\xff"
-	rsMathOpRange               = "\\xac\\xb1\\xd7\\xf7"
-	rsNonCharRange              = "\\x00-\\x2f\\x3a-\\x40\\x5b-\\x60\\x7b-\\xbf"
-	rsPunctuationRange          = "\\u2000-\\u206f"
-	rsSpaceRange                = " \\t\\x0b\\f\\xa0\\ufeff\\n\\r\\u2028\\u2029\\u1680\\u180e\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200a\\u202f\\u205f\\u3000"
-	rsUpperRange                = "A-Z\\xc0-\\xd6\\xd8-\\xde"
-	rsVarRange                  = "\\ufe0e\\ufe0f"
-	rsBreakRange                = rsMathOpRange + rsNonCharRange + rsPunctuationRange + rsSpaceRange
+	astralRange               = "\\ud800-\\udfff"
+	comboMarksRange           = "\\u0300-\\u036f"
+	comboHalfMarksRange       = "\\ufe20-\\ufe2f"
+	comboSymbolsRange         = "\\u20d0-\\u20ff"
+	comboMarksExtendedRange   = "\\u1ab0-\\u1aff"
+	comboMarksSupplementRange = "\\u1dc0-\\u1dff"
+	comboRange                = comboMarksRange + comboHalfMarksRange + comboSymbolsRange + comboMarksExtendedRange + comboMarksSupplementRange
+	dingbatRange              = "\\u2700-\\u27bf"
+	lowerRange                = "a-z\\xdf-\\xf6\\xf8-\\xff"
+	mathOpRange               = "\\xac\\xb1\\xd7\\xf7"
+	nonCharRange              = "\\x00-\\x2f\\x3a-\\x40\\x5b-\\x60\\x7b-\\xbf"
+	punctuationRange          = "\\u2000-\\u206f"
+	spaceRange                = " \\t\\x0b\\f\\xa0\\ufeff\\n\\r\\u2028\\u2029\\u1680\\u180e\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200a\\u202f\\u205f\\u3000"
+	upperRange                = "A-Z\\xc0-\\xd6\\xd8-\\xde"
+	varRange                  = "\\ufe0e\\ufe0f"
+	breakRange                = mathOpRange + nonCharRange + punctuationRange + spaceRange
 
 	// Used to compose unicode capture groups
-	rsApos      = "['\u2019]"
-	rsBreak     = "[" + rsBreakRange + "]"
-	rsCombo     = "[" + rsComboRange + "]"
-	rsDigit     = "\\d"
-	rsDingbat   = "[" + rsDingbatRange + "]"
-	rsLower     = "[" + rsLowerRange + "]"
-	rsMisc      = "[^" + rsAstralRange + rsBreakRange + rsDigit + rsDingbatRange + rsLowerRange + rsUpperRange + "]"
-	rsFitz      = "\\ud83c[\\udffb-\\udfff]"
-	rsModifier  = "(?:" + rsCombo + "|" + rsFitz + ")"
-	rsNonAstral = "[^" + rsAstralRange + "]"
-	rsRegional  = "(?:\\ud83c[\\udde6-\\uddff]){2}"
-	rsSurrPair  = "[\\ud800-\\udbff][\\udc00-\\udfff]"
-	rsUpper     = "[" + rsUpperRange + "]"
-	rsZWJ       = "\\u200d"
+	apos      = "['\u2019]"
+	breakExp  = "[" + breakRange + "]"
+	combo     = "[" + comboRange + "]"
+	digit     = "\\d"
+	dingbat   = "[" + dingbatRange + "]"
+	lower     = "[" + lowerRange + "]"
+	misc      = "[^" + astralRange + breakRange + digit + dingbatRange + lowerRange + upperRange + "]"
+	fitz      = "\\ud83c[\\udffb-\\udfff]"
+	modifier  = "(?:" + combo + "|" + fitz + ")"
+	nonAstral = "[^" + astralRange + "]"
+	regional  = "(?:\\ud83c[\\udde6-\\uddff]){2}"
+	surrPair  = "[\\ud800-\\udbff][\\udc00-\\udfff]"
+	upper     = "[" + upperRange + "]"
+	zwj       = "\\u200d"
 
 	// Used to compose unicode regexes
-	rsMiscLower     = "(?:" + rsLower + "|" + rsMisc + ")"
-	rsMiscUpper     = "(?:" + rsUpper + "|" + rsMisc + ")"
-	rsOptContrLower = "(?:" + rsApos + "(?:d|ll|m|re|s|t|ve))?"
-	rsOptContrUpper = "(?:" + rsApos + "(?:D|LL|M|RE|S|T|VE))?"
-	reOptMod        = rsModifier + "?"
-	rsOptVar        = "[" + rsVarRange + "]?"
-	rsOptJoin       = "(?:" + rsZWJ + "(?:" + rsNonAstral + "|" + rsRegional + "|" + rsSurrPair + ")" + rsOptVar + reOptMod + ")*"
-	rsOrdLower      = "\\d*(?:1st|2nd|3rd|(?![123])\\dth)(?=\\b|[A-Z_])"
-	rsOrdUpper      = "\\d*(?:1ST|2ND|3RD|(?![123])\\dTH)(?=\\b|[a-z_])"
-	rsSeq           = rsOptVar + reOptMod + rsOptJoin
-	rsEmoji         = "(?:" + rsDingbat + "|" + rsRegional + "|" + rsSurrPair + ")" + rsSeq
+	miscLower     = "(?:" + lower + "|" + misc + ")"
+	miscUpper     = "(?:" + upper + "|" + misc + ")"
+	optContrLower = "(?:" + apos + "(?:d|ll|m|re|s|t|ve))?"
+	optContrUpper = "(?:" + apos + "(?:D|LL|M|RE|S|T|VE))?"
+	optMod        = modifier + "?"
+	optVar        = "[" + varRange + "]?"
+	optJoin       = "(?:" + zwj + "(?:" + nonAstral + "|" + regional + "|" + surrPair + ")" + optVar + optMod + ")*"
+	ordLower      = "\\d*(?:1st|2nd|3rd|(?![123])\\dth)(?=\\b|[A-Z_])"
+	ordUpper      = "\\d*(?:1ST|2ND|3RD|(?![123])\\dTH)(?=\\b|[a-z_])"
+	seq           = optVar + optMod + optJoin
+	emoji         = "(?:" + dingbat + "|" + regional + "|" + surrPair + ")" + seq
 )
 
 var (
 	reUnicodeWords = regexp2.MustCompile(
 		strings.Join(
 			[]string{
-				rsUpper + "?" + rsLower + "+" + rsOptContrLower + "(?=" + rsBreak + "|" + rsUpper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
-				rsMiscUpper + "+" + rsOptContrUpper + "(?=" + rsBreak + "|" + rsUpper + rsMiscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
-				rsUpper + "?" + rsMiscLower + "+" + rsOptContrLower,                                              // Miscellaneous lowercase sequences with optional contractions
-				rsUpper + "+" + rsOptContrUpper,                                                                  // All uppercase words with optional contractions (e.g., "THIS")
-				rsOrdUpper,                                                                                       // Ordinals for uppercase (e.g., "1ST", "2ND")
-				rsOrdLower,                                                                                       // Ordinals for lowercase (e.g., "1st", "2nd")
-				rsDigit + "+",                                                                                    // Pure digits (e.g., "123")
-				rsEmoji,                                                                                          // Emojis (e.g., 😀, ❤️)
+				upper + "?" + lower + "+" + optContrLower + "(?=" + breakExp + "|" + upper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
+				miscUpper + "+" + optContrUpper + "(?=" + breakExp + "|" + upper + miscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
+				upper + "?" + miscLower + "+" + optContrLower,                                             // Miscellaneous lowercase sequences with optional contractions
+				upper + "+" + optContrUpper, // All uppercase words with optional contractions (e.g., "THIS")
+				ordUpper,                    // Ordinals for uppercase (e.g., "1ST", "2ND")
+				ordLower,                    // Ordinals for lowercase (e.g., "1st", "2nd")
+				digit + "+",                 // Pure digits (e.g., "123")
+				emoji,                       // Emojis (e.g., 😀, ❤️)
 			},
 			"|",
 		),
@@ -76,18 +76,18 @@ var (
 	reUnicodeWordsWithNumbers = regexp2.MustCompile(
 		strings.Join(
 			[]string{
-				rsUpper + "?" + rsLower + "+" + rsDigit + "+", // Lowercase letters followed by digits (e.g., "abc123")
-				rsUpper + "+" + rsDigit + "+",                 // Uppercase letters followed by digits (e.g., "ABC123")
-				rsDigit + "+" + rsUpper + "?" + rsLower + "+", // Digits followed by lowercase letters (e.g., "123abc")
-				rsDigit + "+" + rsUpper + "+",                 // Digits followed by uppercase letters (e.g., "123ABC")
-				rsUpper + "?" + rsLower + "+" + rsOptContrLower + "(?=" + rsBreak + "|" + rsUpper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
-				rsMiscUpper + "+" + rsOptContrUpper + "(?=" + rsBreak + "|" + rsUpper + rsMiscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
-				rsUpper + "?" + rsMiscLower + "+" + rsOptContrLower,                                              // Miscellaneous lowercase sequences with optional contractions
-				rsUpper + "+" + rsOptContrUpper,                                                                  // All uppercase words with optional contractions (e.g., "THIS")
-				rsOrdUpper,                                                                                       // Ordinals for uppercase (e.g., "1ST", "2ND")
-				rsOrdLower,                                                                                       // Ordinals for lowercase (e.g., "1st", "2nd")
-				rsDigit + "+",                                                                                    // Pure digits (e.g., "123")
-				rsEmoji,                                                                                          // Emojis (e.g., 😀, ❤️)
+				upper + "?" + lower + "+" + digit + "+", // Lowercase letters followed by digits (e.g., "abc123")
+				upper + "+" + digit + "+",               // Uppercase letters followed by digits (e.g., "ABC123")
+				digit + "+" + upper + "?" + lower + "+", // Digits followed by lowercase letters (e.g., "123abc")
+				digit + "+" + upper + "+",               // Digits followed by uppercase letters (e.g., "123ABC")
+				upper + "?" + lower + "+" + optContrLower + "(?=" + breakExp + "|" + upper + "|" + "$)",   // Regular words, lowercase letters followed by optional contractions
+				miscUpper + "+" + optContrUpper + "(?=" + breakExp + "|" + upper + miscLower + "|" + "$)", // Miscellaneous uppercase characters with optional contractions
+				upper + "?" + miscLower + "+" + optContrLower,                                             // Miscellaneous lowercase sequences with optional contractions
+				upper + "+" + optContrUpper, // All uppercase words with optional contractions (e.g., "THIS")
+				ordUpper,                    // Ordinals for uppercase (e.g., "1ST", "2ND")
+				ordLower,                    // Ordinals for lowercase (e.g., "1st", "2nd")
+				digit + "+",                 // Pure digits (e.g., "123")
+				emoji,                       // Emojis (e.g., 😀, ❤️)
 			},
 			"|",
 		),

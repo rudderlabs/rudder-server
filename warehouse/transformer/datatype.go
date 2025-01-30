@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -35,6 +37,8 @@ func primitiveType(val any) string {
 }
 
 func getFloatType(v float64) string {
+	// JSON unmarshalling treats all numbers as float64 by default, even if they are whole numbers
+	// So, we need to check if the float is actually an integer
 	if v == float64(int64(v)) {
 		return model.IntDataType
 	}
@@ -55,14 +59,14 @@ func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 }
 
 func overrideForPostgres(key string, isJSONKey bool) string {
-	if key == violationErrors || isJSONKey {
+	if isJSONKey || key == violationErrors {
 		return model.JSONDataType
 	}
 	return model.StringDataType
 }
 
 func overrideForSnowflake(key string, isJSONKey bool) string {
-	if key == violationErrors || isJSONKey {
+	if isJSONKey || key == violationErrors {
 		return model.JSONDataType
 	}
 	return model.StringDataType
@@ -75,10 +79,15 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 	if val == nil {
 		return model.StringDataType
 	}
-	if jsonVal, _ := json.Marshal(val); len(jsonVal) > redshiftStringLimit {
-		return model.TextDataType
+	switch reflect.TypeOf(val).Kind() {
+	case reflect.Slice, reflect.Array:
+		if jsonVal, _ := json.Marshal(val); len(jsonVal) > redshiftStringLimit {
+			return model.TextDataType
+		}
+		return model.StringDataType
+	default:
+		return model.StringDataType
 	}
-	return model.StringDataType
 }
 
 func convertValIfDateTime(val any, colType string) any {

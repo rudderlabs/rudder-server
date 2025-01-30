@@ -30,9 +30,9 @@ func TestExtractJSONPathInfo(t *testing.T) {
 		},
 		{
 			name:      "Whitespace and empty path",
-			jsonPaths: []string{"   ", "track.properties.name", ""},
+			jsonPaths: []string{"   ", "track.properties.name", "", " track.properties.age "},
 			expected: jsonPathInfo{
-				keysMap:       map[string]int{"track_properties_name": 2},
+				keysMap:       map[string]int{"track_properties_name": 2, "track_properties_age": 2},
 				legacyKeysMap: make(map[string]int),
 			},
 		},

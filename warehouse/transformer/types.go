@@ -18,6 +18,10 @@ type (
 		logger       logger.Logger
 		statsFactory stats.Stats
 
+		stats struct {
+			comparisionTime  stats.Timer
+			mismatchedEvents stats.Counter
+		}
 		config struct {
 			enableIDResolution           config.ValueLoader[bool]
 			populateSrcDestInfoInContext config.ValueLoader[bool]
