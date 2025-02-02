@@ -20,7 +20,7 @@ type (
 
 		stats struct {
 			comparisionTime  stats.Timer
-			mismatchedEvents stats.Counter
+			mismatchedEvents stats.Histogram
 		}
 		config struct {
 			enableIDResolution           config.ValueLoader[bool]

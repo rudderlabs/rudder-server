@@ -47,10 +47,8 @@ func getFloatType(v float64) string {
 
 func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 	switch destType {
-	case whutils.POSTGRES:
-		return overrideForPostgres(key, isJSONKey)
-	case whutils.SNOWFLAKE, whutils.SnowpipeStreaming:
-		return overrideForSnowflake(key, isJSONKey)
+	case whutils.POSTGRES, whutils.SNOWFLAKE, whutils.SnowpipeStreaming:
+		return overrideForPostgresSnowflake(key, isJSONKey)
 	case whutils.RS:
 		return overrideForRedshift(val, isJSONKey)
 	default:
@@ -58,14 +56,7 @@ func dataTypeOverride(destType, key string, val any, isJSONKey bool) string {
 	}
 }
 
-func overrideForPostgres(key string, isJSONKey bool) string {
-	if isJSONKey || key == violationErrors {
-		return model.JSONDataType
-	}
-	return model.StringDataType
-}
-
-func overrideForSnowflake(key string, isJSONKey bool) string {
+func overrideForPostgresSnowflake(key string, isJSONKey bool) string {
 	if isJSONKey || key == violationErrors {
 		return model.JSONDataType
 	}
@@ -82,6 +73,11 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 	switch reflect.TypeOf(val).Kind() {
 	case reflect.Slice, reflect.Array:
 		if jsonVal, _ := json.Marshal(val); len(jsonVal) > redshiftStringLimit {
+			return model.TextDataType
+		}
+		return model.StringDataType
+	case reflect.String:
+		if len(val.(string)) > redshiftStringLimit {
 			return model.TextDataType
 		}
 		return model.StringDataType

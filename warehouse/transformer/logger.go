@@ -66,7 +66,7 @@ func (t *Transformer) differingEvents(
 		events := lo.Map(eventsToTransform, func(e ptrans.TransformerEvent, _ int) types.SingularEventT {
 			return eventsByMessageID[e.Metadata.MessageID].SingularEvent
 		})
-		t.stats.mismatchedEvents.Count(len(events))
+		t.stats.mismatchedEvents.Observe(float64(len(events)))
 		return events
 	}
 
@@ -87,7 +87,7 @@ func (t *Transformer) differingEvents(
 		}
 		differedEventsCount++
 	}
-	t.stats.mismatchedEvents.Count(differedEventsCount)
+	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
 	return differedSampleEvents
 }
 

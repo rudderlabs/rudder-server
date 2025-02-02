@@ -36,7 +36,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		loggedFileName: generateLogFileName(),
 	}
 
-	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.CountType)
+	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.HistogramType)
 	t.stats.comparisionTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
 
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
@@ -71,19 +71,17 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []ptrans.Transfo
 		t.statsFactory.NewTaggedStat("warehouse_dest_transform_output_failed_events", stats.HistogramType, tags).Observe(float64(len(res.FailedEvents)))
 	}()
 
-	for i := range clientEvents {
-		event := &clientEvents[i]
-
-		r, err := t.processWarehouseMessage(c, event)
+	for _, clientEvent := range clientEvents {
+		r, err := t.processWarehouseMessage(c, &clientEvent)
 		if err != nil {
-			res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(event, err))
+			res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(&clientEvent, err))
 			continue
 		}
 
 		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) ptrans.TransformerResponse {
 			return ptrans.TransformerResponse{
 				Output:     item,
-				Metadata:   event.Metadata,
+				Metadata:   clientEvent.Metadata,
 				StatusCode: http.StatusOK,
 			}
 		})...)

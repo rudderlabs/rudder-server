@@ -10,7 +10,7 @@ import (
 func extractIntrOpts(destType string, message map[string]any) intrOptions {
 	options := misc.MapLookup(message, "integrations", destType, "options")
 	if options == nil || !utils.IsObject(options) {
-		return intrOptions{}
+		return mergeDataWarehouseIntrOpts(destType, message, intrOptions{})
 	}
 
 	var opts intrOptions
@@ -24,6 +24,27 @@ func extractIntrOpts(destType string, message map[string]any) intrOptions {
 	setOption(srcMap, "useBlendoCasing", &opts.useBlendoCasing)
 	setOption(srcMap, "jsonPaths", &jsonPaths)
 
+	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
+		for _, jp := range jsonPaths {
+			if jpStr, ok := jp.(string); ok {
+				opts.jsonPaths = append(opts.jsonPaths, jpStr)
+			}
+		}
+	}
+	return mergeDataWarehouseIntrOpts(destType, message, opts)
+}
+
+func mergeDataWarehouseIntrOpts(destType string, message map[string]any, opts intrOptions) intrOptions {
+	options := misc.MapLookup(message, "integrations", "DATA_WAREHOUSE", "options")
+	if options == nil || !utils.IsObject(options) {
+		return opts
+	}
+
+	var jsonPaths []any
+
+	srcMap := options.(map[string]any)
+
+	setOption(srcMap, "jsonPaths", &jsonPaths)
 	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
 		for _, jp := range jsonPaths {
 			if jpStr, ok := jp.(string); ok {

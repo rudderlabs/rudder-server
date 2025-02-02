@@ -105,6 +105,39 @@ func TestIntegrationOptions(t *testing.T) {
 		require.False(t, opts.skipTracksTable)
 		require.Equal(t, []string{"path1"}, opts.jsonPaths)
 	})
+	t.Run("DataWarehouseOptions", func(t *testing.T) {
+		event := ptrans.TransformerEvent{
+			Message: map[string]any{
+				"integrations": map[string]any{
+					"POSTGRES": map[string]any{
+						"options": map[string]any{
+							"skipReservedKeywordsEscaping": true,
+							"useBlendoCasing":              false,
+							"skipTracksTable":              true,
+							"skipUsersTable":               false,
+							"jsonPaths":                    []any{"path1", "path2", "path3"},
+						},
+					},
+					"DATA_WAREHOUSE": map[string]any{
+						"options": map[string]any{
+							"jsonPaths": []any{"path4", "path5"},
+						},
+					},
+				},
+			},
+			Metadata: ptrans.Metadata{
+				DestinationType: "POSTGRES",
+			},
+		}
+
+		opts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
+
+		require.True(t, opts.skipReservedKeywordsEscaping)
+		require.False(t, opts.useBlendoCasing)
+		require.True(t, opts.skipTracksTable)
+		require.False(t, opts.skipUsersTable)
+		require.Equal(t, []string{"path1", "path2", "path3", "path4", "path5"}, opts.jsonPaths)
+	})
 }
 
 func TestDestinationOptions(t *testing.T) {

@@ -143,7 +143,16 @@ func ToString(value interface{}) string {
 // - A value is considered blank if its string representation is an empty string.
 // - The function first converts the value to its string representation using ToString and checks if its length is zero.
 func IsBlank(value interface{}) bool {
-	return len(ToString(value)) == 0
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return v == ""
+	case fmt.Stringer:
+		return v.String() == ""
+	}
+	return false
 }
 
 func IsJSONPathSupportedAsPartOfConfig(destType string) bool {
