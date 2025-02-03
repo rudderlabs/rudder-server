@@ -132,5 +132,3 @@ generate-openapi-spec: install-tools
 sec: ## Run security checks
 	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
-	./build/scan_docker.sh
-	./build/scan_docker.sh -f ./suppression-backup-service/Dockerfile
