@@ -1382,11 +1382,11 @@ func TestIntegration(t *testing.T) {
 		schema, err := d.FetchSchema(ctx)
 		require.NoError(t, err)
 		require.Contains(t, schema, tableName)
-		require.Equal(t, model.TableSchema(map[string]string{
+		require.Equal(t, model.TableSchema{
 			"col1": "int",
 			"col2": "string",
 			"col3": "int",
-		}), schema[tableName])
+		}, schema[tableName])
 	})
 }
 
