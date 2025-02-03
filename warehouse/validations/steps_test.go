@@ -10,11 +10,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestValidationSteps(t *testing.T) {
-	warehouseutils.Init()
+	whutils.Init()
 
 	testCases := []struct {
 		name  string
@@ -22,38 +22,38 @@ func TestValidationSteps(t *testing.T) {
 		steps []string
 	}{
 		{
-			name: "GCS",
+			name: whutils.GCSDatalake,
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.GCSDatalake,
+					Name: whutils.GCSDatalake,
 				},
 			},
 			steps: []string{model.VerifyingObjectStorage},
 		},
 		{
-			name: "Azure",
+			name: whutils.AzureDatalake,
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.AzureDatalake,
+					Name: whutils.AzureDatalake,
 				},
 			},
 			steps: []string{model.VerifyingObjectStorage},
 		},
 		{
-			name: "S3 without Glue",
+			name: whutils.S3Datalake + " without Glue",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.S3Datalake,
+					Name: whutils.S3Datalake,
 				},
 				Config: map[string]interface{}{},
 			},
 			steps: []string{model.VerifyingObjectStorage},
 		},
 		{
-			name: "S3 with Glue",
+			name: whutils.S3Datalake + " with Glue",
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.S3Datalake,
+					Name: whutils.S3Datalake,
 				},
 				Config: map[string]interface{}{
 					"region":  "us-east-1",
@@ -68,10 +68,10 @@ func TestValidationSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "RS",
+			name: whutils.RS,
 			dest: backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Name: warehouseutils.RS,
+					Name: whutils.RS,
 				},
 			},
 			steps: []string{
@@ -83,17 +83,27 @@ func TestValidationSteps(t *testing.T) {
 				model.VerifyingLoadTable,
 			},
 		},
+		{
+			name: whutils.SnowpipeStreaming,
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: whutils.SnowpipeStreaming,
+				},
+				Config: map[string]interface{}{},
+			},
+			steps: []string{
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			steps := validations.StepsToValidate(&tc.dest)
 			require.Len(t, steps.Steps, len(tc.steps))
-
 			for i, step := range steps.Steps {
 				require.Equal(t, step.ID, i+1)
 				require.Equal(t, step.Name, tc.steps[i])

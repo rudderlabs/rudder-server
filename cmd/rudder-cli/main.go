@@ -70,14 +70,13 @@ func main() {
 			Usage: "Test underlying warehouse",
 			Flags: []cli.Flag{
 				&cli.StringFlag{
-					Name:    "dest",
-					Usage:   `Specify destination ID to test underlying warehouse`,
-					Aliases: []string{"d"},
+					Name:    "revisionID",
+					Usage:   `Specify destination revision ID to test underlying warehouse`,
+					Aliases: []string{"revID"},
 				},
 			},
 			Action: func(c *cli.Context) error {
-				err := warehouse.ConfigurationTest(c)
-				return err
+				return warehouse.ConfigurationTest(c)
 			},
 		},
 		{

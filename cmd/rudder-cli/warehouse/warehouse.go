@@ -1,13 +1,22 @@
 package warehouse
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v2"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/cmd/rudder-cli/client"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type QueryResult struct {
@@ -19,15 +28,6 @@ type QueryInput struct {
 	DestID       string
 	SourceID     string
 	SQLStatement string
-}
-
-type ConfigurationTestInput struct {
-	DestID string
-}
-
-type ConfigurationTestOutput struct {
-	Valid bool
-	Error string
 }
 
 func Query(c *cli.Context) (err error) {
@@ -69,22 +69,36 @@ func Query(c *cli.Context) (err error) {
 	return
 }
 
-func ConfigurationTest(c *cli.Context) (err error) {
-	reply := ConfigurationTestOutput{}
+func ConfigurationTest(c *cli.Context) error {
+	misc.Init()
+	backendconfig.Init()
+	warehouseutils.Init()
+	validations.Init()
 
-	input := ConfigurationTestInput{
-		DestID: c.String("dest"),
+	revisionID := c.String("revisionID")
+
+	if strings.TrimSpace(revisionID) == "" {
+		return errors.New("please specify the revision ID")
 	}
 
-	err = client.GetUDSClient().Call("Warehouse.ConfigurationTest", input, &reply)
+	if err := backendconfig.Setup(nil); err != nil {
+		return fmt.Errorf("setting up backend config: %w", err)
+	}
+	cpClient := controlplane.NewClient(
+		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		backendconfig.DefaultBackendConfig.Identity(),
+	)
+	destination, err := cpClient.DestinationHistory(c.Context, revisionID)
 	if err != nil {
-		return
+		return fmt.Errorf("getting destination history failed: %v", err)
 	}
+	fmt.Println("Destination history fetched successfully")
 
-	if reply.Valid {
-		fmt.Printf("Successfully validated destID: %s \n", input.DestID)
+	res := validations.NewDestinationValidator().Validate(c.Context, &destination)
+	if res.Success {
+		fmt.Println(fmt.Printf("Successfully validated destination with revision ID: %s", revisionID))
 	} else {
-		fmt.Printf("Failed validation for destID: %s with err: %s \n", input.DestID, reply.Error)
+		fmt.Println(fmt.Printf("Failed to validate destination with revision ID: %s with error: %s", revisionID, res.Error))
 	}
-	return
+	return nil
 }
