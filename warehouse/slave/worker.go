@@ -319,7 +319,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 					}
 
 					columnVal = newColumnVal
-				case model.ArrayOfBooleanDatatype:
+				case model.ArrayOfBooleanDataType:
 					if boolValue, ok := columnVal.([]interface{}); ok {
 						newColumnVal := make([]interface{}, len(boolValue))
 
