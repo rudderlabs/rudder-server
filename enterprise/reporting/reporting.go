@@ -685,11 +685,9 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		if r.eventSamplingEnabled.Load() {
-			metric, err = transformMetricWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
-			if err != nil {
-				return err
-			}
+		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()))
+		if err != nil {
+			return err
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)
@@ -717,7 +715,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
 			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
 			metric.StatusDetail.StatusCode,
-			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
+			sampleResponse, string(sampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorType,
 		)
