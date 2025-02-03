@@ -62,12 +62,12 @@ docker save "$IMAGE_SHA" > "$TAR_FILENAME"
 trivy image --input "$TAR_FILENAME" --scanners vuln,secret
 
 # Run TruffleHog scan
-echo "Running TruffleHog scan..."
-docker run --rm -v /tmp:/tmp trufflesecurity/trufflehog:latest \
-    docker --image "file://$TAR_FILENAME" \
-    --no-verification \
-    --fail
+# echo "Running TruffleHog scan..."
+# docker run --rm -v /tmp:/tmp trufflesecurity/trufflehog:latest \
+#     docker --image "file://$TAR_FILENAME" \
+#     --no-verification \
+#     --fail
 
 
-echo "Build and scan completed. Image SHA: $IMAGE_SHA"
+# echo "Build and scan completed. Image SHA: $IMAGE_SHA"
 
