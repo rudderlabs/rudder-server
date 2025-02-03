@@ -36,14 +36,11 @@ func safeNamespace(conf *config.Config, destType, input string) string {
 	if !shouldSkipSnakeCasing(conf, destType) {
 		namespace = strcase.ToSnake(namespace)
 	}
-	if startsWithDigit(namespace) {
+	if startsWithDigit(namespace) || reservedkeywords.IsNamespace(destType, namespace) {
 		namespace = "_" + namespace
 	}
 	if namespace == "" {
 		namespace = "stringempty"
-	}
-	if reservedkeywords.IsNamespace(destType, namespace) {
-		namespace = "_" + namespace
 	}
 	return misc.TruncateStr(namespace, 127)
 }

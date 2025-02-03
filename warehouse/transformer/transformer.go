@@ -16,6 +16,7 @@ import (
 
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -182,10 +183,10 @@ func (t *Transformer) getColumns(
 	// uuid_ts and loaded_at datatypes are passed from here to create appropriate columns.
 	// Corresponding values are inserted when loading into the warehouse
 	uuidTS := whutils.ToProviderCase(destType, "uuid_ts")
-	columns[uuidTS] = "datetime"
+	columns[uuidTS] = model.DateTimeDataType
 
 	if destType == whutils.BQ {
-		columns["loaded_at"] = "datetime"
+		columns["loaded_at"] = model.DateTimeDataType
 	}
 
 	for key, value := range data {

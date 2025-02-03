@@ -719,7 +719,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	for i := 0; i < maxLoggedEvents; i++ {
 		require.Contains(t, differingEvents[i], "track"+strconv.Itoa(i))
 	}
-	require.EqualValues(t, maxLoggedEvents*50, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).LastValue())
+	require.EqualValues(t, []float64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
 }
 
 func TestTransformer_GetColumns(t *testing.T) {

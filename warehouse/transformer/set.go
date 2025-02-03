@@ -28,7 +28,7 @@ func setDataAndMetadataFromInput(
 		return handleStringLikeObject(tec, inputMap, data, metadata, pi)
 	}
 	for key, val := range inputMap {
-		if val == nil || utils.IsBlank(val) {
+		if utils.IsBlank(val) {
 			continue
 		}
 		if isValidJSONPath(tec, key, pi) {
@@ -58,12 +58,12 @@ func handleStringLikeObject(
 	data map[string]any, metadata map[string]string,
 	pi *prefixInfo,
 ) error {
-	if pi.prefix == "context_traits_" {
-		err := addDataAndMetadata(tec, pi.prefix, stringlikeobject.ToString(inputMap), false, data, metadata)
-		if err != nil {
-			return fmt.Errorf("adding column type and value: %w", err)
-		}
+	if pi.prefix != "context_traits_" {
 		return nil
+	}
+	err := addDataAndMetadata(tec, pi.prefix, stringlikeobject.ToString(inputMap), false, data, metadata)
+	if err != nil {
+		return fmt.Errorf("adding column type and value: %w", err)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func setDataAndMetadataFromRules(
 		if err != nil {
 			return fmt.Errorf("applying functional rule: %w", err)
 		}
-		if colVal == nil || utils.IsBlank(colVal) || utils.IsObject(colVal) {
+		if utils.IsBlank(colVal) || utils.IsObject(colVal) {
 			continue
 		}
 

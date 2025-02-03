@@ -1,6 +1,8 @@
 package stringlikeobject
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -130,6 +132,17 @@ func TestStringLikeObjectToString(t *testing.T) {
 				"2": "y",
 			},
 			expected: "xy",
+		},
+		{
+			name: "valid string-like object with big keys",
+			input: func() map[string]any {
+				m := make(map[string]any, 1040)
+				for i := 0; i < 1040; i++ {
+					m[strconv.Itoa(i)] = string('a' + rune(i%26))
+				}
+				return m
+			}(),
+			expected: strings.Repeat("abcdefghijklmnopqrstuvwxyz", 40),
 		},
 	}
 

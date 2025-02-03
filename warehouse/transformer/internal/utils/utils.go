@@ -133,10 +133,14 @@ func ToString(value interface{}) string {
 	if value == nil {
 		return ""
 	}
-	if str, ok := value.(fmt.Stringer); ok {
-		return str.String()
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		return fmt.Sprintf("%v", value)
 	}
-	return fmt.Sprintf("%v", value)
 }
 
 // IsBlank checks if the given value is considered "blank."
@@ -151,8 +155,9 @@ func IsBlank(value interface{}) bool {
 		return v == ""
 	case fmt.Stringer:
 		return v.String() == ""
+	default:
+		return false
 	}
-	return false
 }
 
 func IsJSONPathSupportedAsPartOfConfig(destType string) bool {

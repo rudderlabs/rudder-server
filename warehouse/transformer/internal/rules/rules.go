@@ -132,7 +132,7 @@ func createReservedColumns(rules ...map[string]Rules) map[string]struct{} {
 func firstValidValue(message map[string]any, props []string) any {
 	for _, prop := range props {
 		propKeys := strings.Split(prop, ".")
-		if val := misc.MapLookup(message, propKeys...); val != nil && !utils.IsBlank(val) {
+		if val := misc.MapLookup(message, propKeys...); !utils.IsBlank(val) {
 			return val
 		}
 	}
@@ -140,7 +140,7 @@ func firstValidValue(message map[string]any, props []string) any {
 }
 
 func extractRecordID(metadata *ptrans.Metadata) (any, error) {
-	if metadata.RecordID == nil || utils.IsBlank(metadata.RecordID) {
+	if utils.IsBlank(metadata.RecordID) {
 		return nil, response.ErrRecordIDEmpty
 	}
 	if utils.IsObject(metadata.RecordID) {
@@ -150,7 +150,7 @@ func extractRecordID(metadata *ptrans.Metadata) (any, error) {
 }
 
 func extractCloudRecordID(message types.SingularEventT, metadata *ptrans.Metadata, fallbackValue any) (any, error) {
-	if sv := misc.MapLookup(message, "context", "sources", "version"); sv != nil && !utils.IsBlank(sv) {
+	if sv := misc.MapLookup(message, "context", "sources", "version"); !utils.IsBlank(sv) {
 		return extractRecordID(metadata)
 	}
 	return fallbackValue, nil

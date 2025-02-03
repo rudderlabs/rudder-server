@@ -15,7 +15,7 @@ import (
 )
 
 func (t *Transformer) trackEvents(tec *transformEventContext) ([]map[string]any, error) {
-	commonData, commonMetadata, transformerEventName, err := t.trackCommonProps(tec)
+	commonData, commonMetadata, transformedEventName, err := t.trackCommonProps(tec)
 	if err != nil {
 		return nil, fmt.Errorf("track common properties: %w", err)
 	}
@@ -25,7 +25,7 @@ func (t *Transformer) trackEvents(tec *transformEventContext) ([]map[string]any,
 		return nil, fmt.Errorf("track response: %w", err)
 	}
 
-	trackEventsResponse, err := t.trackEventsResponse(tec, transformerEventName, commonData, commonMetadata)
+	trackEventsResponse, err := t.trackEventsResponse(tec, transformedEventName, commonData, commonMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("track events response: %w", err)
 	}
@@ -59,15 +59,15 @@ func (t *Transformer) trackCommonProps(tec *transformEventContext) (map[string]a
 		return nil, nil, "", fmt.Errorf("track common props: safe column name: %w", err)
 	}
 
-	var eventName, transformerEventName string
+	var eventName, transformedEventName string
 	if d, dok := commonData[eventTextColName]; dok {
 		eventName, _ = d.(string)
 	}
-	transformerEventName = transformTableNameCached(tec, eventName)
+	transformedEventName = transformTableNameCached(tec, eventName)
 
-	commonData[eventColName] = transformerEventName
-	commonMetadata[eventColName] = "string"
-	return commonData, commonMetadata, transformerEventName, nil
+	commonData[eventColName] = transformedEventName
+	commonMetadata[eventColName] = model.StringDataType
+	return commonData, commonMetadata, transformedEventName, nil
 }
 
 func (t *Transformer) tracksResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
@@ -187,19 +187,19 @@ func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]an
 	}
 
 	eventName, _ := tec.event.Message[eventColName].(string)
+	transformedEventName := transformTableNameCached(tec, eventName)
+	if utils.IsBlank(transformedEventName) {
+		return nil, response.ErrExtractEventNameEmpty
+	}
 
-	data[eventColName] = transformTableNameCached(tec, eventName)
+	data[eventColName] = transformedEventName
 	metadata[eventColName] = model.StringDataType
 
 	if err = setDataAndMetadataFromRules(tec, data, metadata, rules.ExtractRules); err != nil {
 		return nil, fmt.Errorf("extract: setting data and column types from rules: %w", err)
 	}
 
-	if val := data[eventColName]; val == nil || utils.IsBlank(val) {
-		return nil, response.ErrExtractEventNameEmpty
-	}
-
-	columnName := transformColumnNameCached(tec, data[eventColName].(string))
+	columnName := transformColumnNameCached(tec, transformedEventName)
 	tableName, err := safeTableNameCached(tec, columnName)
 	if err != nil {
 		return nil, fmt.Errorf("extract: safe table name: %w", err)
@@ -304,10 +304,8 @@ func (t *Transformer) identifyCommonProps(tec *transformEventContext) (map[strin
 }
 
 func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
-	data := make(map[string]any)
+	data := lo.Assign(commonData)
 	metadata := make(map[string]string)
-
-	data = lo.Assign(data, commonData)
 
 	if err := setDataAndMetadataFromRules(tec, data, metadata, rules.DefaultRules); err != nil {
 		return nil, fmt.Errorf("identifies response: setting data and column types from rules: %w", err)
@@ -339,17 +337,15 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 
 func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
 	userID := misc.MapLookup(tec.event.Message, "userId")
-	if userID == nil || utils.IsBlank(userID) {
+	if utils.IsBlank(userID) {
 		return nil, nil
 	}
-	if tec.intrOpts.skipUsersTable || tec.destOpts.skipUsersTable || tec.event.Metadata.DestinationType == whutils.SnowpipeStreaming {
+	if shouldSkipUsersTable(tec) {
 		return nil, nil
 	}
 
-	data := make(map[string]any)
+	data := lo.Assign(commonData)
 	metadata := make(map[string]string)
-
-	data = lo.Assign(data, commonData)
 
 	var rulesMap map[string]rules.Rules
 	if utils.IsDataLake(tec.event.Metadata.DestinationType) {
@@ -376,8 +372,8 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 		return nil, fmt.Errorf("users response: safe column name: %w", err)
 	}
 
-	data[receivedAtColName] = convertValIfDateTime(tec.event.Metadata.ReceivedAt, "datetime")
-	metadata[receivedAtColName] = "datetime"
+	data[receivedAtColName] = convertValIfDateTime(tec.event.Metadata.ReceivedAt, model.DateTimeDataType)
+	metadata[receivedAtColName] = model.DateTimeDataType
 
 	tableName, err := safeTableNameCached(tec, "users")
 	if err != nil {
@@ -398,6 +394,10 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 		"userId": "",
 	}
 	return []map[string]any{usersOutput}, nil
+}
+
+func shouldSkipUsersTable(tec *transformEventContext) bool {
+	return tec.event.Metadata.DestinationType == whutils.SnowpipeStreaming || tec.destOpts.skipUsersTable || tec.intrOpts.skipUsersTable
 }
 
 func (t *Transformer) pageEvents(tec *transformEventContext) ([]map[string]any, error) {
