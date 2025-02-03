@@ -526,6 +526,18 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 
 // AddColumns adds columns to the table.
 func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	tableSchema, err := d.fetchTableAttributes(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("fetch table attributes: %w", err)
+	}
+	var updatedColumnsInfo []warehouseutils.ColumnInfo
+	for _, columnInfo := range columnsInfo {
+		_, ok := tableSchema[columnInfo.Name]
+		if !ok {
+			updatedColumnsInfo = append(updatedColumnsInfo, columnInfo)
+		}
+	}
+
 	var queryBuilder strings.Builder
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -536,17 +548,17 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		tableName,
 	))
 
-	for _, columnInfo := range columnsInfo {
+	for _, columnInfo := range updatedColumnsInfo {
 		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
 	query := strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	_, err := d.DB.ExecContext(ctx, query)
+	_, err = d.DB.ExecContext(ctx, query)
 
 	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
+	if len(updatedColumnsInfo) == 1 {
 		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
 			d.logger.Infow("column already exists",
 				logfield.SourceID, d.Warehouse.Source.ID,
@@ -556,7 +568,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
 				logfield.Namespace, d.Namespace,
 				logfield.TableName, tableName,
-				logfield.ColumnName, columnsInfo[0].Name,
+				logfield.ColumnName, updatedColumnsInfo[0].Name,
 				logfield.Error, err.Error(),
 			)
 			return nil
