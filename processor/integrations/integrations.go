@@ -8,6 +8,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -42,11 +43,20 @@ type PostParametersT struct {
 	Files       map[string]interface{} `json:"files"`
 }
 
+var integrationsLogger = logger.NewLogger().With("component", "integrations")
+
 type TransStatsT struct {
 	StatTags map[string]string `json:"statTags"`
 }
 
+func logError(msg string, response string) {
+	if strings.Contains(response, "unhandledStatusCode") {
+		integrationsLogger.Error(msg, logger.NewStringField("response", response))
+	}
+}
+
 func CollectDestErrorStats(input []byte) {
+	logError("Error in delivery", string(input))
 	var integrationStat TransStatsT
 	err := json.Unmarshal(input, &integrationStat)
 	if err == nil {
@@ -57,6 +67,7 @@ func CollectDestErrorStats(input []byte) {
 }
 
 func CollectIntgTransformErrorStats(input []byte) {
+	logError("Error in transformation", string(input))
 	var integrationStats []TransStatsT
 	err := json.Unmarshal(input, &integrationStats)
 	if err == nil {
