@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"golang.org/x/sync/errgroup"
 
@@ -57,6 +58,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
+	wtrans "github.com/rudderlabs/rudder-server/warehouse/transformer"
 )
 
 const (
@@ -84,12 +86,18 @@ type trackedUsersReporter interface {
 	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
 }
 
+type warehouseTransformer interface {
+	transformer.DestinationTransformer
+	CompareAndLog(events []transformer.TransformerEvent, pResponse, wResponse transformer.Response, metadata *transformer.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt)
+}
+
 // Handle is a handle to the processor module
 type Handle struct {
-	conf          *config.Config
-	tracer        stats.Tracer
-	backendConfig backendconfig.BackendConfig
-	transformer   transformer.Transformer
+	conf                 *config.Config
+	tracer               stats.Tracer
+	backendConfig        backendconfig.BackendConfig
+	transformer          transformer.Transformer
+	warehouseTransformer warehouseTransformer
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -158,6 +166,7 @@ type Handle struct {
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]transformer.Credential
 		nonEventStreamSources           map[string]bool
+		enableWarehouseTransformations  config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -617,6 +626,9 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+
+	proc.warehouseTransformer = wtrans.New(proc.conf, proc.logger, proc.statsFactory)
+
 	if proc.config.enableDedup {
 		var err error
 		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
@@ -817,6 +829,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
+	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 }
 
 type connection struct {
@@ -2902,6 +2915,7 @@ func (proc *Handle) transformSrcDest(
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
 			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			proc.handleWarehouseTransformations(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3058,6 +3072,27 @@ func (proc *Handle) transformSrcDest(
 		routerDestIDs:   routerDestIDs,
 		droppedJobs:     droppedJobs,
 	}
+}
+
+func (proc *Handle) handleWarehouseTransformations(
+	ctx context.Context,
+	eventsToTransform []transformer.TransformerEvent,
+	pResponse transformer.Response,
+	commonMetaData *transformer.Metadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+) {
+	if len(eventsToTransform) == 0 {
+		return
+	}
+	if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
+		return
+	}
+	if !proc.config.enableWarehouseTransformations.Load() {
+		return
+	}
+
+	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse, commonMetaData, eventsByMessageID)
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {

@@ -17,7 +17,7 @@ const (
 	JSONDataType           SchemaType = "json"
 	TextDataType           SchemaType = "text"
 	DateTimeDataType       SchemaType = "datetime"
-	ArrayOfBooleanDatatype SchemaType = "array(boolean)"
+	ArrayOfBooleanDataType SchemaType = "array(boolean)"
 )
 
 type WHSchema struct {
