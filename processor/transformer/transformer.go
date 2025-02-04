@@ -27,6 +27,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -509,7 +510,11 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 				resp, reqErr = trans.httpClient.Do(req)
 			})
-			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
+			duration := time.Since(requestStartTime)
+			if duration >= time.Second {
+				trans.logger.Errorw("duration > 1s", time.Now().Format(misc.RFC3339Milli), duration)
+			}
+			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(duration)
 			if reqErr != nil {
 				return reqErr
 			}
@@ -520,7 +525,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				newTags := lo.Assign(tags)
 				newTags["instanceWorker"] = instanceWorker
 				trans.stat.NewTaggedStat("processor_transformer_instance_event_count", stats.CountType, newTags).Count(numEvents)
-				dur := time.Since(requestStartTime).Milliseconds()
+				dur := duration.Milliseconds()
 				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
 				if err == nil {
 					diff := float64(dur) - headerTime
