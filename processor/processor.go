@@ -1658,7 +1658,7 @@ type preTransformationMessage struct {
 	dedupKeys                    map[string]struct{}
 }
 
-func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *preTransformationMessage {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -1734,7 +1734,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *preTra
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
 		if err := jsonfast.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
-			panic(err)
+			return nil, err
 		}
 
 		var span stats.TraceSpan
@@ -1837,7 +1837,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *preTra
 	if proc.config.enableDedup {
 		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 	}
 	for _, event := range jobsWithMetaData {
@@ -1980,7 +1980,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *preTra
 	}
 
 	if len(statusList) != len(jobList) {
-		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
 	return &preTransformationMessage{
@@ -2008,7 +2008,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) *preTra
 		start:                        start,
 		sourceDupStats:               sourceDupStats,
 		dedupKeys:                    dedupKeys,
-	}
+	}, nil
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
@@ -2061,7 +2061,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 	})
 
 	if err := g.Wait(); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// REPORTING - GATEWAY metrics - START
@@ -3282,15 +3282,18 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 
 	var transMessage *transformationMessage
 	var err error
-	transMessage, err = proc.generateTransformationMessage(proc.processJobsForDest(
+	preTransMessage, err := proc.processJobsForDest(
 		partition,
 		subJob{
 			subJobs:       unprocessedList.Jobs,
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
 		},
-	),
 	)
+	if err != nil {
+		panic(err)
+	}
+	transMessage, err = proc.generateTransformationMessage(preTransMessage)
 	if err != nil {
 		panic(err)
 	}
