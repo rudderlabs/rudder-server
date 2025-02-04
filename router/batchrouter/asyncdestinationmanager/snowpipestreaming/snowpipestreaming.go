@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -57,6 +58,7 @@ func New(
 		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
+		validator:           validations.NewDestinationValidator(),
 	}
 
 	m.config.client.url = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
@@ -176,6 +178,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		switch {
 		case errors.Is(err, errAuthz):
 			m.setBackOff(err)
+			response := m.validator.Validate(ctx, asyncDest.Destination)
+			if !response.Success {
+				err = fmt.Errorf("failed to validate snowpipe credentials: %s", response.Error)
+			}
 			return m.failedJobs(asyncDest, err.Error())
 		case errors.Is(err, errBackoff):
 			return m.failedJobs(asyncDest, err.Error())
@@ -216,6 +222,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	)
 	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
 	isBackoffSet := false      // should not be set again if already set
+	var failedReason error
 	for _, info := range uploadInfos {
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
@@ -225,6 +232,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				if !isBackoffSet {
 					isBackoffSet = true
 					m.setBackOff(err)
+					response := m.validator.Validate(ctx, asyncDest.Destination)
+					if !response.Success {
+						failedReason = fmt.Errorf("failed to validate snowpipe credentials: %s", response.Error)
+					}
 				}
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
@@ -271,7 +282,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	m.stats.jobs.importing.Count(len(importingJobIDs))
 	m.stats.jobs.failed.Count(len(failedJobIDs))
 
-	return common.AsyncUploadOutput{
+	asyncUploadOutput := common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
 		ImportingCount:      len(importingJobIDs),
 		ImportingParameters: importParameters,
@@ -280,6 +291,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		FailedCount:         len(failedJobIDs),
 		DestinationID:       asyncDest.Destination.ID,
 	}
+	if failedReason != nil {
+		asyncUploadOutput.FailedReason = failedReason.Error()
+	}
+	return asyncUploadOutput
 }
 
 func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, error) {

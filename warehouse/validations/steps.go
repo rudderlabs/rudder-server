@@ -19,11 +19,12 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 		destType = dest.DestinationDefinition.Name
 		steps    []*model.Step
 	)
-
-	steps = []*model.Step{{
-		ID:   len(steps) + 1,
-		Name: model.VerifyingObjectStorage,
-	}}
+	if destType != warehouseutils.SnowpipeStreaming {
+		steps = []*model.Step{{
+			ID:   len(steps) + 1,
+			Name: model.VerifyingObjectStorage,
+		}}
+	}
 
 	switch destType {
 	case warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
@@ -65,11 +66,13 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 				ID:   len(steps) + 4,
 				Name: model.VerifyingFetchSchema,
 			},
-			&model.Step{
-				ID:   len(steps) + 5,
-				Name: model.VerifyingLoadTable,
-			},
 		)
+		if destType != warehouseutils.SnowpipeStreaming {
+			steps = append(steps, &model.Step{
+				ID:   len(steps) + 1,
+				Name: model.VerifyingLoadTable,
+			})
+		}
 	}
 	return &model.StepsResponse{
 		Steps: steps,

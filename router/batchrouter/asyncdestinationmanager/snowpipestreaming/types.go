@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type (
@@ -31,6 +32,7 @@ type (
 		api                 api
 		channelCache        sync.Map
 		polledImportInfoMap map[string]*importInfo
+		validator           validations.DestinationValidator
 
 		config struct {
 			client struct {
