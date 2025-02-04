@@ -45,32 +45,35 @@ func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	return bucketStart, bucketEnd
 }
 
-func transformMetricWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingDuration int64) (types.PUReportedMetric, error) {
-	if eventSampler == nil {
-		return metric, nil
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+	sampleEvent = metric.StatusDetail.SampleEvent
+	sampleResponse = metric.StatusDetail.SampleResponse
+
+	if !eventSamplingEnabled || eventSampler == nil {
+		return sampleEvent, sampleResponse, nil
 	}
 
-	isValidSample := (metric.StatusDetail.SampleEvent != nil && string(metric.StatusDetail.SampleEvent) != "{}") || metric.StatusDetail.SampleResponse != ""
+	isValidSample := (sampleEvent != nil && string(sampleEvent) != "{}") || sampleResponse != ""
 
 	if isValidSample {
 		sampleEventBucket, _ := getAggregationBucketMinute(reportedAt, eventSamplingDuration)
 		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
-		found, err := eventSampler.Get(hash)
+
+		var found bool
+		found, err = eventSampler.Get(hash)
 		if err != nil {
-			return metric, err
+			return sampleEvent, sampleResponse, err
 		}
 
 		if found {
-			metric.StatusDetail.SampleEvent = json.RawMessage(`{}`)
-			metric.StatusDetail.SampleResponse = ""
+			sampleEvent = json.RawMessage(`{}`)
+			sampleResponse = ""
 		} else {
-			err := eventSampler.Put(hash)
-			if err != nil {
-				return metric, err
-			}
+			err = eventSampler.Put(hash)
 		}
 	}
-	return metric, nil
+
+	return sampleEvent, sampleResponse, err
 }
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
