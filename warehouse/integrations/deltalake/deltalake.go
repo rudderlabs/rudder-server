@@ -531,7 +531,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 	if err != nil {
 		return fmt.Errorf("fetch table attributes: %w", err)
 	}
-	columnsInfo = lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
+	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
 		_, ok := tableSchema[columnInfo.Name]
 		return !ok
 	})
@@ -546,7 +546,7 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		tableName,
 	))
 
-	for _, columnInfo := range columnsInfo {
+	for _, columnInfo := range columnsToAddInfo {
 		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
