@@ -171,7 +171,7 @@ jobs:
           - os: ubuntu-latest
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
-            platforms: linux/amd64
+            platform: linux/amd64
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
