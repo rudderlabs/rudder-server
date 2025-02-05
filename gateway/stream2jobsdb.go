@@ -1,10 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
+	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -22,41 +25,44 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// TODO remove duplicated code from GW?
-
-type BackendConfigReader interface {
-	GetWriteKeyFromSourceID(sourceID string) (string, bool)
-	GetSourceConfigFromSourceID(sourceID string) backendconfig.SourceT
+func NewStream2JobsDBTransformer(
+	backendConfig backendconfig.BackendConfig,
+	stats stats.Stats,
+	logger logger.Logger,
+) *Stream2JobsDBTransformer {
+	return &Stream2JobsDBTransformer{
+		BackendConfig:                backendConfig,
+		StreamMsgValidator:           stream.NewMessageValidator(),
+		EnableSuppressUserFeature:    false,
+		SuppressUserHandler:          nil,
+		Stats:                        stats,
+		Logger:                       logger,
+		configSubscriberLock:         sync.RWMutex{},
+		writeKeysSourceMap:           make(map[string]backendconfig.SourceT),
+		sourceIDSourceMap:            make(map[string]backendconfig.SourceT),
+		backendConfigInitialised:     false,
+		backendConfigInitialisedChan: make(chan struct{}),
+	}
 }
 
 type Stream2JobsDBTransformer struct {
+	BackendConfig             backendconfig.BackendConfig
 	StreamMsgValidator        func(message *stream.Message) error
-	BackendConfigReader       BackendConfigReader
 	EnableSuppressUserFeature bool
 	SuppressUserHandler       types.UserSuppression
-	RequestSizeStat           stats.Histogram
 	Stats                     stats.Stats
 	Logger                    logger.Logger
+
+	// backendconfig state
+	configSubscriberLock         sync.RWMutex
+	writeKeysSourceMap           map[string]backendconfig.SourceT
+	sourceIDSourceMap            map[string]backendconfig.SourceT
+	backendConfigInitialised     bool
+	backendConfigInitialisedChan chan struct{}
 }
 
-func (gw *Stream2JobsDBTransformer) Transform(reqType string, body []byte) ([]*jobsdb.JobT, error) {
-	var (
-		messages         []stream.Message
-		isUserSuppressed = gw.memoizedIsUserSuppressed()
-		res              []jobWithStat
-		stat             = gwstats.SourceStat{ReqType: reqType}
-	)
-
-	err := jsonfast.Unmarshal(body, &messages)
-	if err != nil {
-		stat.RequestFailed(response.InvalidJSON)
-		stat.Report(gw.Stats)
-		gw.Logger.Errorn("invalid json in request",
-			obskit.Error(err))
-		return nil, errors.New(response.InvalidJSON)
-	}
-	gw.RequestSizeStat.Observe(float64(len(body)))
-
+func (gw *Stream2JobsDBTransformer) Transform(reqType string, messages []pulsar.ProducerMessage) ([]*jobsdb.JobT, error) {
+	stat := gwstats.SourceStat{ReqType: reqType}
 	if len(messages) == 0 {
 		stat.RequestFailed(response.NotRudderEvent)
 		stat.Report(gw.Stats)
@@ -64,9 +70,28 @@ func (gw *Stream2JobsDBTransformer) Transform(reqType string, body []byte) ([]*j
 		return nil, errors.New(response.NotRudderEvent)
 	}
 
-	res = make([]jobWithStat, 0, len(messages))
-
+	var (
+		res              []jobWithStat
+		isUserSuppressed = gw.memoizedIsUserSuppressed()
+		streamMessages   = make([]stream.Message, 0, len(messages))
+	)
 	for _, msg := range messages {
+		properties, err := stream.FromMapProperties(msg.Properties)
+		if err != nil {
+			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
+			stat.Report(gw.Stats)
+			gw.Logger.Errorn("invalid properties in message", logger.NewStringField("key", msg.Key), obskit.Error(err))
+			return nil, errors.New(response.InvalidStreamMessage)
+		}
+		streamMessages = append(streamMessages, stream.Message{
+			Payload:    msg.Payload,
+			Properties: properties,
+		})
+	}
+
+	res = make([]jobWithStat, 0, len(streamMessages))
+
+	for _, msg := range streamMessages {
 		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.StreamMsgValidator(&msg)
 		if err != nil {
@@ -126,7 +151,7 @@ func (gw *Stream2JobsDBTransformer) Transform(reqType string, body []byte) ([]*j
 				loggerFields...)
 			return nil, errors.New(response.NotRudderEvent)
 		}
-		writeKey, ok := gw.BackendConfigReader.GetWriteKeyFromSourceID(msg.Properties.SourceID)
+		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
 			gw.Logger.Errorn("unable to get writeKey for job",
@@ -137,7 +162,7 @@ func (gw *Stream2JobsDBTransformer) Transform(reqType string, body []byte) ([]*j
 		stat.WorkspaceID = msg.Properties.WorkspaceID
 		stat.WriteKey = writeKey
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
-			sourceConfig := gw.BackendConfigReader.GetSourceConfigFromSourceID(msg.Properties.SourceID)
+			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.Logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
@@ -283,6 +308,58 @@ func (gw *Stream2JobsDBTransformer) newSourceStatTagsWithReason(s *backendconfig
 		tags["reason"] = reason
 	}
 	return tags
+}
+
+func (gw *Stream2JobsDBTransformer) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s
+	}
+	return backendconfig.SourceT{}
+}
+
+func (gw *Stream2JobsDBTransformer) getWriteKeyFromSourceID(sourceID string) (string, bool) {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s.WriteKey, true
+	}
+	return "", false
+}
+
+// backendConfigSubscriber gets the config from config backend and extracts source information from it.
+func (gw *Stream2JobsDBTransformer) backendConfigSubscriber(ctx context.Context) {
+	closeConfigChan := func(sources int) {
+		if !gw.backendConfigInitialised {
+			gw.Logger.Infow("BackendConfig initialised", "sources", sources)
+			gw.backendConfigInitialised = true
+			close(gw.backendConfigInitialisedChan)
+		}
+	}
+	defer closeConfigChan(0)
+	ch := gw.BackendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
+	for data := range ch {
+		var (
+			writeKeysSourceMap = map[string]backendconfig.SourceT{}
+			sourceIDSourceMap  = map[string]backendconfig.SourceT{}
+		)
+		configData := data.Data.(map[string]backendconfig.ConfigT)
+		for _, wsConfig := range configData {
+			for _, source := range wsConfig.Sources {
+				writeKeysSourceMap[source.WriteKey] = source
+				sourceIDSourceMap[source.ID] = source
+				if source.Enabled && source.SourceDefinition.Category == "webhook" {
+					// gw.webhook.Register(source.SourceDefinition.Name) // TODO
+				}
+			}
+		}
+		gw.configSubscriberLock.Lock()
+		gw.writeKeysSourceMap = writeKeysSourceMap
+		gw.sourceIDSourceMap = sourceIDSourceMap
+		gw.configSubscriberLock.Unlock()
+		closeConfigChan(len(gw.writeKeysSourceMap))
+	}
 }
 
 type params struct {
