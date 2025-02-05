@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
@@ -35,8 +37,7 @@ const (
 )
 
 const (
-	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
-	columnsAlreadyExists = "already exists in root"
+	schemaNotFound = "[SCHEMA_NOT_FOUND]"
 )
 
 const (
@@ -526,6 +527,15 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 
 // AddColumns adds columns to the table.
 func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	tableSchema, err := d.fetchTableAttributes(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("fetch table attributes: %w", err)
+	}
+	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
+		_, ok := tableSchema[columnInfo.Name]
+		return !ok
+	})
+
 	var queryBuilder strings.Builder
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -536,33 +546,14 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		tableName,
 	))
 
-	for _, columnInfo := range columnsInfo {
+	for _, columnInfo := range columnsToAddInfo {
 		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
 	query := strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	_, err := d.DB.ExecContext(ctx, query)
-
-	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
-		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
-			d.logger.Infow("column already exists",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.TableName, tableName,
-				logfield.ColumnName, columnsInfo[0].Name,
-				logfield.Error, err.Error(),
-			)
-			return nil
-		}
-	}
-
+	_, err = d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("adding columns: %w", err)
 	}
