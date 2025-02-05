@@ -233,7 +233,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 					isBackoffSet = true
 					m.setBackOff(err)
 					response := m.validator.Validate(ctx, asyncDest.Destination)
-					if !response.Success {
+					if !response.Success && failedReason == nil {
 						failedReason = fmt.Errorf("failed to validate snowpipe credentials: %s", response.Error)
 					}
 				}
@@ -244,9 +244,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
 			)
-			if failedReason == "" {
-				failedReason = err.Error()
+			if failedReason == nil {
+				failedReason = err
 			}
+
 			failedJobIDs = append(failedJobIDs, info.jobIDs...)
 			continue
 		}

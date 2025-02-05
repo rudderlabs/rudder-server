@@ -89,6 +89,7 @@ func TestValidationSteps(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.SnowpipeStreaming,
 				},
+				Config: make(map[string]interface{}),
 			},
 			steps: []string{
 				model.VerifyingConnections,

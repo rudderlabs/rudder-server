@@ -437,7 +437,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			{
 				name:                 "should not return any error",
 				validationError:      nil,
-				expectedFailedReason: "",
+				expectedFailedReason: "failed to create schema",
 			},
 		}
 		for _, tc := range testCases {
@@ -465,11 +465,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				output := sm.Upload(asyncDestStruct)
 				require.Equal(t, 2, output.FailedCount)
 				require.Equal(t, 0, output.AbortCount)
-				if tc.expectedFailedReason != "" {
-					require.Contains(t, output.FailedReason, tc.expectedFailedReason)
-				} else {
-					require.Empty(t, output.FailedReason)
-				}
+				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
 			})
 		}
 	})
