@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.1](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.42.1) (2025-02-05)
+
+
+### Bug Fixes
+
+* deltalake syncs failing for columns with unhandled data type ([#5467](https://github.com/rudderlabs/rudder-server/issues/5467)) ([#5475](https://github.com/rudderlabs/rudder-server/issues/5475)) ([c1199ce](https://github.com/rudderlabs/rudder-server/commit/c1199ce494341eb52e38e796281eac95228b0e24))
+
 ## [1.42.0](https://github.com/rudderlabs/rudder-server/compare/v1.41.0...v1.42.0) (2025-02-04)
 
 
