@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.42.1](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.42.1) (2025-02-05)
+
+
+### Bug Fixes
+
+* deltalake syncs failing for columns with unhandled data type ([#5467](https://github.com/rudderlabs/rudder-server/issues/5467)) ([#5475](https://github.com/rudderlabs/rudder-server/issues/5475)) ([c1199ce](https://github.com/rudderlabs/rudder-server/commit/c1199ce494341eb52e38e796281eac95228b0e24))
+
+## [1.42.0](https://github.com/rudderlabs/rudder-server/compare/v1.41.0...v1.42.0) (2025-02-04)
+
+
+### Features
+
+* bq load using folder ([#5445](https://github.com/rudderlabs/rudder-server/issues/5445)) ([9c733be](https://github.com/rudderlabs/rudder-server/commit/9c733bedd685b7b5689375d7cb00332e8d3d0397))
+* delete staging and load files from object storage post successful sync ([#5428](https://github.com/rudderlabs/rudder-server/issues/5428)) ([134fbc0](https://github.com/rudderlabs/rudder-server/commit/134fbc008df645a29ecea3cc734913d980cd220d))
+* implement object storage delete validations for warehouse destinations ([#5456](https://github.com/rudderlabs/rudder-server/issues/5456)) ([06e99fa](https://github.com/rudderlabs/rudder-server/commit/06e99fa8cc786347fed0dffa102d107ab8e66d1e))
+* rs load using folder ([#5450](https://github.com/rudderlabs/rudder-server/issues/5450)) ([66139a2](https://github.com/rudderlabs/rudder-server/commit/66139a269dde71699e140ebe52c8352c00df0123))
+* warehouse transformer ([#5205](https://github.com/rudderlabs/rudder-server/issues/5205)) ([3db39a1](https://github.com/rudderlabs/rudder-server/commit/3db39a1b7e40cda8ccbedccd6fb0edb1bd561c81))
+
+
+### Bug Fixes
+
+* report modification in reporting during event sampling ([#5454](https://github.com/rudderlabs/rudder-server/issues/5454)) ([93f30e1](https://github.com/rudderlabs/rudder-server/commit/93f30e18088bd16199d7856f096c74f02a9df19d))
+
+
+### Miscellaneous
+
+* add custom bucket for throttling metric ([#5461](https://github.com/rudderlabs/rudder-server/issues/5461)) ([e472c28](https://github.com/rudderlabs/rudder-server/commit/e472c28c38527eb27945caa22b9efa92de51220d))
+* remove parallel scan flag in processor ([#5448](https://github.com/rudderlabs/rudder-server/issues/5448)) ([71efda1](https://github.com/rudderlabs/rudder-server/commit/71efda1c1ef080bfb553249512c9e2ceaeeaea18))
+* sync release v1.41.0 to main branch ([#5446](https://github.com/rudderlabs/rudder-server/issues/5446)) ([aaae529](https://github.com/rudderlabs/rudder-server/commit/aaae52977caea271dc764690989278ce1baf416e))
+
 ## [1.41.0](https://github.com/rudderlabs/rudder-server/compare/v1.40.0...v1.41.0) (2025-01-20)
 
 
