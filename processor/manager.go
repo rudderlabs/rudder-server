@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -23,17 +22,17 @@ import (
 )
 
 type LifecycleManager struct {
-	Handle                     *Handle
-	mainCtx                    context.Context
-	currentCancel              context.CancelFunc
-	waitGroup                  interface{ Wait() }
-	gatewayDB                  *jobsdb.Handle
-	routerDB                   *jobsdb.Handle
-	batchRouterDB              *jobsdb.Handle
-	readErrDB                  *jobsdb.Handle
-	writeErrDB                 *jobsdb.Handle
-	esDB                       *jobsdb.Handle
-	arcDB                      *jobsdb.Handle
+	Handle        *Handle
+	mainCtx       context.Context
+	currentCancel context.CancelFunc
+	waitGroup     interface{ Wait() }
+	// gatewayDB                  *jobsdb.Handle
+	// routerDB                   *jobsdb.Handle
+	// batchRouterDB              *jobsdb.Handle
+	// readErrDB                  *jobsdb.Handle
+	// writeErrDB                 *jobsdb.Handle
+	// esDB                       *jobsdb.Handle
+	// arcDB                      *jobsdb.Handle
 	clearDB                    *bool
 	ReportingI                 types.Reporting // need not initialize again
 	BackendConfig              backendconfig.BackendConfig
@@ -58,13 +57,13 @@ func (proc *LifecycleManager) Start() error {
 
 	if err := proc.Handle.Setup(
 		proc.BackendConfig,
-		proc.gatewayDB,
-		proc.routerDB,
-		proc.batchRouterDB,
-		proc.readErrDB,
-		proc.writeErrDB,
-		proc.esDB,
-		proc.arcDB,
+		// proc.gatewayDB,
+		// proc.routerDB,
+		// proc.batchRouterDB,
+		// proc.readErrDB,
+		// proc.writeErrDB,
+		// proc.esDB,
+		// proc.arcDB,
 		proc.ReportingI,
 		proc.transientSources,
 		proc.fileuploader,
@@ -107,7 +106,7 @@ func (proc *LifecycleManager) Stop() {
 func New(
 	ctx context.Context,
 	clearDb *bool,
-	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
+	// gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
@@ -128,14 +127,14 @@ func New(
 				stats.Default,
 			),
 		),
-		mainCtx:                    ctx,
-		gatewayDB:                  gwDb,
-		routerDB:                   rtDb,
-		batchRouterDB:              brtDb,
-		readErrDB:                  errDbForRead,
-		writeErrDB:                 errDBForWrite,
-		esDB:                       esDB,
-		arcDB:                      arcDB,
+		mainCtx: ctx,
+		// gatewayDB:                  gwDb,
+		// routerDB:                   rtDb,
+		// batchRouterDB:              brtDb,
+		// readErrDB:                  errDbForRead,
+		// writeErrDB:                 errDBForWrite,
+		// esDB:                       esDB,
+		// arcDB:                      arcDB,
 		clearDB:                    clearDb,
 		BackendConfig:              backendconfig.DefaultBackendConfig,
 		ReportingI:                 reporting,

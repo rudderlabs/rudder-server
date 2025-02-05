@@ -13,16 +13,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,16 +24,16 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -91,13 +85,13 @@ type Handle struct {
 	backendConfig backendconfig.BackendConfig
 	transformer   transformer.Transformer
 
-	gatewayDB                  jobsdb.JobsDB
-	routerDB                   jobsdb.JobsDB
-	batchRouterDB              jobsdb.JobsDB
-	readErrorDB                jobsdb.JobsDB
-	writeErrorDB               jobsdb.JobsDB
-	eventSchemaDB              jobsdb.JobsDB
-	archivalDB                 jobsdb.JobsDB
+	// gatewayDB                  jobsdb.JobsDB
+	// routerDB                   jobsdb.JobsDB
+	// batchRouterDB              jobsdb.JobsDB
+	// readErrorDB                jobsdb.JobsDB
+	// writeErrorDB               jobsdb.JobsDB
+	// eventSchemaDB              jobsdb.JobsDB
+	// archivalDB                 jobsdb.JobsDB
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
@@ -372,9 +366,9 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 // Setup initializes the module
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig,
-	gatewayDB, routerDB, batchRouterDB,
-	readErrorDB, writeErrorDB,
-	eventSchemaDB, archivalDB jobsdb.JobsDB,
+	// gatewayDB, routerDB, batchRouterDB,
+	// readErrorDB, writeErrorDB,
+	// eventSchemaDB, archivalDB jobsdb.JobsDB,
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
@@ -396,13 +390,13 @@ func (proc *Handle) Setup(
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
 
-	proc.gatewayDB = gatewayDB
-	proc.routerDB = routerDB
-	proc.batchRouterDB = batchRouterDB
-	proc.readErrorDB = readErrorDB
-	proc.writeErrorDB = writeErrorDB
-	proc.eventSchemaDB = eventSchemaDB
-	proc.archivalDB = archivalDB
+	// proc.gatewayDB = gatewayDB
+	// proc.routerDB = routerDB
+	// proc.batchRouterDB = batchRouterDB
+	// proc.readErrorDB = readErrorDB
+	// proc.writeErrorDB = writeErrorDB
+	// proc.eventSchemaDB = eventSchemaDB
+	// proc.archivalDB = archivalDB
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -720,6 +714,8 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 		proc.logger.Info("Transformer features received")
 
+		// TODO MUST
+		// TODO: need to fire workers
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
 		defer pool.Shutdown()
@@ -729,38 +725,38 @@ func (proc *Handle) Start(ctx context.Context) error {
 				return nil
 			case <-time.After(proc.config.pingerSleep.Load()):
 			}
-			for _, partition := range proc.activePartitions(ctx) {
-				pool.PingWorker(partition)
-			}
+			//for _, partition := range proc.activePartitions(ctx) {
+			//	pool.PingWorker(partition)
+			//}
 		}
 	}))
 
-	// stash loop
-	g.Go(crash.Wrapper(func() error {
-		st := stash.New()
-		st.Setup(
-			proc.readErrorDB,
-			proc.transientSources,
-			proc.fileuploader,
-			proc.adaptiveLimit,
-		)
-		st.Start(ctx)
-		return nil
-	}))
+	// stash loop // TODO
+	//g.Go(crash.Wrapper(func() error {
+	//	st := stash.New()
+	//	st.Setup(
+	//		proc.readErrorDB,
+	//		proc.transientSources,
+	//		proc.fileuploader,
+	//		proc.adaptiveLimit,
+	//	)
+	//	st.Start(ctx)
+	//	return nil
+	//}))
 
 	return g.Wait()
 }
 
-func (proc *Handle) activePartitions(ctx context.Context) []string {
-	defer proc.statsFactory.NewStat("proc_active_partitions_time", stats.TimerType).RecordDuration()()
-	keys, err := proc.isolationStrategy.ActivePartitions(ctx, proc.gatewayDB)
-	if err != nil && ctx.Err() == nil {
-		// TODO: retry?
-		panic(err)
-	}
-	proc.statsFactory.NewStat("proc_active_partitions", stats.GaugeType).Gauge(len(keys))
-	return keys
-}
+//func (proc *Handle) activePartitions(ctx context.Context) []string {
+//	defer proc.statsFactory.NewStat("proc_active_partitions_time", stats.TimerType).RecordDuration()()
+//	keys, err := proc.isolationStrategy.ActivePartitions(ctx, proc.gatewayDB)
+//	if err != nil && ctx.Err() == nil {
+//		// TODO: retry?
+//		panic(err)
+//	}
+//	proc.statsFactory.NewStat("proc_active_partitions", stats.GaugeType).Gauge(len(keys))
+//	return keys
+//}
 
 func (proc *Handle) Shutdown() {
 	proc.backgroundCancel()
@@ -2024,12 +2020,14 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 			proc.jobsDBCommandTimeout.Load(),
 			proc.jobdDBMaxRetries.Load(),
 			func(ctx context.Context) error {
-				return proc.eventSchemaDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						return proc.eventSchemaDB.StoreInTx(ctx, tx, preTrans.eventSchemaJobs)
-					},
-				)
+				// TODO fix this
+				//return proc.eventSchemaDB.WithStoreSafeTx(
+				//	ctx,
+				//	func(tx jobsdb.StoreSafeTx) error {
+				//		return proc.eventSchemaDB.StoreInTx(ctx, tx, preTrans.eventSchemaJobs)
+				//	},
+				//)
+				return nil
 			}, proc.sendRetryStoreStats)
 		if err != nil {
 			return fmt.Errorf("store into event schema table failed with error: %v", err)
@@ -2038,28 +2036,29 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 		return nil
 	})
 
-	g.Go(func() error {
-		if len(preTrans.archivalJobs) == 0 {
-			return nil
-		}
-		err := misc.RetryWithNotify(
-			groupCtx,
-			proc.jobsDBCommandTimeout.Load(),
-			proc.jobdDBMaxRetries.Load(),
-			func(ctx context.Context) error {
-				return proc.archivalDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						return proc.archivalDB.StoreInTx(ctx, tx, preTrans.archivalJobs)
-					},
-				)
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			return fmt.Errorf("store into archival table failed with error: %v", err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(preTrans.archivalJobs))
-		return nil
-	})
+	// TODO - ARCHIVAL - Uncomment this block when archival is enabled
+	//g.Go(func() error {
+	//	if len(preTrans.archivalJobs) == 0 {
+	//		return nil
+	//	}
+	//	err := misc.RetryWithNotify(
+	//		groupCtx,
+	//		proc.jobsDBCommandTimeout.Load(),
+	//		proc.jobdDBMaxRetries.Load(),
+	//		func(ctx context.Context) error {
+	//			return proc.archivalDB.WithStoreSafeTx(
+	//				ctx,
+	//				func(tx jobsdb.StoreSafeTx) error {
+	//					return proc.archivalDB.StoreInTx(ctx, tx, preTrans.archivalJobs)
+	//				},
+	//			)
+	//		}, proc.sendRetryStoreStats)
+	//	if err != nil {
+	//		return fmt.Errorf("store into archival table failed with error: %v", err)
+	//	}
+	//	proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(preTrans.archivalJobs))
+	//	return nil
+	//})
 
 	if err := g.Wait(); err != nil {
 		panic(err)
@@ -2446,40 +2445,41 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
-	if len(batchDestJobs) > 0 {
-		err := misc.RetryWithNotify(
-			context.Background(),
-			proc.jobsDBCommandTimeout.Load(),
-			proc.jobdDBMaxRetries.Load(),
-			func(ctx context.Context) error {
-				return proc.batchRouterDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
-						if err != nil {
-							return fmt.Errorf("storing batch router jobs: %w", err)
-						}
-
-						// rsources stats
-						err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
-						if err != nil {
-							return fmt.Errorf("publishing rsources stats for batch router: %w", err)
-						}
-						return nil
-					})
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-
-		proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
-		proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
-		proc.stats.statDBWriteBatchEvents(partition).Observe(float64(len(batchDestJobs)))
-		proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
-			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
-		)
-	}
+	// TODO batch router not supported
+	//if len(batchDestJobs) > 0 {
+	//	err := misc.RetryWithNotify(
+	//		context.Background(),
+	//		proc.jobsDBCommandTimeout.Load(),
+	//		proc.jobdDBMaxRetries.Load(),
+	//		func(ctx context.Context) error {
+	//			return proc.batchRouterDB.WithStoreSafeTx(
+	//				ctx,
+	//				func(tx jobsdb.StoreSafeTx) error {
+	//					err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+	//					if err != nil {
+	//						return fmt.Errorf("storing batch router jobs: %w", err)
+	//					}
+	//
+	//					// rsources stats
+	//					err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
+	//					if err != nil {
+	//						return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+	//					}
+	//					return nil
+	//				})
+	//		}, proc.sendRetryStoreStats)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//	proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
+	//
+	//	proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
+	//	proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
+	//	proc.stats.statDBWriteBatchEvents(partition).Observe(float64(len(batchDestJobs)))
+	//	proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
+	//		float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+	//	)
+	//}
 
 	if len(destJobs) > 0 {
 		func() {
@@ -2502,30 +2502,38 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 						}),
 					))
 			}
-			err := misc.RetryWithNotify(
-				context.Background(),
-				proc.jobsDBCommandTimeout.Load(),
-				proc.jobdDBMaxRetries.Load(),
-				func(ctx context.Context) error {
-					return proc.routerDB.WithStoreSafeTx(
-						ctx,
-						func(tx jobsdb.StoreSafeTx) error {
-							err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
-							if err != nil {
-								return fmt.Errorf("storing router jobs: %w", err)
-							}
 
-							// rsources stats
-							err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
-							if err != nil {
-								return fmt.Errorf("publishing rsources stats for router: %w", err)
-							}
-							return nil
-						})
-				}, proc.sendRetryStoreStats)
-			if err != nil {
-				panic(err)
-			}
+			// TODO MUST
+			// TODO ROUTER: write in a Pulsar topic (one topic per connection/source), then
+			//  use 1 consumer group per dest type to upload to S3
+			//  this can be done in a single transaction and do archival as well via Pulsar
+			//  we would effectively be pushing into multiple topics in a single transaction (e.g. router, archival,
+			//  event_schema, rsources stats, reporting)
+
+			//err := misc.RetryWithNotify(
+			//	context.Background(),
+			//	proc.jobsDBCommandTimeout.Load(),
+			//	proc.jobdDBMaxRetries.Load(),
+			//	func(ctx context.Context) error {
+			//		return proc.routerDB.WithStoreSafeTx(
+			//			ctx,
+			//			func(tx jobsdb.StoreSafeTx) error {
+			//				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+			//				if err != nil {
+			//					return fmt.Errorf("storing router jobs: %w", err)
+			//				}
+			//
+			//				// rsources stats
+			//				err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+			//				if err != nil {
+			//					return fmt.Errorf("publishing rsources stats for router: %w", err)
+			//				}
+			//				return nil
+			//			})
+			//	}, proc.sendRetryStoreStats)
+			//if err != nil {
+			//	panic(err)
+			//}
 			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
@@ -2540,56 +2548,60 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-		}, proc.sendRetryStoreStats)
-		if err != nil {
-			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+		// TODO proc error can be a topic like for the ingestion-svc webhook
+		//err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		//	return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
+		//}, proc.sendRetryStoreStats)
+		//if err != nil {
+		//	proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+		//	proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
+		//	panic(err)
+		//}
+		//proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+		//proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
 	in.rsourcesStats.CollectStats(statusList)
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
-			if err != nil {
-				return fmt.Errorf("updating gateway jobs statuses: %w", err)
-			}
-
-			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
-			if err != nil {
-				return fmt.Errorf("saving dropped jobs: %w", err)
-			}
-
-			if proc.isReportingEnabled() {
-				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
-					return fmt.Errorf("reporting metrics: %w", err)
-				}
-			}
-
-			err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
-			if err != nil {
-				return fmt.Errorf("storing tracked users: %w", err)
-			}
-
-			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
-			if err != nil {
-				return fmt.Errorf("publishing rsources stats: %w", err)
-			}
-
-			return nil
-		})
-	}, proc.sendRetryUpdateStats)
-	if err != nil {
-		panic(err)
-	}
+	// TODO MUST
+	// TODO ack instead
+	// TODO review below, do we need everything for PoC?
+	//err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	//	return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
+	//		err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
+	//		if err != nil {
+	//			return fmt.Errorf("updating gateway jobs statuses: %w", err)
+	//		}
+	//
+	//		err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
+	//		if err != nil {
+	//			return fmt.Errorf("saving dropped jobs: %w", err)
+	//		}
+	//
+	//		if proc.isReportingEnabled() {
+	//			if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
+	//				return fmt.Errorf("reporting metrics: %w", err)
+	//			}
+	//		}
+	//
+	//		err = proc.trackedUsersReporter.ReportUsers(ctx, in.trackedUsersReports, tx.Tx())
+	//		if err != nil {
+	//			return fmt.Errorf("storing tracked users: %w", err)
+	//		}
+	//
+	//		err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
+	//		if err != nil {
+	//			return fmt.Errorf("publishing rsources stats: %w", err)
+	//		}
+	//
+	//		return nil
+	//	})
+	//}, proc.sendRetryUpdateStats)
+	//if err != nil {
+	//	panic(err)
+	//}
 	if proc.config.enableDedup {
 		proc.updateSourceStats(in.sourceDupStats, "processor_write_key_duplicate_events")
 		if len(in.dedupKeys) > 0 {
@@ -3178,61 +3190,66 @@ func ConvertToFilteredTransformerResponse(
 }
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
-	if proc.limiter.read != nil {
-		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
-	}
+	//if proc.limiter.read != nil {
+	//	defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
+	//}
 
-	s := time.Now()
+	// s := time.Now()
 
-	proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
+	// proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
 
-	eventCount := proc.config.maxEventsToProcess.Load()
-	if !proc.config.enableEventCount.Load() {
-		eventCount = 0
-	}
-	queryParams := jobsdb.GetQueryParams{
-		CustomValFilters: []string{proc.config.GWCustomVal},
-		JobsLimit:        proc.config.maxEventsToProcess.Load(),
-		EventsLimit:      eventCount,
-		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
-	}
-	proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
+	//eventCount := proc.config.maxEventsToProcess.Load()
+	//if !proc.config.enableEventCount.Load() {
+	//	eventCount = 0
+	//}
+	//queryParams := jobsdb.GetQueryParams{
+	//	CustomValFilters: []string{proc.config.GWCustomVal},
+	//	JobsLimit:        proc.config.maxEventsToProcess.Load(),
+	//	EventsLimit:      eventCount,
+	//	PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
+	//}
+	//proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
 
-	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
-	}, proc.sendQueryRetryStats)
-	if err != nil {
-		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
-		panic(err)
-	}
+	//unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
+	//	return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
+	//}, proc.sendQueryRetryStats)
+	//if err != nil {
+	//	proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
+	//	panic(err)
+	//}
 
-	totalPayloadBytes := 0
-	for _, job := range unprocessedList.Jobs {
-		totalPayloadBytes += len(job.EventPayload)
-	}
-	dbReadTime := time.Since(s)
-	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
+	//totalPayloadBytes := 0
+	//for _, job := range unprocessedList.Jobs {
+	//	totalPayloadBytes += len(job.EventPayload)
+	//}
+	//dbReadTime := time.Since(s)
+	//defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
+	//
+	//var firstJob *jobsdb.JobT
+	//var lastJob *jobsdb.JobT
+	//if len(unprocessedList.Jobs) > 0 {
+	//	firstJob = unprocessedList.Jobs[0]
+	//	lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	//}
+	//proc.pipelineDelayStats(partition, firstJob, lastJob)
+	//
+	//// check if there is work to be done
+	//if len(unprocessedList.Jobs) == 0 {
+	//	proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
+	//	return unprocessedList
+	//}
+	//
+	//proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
+	//proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
+	//
+	//proc.stats.statDBReadRequests(partition).Observe(float64(len(unprocessedList.Jobs)))
+	//proc.stats.statDBReadEvents(partition).Observe(float64(unprocessedList.EventsCount))
+	//proc.stats.statDBReadPayloadBytes(partition).Observe(float64(totalPayloadBytes))
 
-	var firstJob *jobsdb.JobT
-	var lastJob *jobsdb.JobT
-	if len(unprocessedList.Jobs) > 0 {
-		firstJob = unprocessedList.Jobs[0]
-		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
-	}
-	proc.pipelineDelayStats(partition, firstJob, lastJob)
+	var unprocessedList jobsdb.JobsResult
 
-	// check if there is work to be done
-	if len(unprocessedList.Jobs) == 0 {
-		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		return unprocessedList
-	}
-
-	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
-	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
-
-	proc.stats.statDBReadRequests(partition).Observe(float64(len(unprocessedList.Jobs)))
-	proc.stats.statDBReadEvents(partition).Observe(float64(unprocessedList.EventsCount))
-	proc.stats.statDBReadPayloadBytes(partition).Observe(float64(totalPayloadBytes))
+	// TODO read from Pulsar
+	// TODO MUST
 
 	return unprocessedList
 }
@@ -3241,28 +3258,28 @@ func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 	start := time.Now()
 	defer proc.stats.statMarkExecuting(partition).Since(start)
 
-	statusList := make([]*jobsdb.JobStatusT, len(jobs))
-	for i, job := range jobs {
-		statusList[i] = &jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			JobState:      jobsdb.Executing.State,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorCode:     "",
-			ErrorResponse: []byte(`{}`),
-			Parameters:    []byte(`{}`),
-			JobParameters: job.Parameters,
-			WorkspaceId:   job.WorkspaceId,
-		}
-	}
-	// Mark the jobs as executing
-	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{proc.config.GWCustomVal}, nil)
-	}, proc.sendRetryUpdateStats)
-	if err != nil {
-		return fmt.Errorf("marking jobs as executing: %w", err)
-	}
+	//	statusList := make([]*jobsdb.JobStatusT, len(jobs))
+	//	for i, job := range jobs {
+	//		statusList[i] = &jobsdb.JobStatusT{
+	//			JobID:         job.JobID,
+	//			AttemptNum:    job.LastJobStatus.AttemptNum,
+	//			JobState:      jobsdb.Executing.State,
+	//			ExecTime:      time.Now(),
+	//			RetryTime:     time.Now(),
+	//			ErrorCode:     "",
+	//			ErrorResponse: []byte(`{}`),
+	//			Parameters:    []byte(`{}`),
+	//			JobParameters: job.Parameters,
+	//			WorkspaceId:   job.WorkspaceId,
+	//		}
+	//	}
+	//	// Mark the jobs as executing
+	//	//err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+	//	//	return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{proc.config.GWCustomVal}, nil)
+	//	//}, proc.sendRetryUpdateStats)
+	//	//if err != nil {
+	//	//	return fmt.Errorf("marking jobs as executing: %w", err)
+	//	//}
 
 	return nil
 }
@@ -3328,7 +3345,7 @@ func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
 }
 
 func (proc *Handle) crashRecover() {
-	proc.gatewayDB.DeleteExecuting()
+	// proc.gatewayDB.DeleteExecuting()
 }
 
 func (proc *Handle) updateSourceStats(sourceStats map[dupStatKey]int, bucket string) {
@@ -3428,7 +3445,7 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 }
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
-	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
+	dbs := map[string]jobsdb.JobsDB{} //"rt": proc.routerDB, "batch_rt": proc.batchRouterDB} // TODO: remove we don't need pending events
 	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
