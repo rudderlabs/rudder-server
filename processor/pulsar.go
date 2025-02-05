@@ -60,12 +60,24 @@ func NewPulsarClient(conf *config.Config, log logger.Logger, opts ...ClientOptio
 		MemoryLimitBytes:        conf.GetInt64("Pulsar.Client.memoryLimitBytes", 64*1024*1024 /* 64MB */),
 		Logger:                  &pulsarLogAdapter{Logger: log},
 		MetricsRegisterer:       prometheus.DefaultRegisterer, // TODO can we get the registerer from stats?
+		// EnableTransaction:       true,
 	}
 	for _, opt := range opts {
 		opt(&clientOptions)
 	}
 
-	return pulsar.NewClient(clientOptions)
+	pc, err := pulsar.NewClient(clientOptions)
+
+	// Example of using transactions
+	//tx, err := pc.NewTransaction(time.Minute)
+	//
+	//producer, err := pc.CreateProducer(pulsar.ProducerOptions{})
+	//producer.Send(context.Background(), &pulsar.ProducerMessage{Transaction: tx})
+	//
+	//consumer, err := pc.Subscribe(pulsar.ConsumerOptions{})
+	//consumer.AckWithTxn(&pulsar.ConsumerMessage{}, tx)
+
+	return pc, err
 }
 
 type pulsarLogAdapter struct {
