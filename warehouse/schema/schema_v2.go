@@ -29,10 +29,12 @@ type schemaV2 struct {
 	enableIDResolution               bool
 	fetchSchemaRepo                  fetchSchemaRepo
 	now                              func() time.Time
+	cachedSchema                     model.Schema
+	cacheExpiry                      time.Time
 }
 
 func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, schemaSize stats.Histogram, ttlInMinutes time.Duration, fetchSchemaRepo fetchSchemaRepo) *schemaV2 {
-	return &schemaV2{
+	v2 := &schemaV2{
 		warehouse:                        warehouse,
 		log:                              log,
 		ttlInMinutes:                     ttlInMinutes,
@@ -42,12 +44,9 @@ func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, schem
 		fetchSchemaRepo:                  fetchSchemaRepo,
 		enableIDResolution:               v1.enableIDResolution,
 		now:                              timeutil.Now,
-		stats: struct {
-			schemaSize stats.Histogram
-		}{
-			schemaSize: schemaSize,
-		},
 	}
+	v2.stats.schemaSize = schemaSize
+	return v2
 }
 
 func (sh *schemaV2) SyncRemoteSchema(ctx context.Context, _ fetchSchemaRepo, uploadID int64) (bool, error) {
@@ -57,7 +56,7 @@ func (sh *schemaV2) SyncRemoteSchema(ctx context.Context, _ fetchSchemaRepo, upl
 func (sh *schemaV2) IsWarehouseSchemaEmpty(ctx context.Context) bool {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
-		sh.log.Errorw("error getting schema: %w", err)
+		sh.log.Warnf("error getting schema: %v", err)
 		return true
 	}
 	return len(schema) == 0
@@ -66,7 +65,7 @@ func (sh *schemaV2) IsWarehouseSchemaEmpty(ctx context.Context) bool {
 func (sh *schemaV2) GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
-		sh.log.Errorw("error getting schema: %w", err)
+		sh.log.Warnf("error getting schema: %w", err)
 		return model.TableSchema{}
 	}
 	return schema[tableName]
@@ -161,18 +160,27 @@ func (sh *schemaV2) fetchSchemaFromWarehouse(ctx context.Context) (model.Schema,
 }
 
 func (sh *schemaV2) saveSchema(ctx context.Context, newSchema model.Schema) error {
+	expiresAt := sh.now().Add(sh.ttlInMinutes)
 	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
 		DestinationID:   sh.warehouse.Destination.ID,
 		DestinationType: sh.warehouse.Type,
 		Schema:          newSchema,
-		ExpiresAt:       sh.now().Add(sh.ttlInMinutes),
+		ExpiresAt:       expiresAt,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("inserting schema: %w", err)
+	}
+	sh.cachedSchema = newSchema
+	sh.cacheExpiry = expiresAt
+	return nil
 }
 
 func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
+	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
+		return sh.cachedSchema, nil
+	}
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
@@ -183,11 +191,13 @@ func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
-		return model.Schema{}, nil
+		sh.cachedSchema = model.Schema{}
+		sh.cacheExpiry = sh.now().Add(sh.ttlInMinutes)
+		return sh.cachedSchema, nil
 	}
 	if whSchema.ExpiresAt.Before(sh.now()) {
 		sh.log.Infof("Schema expired for destination id: %s, namespace: %s at %v", sh.warehouse.Destination.ID, sh.warehouse.Namespace, whSchema.ExpiresAt)
 		return sh.fetchSchemaFromWarehouse(ctx)
 	}
-	return whSchema.Schema, nil
+	return sh.cachedSchema, nil
 }

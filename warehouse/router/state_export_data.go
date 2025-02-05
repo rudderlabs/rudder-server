@@ -10,7 +10,9 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
@@ -809,7 +811,10 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	}
 	currentColumnsCount, err := job.schemaHandle.GetColumnsCountInWarehouseSchema(job.ctx, tableName)
 	if err != nil {
-		job.logger.Errorf("error getting column count for table %s: %v", tableName, err)
+		job.logger.Warnn("Getting column count in warehouse schema",
+			logger.NewStringField(logfield.TableName, tableName),
+			obskit.Error(err),
+		)
 		return
 	}
 

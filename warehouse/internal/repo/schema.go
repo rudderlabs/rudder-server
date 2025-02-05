@@ -123,6 +123,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 		var (
 			whSchema            model.WHSchema
 			schemaPayloadRawRaw []byte
+			expiresAt           sql.NullTime
 		)
 		err := rows.Scan(
 			&whSchema.ID,
@@ -133,7 +134,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 			&schemaPayloadRawRaw,
 			&whSchema.CreatedAt,
 			&whSchema.UpdatedAt,
-			&whSchema.ExpiresAt,
+			&expiresAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -141,7 +142,9 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 
 		whSchema.CreatedAt = whSchema.CreatedAt.UTC()
 		whSchema.UpdatedAt = whSchema.UpdatedAt.UTC()
-		whSchema.ExpiresAt = whSchema.ExpiresAt.UTC()
+		if expiresAt.Valid {
+			whSchema.ExpiresAt = expiresAt.Time.UTC()
+		}
 
 		var schemaPayload model.Schema
 		err = json.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
