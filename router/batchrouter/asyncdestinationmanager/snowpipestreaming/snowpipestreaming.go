@@ -140,6 +140,15 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 	return client
 }
 
+func (m *Manager) validateConfig(ctx context.Context, dest *backendconfig.DestinationT) string {
+	dest.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
+	response := m.validator.Validate(ctx, dest)
+	if response.Success {
+		return ""
+	}
+	return response.Error
+}
+
 func (m *Manager) Now() time.Time {
 	return m.now()
 }
@@ -178,9 +187,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		switch {
 		case errors.Is(err, errAuthz):
 			m.setBackOff(err)
-			response := m.validator.Validate(ctx, asyncDest.Destination)
-			if !response.Success {
-				err = fmt.Errorf("failed to validate snowpipe credentials: %s", response.Error)
+			validationError := m.validateConfig(ctx, asyncDest.Destination)
+			if validationError != "" {
+				err = fmt.Errorf("failed to validate snowpipe credentials: %s", validationError)
 			}
 			return m.failedJobs(asyncDest, err.Error())
 		case errors.Is(err, errBackoff):
@@ -232,9 +241,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				if !isBackoffSet {
 					isBackoffSet = true
 					m.setBackOff(err)
-					response := m.validator.Validate(ctx, asyncDest.Destination)
-					if !response.Success && failedReason == nil {
-						failedReason = fmt.Errorf("failed to validate snowpipe credentials: %s", response.Error)
+					validationError := m.validateConfig(ctx, asyncDest.Destination)
+					if validationError != "" && failedReason == nil {
+						failedReason = fmt.Errorf("failed to validate snowpipe credentials: %s", validationError)
 					}
 				}
 			case errors.Is(err, errBackoff):

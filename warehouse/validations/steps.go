@@ -20,7 +20,6 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	destType := dest.DestinationDefinition.Name
 
 	if destType == warehouseutils.SnowpipeStreaming {
-		dest.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
 		return &model.StepsResponse{
 			Steps: []*model.Step{
 				{ID: 1, Name: model.VerifyingConnections},
