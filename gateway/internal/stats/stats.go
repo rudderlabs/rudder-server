@@ -77,6 +77,19 @@ func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.reason = reason
 }
 
+// EventsSuccess increments the events total & succeeded counters by num
+func (ss *SourceStat) EventsSuccess(num int) {
+	ss.events.succeeded += num
+	ss.events.total += num
+}
+
+// EventsFailed increments the events total & failed counters by num
+func (ss *SourceStat) EventsFailed(num int, reason string) {
+	ss.events.failed += num
+	ss.events.total += num
+	ss.reason = reason
+}
+
 func (ss *SourceStat) RequestEventsBot(num int) {
 	ss.events.bot += num
 }
