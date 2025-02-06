@@ -219,7 +219,11 @@ func TestIntegrationWebhook(t *testing.T) {
 			t.Logf("workspaceID: %s", workspaceID)
 
 			query := url.Values{}
-			json.Unmarshal([]byte(tc.Input.Request.RawQuery), &query)
+			for k, v := range tc.Input.Request.RawQuery {
+				for _, vv := range v {
+					query.Add(k, vv)
+				}
+			}
 			query.Set("writeKey", writeKey)
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
