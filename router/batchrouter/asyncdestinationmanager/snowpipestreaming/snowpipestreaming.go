@@ -175,7 +175,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	if err != nil {
 		switch {
 		case errors.Is(err, errAuthz):
-			m.setBackOff()
+			m.setBackOff(err)
 			return m.failedJobs(asyncDest, err.Error())
 		case errors.Is(err, errBackoff):
 			return m.failedJobs(asyncDest, err.Error())
@@ -212,6 +212,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importingJobIDs, failedJobIDs []int64
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
+		failedReason                  string
 	)
 	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
 	isBackoffSet := false      // should not be set again if already set
@@ -223,7 +224,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				shouldResetBackoff = false
 				if !isBackoffSet {
 					isBackoffSet = true
-					m.setBackOff()
+					m.setBackOff(err)
 				}
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
@@ -232,7 +233,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
 			)
-
+			if failedReason == "" {
+				failedReason = err.Error()
+			}
 			failedJobIDs = append(failedJobIDs, info.jobIDs...)
 			continue
 		}
@@ -273,6 +276,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		ImportingCount:      len(importingJobIDs),
 		ImportingParameters: importParameters,
 		FailedJobIDs:        failedJobIDs,
+		FailedReason:        failedReason,
 		FailedCount:         len(failedJobIDs),
 		DestinationID:       asyncDest.Destination.ID,
 	}
@@ -614,9 +618,10 @@ func (m *Manager) isInBackoff() bool {
 func (m *Manager) resetBackoff() {
 	m.backoff.next = time.Time{}
 	m.backoff.attempts = 0
+	m.backoff.error = ""
 }
 
-func (m *Manager) setBackOff() {
+func (m *Manager) setBackOff(err error) {
 	b := backoff.NewExponentialBackOff(
 		backoff.WithInitialInterval(m.config.backoff.initialInterval.Load()),
 		backoff.WithMultiplier(m.config.backoff.multiplier.Load()),
@@ -627,6 +632,7 @@ func (m *Manager) setBackOff() {
 	)
 	b.Reset()
 	m.backoff.attempts++
+	m.backoff.error = err.Error()
 
 	var d time.Duration
 	for index := int64(0); index < int64(m.backoff.attempts); index++ {
