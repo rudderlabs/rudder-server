@@ -7,9 +7,10 @@ import (
 	"path"
 	"time"
 
+	"github.com/samber/lo/mutable"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -115,8 +116,8 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 			return txn.Delete([]byte(key))
 		})
 	}
-
-	return lo.Reverse(values), err
+	mutable.Reverse(values)
+	return values, err
 }
 
 func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...func(Cache[E])) (*Cache[E], error) {

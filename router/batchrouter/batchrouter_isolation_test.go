@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo/mutable"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -467,5 +469,6 @@ func (brtIsolationMethods) generateJobs(jobs []*brtIsolationJobSpec, batchSize i
 		chunks := lo.Chunk(wsBatch, batchSize)
 		batches = append(batches, chunks...)
 	}
-	return lo.Shuffle(batches)
+	mutable.Shuffle(batches)
+	return batches
 }
