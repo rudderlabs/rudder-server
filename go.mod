@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.23.4
+go 1.23.5
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -14,13 +14,13 @@ replace (
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
-	golang.org/x/crypto => golang.org/x/crypto v0.23.0
-	golang.org/x/image => golang.org/x/image v0.16.0
-	golang.org/x/net => golang.org/x/net v0.25.0
-	golang.org/x/text => golang.org/x/text v0.15.0
+	golang.org/x/crypto => golang.org/x/crypto v0.32.0
+	golang.org/x/image => golang.org/x/image v0.24.0
+	golang.org/x/net => golang.org/x/net v0.34.0
+	golang.org/x/text => golang.org/x/text v0.22.0
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
-	k8s.io/kubernetes => k8s.io/kubernetes v1.30.1
+	k8s.io/kubernetes => k8s.io/kubernetes v1.32.1
 )
 
 require (
@@ -344,8 +344,8 @@ require (
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.10.0
 	golang.org/x/tools v0.28.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
