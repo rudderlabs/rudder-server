@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -128,196 +129,257 @@ var loggerOverride logger.Logger
 
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
-	var destinationJobs types.DestinationJobs
-	transformMessageCopy, jobs := transformMessage.Dehydrate()
-
-	// Call remote transformation
-	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
+	// Early validation of transform type
+	url, err := trans.getTransformURL(transformType)
 	if err != nil {
-		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
-		panic(err)
-	}
-	trans.logger.Debugf("[Router Transformer] :: input payload : %s", string(rawJSON))
-
-	retryCount := 0
-	var resp *http.Response
-	var respData []byte
-	// We should rarely have error communicating with our JS
-	reqFailed := false
-
-	var url string
-	if transformType == BATCH {
-		url = getBatchURL()
-	} else if transformType == ROUTER_TRANSFORM {
-		url = getRouterTransformURL()
-	} else {
-		// Unexpected transformType returning empty
 		return []types.DestinationJobT{}
 	}
 
-	for {
-		s := time.Now()
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
+	// Prepare request payload
+	transformMessageCopy, jobs := transformMessage.Dehydrate()
+	rawJSON, err := trans.marshalTransformMessage(transformMessageCopy)
+	if err != nil {
+		return []types.DestinationJobT{}
+	}
+
+	// Make request to transformer service
+	resp, respData, err := trans.makeTransformRequest(url, rawJSON, transformMessageCopy)
+	if err != nil {
+		return trans.handleTransformError(err, transformMessage)
+	}
+	defer httputil.CloseResponse(resp)
+
+	// Handle non-200 responsess
+	if resp.StatusCode != http.StatusOK {
+		return trans.handleNon200Response(resp, respData, transformMessage)
+	}
+
+	// Process successful response
+	destinationJobs, err := trans.processTransformResponse(resp, respData, transformType, transformMessage)
+	if err != nil {
+		return trans.handleTransformError(err, transformMessage)
+	}
+
+	destinationJobs.Hydrate(jobs)
+	return destinationJobs
+}
+
+func (trans *handle) getTransformURL(transformType string) (string, error) {
+	switch transformType {
+	case BATCH:
+		return getBatchURL(), nil
+	case ROUTER_TRANSFORM:
+		return getRouterTransformURL(), nil
+	default:
+		return "", fmt.Errorf("unexpected transform type: %s", transformType)
+	}
+}
+
+func (trans *handle) marshalTransformMessage(msg interface{}) ([]byte, error) {
+	rawJSON, err := jsonfast.Marshal(msg)
+	if err != nil {
+		trans.logger.Errorf("problematic input for marshalling: %#v", msg)
+		return nil, fmt.Errorf("failed to marshal transform message: %w", err)
+	}
+	trans.logger.Debugf("[Router Transformer] :: input payload : %s", string(rawJSON))
+	return rawJSON, nil
+}
+
+func (trans *handle) makeTransformRequest(url string, payload []byte, transformMessage interface{}) (*http.Response, []byte, error) {
+	const maxRetries = 30
+	var resp *http.Response
+	var respData []byte
+
+	for retryCount := 0; retryCount <= maxRetries; retryCount++ {
+		req, err := trans.createTransformRequest(url, payload)
 		if err != nil {
-			// No point in retrying if we can't even create a request. Panicking as per convention.
-			panic(fmt.Errorf("JS HTTP request creation error: URL: %v Error: %+v", url, err))
+			return nil, nil, err
 		}
 
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		req.Header.Set("X-Feature-Gzip-Support", "?1")
-		// Header to let transformer know that the client understands event filter code
-		req.Header.Set("X-Feature-Filter-Code", "?1")
 		if trans.oAuthV2EnabledLoader.Load() {
-			trans.logger.Debugn("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
-			destinationInfo := &oauthv2.DestinationInfo{
-				Config:           transformMessageCopy.Data[0].Destination.Config,
-				DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-				WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-				ID:               transformMessageCopy.Data[0].Destination.ID,
-			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
-			resp, err = trans.clientOAuthV2.Do(req)
+			resp, respData, err = trans.makeOAuthRequest(req, transformMessage)
 		} else {
-			resp, err = trans.client.Do(req)
+			resp, respData, err = trans.makeStandardRequest(req)
 		}
 
 		if err == nil {
-			// If no err returned by client.Post, reading body.
-			// If reading body fails, retrying.
-			respData, err = io.ReadAll(resp.Body)
+			return resp, respData, nil
 		}
 
-		if err != nil {
-			trans.transformRequestTimerStat.SendTiming(time.Since(s))
-			reqFailed = true
-			trans.logger.Errorn(
-				"JS HTTP connection error",
-				logger.NewErrorField(err),
-				logger.NewStringField("URL", url),
-			)
-			if retryCount > config.GetInt("Processor.maxRetry", 30) {
-				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
-			}
-			retryCount++
-			time.Sleep(config.GetDurationVar(100, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS"))
-			// Refresh the connection
+		if retryCount == maxRetries {
+			return nil, nil, fmt.Errorf("max retries exceeded: %w", err)
+		}
+
+		trans.logger.Errorn(
+			"JS HTTP connection error",
+			logger.NewErrorField(err),
+			logger.NewStringField("URL", url),
+		)
+
+		time.Sleep(config.GetDurationVar(100, time.Millisecond, "Processor.retrySleep", "Processor.retrySleepInMS"))
+		if resp != nil {
 			httputil.CloseResponse(resp)
-			continue
 		}
-
-		if reqFailed {
-			trans.logger.Errorn(
-				"Failed request succeeded",
-				logger.NewStringField("URL", url),
-				logger.NewIntField("RetryCount", int64(retryCount)),
-			)
-		}
-
-		trans.transformRequestTimerStat.SendTiming(time.Since(s))
-		break
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+	return nil, nil, fmt.Errorf("failed to make transform request after retries")
+}
+
+func (trans *handle) createTransformRequest(url string, payload []byte) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	var transResp oauthv2.TransportResponse
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-Feature-Gzip-Support", "?1")
+	req.Header.Set("X-Feature-Filter-Code", "?1")
+	return req, nil
+}
+
+func (trans *handle) processTransformResponse(resp *http.Response, respData []byte, transformType string, transformMessage *types.TransformMessageT) (types.DestinationJobs, error) {
+	// Verify API version
+	if err := trans.verifyTransformerVersion(resp); err != nil {
+		return nil, err
+	}
+
+	var destinationJobs types.DestinationJobs
+	var err error
+
+	// Handle OAuth response if enabled
 	if trans.oAuthV2EnabledLoader.Load() {
-		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
-		// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
-		err = json.Unmarshal(respData, &transResp)
-		if err == nil && transResp.OriginalResponse != "" {
-			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
-		}
+		respData = trans.handleOAuthResponse(respData)
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
-		if convErr != nil {
-			transformerAPIVersion = 0
-		}
-		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
-			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
-			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
-		}
-
-		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
-
-		if transformType == BATCH {
-			integrations.CollectIntgTransformErrorStats(respData)
-			err = jsonfast.Unmarshal(respData, &destinationJobs)
-		} else if transformType == ROUTER_TRANSFORM {
-			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
-			integrations.CollectIntgTransformErrorStats(rawResp)
-			err = jsonfast.Unmarshal(rawResp, &destinationJobs)
-		}
-
-		// Validate the response received from the transformer
-		in := transformMessage.JobIDs()
-		var out []int64
-		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
-		for i := range destinationJobs {
-			if oauthv2.IsValidAuthErrorCategory(destinationJobs[i].AuthErrorCategory) {
-				if transResp.InterceptorResponse.StatusCode > 0 {
-					destinationJobs[i].StatusCode = transResp.InterceptorResponse.StatusCode
-				}
-				if transResp.InterceptorResponse.Response != "" {
-					destinationJobs[i].Error = transResp.InterceptorResponse.Response
-				}
-			}
-			for k, v := range destinationJobs[i].JobIDs() {
-				out = append(out, k)
-				if _, ok := in[k]; !ok {
-					invalid[k] = v
-				}
-			}
-		}
-		var invalidResponseReason, invalidResponseError string
-		if err != nil {
-			invalidResponseReason = "unmarshal error"
-			invalidResponseError = fmt.Sprintf("Transformer returned invalid response: %s for input: %s", string(respData), string(rawJSON))
-		} else if len(in) != len(out) {
-			invalidResponseReason = "in out mismatch"
-			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
-		} else if len(invalid) > 0 {
-			var invalidSlice []int64
-			for k := range invalid {
-				invalidSlice = append(invalidSlice, k)
-			}
-			invalidResponseReason = "invalid jobIDs"
-			invalidResponseError = fmt.Sprintf("Transformer returned invalid jobIDs: %v", invalidSlice)
-		}
-
-		if invalidResponseReason != "" {
-
-			trans.logger.Error(invalidResponseError)
-			stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
-				"destType": transformMessage.DestType,
-				"reason":   invalidResponseReason,
-			}).Increment()
-
-			// Retrying. Go and fix transformer.
-			statusCode := 500
-			destinationJobs = []types.DestinationJobT{}
-			for i := range transformMessage.Data {
-				routerJob := &transformMessage.Data[i]
-				resp := types.DestinationJobT{
-					Message:          routerJob.Message,
-					JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
-					Destination:      routerJob.Destination,
-					Connection:       routerJob.Connection,
-					StatusCode:       statusCode,
-					Error:            invalidResponseError,
-				}
-				destinationJobs = append(destinationJobs, resp)
-			}
-		}
+	// Parse response based on transform type
+	if transformType == BATCH {
+		integrations.CollectIntgTransformErrorStats(respData)
+		err = jsonfast.Unmarshal(respData, &destinationJobs)
 	} else {
-		statusCode := 500
-		if resp.StatusCode == http.StatusNotFound {
-			statusCode = 404
+		rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
+		integrations.CollectIntgTransformErrorStats(rawResp)
+		err = jsonfast.Unmarshal(rawResp, &destinationJobs)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	// Validate response
+	if err := trans.validateTransformResponse(destinationJobs, transformMessage); err != nil {
+		return trans.createErrorResponse(transformMessage, err.Error()), nil
+	}
+
+	return destinationJobs, nil
+}
+
+func (trans *handle) handleTransformError(err error, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+	trans.logger.Error(err.Error())
+	stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
+		"destType": transformMessage.DestType,
+		"reason":   "unknown",
+	}).Increment()
+
+	statusCode := 500
+	if respErr, ok := err.(net.Error); ok && respErr.Timeout() {
+		statusCode = http.StatusGatewayTimeout
+	}
+
+	destinationJobs := []types.DestinationJobT{}
+	for i := range transformMessage.Data {
+		routerJob := &transformMessage.Data[i]
+		resp := types.DestinationJobT{
+			Message:          routerJob.Message,
+			JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+			Destination:      routerJob.Destination,
+			Connection:       routerJob.Connection,
+			StatusCode:       statusCode,
+			Error:            err.Error(),
 		}
+		destinationJobs = append(destinationJobs, resp)
+	}
+	return destinationJobs
+}
+
+func (trans *handle) handleNon200Response(resp *http.Response, respData []byte, transformMessage *types.TransformMessageT) []types.DestinationJobT {
+	trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+
+	statusCode := 500
+	if resp.StatusCode == http.StatusNotFound {
+		statusCode = 404
+	}
+
+	destinationJobs := []types.DestinationJobT{}
+	for i := range transformMessage.Data {
+		routerJob := &transformMessage.Data[i]
+		resp := types.DestinationJobT{
+			Message:          routerJob.Message,
+			JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+			Destination:      routerJob.Destination,
+			Connection:       routerJob.Connection,
+			StatusCode:       statusCode,
+			Error:            string(respData),
+		}
+		destinationJobs = append(destinationJobs, resp)
+	}
+	return destinationJobs
+}
+
+func (trans *handle) verifyTransformerVersion(resp *http.Response) error {
+	transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
+	if convErr != nil {
+		transformerAPIVersion = 0
+	}
+	if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
+		trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, resp.Request.URL)
+		return fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, resp.Request.URL)
+	}
+	return nil
+}
+
+func (trans *handle) handleOAuthResponse(respData []byte) []byte {
+	var transResp oauthv2.TransportResponse
+	err := json.Unmarshal(respData, &transResp)
+	if err == nil && transResp.OriginalResponse != "" {
+		respData = []byte(transResp.OriginalResponse)
+	}
+	return respData
+}
+
+func (trans *handle) validateTransformResponse(destinationJobs types.DestinationJobs, transformMessage *types.TransformMessageT) error {
+	in := transformMessage.JobIDs()
+	var out []int64
+	invalid := make(map[int64]struct{})
+	for i := range destinationJobs {
+		for k, v := range destinationJobs[i].JobIDs() {
+			out = append(out, k)
+			if _, ok := in[k]; !ok {
+				invalid[k] = v
+			}
+		}
+	}
+	var invalidResponseReason, invalidResponseError string
+	if len(in) != len(out) {
+		invalidResponseReason = "in out mismatch"
+		invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
+	} else if len(invalid) > 0 {
+		var invalidSlice []int64
+		for k := range invalid {
+			invalidSlice = append(invalidSlice, k)
+		}
+		invalidResponseReason = "invalid jobIDs"
+		invalidResponseError = fmt.Sprintf("Transformer returned invalid jobIDs: %v", invalidSlice)
+	}
+
+	if invalidResponseReason != "" {
+		trans.logger.Error(invalidResponseError)
+		stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
+			"destType": transformMessage.DestType,
+			"reason":   invalidResponseReason,
+		}).Increment()
+
+		statusCode := 500
+		destinationJobs = []types.DestinationJobT{}
 		for i := range transformMessage.Data {
 			routerJob := &transformMessage.Data[i]
 			resp := types.DestinationJobT{
@@ -326,14 +388,29 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				Destination:      routerJob.Destination,
 				Connection:       routerJob.Connection,
 				StatusCode:       statusCode,
-				Error:            string(respData),
+				Error:            invalidResponseError,
 			}
 			destinationJobs = append(destinationJobs, resp)
 		}
+		return fmt.Errorf(invalidResponseError)
 	}
-	func() { httputil.CloseResponse(resp) }()
+	return nil
+}
 
-	destinationJobs.Hydrate(jobs)
+func (trans *handle) createErrorResponse(transformMessage *types.TransformMessageT, reason string) types.DestinationJobs {
+	destinationJobs := []types.DestinationJobT{}
+	for i := range transformMessage.Data {
+		routerJob := &transformMessage.Data[i]
+		resp := types.DestinationJobT{
+			Message:          routerJob.Message,
+			JobMetadataArray: []types.JobMetadataT{routerJob.JobMetadata},
+			Destination:      routerJob.Destination,
+			Connection:       routerJob.Connection,
+			StatusCode:       500,
+			Error:            reason,
+		}
+		destinationJobs = append(destinationJobs, resp)
+	}
 	return destinationJobs
 }
 
@@ -664,4 +741,62 @@ func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, er
 		return "", err
 	}
 	return transformedJobs.AuthErrorCategory, nil
+}
+
+func (trans *handle) makeOAuthRequest(req *http.Request, transformMessage interface{}) (*http.Response, []byte, error) {
+	// Cast the transform message to access required fields
+	msg, ok := transformMessage.(*types.TransformMessageT)
+	if !ok || len(msg.Data) == 0 {
+		return nil, nil, fmt.Errorf("invalid transform message format for OAuth request")
+	}
+
+	// Prepare destination info for OAuth context
+	destinationInfo := &oauthv2.DestinationInfo{
+		Config:           msg.Data[0].Destination.Config,
+		DefinitionConfig: msg.Data[0].Destination.DestinationDefinition.Config,
+		WorkspaceID:      msg.Data[0].JobMetadata.WorkspaceID,
+		DefinitionName:   msg.Data[0].Destination.DestinationDefinition.Name,
+		ID:               msg.Data[0].Destination.ID,
+	}
+
+	// Add destination info to request context
+	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+
+	// Start timing the request
+	start := time.Now()
+	resp, err := trans.clientOAuthV2.Do(req)
+	trans.transformRequestTimerStat.SendTiming(time.Since(start))
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("OAuth request failed: %w", err)
+	}
+
+	// Read response body
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		httputil.CloseResponse(resp)
+		return nil, nil, fmt.Errorf("failed to read OAuth response body: %w", err)
+	}
+
+	return resp, respData, nil
+}
+
+func (trans *handle) makeStandardRequest(req *http.Request) (*http.Response, []byte, error) {
+	// Start timing the request
+	start := time.Now()
+	resp, err := trans.client.Do(req)
+	trans.transformRequestTimerStat.SendTiming(time.Since(start))
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("standard request failed: %w", err)
+	}
+
+	// Read response body
+	respData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		httputil.CloseResponse(resp)
+		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return resp, respData, nil
 }
