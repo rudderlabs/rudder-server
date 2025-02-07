@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.2](https://github.com/rudderlabs/rudder-server/compare/v1.42.1...v1.42.2) (2025-02-06)
+
+
+### Bug Fixes
+
+* snowpipe streaming error enrichment for failed events ([#5479](https://github.com/rudderlabs/rudder-server/issues/5479)) ([9bf77b4](https://github.com/rudderlabs/rudder-server/commit/9bf77b451b42cb5a1756ea76d20a0b3840368a3c))
+
 ## [1.42.1](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.42.1) (2025-02-05)
 
 
