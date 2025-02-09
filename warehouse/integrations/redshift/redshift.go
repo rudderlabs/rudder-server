@@ -192,7 +192,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.skipComputingUserLatestTraits = conf.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
-	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
+	rs.config.loadByFolderPath = true
 
 	return rs
 }

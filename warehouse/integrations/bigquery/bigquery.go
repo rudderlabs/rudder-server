@@ -131,7 +131,7 @@ func New(conf *config.Config, log logger.Logger) *BigQuery {
 	bq.config.enableDeleteByJobs = conf.GetBool("Warehouse.bigquery.enableDeleteByJobs", false)
 	bq.config.customPartitionsEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", nil)
 	bq.config.slowQueryThreshold = conf.GetDuration("Warehouse.bigquery.slowQueryThreshold", 5, time.Minute)
-	bq.config.loadByFolderPath = conf.GetBool("Warehouse.bigquery.loadByFolderPath", false)
+	bq.config.loadByFolderPath = true
 
 	return bq
 }
