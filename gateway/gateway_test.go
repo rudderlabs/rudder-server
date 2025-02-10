@@ -1756,15 +1756,9 @@ var _ = Describe("Gateway", func() {
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
 
+		var statStore *memstats.Store
 		// a second after receivedAt
 		now, err := time.Parse(time.RFC3339Nano, "2024-01-01T01:01:02.000000001Z")
-		Expect(err).To(BeNil())
-
-		statStore, err := memstats.New(
-			memstats.WithNow(func() time.Time {
-				return now
-			}),
-		)
 		Expect(err).To(BeNil())
 
 		BeforeEach(func() {
@@ -1788,6 +1782,13 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+
+			statStore, err = memstats.New(
+				memstats.WithNow(func() time.Time {
+					return now
+				}),
+			)
+			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
@@ -1872,12 +1873,12 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_requests",
 					Tags: map[string]string{
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
 					},
 					Value: 1,
@@ -1888,10 +1889,10 @@ var _ = Describe("Gateway", func() {
 					Name: "gateway.write_key_successful_requests",
 					Tags: map[string]string{
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 					},
@@ -1903,10 +1904,10 @@ var _ = Describe("Gateway", func() {
 					Name: "gateway.write_key_failed_requests",
 					Tags: map[string]string{
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 					},
@@ -2007,10 +2008,10 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
@@ -2029,16 +2030,16 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
 			})
 			Expect(successfulReqStat).To(Not(BeNil()))
-			Expect(successfulReqStat.LastValue()).To(Equal(float64(3)))
+			Expect(successfulReqStat.LastValue()).To(Equal(float64(1)))
 			successfulEventStat := statStore.Get("gateway.write_key_successful_events", map[string]string{
 				"writeKey":    WriteKeyEnabled,
 				"reqType":     "internalBatch",
@@ -2049,7 +2050,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(successfulEventStat).To(Not(BeNil()))
-			Expect(successfulEventStat.LastValue()).To(Equal(float64(3)))
+			Expect(successfulEventStat.LastValue()).To(Equal(float64(2)))
 			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
 				"writeKey":    WriteKeyEnabled,
 				"reqType":     "internalBatch",
@@ -2060,7 +2061,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3}))
+			Expect(eventsStat.Values()).To(Equal([]float64{1, 2}))
 		})
 
 		It("request failed db error", func() {
@@ -2072,10 +2073,10 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
 			failedReqStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
@@ -2105,7 +2106,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3, 4}))
+			Expect(eventsStat.Values()).To(Equal([]float64{1}))
 		})
 	})
 
