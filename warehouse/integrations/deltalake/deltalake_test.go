@@ -1376,8 +1376,8 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		err = d.AddColumns(ctx, tableName, columnsToAdd)
-		require.NoError(t, err)
+		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
+		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
 
 		schema, err := d.FetchSchema(ctx)
 		require.NoError(t, err)
