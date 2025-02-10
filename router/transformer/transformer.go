@@ -26,6 +26,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -50,7 +51,7 @@ const (
 type handle struct {
 	tr *http.Transport
 	// http client for router transformation request
-	client *http.Client
+	client sysUtils.HTTPClientI
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
@@ -501,7 +502,17 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: trans.transformTimeout,
+		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
+		ClientType:    config.GetString("Transformer.Client.type", "stdlib"),
+		PickerType:    config.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBool("Transformer.Client.disableKeepAlives", true)
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetInt("Transformer.Client.maxHTTPConnections", 100)
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
+	transformerClientConfig.TransportConfig.IdleConnTimeout = 30 * time.Second
+	trans.client = transformerclient.NewClient(transformerClientConfig)
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
@@ -517,7 +528,8 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Logger:             logger.NewLogger().Child("TransformerProxyHttpClient"),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
+	transformerClientConfig.ClientTimeout = trans.destinationTimeout + trans.transformTimeout
+	trans.proxyClient = transformerclient.NewClient(transformerClientConfig)
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
