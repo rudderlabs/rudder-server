@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.4](https://github.com/rudderlabs/rudder-server/compare/v1.42.3...v1.42.4) (2025-02-10)
+
+
+### Bug Fixes
+
+* databricks columns to add becomes empty after filtering ([#5494](https://github.com/rudderlabs/rudder-server/issues/5494)) ([462aeef](https://github.com/rudderlabs/rudder-server/commit/462aeef76866dc86b391bd52634899082a7cc7db))
+
 ## [1.42.3](https://github.com/rudderlabs/rudder-server/compare/v1.42.2...v1.42.3) (2025-02-10)
 
 
