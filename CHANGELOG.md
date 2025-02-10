@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.42.3](https://github.com/rudderlabs/rudder-server/compare/v1.42.2...v1.42.3) (2025-02-10)
+
+
+### Bug Fixes
+
+* async framework destination live events ([#5480](https://github.com/rudderlabs/rudder-server/issues/5480)) ([40d9c7d](https://github.com/rudderlabs/rudder-server/commit/40d9c7d449ceae6c9393cefbf49993a3207f6cb6))
+
+
+### Miscellaneous
+
+* fix gateway metrics ([#5483](https://github.com/rudderlabs/rudder-server/issues/5483)) ([77b7d02](https://github.com/rudderlabs/rudder-server/commit/77b7d025fa9a4d22fbad5851b6efd14a9e973d5d))
+* make cslb configurable ([#5451](https://github.com/rudderlabs/rudder-server/issues/5451)) ([54820a4](https://github.com/rudderlabs/rudder-server/commit/54820a4086f63a53e899f6950689087c323866c0))
+
 ## [1.42.2](https://github.com/rudderlabs/rudder-server/compare/v1.42.1...v1.42.2) (2025-02-06)
 
 

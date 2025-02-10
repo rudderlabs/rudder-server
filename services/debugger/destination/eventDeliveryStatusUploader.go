@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../../mocks/services/debugger/destination/eventDeliveryStatusUploader.go -package mock_destinationdebugger github.com/rudderlabs/rudder-server/services/debugger/destination/ DestinationDebugger
+
 package destinationdebugger
 
 import (
