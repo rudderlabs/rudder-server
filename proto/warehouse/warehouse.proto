@@ -20,6 +20,7 @@ service Warehouse {
   rpc RetrieveFailedBatches(RetrieveFailedBatchesRequest) returns (RetrieveFailedBatchesResponse);
   rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
   rpc GetFirstAbortedUploadInContinuousAbortsByDestination(FirstAbortedUploadInContinuousAbortsByDestinationRequest) returns (FirstAbortedUploadInContinuousAbortsByDestinationResponse);
+  rpc GetSyncLatency(SyncLatencyRequest) returns (SyncLatencyResponse);
 }
 
 message Pagination {
@@ -171,6 +172,23 @@ message FirstAbortedUploadResponse {
   google.protobuf.Timestamp last_event_at = 6;
 }
 
-message FirstAbortedUploadInContinuousAbortsByDestinationResponse { 
+message FirstAbortedUploadInContinuousAbortsByDestinationResponse {
   repeated FirstAbortedUploadResponse uploads = 1;
+}
+
+message SyncLatencyRequest {
+  string destination_id = 1;
+  string workspace_id = 2;
+  string start_time = 3;
+  string aggregation_minutes = 4;
+  string source_id = 5;
+}
+
+message SyncLatencyResponse {
+  repeated LatencyTimeSeriesDataPoint time_series_data_points = 1 [json_name = "graph"];
+}
+
+message LatencyTimeSeriesDataPoint {
+  google.protobuf.DoubleValue timestamp_millis = 1 [json_name = "bucket"];
+  google.protobuf.DoubleValue latency_seconds = 2 [json_name = "latency"];
 }
