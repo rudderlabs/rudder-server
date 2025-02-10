@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/utils/types"
