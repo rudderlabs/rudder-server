@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -35,7 +36,7 @@ type schemaV2 struct {
 	cachedSchemaMu                   sync.RWMutex
 }
 
-func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, schemaSize stats.Histogram, ttlInMinutes time.Duration, fetchSchemaRepo fetchSchemaRepo) *schemaV2 {
+func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, ttlInMinutes time.Duration, fetchSchemaRepo fetchSchemaRepo) *schemaV2 {
 	v2 := &schemaV2{
 		warehouse:                        warehouse,
 		log:                              log,
@@ -47,7 +48,7 @@ func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, schem
 		enableIDResolution:               v1.enableIDResolution,
 		now:                              timeutil.Now,
 	}
-	v2.stats.schemaSize = schemaSize
+	v2.stats.schemaSize = v1.stats.schemaSize
 	return v2
 }
 
@@ -58,7 +59,7 @@ func (sh *schemaV2) SyncRemoteSchema(ctx context.Context, _ fetchSchemaRepo, upl
 func (sh *schemaV2) IsWarehouseSchemaEmpty(ctx context.Context) bool {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
-		sh.log.Warnf("error getting schema: %v", err)
+		sh.log.Warnn("error getting schema", obskit.Error(err))
 		return true
 	}
 	return len(schema) == 0
@@ -67,7 +68,7 @@ func (sh *schemaV2) IsWarehouseSchemaEmpty(ctx context.Context) bool {
 func (sh *schemaV2) GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
-		sh.log.Warnf("error getting schema: %w", err)
+		sh.log.Warnn("error getting schema", obskit.Error(err))
 		return model.TableSchema{}
 	}
 	return schema[tableName]
@@ -206,7 +207,7 @@ func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
 		return sh.cachedSchema, nil
 	}
 	if whSchema.ExpiresAt.Before(sh.now()) {
-		sh.log.Infof("Schema expired for destination id: %s, namespace: %s at %v", sh.warehouse.Destination.ID, sh.warehouse.Namespace, whSchema.ExpiresAt)
+		sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
 		sh.cachedSchemaMu.RUnlock() // Release the lock since "fetchSchemaFromWarehouse" internally acquires a lock
 		schema, err := sh.fetchSchemaFromWarehouse(ctx)
 		sh.cachedSchemaMu.RLock() // Acquire the lock again so that deferred unlock is called without any issues

@@ -45,7 +45,7 @@ func TestSchemaV2(t *testing.T) {
 		},
 	}
 	ttl := 10 * time.Minute
-	v2 := newSchemaV2(v1, warehouse, logger.NOP, nil, ttl, &mockFetchSchemaRepoV2{})
+	v2 := newSchemaV2(v1, warehouse, logger.NOP, ttl, &mockFetchSchemaRepoV2{})
 	ctx := context.Background()
 
 	t.Run("SyncRemoteSchema", func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestSchemaV2(t *testing.T) {
 	})
 
 	t.Run("Test ttl", func(t *testing.T) {
-		v2 := newSchemaV2(v1, warehouse, logger.NOP, nil, ttl, &mockFetchSchemaRepoV2{})
+		v2 := newSchemaV2(v1, warehouse, logger.NOP, ttl, &mockFetchSchemaRepoV2{})
 		_, err := v2.SyncRemoteSchema(ctx, nil, 0)
 		require.NoError(t, err)
 		count, err := v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
