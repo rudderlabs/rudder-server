@@ -27,7 +27,6 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -162,11 +161,23 @@ func WithClient(client HTTPDoer) Opt {
 	}
 }
 
+type UserTransformer interface {
+	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
+type DestinationTransformer interface {
+	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
+type TrackingPlanValidator interface {
+	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
-	Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response
+	UserTransformer
+	DestinationTransformer
+	TrackingPlanValidator
 }
 
 type HTTPDoer interface {
@@ -188,11 +199,12 @@ type handle struct {
 	guardConcurrency chan struct{}
 
 	config struct {
-		maxConcurrency         int
-		maxHTTPConnections     int
-		maxHTTPIdleConnections int
-		maxIdleConnDuration    time.Duration
-		disableKeepAlives      bool
+		maxConcurrency            int
+		maxHTTPConnections        int
+		maxHTTPIdleConnections    int
+		maxIdleConnDuration       time.Duration
+		disableKeepAlives         bool
+		collectInstanceLevelStats bool
 
 		timeoutDuration time.Duration
 
@@ -230,20 +242,16 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
-
+	trans.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
 	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
 	transformerClientConfig := &transformerclient.ClientConfig{
 		ClientTimeout: trans.config.timeoutDuration,
-		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 120, time.Second),
+		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
 		ClientType:    conf.GetString("Transformer.Client.type", "stdlib"),
 		PickerType:    conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
-		CheckerType:   conf.GetString("Transformer.Client.httplb.checkerType", "nop"),
-
-		//for now no health checks - can be implemented when there are different clients for UT, DT, TPV
-		CheckURL: trans.config.userTransformationURL,
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections
@@ -412,7 +420,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []Tran
 				transformationID = data[0].Destination.Transformations[0].ID
 			}
 
-			respData, statusCode = trans.doPost(context.WithValue(ctx, "numEvents", len(data)), rawJSON, url, stage, stats.Tags{
+			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, stats.Tags{
 				"destinationType":  data[0].Destination.DestinationDefinition.Name,
 				"destinationId":    data[0].Destination.ID,
 				"sourceId":         data[0].Metadata.SourceID,
@@ -485,7 +493,6 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		retryCount int
 		resp       *http.Response
 		respData   []byte
-		numEvents  = ctx.Value("numEvents").(int)
 	)
 	retryStrategy := backoff.NewExponentialBackOff()
 	// MaxInterval caps the RetryInterval
@@ -511,25 +518,20 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				resp, reqErr = trans.httpClient.Do(req)
 			})
 			duration := time.Since(requestStartTime)
-			if duration >= time.Second {
-				trans.logger.Errorw("duration > 1s", time.Now().Format(misc.RFC3339Milli), duration)
-			}
 			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(duration)
 			if reqErr != nil {
 				return reqErr
 			}
-			// TODO: cleanup and adjust for cardinality of X-Instance-ID header
 			headerResponseTime := resp.Header.Get("X-Response-Time")
 			instanceWorker := resp.Header.Get("X-Instance-ID")
-			if instanceWorker != "" {
+			if trans.config.collectInstanceLevelStats && instanceWorker != "" {
 				newTags := lo.Assign(tags)
 				newTags["instanceWorker"] = instanceWorker
-				trans.stat.NewTaggedStat("processor_transformer_instance_event_count", stats.CountType, newTags).Count(numEvents)
 				dur := duration.Milliseconds()
 				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
 				if err == nil {
 					diff := float64(dur) - headerTime
-					trans.stat.NewTaggedStat("processor_tranform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
+					trans.stat.NewTaggedStat("processor_transform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
 				}
 			}
 
@@ -579,7 +581,7 @@ func (trans *handle) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", trans.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
 		case warehouseutils.RS:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -591,7 +593,7 @@ func (trans *handle) destTransformURL(destType string) string {
 		}
 	}
 	if destType == warehouseutils.SnowpipeStreaming {
-		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, trans.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
 }

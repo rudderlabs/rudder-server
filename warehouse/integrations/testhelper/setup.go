@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -172,6 +173,34 @@ func WithConstantRetries(operation func() error) error {
 		time.Sleep(time.Duration(1+i) * time.Second)
 	}
 	return err
+}
+
+func UploadSampleTestRecordsTemplateLoadFile(
+	t testing.TB,
+	fm filemanager.FileManager,
+	prefixes []string,
+	recordSetIndex int,
+) filemanager.UploadedFile {
+	t.Helper()
+
+	tmpl, err := template.ParseFiles("../testdata/load.template")
+	require.NoError(t, err)
+
+	tempFile, err := os.CreateTemp("", "clone_*.csv.gz")
+	require.NoError(t, err)
+
+	gzipWriter := gzip.NewWriter(tempFile)
+	require.NoError(t, tmpl.Execute(gzipWriter, SampleTestRecordsTemplate(recordSetIndex)))
+	require.NoError(t, gzipWriter.Close())
+
+	f, err := os.Open(tempFile.Name())
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	uploadOutput, err := fm.Upload(context.Background(), f, prefixes...)
+	require.NoError(t, err)
+
+	return uploadOutput
 }
 
 func UploadLoadFile(

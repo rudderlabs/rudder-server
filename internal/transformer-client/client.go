@@ -2,15 +2,14 @@ package transformerclient
 
 import (
 	"context"
-	"github.com/bufbuild/httplb/resolver"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/bufbuild/httplb"
 	"github.com/bufbuild/httplb/conn"
-	"github.com/bufbuild/httplb/health"
 	"github.com/bufbuild/httplb/picker"
+	"github.com/bufbuild/httplb/resolver"
 
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -24,14 +23,11 @@ type ClientConfig struct {
 	}
 
 	ClientTimeout time.Duration //	600*time.Second
-	ClientTTL     time.Duration //	120*time.Second
+	ClientTTL     time.Duration //	10*time.Second
 
 	ClientType string // stdlib(default), recycled, httplb
 
 	PickerType string // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
-
-	CheckerType string // nop, polling
-	CheckURL    string
 }
 
 type Client interface {
@@ -53,9 +49,7 @@ func NewClient(config *ClientConfig) Client {
 		return client
 	}
 
-	if !config.TransportConfig.DisableKeepAlives {
-		transport.DisableKeepAlives = false
-	}
+	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
 	if config.TransportConfig.MaxConnsPerHost != 0 {
 		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
 	}
@@ -70,7 +64,7 @@ func NewClient(config *ClientConfig) Client {
 		client.Timeout = config.ClientTimeout
 	}
 
-	clientTTL := 120 * time.Second
+	clientTTL := 10 * time.Second
 	if config.ClientTTL != 0 {
 		clientTTL = config.ClientTTL
 	}
@@ -83,14 +77,9 @@ func NewClient(config *ClientConfig) Client {
 			return client
 		}, clientTTL)
 	case "httplb":
-		checkerType := config.CheckerType
-		if config.CheckURL == "" {
-			checkerType = "nop"
-		}
 		return httplb.NewClient(
 			httplb.WithRootContext(context.TODO()),
 			httplb.WithPicker(getPicker(config.PickerType)),
-			httplb.WithHealthChecks(getChecker(checkerType, config.CheckURL)),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
 			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),
@@ -125,18 +114,4 @@ type HTTPLBTransport struct {
 
 func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
 	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
-}
-
-func getChecker(checkerType, url string) health.Checker {
-	switch checkerType {
-	case "nop":
-		return health.NopChecker
-	case "polling":
-		return health.NewPollingChecker(
-			health.PollingCheckerConfig{},
-			health.NewSimpleProber(url),
-		)
-	default:
-		return health.NopChecker
-	}
 }

@@ -244,6 +244,13 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 		return fmt.Errorf("download file: %w", err)
 	}
 
+	cleanupObjectStorageFiles, _ := os.destination.Config[model.CleanupObjectStorageFilesSetting.String()].(bool)
+	if cleanupObjectStorageFiles {
+		if err = deleteFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
+			return fmt.Errorf("delete file: %w. Ensure that delete permissions are granted because the option to delete files after a successful sync is enabled", err)
+		}
+	}
+
 	return nil
 }
 
@@ -400,6 +407,20 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 	}
 
 	return output, nil
+}
+
+func deleteFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {
+	var (
+		err error
+		fm  filemanager.FileManager
+	)
+	if fm, err = createFileManager(dest); err != nil {
+		return fmt.Errorf("create file manager: %w", err)
+	}
+	if err = fm.Delete(ctx, []string{location}); err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	return nil
 }
 
 func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {

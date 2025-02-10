@@ -74,11 +74,7 @@ func (w *worker) start() {
 		for jobs := range w.channel.preprocess {
 			var val *transformationMessage
 			var err error
-			if w.handle.config().enableParallelScan {
-				val, err = w.handle.processJobsForDestV2(w.partition, jobs)
-			} else {
-				val, err = w.handle.processJobsForDest(w.partition, jobs)
-			}
+			val, err = w.handle.processJobsForDest(w.partition, jobs)
 			if err != nil {
 				panic(err)
 			}

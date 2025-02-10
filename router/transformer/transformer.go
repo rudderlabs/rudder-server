@@ -504,13 +504,9 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Router Transformation
 	transformerClientConfig := &transformerclient.ClientConfig{
 		ClientTimeout: trans.transformTimeout,
-		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 120, time.Second),
+		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
 		ClientType:    config.GetString("Transformer.Client.type", "stdlib"),
 		PickerType:    config.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
-		CheckerType:   config.GetString("Transformer.Client.httplb.checkerType", "nop"),
-
-		// for now no health checks - can be implemented when there are different clients for UT, DT, TPV
-		// CheckURL: trans.config.userTransformationURL,
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBool("Transformer.Client.disableKeepAlives", true)
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetInt("Transformer.Client.maxHTTPConnections", 100)

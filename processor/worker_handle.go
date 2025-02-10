@@ -24,7 +24,6 @@ type workerHandle interface {
 	markExecuting(partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error)
-	processJobsForDestV2(partition string, subJobs subJob) (*transformationMessage, error)
 	transformations(partition string, in *transformationMessage) *storeMessage
 	Store(partition string, in *storeMessage)
 }
@@ -34,7 +33,6 @@ type workerHandleConfig struct {
 	maxEventsToProcess config.ValueLoader[int]
 
 	enablePipelining      bool
-	enableParallelScan    bool
 	pipelineBufferedItems int
 	subJobSize            int
 
