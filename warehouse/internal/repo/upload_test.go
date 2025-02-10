@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo/mutable"
+
 	"github.com/samber/lo"
 
 	"github.com/stretchr/testify/require"
@@ -1368,8 +1370,8 @@ func TestUploads_SyncsInfo(t *testing.T) {
 		uploadIDs = append(uploadIDs, uploadID)
 	}
 
-	reverseUploadIDs := lo.Reverse(uploadIDs)
-
+	reverseUploadIDs := uploadIDs
+	mutable.Reverse(reverseUploadIDs)
 	for _, uploadID := range uploadIDs[26:51] {
 		_, err := db.ExecContext(ctx, "UPDATE wh_uploads SET status = $3, error = $1, last_exec_at = $4, timings = $2 WHERE id = $5;", `
 			{

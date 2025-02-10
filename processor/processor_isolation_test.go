@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo/mutable"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -413,5 +415,6 @@ func (procIsolationMethods) splitInBatches(jobs []*procIsolationJobSpec, batchSi
 			return []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(chunk, ",")))
 		})...)
 	}
-	return lo.Shuffle(batches)
+	mutable.Shuffle(batches)
+	return batches
 }
