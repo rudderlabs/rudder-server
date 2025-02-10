@@ -58,6 +58,7 @@ type (
 			// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
 			attempts int
 			next     time.Time
+			error    string
 		}
 
 		stats struct {
