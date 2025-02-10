@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -69,4 +71,42 @@ type FirstAbortedUploadResponse struct {
 	CreatedAt     time.Time
 	FirstEventAt  time.Time
 	LastEventAt   time.Time
+}
+
+type LatencyAggregationType int
+
+const (
+	MaxLatency LatencyAggregationType = iota + 1
+	P90Latency
+	P95Latency
+	AvgLatency
+)
+
+func GetLatencyAggregationType(aggregationType string) (LatencyAggregationType, error) {
+	switch strings.ToLower(strings.TrimSpace(aggregationType)) {
+	case "max":
+		return MaxLatency, nil
+	case "p90":
+		return P90Latency, nil
+	case "p95":
+		return P95Latency, nil
+	case "avg":
+		return AvgLatency, nil
+	default:
+		return 0, fmt.Errorf("invalid aggregation type: %s", aggregationType)
+	}
+}
+
+type SyncLatencyRequest struct {
+	DestinationID      string
+	WorkspaceID        string
+	StartTime          time.Time
+	AggregationMinutes int64
+	SourceID           string
+	AggregationType    LatencyAggregationType
+}
+
+type LatencyTimeSeriesDataPoint struct {
+	TimestampMillis float64
+	LatencySeconds  float64
 }
