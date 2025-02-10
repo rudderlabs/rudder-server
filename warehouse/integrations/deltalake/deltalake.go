@@ -535,6 +535,9 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		_, ok := tableSchema[columnInfo.Name]
 		return !ok
 	})
+	if len(columnsToAddInfo) == 0 {
+		return nil
+	}
 
 	var queryBuilder strings.Builder
 
