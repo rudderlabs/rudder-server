@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
@@ -31,6 +32,7 @@ type schemaV2 struct {
 	now                              func() time.Time
 	cachedSchema                     model.Schema
 	cacheExpiry                      time.Time
+	cachedSchemaMu                   sync.RWMutex
 }
 
 func newSchemaV2(v1 *schema, warehouse model.Warehouse, log logger.Logger, schemaSize stats.Histogram, ttlInMinutes time.Duration, fetchSchemaRepo fetchSchemaRepo) *schemaV2 {
@@ -89,8 +91,12 @@ func (sh *schemaV2) UpdateWarehouseTableSchema(ctx context.Context, tableName st
 	if err != nil {
 		return fmt.Errorf("getting schema: %w", err)
 	}
-	schema[tableName] = tableSchema
-	err = sh.saveSchema(ctx, schema)
+	schemaCopy := make(model.Schema)
+	for k, v := range schema {
+		schemaCopy[k] = v
+	}
+	schemaCopy[tableName] = tableSchema
+	err = sh.saveSchema(ctx, schemaCopy)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -172,12 +178,16 @@ func (sh *schemaV2) saveSchema(ctx context.Context, newSchema model.Schema) erro
 	if err != nil {
 		return fmt.Errorf("inserting schema: %w", err)
 	}
+	sh.cachedSchemaMu.Lock()
 	sh.cachedSchema = newSchema
+	sh.cachedSchemaMu.Unlock()
 	sh.cacheExpiry = expiresAt
 	return nil
 }
 
 func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
 	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
 		return sh.cachedSchema, nil
 	}
@@ -197,7 +207,10 @@ func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
 	}
 	if whSchema.ExpiresAt.Before(sh.now()) {
 		sh.log.Infof("Schema expired for destination id: %s, namespace: %s at %v", sh.warehouse.Destination.ID, sh.warehouse.Namespace, whSchema.ExpiresAt)
-		return sh.fetchSchemaFromWarehouse(ctx)
+		sh.cachedSchemaMu.RUnlock() // Release the lock since "fetchSchemaFromWarehouse" internally acquires a lock
+		schema, err := sh.fetchSchemaFromWarehouse(ctx)
+		sh.cachedSchemaMu.RLock() // Acquire the lock again so that deferred unlock is called without any issues
+		return schema, err
 	}
 	return sh.cachedSchema, nil
 }
