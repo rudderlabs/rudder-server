@@ -96,7 +96,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 
 		validationStart := time.Now()
 		var response types.Response
-		if proc.config.enableTransformationV2 {
+		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
 		} else {
 			client, err := proc.transformerManager.GetServiceClient("trackingplan_validation")
