@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/samber/lo"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -15,63 +17,49 @@ func validateStepFunc(_ context.Context, destination *backendconfig.DestinationT
 }
 
 func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
-	var (
-		destType = dest.DestinationDefinition.Name
-		steps    []*model.Step
-	)
+	destType := dest.DestinationDefinition.Name
 
-	steps = []*model.Step{{
-		ID:   len(steps) + 1,
-		Name: model.VerifyingObjectStorage,
-	}}
+	if destType == warehouseutils.SnowpipeStreaming {
+		return &model.StepsResponse{
+			Steps: []*model.Step{
+				{ID: 1, Name: model.VerifyingConnections},
+				{ID: 2, Name: model.VerifyingCreateSchema},
+				{ID: 3, Name: model.VerifyingCreateAndAlterTable},
+				{ID: 4, Name: model.VerifyingFetchSchema},
+			},
+		}
+	}
+
+	steps := []*model.Step{
+		{ID: 1, Name: model.VerifyingObjectStorage},
+	}
+
+	appendSteps := func(newSteps ...string) {
+		for _, step := range newSteps {
+			steps = append(steps, &model.Step{ID: len(steps) + 1, Name: step})
+		}
+	}
 
 	switch destType {
 	case warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
+		// No additional steps
 	case warehouseutils.S3Datalake:
-		wh := createDummyWarehouse(dest)
-		if canUseGlue := schemarepository.UseGlue(&wh); !canUseGlue {
-			break
+		if schemarepository.UseGlue(lo.ToPtr(createDummyWarehouse(dest))) {
+			appendSteps(
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+			)
 		}
-
-		steps = append(steps,
-			&model.Step{
-				ID:   len(steps) + 1,
-				Name: model.VerifyingCreateSchema,
-			},
-			&model.Step{
-				ID:   len(steps) + 2,
-				Name: model.VerifyingCreateAndAlterTable,
-			},
-			&model.Step{
-				ID:   len(steps) + 3,
-				Name: model.VerifyingFetchSchema,
-			},
-		)
 	default:
-		steps = append(steps,
-			&model.Step{
-				ID:   len(steps) + 1,
-				Name: model.VerifyingConnections,
-			},
-			&model.Step{
-				ID:   len(steps) + 2,
-				Name: model.VerifyingCreateSchema,
-			},
-			&model.Step{
-				ID:   len(steps) + 3,
-				Name: model.VerifyingCreateAndAlterTable,
-			},
-			&model.Step{
-				ID:   len(steps) + 4,
-				Name: model.VerifyingFetchSchema,
-			},
-			&model.Step{
-				ID:   len(steps) + 5,
-				Name: model.VerifyingLoadTable,
-			},
+		appendSteps(
+			model.VerifyingConnections,
+			model.VerifyingCreateSchema,
+			model.VerifyingCreateAndAlterTable,
+			model.VerifyingFetchSchema,
+			model.VerifyingLoadTable,
 		)
 	}
-	return &model.StepsResponse{
-		Steps: steps,
-	}
+
+	return &model.StepsResponse{Steps: steps}
 }

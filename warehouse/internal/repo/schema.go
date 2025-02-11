@@ -23,7 +23,8 @@ const whSchemaTableColumns = `
 	destination_type,
 	schema,
    	created_at,
-   	updated_at
+   	updated_at,
+	expires_at
 `
 
 type WHSchema repo
@@ -54,16 +55,17 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		INSERT INTO `+whSchemaTableName+` (
           source_id, namespace, destination_id,
 		  destination_type, schema, created_at,
-		  updated_at
+		  updated_at, expires_at
 		)
 		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
+		  ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (
 			source_id, destination_id, namespace
 		  ) DO
 		UPDATE
 		SET
 		  schema = $5,
-		  updated_at = $7 RETURNING id;
+		  updated_at = $7,
+		  expires_at = $8 RETURNING id;
 `,
 		whSchema.SourceID,
 		whSchema.Namespace,
@@ -72,6 +74,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		schemaPayload,
 		now.UTC(),
 		now.UTC(),
+		whSchema.ExpiresAt,
 	).Scan(&id)
 	if err != nil {
 		return id, fmt.Errorf("inserting schema: %w", err)
@@ -120,6 +123,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 		var (
 			whSchema            model.WHSchema
 			schemaPayloadRawRaw []byte
+			expiresAt           sql.NullTime
 		)
 		err := rows.Scan(
 			&whSchema.ID,
@@ -130,6 +134,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 			&schemaPayloadRawRaw,
 			&whSchema.CreatedAt,
 			&whSchema.UpdatedAt,
+			&expiresAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -137,6 +142,9 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 
 		whSchema.CreatedAt = whSchema.CreatedAt.UTC()
 		whSchema.UpdatedAt = whSchema.UpdatedAt.UTC()
+		if expiresAt.Valid {
+			whSchema.ExpiresAt = expiresAt.Time.UTC()
+		}
 
 		var schemaPayload model.Schema
 		err = json.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
