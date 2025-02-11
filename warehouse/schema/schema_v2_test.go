@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -38,7 +39,15 @@ func (m *mockFetchSchemaRepoV2) FetchSchema(ctx context.Context) (model.Schema, 
 }
 
 func TestSchemaV2(t *testing.T) {
-	warehouse := model.Warehouse{}
+	warehouse := model.Warehouse{
+		Destination: backendconfig.DestinationT{
+			ID: "dest_id",
+		},
+		Namespace: "namespace",
+		Source: backendconfig.SourceT{
+			ID: "source_id",
+		},
+	}
 	v1 := &schema{
 		schemaRepo: &mockSchemaRepo{
 			schemaMap: make(map[string]model.WHSchema),
@@ -72,10 +81,31 @@ func TestSchemaV2(t *testing.T) {
 	})
 
 	t.Run("Test ttl", func(t *testing.T) {
+		v1 := &schema{
+			schemaRepo: &mockSchemaRepo{
+				schemaMap: map[string]model.WHSchema{
+					"source_id_dest_id_namespace": {
+						Schema: model.Schema{
+							"table1": {
+								"column1": "string",
+								"column2": "int",
+							},
+							"table2": {
+								"column11": "string",
+							},
+						},
+						ExpiresAt: timeutil.Now().Add(10 * time.Minute),
+					},
+				},
+			},
+		}
 		v2 := newSchemaV2(v1, warehouse, logger.NOP, ttl, &mockFetchSchemaRepoV2{})
-		_, err := v2.SyncRemoteSchema(ctx, nil, 0)
-		require.NoError(t, err)
 		count, err := v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+		_, err = v2.SyncRemoteSchema(ctx, nil, 0)
+		require.NoError(t, err)
+		count, err = v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 3, count)
 

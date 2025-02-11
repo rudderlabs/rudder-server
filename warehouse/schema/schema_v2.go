@@ -188,10 +188,11 @@ func (sh *schemaV2) saveSchema(ctx context.Context, newSchema model.Schema) erro
 
 func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
 	sh.cachedSchemaMu.RLock()
-	defer sh.cachedSchemaMu.RUnlock()
 	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
+		defer sh.cachedSchemaMu.RUnlock()
 		return sh.cachedSchema, nil
 	}
+	sh.cachedSchemaMu.RUnlock()
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
@@ -202,16 +203,19 @@ func (sh *schemaV2) getSchema(ctx context.Context) (model.Schema, error) {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
+		sh.cachedSchemaMu.Lock()
+		defer sh.cachedSchemaMu.Unlock()
 		sh.cachedSchema = model.Schema{}
 		sh.cacheExpiry = sh.now().Add(sh.ttlInMinutes)
 		return sh.cachedSchema, nil
 	}
 	if whSchema.ExpiresAt.Before(sh.now()) {
 		sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
-		sh.cachedSchemaMu.RUnlock() // Release the lock since "fetchSchemaFromWarehouse" internally acquires a lock
-		schema, err := sh.fetchSchemaFromWarehouse(ctx)
-		sh.cachedSchemaMu.RLock() // Acquire the lock again so that deferred unlock is called without any issues
-		return schema, err
+		return sh.fetchSchemaFromWarehouse(ctx)
 	}
+	sh.cachedSchemaMu.Lock()
+	defer sh.cachedSchemaMu.Unlock()
+	sh.cachedSchema = whSchema.Schema
+	sh.cacheExpiry = whSchema.ExpiresAt
 	return sh.cachedSchema, nil
 }
