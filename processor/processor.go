@@ -2771,7 +2771,7 @@ func (proc *Handle) transformSrcDest(
 				proc.logger.Error("Error getting destination transformer client", err)
 				panic(err)
 			}
-			response = client.SendRequest(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			response = client.SendRequest(ctx, eventList, proc.config.transformBatchSize.Load())
 		}
 		d := time.Since(startedAt)
 		userTransformationStat.transformTime.SendTiming(d)
@@ -2930,7 +2930,7 @@ func (proc *Handle) transformSrcDest(
 		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 		} else {
-			client, err := proc.transformerManager.GetServiceClient("user_transformer")
+			client, err := proc.transformerManager.GetServiceClient("destination_transformer")
 			if err != nil {
 				proc.logger.Error("Error getting destination transformer client", err)
 				panic(err)
