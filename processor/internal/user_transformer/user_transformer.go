@@ -64,7 +64,7 @@ func NewUserTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.client = http_client.NewHTTPClient(conf)
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
-	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", "http://localhost:9090")
+	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")

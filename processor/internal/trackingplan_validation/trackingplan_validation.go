@@ -52,7 +52,7 @@ func NewTPValidator(conf *config.Config, log logger.Logger, stat stats.Stats) *T
 	handle.log = log
 	handle.stat = stat
 	handle.client = http_client.NewHTTPClient(conf)
-	handle.config.destTransformationURL = handle.conf.GetString("Warehouse.destTransformationURL", "http://localhost:9090")
+	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
