@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -363,6 +365,9 @@ func (job *UploadJob) run() (err error) {
 			if err = job.exportData(); err != nil {
 				break
 			}
+			if err = job.cleanupObjectStorageFiles(); err != nil {
+				break
+			}
 			newStatus = nextUploadState.completed
 
 		default:
@@ -424,6 +429,41 @@ func (job *UploadJob) run() (err error) {
 		return fmt.Errorf("upload Job failed: %w", err)
 	}
 
+	return nil
+}
+
+func (job *UploadJob) cleanupObjectStorageFiles() error {
+	cleanupObjectStorageFiles := job.warehouse.GetBoolDestinationConfig(model.CleanupObjectStorageFilesSetting)
+	if !cleanupObjectStorageFiles {
+		return nil
+	}
+	destination := job.warehouse.Destination
+	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
+	fm, err := filemanager.New(&filemanager.Settings{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           destination.Config,
+			UseRudderStorage: job.upload.UseRudderStorage,
+			WorkspaceID:      job.upload.WorkspaceID,
+		}),
+	})
+	if err != nil {
+		return fmt.Errorf("creating file manager: %w", err)
+	}
+	loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
+	if err != nil {
+		return fmt.Errorf("fetching loading files: %w", err)
+	}
+	stagingKeysToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
+		return fm.GetDownloadKeyFromFileLocation(file.Location)
+	})
+	loadingKeysToDel := lo.Map(loadingFiles, func(file model.LoadFile, _ int) string {
+		return fm.GetDownloadKeyFromFileLocation(file.Location)
+	})
+	if err = fm.Delete(job.ctx, append(stagingKeysToDel, loadingKeysToDel...)); err != nil {
+		return fmt.Errorf("deleting files from object storage: %w", err)
+	}
 	return nil
 }
 

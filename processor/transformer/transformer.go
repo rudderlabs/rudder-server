@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"runtime/trace"
@@ -16,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bufbuild/httplb"
-	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -25,11 +22,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -63,11 +59,23 @@ func WithClient(client HTTPDoer) Opt {
 	}
 }
 
+type UserTransformer interface {
+	UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+}
+
+type DestinationTransformer interface {
+	Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+}
+
+type TrackingPlanValidator interface {
+	Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
-	Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
-	UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
-	Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+	UserTransformer
+	DestinationTransformer
+	TrackingPlanValidator
 }
 
 type HTTPDoer interface {
@@ -89,11 +97,12 @@ type handle struct {
 	guardConcurrency chan struct{}
 
 	config struct {
-		maxConcurrency         int
-		maxHTTPConnections     int
-		maxHTTPIdleConnections int
-		maxIdleConnDuration    time.Duration
-		disableKeepAlives      bool
+		maxConcurrency            int
+		maxHTTPConnections        int
+		maxHTTPIdleConnections    int
+		maxIdleConnDuration       time.Duration
+		disableKeepAlives         bool
+		collectInstanceLevelStats bool
 
 		timeoutDuration time.Duration
 
@@ -131,47 +140,21 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	trans.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnUserTransformTimeout")
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
-
+	trans.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
 	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
-
-	clientType := conf.GetString("Transformer.Client.type", "stdlib")
-
-	transport := &http.Transport{
-		DisableKeepAlives:   trans.config.disableKeepAlives,
-		MaxConnsPerHost:     trans.config.maxHTTPConnections,
-		MaxIdleConnsPerHost: trans.config.maxHTTPIdleConnections,
-		IdleConnTimeout:     trans.config.maxIdleConnDuration,
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: trans.config.timeoutDuration,
+		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
+		ClientType:    conf.GetString("Transformer.Client.type", "stdlib"),
+		PickerType:    conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
 	}
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   trans.config.timeoutDuration,
-	}
-
-	switch clientType {
-	case "stdlib":
-		trans.httpClient = client
-	case "recycled":
-		trans.httpClient = sysUtils.NewRecycledHTTPClient(func() *http.Client {
-			return client
-		}, config.GetDuration("Transformer.Client.ttl", 120, time.Second))
-	case "httplb":
-		trans.httpClient = httplb.NewClient(
-			httplb.WithTransport("http", &HTTPLBTransport{
-				Transport: transport,
-			}),
-			httplb.WithResolver(
-				resolver.NewDNSResolver(
-					net.DefaultResolver,
-					resolver.PreferIPv6,
-					config.GetDuration("Transformer.Client.ttl", 120, time.Second), // TTL value
-				),
-			),
-		)
-	default:
-		panic(fmt.Sprintf("unknown transformer client type: %s", clientType))
-	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = trans.config.maxHTTPIdleConnections
+	transformerClientConfig.TransportConfig.IdleConnTimeout = trans.config.maxIdleConnDuration
+	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
 
 	for _, opt := range opts {
 		opt(&trans)
@@ -199,14 +182,6 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []types.Tra
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
-}
-
-type HTTPLBTransport struct {
-	*http.Transport
-}
-
-func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
-	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
 }
 
 func (trans *handle) transform(
@@ -439,9 +414,22 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 
 				resp, reqErr = trans.httpClient.Do(req)
 			})
-			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
+			duration := time.Since(requestStartTime)
+			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(duration)
 			if reqErr != nil {
 				return reqErr
+			}
+			headerResponseTime := resp.Header.Get("X-Response-Time")
+			instanceWorker := resp.Header.Get("X-Instance-ID")
+			if trans.config.collectInstanceLevelStats && instanceWorker != "" {
+				newTags := lo.Assign(tags)
+				newTags["instanceWorker"] = instanceWorker
+				dur := duration.Milliseconds()
+				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
+				if err == nil {
+					diff := float64(dur) - headerTime
+					trans.stat.NewTaggedStat("processor_transform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
+				}
 			}
 
 			defer func() { httputil.CloseResponse(resp) }()
@@ -490,7 +478,7 @@ func (trans *handle) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", trans.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", trans.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
 		case warehouseutils.RS:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -502,7 +490,7 @@ func (trans *handle) destTransformURL(destType string) string {
 		}
 	}
 	if destType == warehouseutils.SnowpipeStreaming {
-		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, trans.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, trans.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
 }

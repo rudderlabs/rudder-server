@@ -10,6 +10,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -79,12 +80,16 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 	)
 
 	for _, status := range statusList {
-		if status.JobState == jobsdb.Succeeded.State {
+		switch status.JobState {
+		case jobsdb.Succeeded.State:
 			successCount++
-		} else {
+		case jobsdb.Failed.State, jobsdb.Aborted.State:
 			failureCount++
 			failedReason = string(status.ErrorResponse)
 		}
+	}
+	if failureCount == 0 && successCount == 0 {
+		return
 	}
 
 	if failureCount > 0 {

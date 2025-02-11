@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -224,19 +225,19 @@ func TestGetAggregationBucket(t *testing.T) {
 	})
 }
 
-func TestTransformMetricWithEventSamplingWithNilEventSampler(t *testing.T) {
-	sampleEvent := []byte(`{"event": "1"}`)
-	sampleResponse := "response"
+func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
+	inputSampleEvent := json.RawMessage(`{"event": "1"}`)
+	inputSampleResponse := "response"
 	metric := types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
-			SampleEvent:    sampleEvent,
-			SampleResponse: sampleResponse,
+			SampleEvent:    inputSampleEvent,
+			SampleResponse: inputSampleResponse,
 		},
 	}
-	transformedMetric, err := transformMetricWithEventSampling(metric, 1234567890, nil, 60)
+	outputSampleEvent, outputSampleResponse, err := getSampleWithEventSampling(metric, 1234567890, nil, false, 60)
 	require.NoError(t, err)
-	require.Equal(t, sampleEvent, []byte(transformedMetric.StatusDetail.SampleEvent))
-	require.Equal(t, sampleResponse, transformedMetric.StatusDetail.SampleResponse)
+	require.Equal(t, inputSampleEvent, outputSampleEvent)
+	require.Equal(t, inputSampleResponse, outputSampleResponse)
 }
 
 func TestFloorFactor(t *testing.T) {
@@ -267,10 +268,10 @@ func TestFloorFactor(t *testing.T) {
 	}
 }
 
-func TestTransformMetricWithEventSampling(t *testing.T) {
-	sampleEvent := []byte(`{"event": "2"}`)
+func TestGetSampleWithEventSampling(t *testing.T) {
+	sampleEvent := json.RawMessage(`{"event": "2"}`)
 	sampleResponse := "sample response"
-	emptySampleEvent := []byte(`{}`)
+	emptySampleEvent := json.RawMessage(`{}`)
 	emptySampleResponse := ""
 
 	tests := []struct {
@@ -391,14 +392,14 @@ func TestTransformMetricWithEventSampling(t *testing.T) {
 				mockEventSampler.EXPECT().Put(gomock.Any()).Return(tt.putError)
 			}
 
-			gotMetric, err := transformMetricWithEventSampling(tt.metric, 1234567890, mockEventSampler, 60)
+			sampleEvent, sampleResponse, err := getSampleWithEventSampling(tt.metric, 1234567890, mockEventSampler, true, 60)
 			if tt.getError != nil || tt.putError != nil {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tt.wantMetric.StatusDetail.SampleEvent, gotMetric.StatusDetail.SampleEvent)
-			require.Equal(t, tt.wantMetric.StatusDetail.SampleResponse, gotMetric.StatusDetail.SampleResponse)
+			require.Equal(t, tt.wantMetric.StatusDetail.SampleEvent, sampleEvent)
+			require.Equal(t, tt.wantMetric.StatusDetail.SampleResponse, sampleResponse)
 		})
 	}
 }

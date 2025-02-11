@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.42.4](https://github.com/rudderlabs/rudder-server/compare/v1.42.3...v1.42.4) (2025-02-10)
+
+
+### Bug Fixes
+
+* databricks columns to add becomes empty after filtering ([#5494](https://github.com/rudderlabs/rudder-server/issues/5494)) ([462aeef](https://github.com/rudderlabs/rudder-server/commit/462aeef76866dc86b391bd52634899082a7cc7db))
+
+## [1.42.3](https://github.com/rudderlabs/rudder-server/compare/v1.42.2...v1.42.3) (2025-02-10)
+
+
+### Bug Fixes
+
+* async framework destination live events ([#5480](https://github.com/rudderlabs/rudder-server/issues/5480)) ([40d9c7d](https://github.com/rudderlabs/rudder-server/commit/40d9c7d449ceae6c9393cefbf49993a3207f6cb6))
+
+
+### Miscellaneous
+
+* fix gateway metrics ([#5483](https://github.com/rudderlabs/rudder-server/issues/5483)) ([77b7d02](https://github.com/rudderlabs/rudder-server/commit/77b7d025fa9a4d22fbad5851b6efd14a9e973d5d))
+* make cslb configurable ([#5451](https://github.com/rudderlabs/rudder-server/issues/5451)) ([54820a4](https://github.com/rudderlabs/rudder-server/commit/54820a4086f63a53e899f6950689087c323866c0))
+
+## [1.42.2](https://github.com/rudderlabs/rudder-server/compare/v1.42.1...v1.42.2) (2025-02-06)
+
+
+### Bug Fixes
+
+* snowpipe streaming error enrichment for failed events ([#5479](https://github.com/rudderlabs/rudder-server/issues/5479)) ([9bf77b4](https://github.com/rudderlabs/rudder-server/commit/9bf77b451b42cb5a1756ea76d20a0b3840368a3c))
+
+## [1.42.1](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.42.1) (2025-02-05)
+
+
+### Bug Fixes
+
+* deltalake syncs failing for columns with unhandled data type ([#5467](https://github.com/rudderlabs/rudder-server/issues/5467)) ([#5475](https://github.com/rudderlabs/rudder-server/issues/5475)) ([c1199ce](https://github.com/rudderlabs/rudder-server/commit/c1199ce494341eb52e38e796281eac95228b0e24))
+
+## [1.42.0](https://github.com/rudderlabs/rudder-server/compare/v1.41.0...v1.42.0) (2025-02-04)
+
+
+### Features
+
+* bq load using folder ([#5445](https://github.com/rudderlabs/rudder-server/issues/5445)) ([9c733be](https://github.com/rudderlabs/rudder-server/commit/9c733bedd685b7b5689375d7cb00332e8d3d0397))
+* delete staging and load files from object storage post successful sync ([#5428](https://github.com/rudderlabs/rudder-server/issues/5428)) ([134fbc0](https://github.com/rudderlabs/rudder-server/commit/134fbc008df645a29ecea3cc734913d980cd220d))
+* implement object storage delete validations for warehouse destinations ([#5456](https://github.com/rudderlabs/rudder-server/issues/5456)) ([06e99fa](https://github.com/rudderlabs/rudder-server/commit/06e99fa8cc786347fed0dffa102d107ab8e66d1e))
+* rs load using folder ([#5450](https://github.com/rudderlabs/rudder-server/issues/5450)) ([66139a2](https://github.com/rudderlabs/rudder-server/commit/66139a269dde71699e140ebe52c8352c00df0123))
+* warehouse transformer ([#5205](https://github.com/rudderlabs/rudder-server/issues/5205)) ([3db39a1](https://github.com/rudderlabs/rudder-server/commit/3db39a1b7e40cda8ccbedccd6fb0edb1bd561c81))
+
+
+### Bug Fixes
+
+* report modification in reporting during event sampling ([#5454](https://github.com/rudderlabs/rudder-server/issues/5454)) ([93f30e1](https://github.com/rudderlabs/rudder-server/commit/93f30e18088bd16199d7856f096c74f02a9df19d))
+
+
+### Miscellaneous
+
+* add custom bucket for throttling metric ([#5461](https://github.com/rudderlabs/rudder-server/issues/5461)) ([e472c28](https://github.com/rudderlabs/rudder-server/commit/e472c28c38527eb27945caa22b9efa92de51220d))
+* remove parallel scan flag in processor ([#5448](https://github.com/rudderlabs/rudder-server/issues/5448)) ([71efda1](https://github.com/rudderlabs/rudder-server/commit/71efda1c1ef080bfb553249512c9e2ceaeeaea18))
+* sync release v1.41.0 to main branch ([#5446](https://github.com/rudderlabs/rudder-server/issues/5446)) ([aaae529](https://github.com/rudderlabs/rudder-server/commit/aaae52977caea271dc764690989278ce1baf416e))
+
 ## [1.41.0](https://github.com/rudderlabs/rudder-server/compare/v1.40.0...v1.41.0) (2025-01-20)
 
 
