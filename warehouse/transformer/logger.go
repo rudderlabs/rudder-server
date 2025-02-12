@@ -12,15 +12,14 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func (t *Transformer) CompareAndLog(
-	events []ptrans.TransformerEvent,
-	pResponse, wResponse ptrans.Response,
-	metadata *ptrans.Metadata,
+	events []types.TransformerEvent,
+	pResponse, wResponse types.Response,
+	metadata *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 ) {
 	if len(events) == 0 {
@@ -42,7 +41,7 @@ func (t *Transformer) CompareAndLog(
 	}
 
 	logEntries := lo.Map(differingEvents, func(item types.SingularEventT, index int) string {
-		return stringify.Any(ptrans.TransformerEvent{
+		return stringify.Any(types.TransformerEvent{
 			Message:  item,
 			Metadata: *metadata,
 		})
@@ -57,13 +56,13 @@ func (t *Transformer) CompareAndLog(
 }
 
 func (t *Transformer) differingEvents(
-	eventsToTransform []ptrans.TransformerEvent,
-	pResponse, wResponse ptrans.Response,
+	eventsToTransform []types.TransformerEvent,
+	pResponse, wResponse types.Response,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 ) []types.SingularEventT {
 	// If the event counts differ, return all events in the transformation
 	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
-		events := lo.Map(eventsToTransform, func(e ptrans.TransformerEvent, _ int) types.SingularEventT {
+		events := lo.Map(eventsToTransform, func(e types.TransformerEvent, _ int) types.SingularEventT {
 			return eventsByMessageID[e.Metadata.MessageID].SingularEvent
 		})
 		t.stats.mismatchedEvents.Observe(float64(len(events)))

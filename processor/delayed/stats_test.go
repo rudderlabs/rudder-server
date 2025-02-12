@@ -3,6 +3,8 @@ package delayed_test
 import (
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
 func TestEventStats(t *testing.T) {
@@ -36,7 +37,7 @@ func TestEventStats(t *testing.T) {
 		sdkLibrary := "rudder-go"
 		sdkVersion := "1.0.0"
 
-		es.ObserveSourceEvents(source, fromSDK(sdkLibrary, sdkVersion, []transformer.TransformerEvent{
+		es.ObserveSourceEvents(source, fromSDK(sdkLibrary, sdkVersion, []types.TransformerEvent{
 			// missing originalTimestamp
 			{
 				Message: map[string]interface{}{
@@ -228,7 +229,7 @@ func TestEventStats(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				tc.message["originalTimestamp"] = "2020-01-01T00:00:00.000Z"
 				tc.message["sentAt"] = "2020-01-01T00:10:00.000Z"
-				events := []transformer.TransformerEvent{
+				events := []types.TransformerEvent{
 					{
 						Message: tc.message,
 					},
@@ -259,7 +260,7 @@ func TestEventStats(t *testing.T) {
 	})
 }
 
-func fromSDK(lib, version string, events []transformer.TransformerEvent) []transformer.TransformerEvent {
+func fromSDK(lib, version string, events []types.TransformerEvent) []types.TransformerEvent {
 	for i := range events {
 		events[i].Message["context"] = map[string]interface{}{
 			"library": map[string]interface{}{

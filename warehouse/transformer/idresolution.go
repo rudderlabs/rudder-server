@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
@@ -69,7 +69,7 @@ func (t *Transformer) mergeEvents(tec *transformEventContext) ([]map[string]any,
 	return []map[string]any{mergeOutput}, nil
 }
 
-func mergeProps(message types.SingularEventT, metadata ptrans.Metadata) (*mergeRule, *mergeRule, error) {
+func mergeProps(message types.SingularEventT, metadata types.Metadata) (*mergeRule, *mergeRule, error) {
 	switch strings.ToLower(metadata.EventType) {
 	case "merge":
 		return mergePropsForMergeEventType(message)

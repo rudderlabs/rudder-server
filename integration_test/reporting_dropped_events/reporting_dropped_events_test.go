@@ -25,7 +25,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -120,7 +120,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 				transformertest.ViolationErrorTransformerHandler(
 					http.StatusBadRequest,
 					"tracking plan validation failed",
-					[]transformer.ValidationError{{Type: "Datatype-Mismatch", Message: "must be number"}},
+					[]types.ValidationError{{Type: "Datatype-Mismatch", Message: "must be number"}},
 				),
 			).
 			Build()

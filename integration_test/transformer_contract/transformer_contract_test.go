@@ -28,7 +28,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
@@ -107,7 +107,7 @@ func TestTransformerContract(t *testing.T) {
 
 		trServer := transformertest.NewBuilder().
 			WithUserTransformHandler(
-				func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+				func(request []types.TransformerEvent) (response []types.TransformerResponse) {
 					for i := range request {
 						req := request[i]
 
@@ -123,7 +123,7 @@ func TestTransformerContract(t *testing.T) {
 						require.Equal(t, req.Metadata.TransformationID, "transformation-1")
 						require.Equal(t, req.Metadata.TransformationVersionID, "version-1")
 						require.Equal(t, req.Metadata.EventType, "identify")
-						require.Equal(t, req.Credentials, []transformer.Credential{
+						require.Equal(t, req.Credentials, []types.Credential{
 							{
 								ID:       "credential-1",
 								Key:      "key-1",
@@ -131,7 +131,7 @@ func TestTransformerContract(t *testing.T) {
 								IsSecret: false,
 							},
 						})
-						response = append(response, transformer.TransformerResponse{
+						response = append(response, types.TransformerResponse{
 							Metadata:   req.Metadata,
 							Output:     req.Message,
 							StatusCode: http.StatusOK,

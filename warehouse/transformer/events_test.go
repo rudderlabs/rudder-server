@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -653,9 +655,9 @@ func TestEvents(t *testing.T) {
 		name             string
 		configOverride   map[string]any
 		eventPayload     string
-		metadata         ptrans.Metadata
+		metadata         types.Metadata
 		destination      backendconfig.DestinationT
-		expectedResponse ptrans.Response
+		expectedResponse types.Response
 	}{
 		{
 			name:         "identify (POSTGRES)",
@@ -664,8 +666,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     identifyDefaultOutput(),
 						Metadata:   getMetadata("identify", "POSTGRES"),
@@ -686,8 +688,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("S3_DATALAKE", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							SetDataField("_timestamp", "2021-09-01T00:00:00.000Z").
@@ -716,8 +718,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("product_id", "review_id").
@@ -742,8 +744,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("rating", "review_body").
@@ -768,8 +770,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("context_traits_email", "context_traits_logins", "context_traits_name", "email", "logins", "name").
@@ -794,8 +796,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -820,8 +822,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"identify","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("identify", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("email", "logins", "name").
@@ -846,8 +848,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     identifyDefaultOutput(),
 						Metadata:   getMetadata("identify", "POSTGRES"),
@@ -869,8 +871,8 @@ func TestEvents(t *testing.T) {
 				"storeFullEvent":          true,
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							SetDataField("rudder_event", "{\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"ip\":\"1.2.3.4\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2,\"name\":\"Richard Hendricks\"},\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\"},\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"traits\":{\"product_id\":\"9578257311\",\"review_id\":\"86ac1cd43\"},\"type\":\"identify\",\"userId\":\"userId\",\"userProperties\":{\"rating\":3,\"review_body\":\"OK for the price. It works but the material feels flimsy.\"}}").
@@ -893,8 +895,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -919,8 +921,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							RemoveDataFields("user_id").
@@ -945,8 +947,8 @@ func TestEvents(t *testing.T) {
 					Name: "POSTGRES",
 				},
 			},
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     identifyDefaultOutput(),
 						Metadata:   getMetadata("identify", "POSTGRES"),
@@ -962,8 +964,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     identifyDefaultOutput(),
 						Metadata:   getMetadata("identify", "POSTGRES"),
@@ -982,8 +984,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("BQ", map[string]any{
 				"allowUsersContextTraits": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: identifyDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1012,8 +1014,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     aliasDefaultOutput(),
 						Metadata:   getMetadata("alias", "POSTGRES"),
@@ -1027,8 +1029,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							RemoveDataFields("title", "url").
@@ -1044,8 +1046,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`,
 			metadata:     getMetadata("alias", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1064,8 +1066,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("rudder_event", "{\"type\":\"alias\",\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\",\"ip\":\"1.2.3.4\",\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2}},\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"previousId\":\"previousId\",\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"traits\":{\"title\":\"Home | RudderStack\",\"url\":\"https://www.rudderstack.com\"},\"userId\":\"userId\"}").
@@ -1081,8 +1083,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -1101,8 +1103,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1124,8 +1126,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"extract","recordId":"recordID","event":"event","receivedAt":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("extract", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     extractDefaultOutput(),
 						Metadata:   getMetadata("extract", "POSTGRES"),
@@ -1139,8 +1141,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"extract","recordId":"recordID","event":"event","receivedAt":"2021-09-01T00:00:00.000Z","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("extract", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: extractDefaultOutput().
 							RemoveDataFields("name", "title", "url").
@@ -1156,8 +1158,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"extract","recordId":"recordID","event":"event","receivedAt":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`,
 			metadata:     getMetadata("extract", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: extractDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1176,8 +1178,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: extractDefaultOutput().
 							SetDataField("event", "accounts").
@@ -1193,8 +1195,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"extract","recordId":"recordID","event":"accounts","receivedAt":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"POSTGRES":{"options":{"skipReservedKeywordsEscaping":true}}}}`,
 			metadata:     getMetadata("extract", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: extractDefaultOutput().
 							SetDataField("event", "accounts").
@@ -1210,8 +1212,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"extract","recordId":"recordID","event":"users","receivedAt":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("extract", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: extractDefaultOutput().
 							SetDataField("event", "users").
@@ -1228,8 +1230,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     pageDefaultOutput(),
 						Metadata:   getMetadata("page", "POSTGRES"),
@@ -1243,8 +1245,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","name":"Home","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							RemoveDataFields("title", "url").
@@ -1260,8 +1262,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`,
 			metadata:     getMetadata("page", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1280,8 +1282,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							SetDataField("rudder_event", "{\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"ip\":\"1.2.3.4\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2,\"name\":\"Richard Hendricks\"},\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\"},\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"properties\":{\"name\":\"Home\",\"title\":\"Home | RudderStack\",\"url\":\"https://www.rudderstack.com\"},\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"type\":\"page\",\"userId\":\"userId\"}").
@@ -1297,8 +1299,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -1317,8 +1319,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1340,8 +1342,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"screen","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Main","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("screen", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     screenDefaultOutput(),
 						Metadata:   getMetadata("screen", "POSTGRES"),
@@ -1355,8 +1357,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"screen","name":"Main","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("screen", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: screenDefaultOutput().
 							RemoveDataFields("title", "url").
@@ -1372,8 +1374,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"screen","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Main","title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`,
 			metadata:     getMetadata("screen", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: screenDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1392,8 +1394,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: screenDefaultOutput().
 							SetDataField("rudder_event", "{\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"ip\":\"1.2.3.4\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2,\"name\":\"Richard Hendricks\"},\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\"},\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"properties\":{\"name\":\"Main\",\"title\":\"Home | RudderStack\",\"url\":\"https://www.rudderstack.com\"},\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"type\":\"screen\",\"userId\":\"userId\"}").
@@ -1409,8 +1411,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"screen","messageId":"messageId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","properties":{"name":"Main","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("screen", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: screenDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -1429,8 +1431,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"screen","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Main","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("screen", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: screenDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1452,8 +1454,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("group", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     groupDefaultOutput(),
 						Metadata:   getMetadata("group", "POSTGRES"),
@@ -1467,8 +1469,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("group", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: groupDefaultOutput().
 							RemoveDataFields("title", "url").
@@ -1484,8 +1486,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"}}`,
 			metadata:     getMetadata("group", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: groupDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1504,8 +1506,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: groupDefaultOutput().
 							SetDataField("rudder_event", "{\"type\":\"group\",\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\",\"ip\":\"1.2.3.4\",\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2}},\"groupId\":\"groupId\",\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"traits\":{\"title\":\"Home | RudderStack\",\"url\":\"https://www.rudderstack.com\"},\"userId\":\"userId\"}").
@@ -1521,8 +1523,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"group","messageId":"messageId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("group", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: groupDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -1541,8 +1543,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("group", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: groupDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1565,8 +1567,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     trackDefaultOutput(),
 						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
@@ -1585,8 +1587,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     trackDefaultOutput(),
 						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
@@ -1607,8 +1609,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     trackDefaultOutput(),
 						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
@@ -1629,8 +1631,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("context_ip", "5.6.7.8"). // overriding the default value
@@ -1655,8 +1657,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"accounts","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("event", "accounts").
@@ -1680,8 +1682,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"accounts","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"POSTGRES":{"options":{"skipReservedKeywordsEscaping":true}}}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("event", "accounts").
@@ -1705,8 +1707,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"users","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("event", "users").
@@ -1730,8 +1732,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("event", "").
@@ -1748,8 +1750,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("event", "").
@@ -1768,8 +1770,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"storeFullEvent": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("rudder_event", "{\"type\":\"track\",\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\",\"ip\":\"1.2.3.4\",\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2,\"name\":\"Richard Hendricks\"}},\"event\":\"event\",\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"properties\":{\"product_id\":\"9578257311\",\"review_id\":\"86ac1cd43\"},\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"userId\":\"userId\",\"userProperties\":{\"rating\":3,\"review_body\":\"OK for the price. It works but the material feels flimsy.\"}}").
@@ -1790,8 +1792,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","event":"event","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							RemoveDataFields("anonymous_id", "channel", "context_request_ip").
@@ -1816,8 +1818,8 @@ func TestEvents(t *testing.T) {
 			destination: getDestination("POSTGRES", map[string]any{
 				"skipTracksTable": true,
 			}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     trackEventDefaultOutput(),
 						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
@@ -1831,8 +1833,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"POSTGRES":{"options":{"skipTracksTable":true}}}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     trackEventDefaultOutput(),
 						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
@@ -1849,8 +1851,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getTrackMetadata("BQ", "webhook"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: trackDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -1882,7 +1884,7 @@ func TestEvents(t *testing.T) {
 			eventPayload:     `{"type":"merge"}`,
 			metadata:         getMetadata("merge", "POSTGRES"),
 			destination:      getDestination("POSTGRES", map[string]any{}),
-			expectedResponse: ptrans.Response{},
+			expectedResponse: types.Response{},
 		},
 		{
 			name: "merge (BQ)",
@@ -1892,8 +1894,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: map[string]any{
 							"data": map[string]any{
@@ -1926,7 +1928,7 @@ func TestEvents(t *testing.T) {
 			eventPayload:     `{"type":"merge"}`,
 			metadata:         getMetadata("merge", "BQ"),
 			destination:      getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{},
+			expectedResponse: types.Response{},
 		},
 		{
 			name: "merge (BQ) missing mergeProperties",
@@ -1936,8 +1938,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge"}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertiesMissing.Error(),
 						StatusCode: response.ErrMergePropertiesMissing.StatusCode(),
@@ -1954,8 +1956,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge", "mergeProperties": "invalid"}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertiesNotArray.Error(),
 						StatusCode: response.ErrMergePropertiesNotArray.StatusCode(),
@@ -1972,8 +1974,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge", "mergeProperties": []}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertiesNotSufficient.Error(),
 						StatusCode: response.ErrMergePropertiesNotSufficient.StatusCode(),
@@ -1990,8 +1992,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":[{"type":"email","value":"alex@example.com"}]}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertiesNotSufficient.Error(),
 						StatusCode: response.ErrMergePropertiesNotSufficient.StatusCode(),
@@ -2008,8 +2010,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":["invalid",{"type":"email","value":"alex@example.com"}]}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertyOneInvalid.Error(),
 						StatusCode: response.ErrMergePropertyOneInvalid.StatusCode(),
@@ -2026,8 +2028,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":[{"type":"email","value":"alex@example.com"},"invalid"]}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertyTwoInvalid.Error(),
 						StatusCode: response.ErrMergePropertyTwoInvalid.StatusCode(),
@@ -2044,8 +2046,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":[{"type1":"email","value1":"alex@example.com"},{"type1":"mobile","value1":"+1-202-555-0146"}]}`,
 			metadata:     getMetadata("merge", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				FailedEvents: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Error:      response.ErrMergePropertyEmpty.Error(),
 						StatusCode: response.ErrMergePropertyEmpty.StatusCode(),
@@ -2062,8 +2064,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"merge","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 			metadata:     getMetadata("merge", "SNOWFLAKE"),
 			destination:  getDestination("SNOWFLAKE", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: map[string]any{
 							"data": map[string]any{
@@ -2096,8 +2098,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -2121,8 +2123,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -2143,8 +2145,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"","previousId":"","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("alias", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: aliasDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -2165,8 +2167,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							SetDataField("context_destination_type", "BQ").
@@ -2190,8 +2192,8 @@ func TestEvents(t *testing.T) {
 			eventPayload: `{"type":"page","messageId":"messageId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 			metadata:     getMetadata("page", "BQ"),
 			destination:  getDestination("BQ", map[string]any{}),
-			expectedResponse: ptrans.Response{
-				Events: []ptrans.TransformerResponse{
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: pageDefaultOutput().
 							SetDataField("context_destination_type", "BQ").

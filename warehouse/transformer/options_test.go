@@ -5,13 +5,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestIntegrationOptions(t *testing.T) {
 	t.Run("AllOptionsSet", func(t *testing.T) {
-		event := ptrans.TransformerEvent{
+		event := types.TransformerEvent{
 			Message: map[string]any{
 				"integrations": map[string]any{
 					"POSTGRES": map[string]any{
@@ -25,7 +25,7 @@ func TestIntegrationOptions(t *testing.T) {
 					},
 				},
 			},
-			Metadata: ptrans.Metadata{
+			Metadata: types.Metadata{
 				DestinationType: "POSTGRES",
 			},
 		}
@@ -39,7 +39,7 @@ func TestIntegrationOptions(t *testing.T) {
 		require.Equal(t, []string{"path1", "path2", "path3"}, opts.jsonPaths)
 	})
 	t.Run("MissingOptions", func(t *testing.T) {
-		event := ptrans.TransformerEvent{
+		event := types.TransformerEvent{
 			Message: map[string]any{
 				"integrations": map[string]any{
 					"POSTGRES": map[string]any{
@@ -47,7 +47,7 @@ func TestIntegrationOptions(t *testing.T) {
 					},
 				},
 			},
-			Metadata: ptrans.Metadata{
+			Metadata: types.Metadata{
 				DestinationType: "POSTGRES",
 			},
 		}
@@ -60,7 +60,7 @@ func TestIntegrationOptions(t *testing.T) {
 		require.Empty(t, opts.jsonPaths)
 	})
 	t.Run("NilIntegrationOptions", func(t *testing.T) {
-		event := ptrans.TransformerEvent{
+		event := types.TransformerEvent{
 			Message: map[string]any{
 				"integrations": map[string]any{
 					"POSTGRES": map[string]any{
@@ -68,7 +68,7 @@ func TestIntegrationOptions(t *testing.T) {
 					},
 				},
 			},
-			Metadata: ptrans.Metadata{
+			Metadata: types.Metadata{
 				DestinationType: "POSTGRES",
 			},
 		}
@@ -81,7 +81,7 @@ func TestIntegrationOptions(t *testing.T) {
 		require.Empty(t, opts.jsonPaths)
 	})
 	t.Run("PartialOptionsSet", func(t *testing.T) {
-		event := ptrans.TransformerEvent{
+		event := types.TransformerEvent{
 			Message: map[string]any{
 				"integrations": map[string]any{
 					"POSTGRES": map[string]any{
@@ -92,7 +92,7 @@ func TestIntegrationOptions(t *testing.T) {
 					},
 				},
 			},
-			Metadata: ptrans.Metadata{
+			Metadata: types.Metadata{
 				DestinationType: "POSTGRES",
 			},
 		}
@@ -106,7 +106,7 @@ func TestIntegrationOptions(t *testing.T) {
 		require.Equal(t, []string{"path1"}, opts.jsonPaths)
 	})
 	t.Run("DataWarehouseOptions", func(t *testing.T) {
-		event := ptrans.TransformerEvent{
+		event := types.TransformerEvent{
 			Message: map[string]any{
 				"integrations": map[string]any{
 					"POSTGRES": map[string]any{
@@ -125,7 +125,7 @@ func TestIntegrationOptions(t *testing.T) {
 					},
 				},
 			},
-			Metadata: ptrans.Metadata{
+			Metadata: types.Metadata{
 				DestinationType: "POSTGRES",
 			},
 		}

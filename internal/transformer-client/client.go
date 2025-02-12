@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/transformer-client/mock_transformer_client.go -package=mocks_transformer_client github.com/rudderlabs/rudder-server/internal/transformer-client Client
+
 package transformerclient
 
 import (
