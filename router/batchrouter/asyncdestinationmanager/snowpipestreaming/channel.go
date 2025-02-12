@@ -138,6 +138,8 @@ func (m *Manager) createChannel(
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
+	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
+		return nil, fmt.Errorf("%w, %w", errAuthz, err)
 	default:
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
