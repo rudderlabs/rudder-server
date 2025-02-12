@@ -44,11 +44,19 @@ type DestTransformer struct {
 	client           transformerclient.Client
 }
 
+type Opt func(*DestTransformer)
+
+func WithClient(client transformerclient.Client) Opt {
+	return func(s *DestTransformer) {
+		s.client = client
+	}
+}
+
 func (d *DestTransformer) SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	return d.transform(ctx, clientEvents, d.destTransformURL(clientEvents[0].Destination.DestinationDefinition.Name), batchSize)
 }
 
-func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats) *DestTransformer {
+func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *DestTransformer {
 	handle := &DestTransformer{}
 	handle.conf = conf
 	handle.log = log
@@ -61,6 +69,11 @@ func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
+
+	for _, opt := range opts {
+		opt(handle)
+	}
+
 	return handle
 }
 
@@ -236,6 +249,11 @@ func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 			if reqErr != nil {
 				return reqErr
 			}
+
+			if !transformer_utils.IsJobTerminated(resp.StatusCode) {
+				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
+			}
+
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},
