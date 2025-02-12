@@ -42,11 +42,19 @@ type TPValidator struct {
 	client           transformerclient.Client
 }
 
+type Opt func(*TPValidator)
+
+func WithClient(client transformerclient.Client) Opt {
+	return func(s *TPValidator) {
+		s.client = client
+	}
+}
+
 func (t *TPValidator) SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	return t.transform(ctx, clientEvents, t.trackingPlanValidationURL(), batchSize)
 }
 
-func NewTPValidator(conf *config.Config, log logger.Logger, stat stats.Stats) *TPValidator {
+func NewTPValidator(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *TPValidator {
 	handle := &TPValidator{}
 	handle.conf = conf
 	handle.log = log
@@ -59,6 +67,11 @@ func NewTPValidator(conf *config.Config, log logger.Logger, stat stats.Stats) *T
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
+
+	for _, opt := range opts {
+		opt(handle)
+	}
+
 	return handle
 }
 
@@ -111,7 +124,7 @@ func (t *TPValidator) transform(
 		func(batch []types.TransformerEvent, i int) {
 			t.guardConcurrency <- struct{}{}
 			go func() {
-				transformResponse[i] = t.request(ctx, url, "trackingPlan_validation", batch)
+				transformResponse[i] = t.request(ctx, url, batch)
 				<-t.guardConcurrency
 				wg.Done()
 			}()
@@ -144,7 +157,7 @@ func (t *TPValidator) transform(
 	}
 }
 
-func (t *TPValidator) request(ctx context.Context, url, stage string, data []types.TransformerEvent) []types.TransformerResponse {
+func (t *TPValidator) request(ctx context.Context, url string, data []types.TransformerEvent) []types.TransformerResponse {
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -183,7 +196,7 @@ func (t *TPValidator) request(ctx context.Context, url, stage string, data []typ
 				"destinationId":    data[0].Destination.ID,
 				"sourceId":         data[0].Metadata.SourceID,
 				"transformationId": transformationID,
-				"stage":            stage,
+				"stage":            "trackingPlan_validation",
 			})
 			if statusCode == transformer_utils.StatusCPDown {
 				t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)

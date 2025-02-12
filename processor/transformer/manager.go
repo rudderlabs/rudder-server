@@ -1,3 +1,4 @@
+//go:generate mockgen -destination=./../../mocks/processor/mock_transformer_manager.go -package=mock_transformer github.com/rudderlabs/rudder-server/processor/transformer ServiceClient
 package transformer
 
 import (
