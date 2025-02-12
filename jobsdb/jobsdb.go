@@ -20,7 +20,6 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -37,7 +36,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -58,10 +56,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-var (
-	errStaleDsList = errors.New("stale dataset list")
-	jsonfast       = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var errStaleDsList = errors.New("stale dataset list")
 
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
@@ -383,12 +378,12 @@ type ConnectionDetails struct {
 
 func (r *JobStatusT) sanitizeJson() error {
 	var err error
-	r.ErrorResponse, err = sanitizeJSON(r.ErrorResponse)
+	r.ErrorResponse, err = misc.SanitizeJSON(r.ErrorResponse)
 	if err != nil {
 		return err
 	}
 
-	r.Parameters, err = sanitizeJSON(r.Parameters)
+	r.Parameters, err = misc.SanitizeJSON(r.Parameters)
 	if err != nil {
 		return err
 	}
@@ -421,11 +416,11 @@ func (job *JobT) String() string {
 
 func (job *JobT) sanitizeJSON() error {
 	var err error
-	job.EventPayload, err = sanitizeJSON(job.EventPayload)
+	job.EventPayload, err = misc.SanitizeJSON(job.EventPayload)
 	if err != nil {
 		return err
 	}
-	job.Parameters, err = sanitizeJSON(job.Parameters)
+	job.Parameters, err = misc.SanitizeJSON(job.Parameters)
 	if err != nil {
 		return err
 	}
@@ -3290,29 +3285,6 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 		jd.assertError(err)
 	}
 	return &job
-}
-
-// sanitizeJSON makes a json payload safe for writing into postgres.
-// 1. Removes any \u0000 string from the payload
-// ~2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8~
-// 3. unmashals and marshals the payload to remove any extra keys
-func sanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
-	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
-	if len(v) == 0 {
-		v = []byte(`{}`)
-	}
-
-	var a any
-	err := jsonfast.Unmarshal(v, &a)
-	if err != nil {
-		return nil, err
-	}
-	v, err = jsonfast.Marshal(a)
-	if err != nil {
-		return nil, err
-	}
-
-	return v, nil
 }
 
 func (jd *Handle) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {

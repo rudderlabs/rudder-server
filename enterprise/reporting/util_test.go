@@ -226,7 +226,7 @@ func TestGetAggregationBucket(t *testing.T) {
 }
 
 func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
-	inputSampleEvent := json.RawMessage(`{"event": "1"}`)
+	inputSampleEvent := json.RawMessage(`{"event":"1"}`)
 	inputSampleResponse := "response"
 	metric := types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
@@ -269,7 +269,7 @@ func TestFloorFactor(t *testing.T) {
 }
 
 func TestGetSampleWithEventSampling(t *testing.T) {
-	sampleEvent := json.RawMessage(`{"event": "2"}`)
+	sampleEvent := json.RawMessage(`{"event":"2"}`)
 	sampleResponse := "sample response"
 	emptySampleEvent := json.RawMessage(`{}`)
 	emptySampleResponse := ""

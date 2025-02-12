@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -28,6 +29,7 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -964,4 +966,36 @@ func GetInstanceID() string {
 		return instanceArr[length-1]
 	}
 	return ""
+}
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// SanitizeJSON makes a json payload safe for writing into postgres.
+// 1. Removes any \u0000 string from the payload
+// ~2. Replaces any invalid utf8 characters using github.com/rudderlabs/rudder-go-kit/utf8~
+// 3. unmarshals and marshals the payload to remove any extra keys
+func SanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
+	// Remove null characters
+	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+
+	if len(v) == 0 {
+		return []byte(`{}`), nil
+	}
+
+	// Validate JSON structure by unmarshaling and marshaling
+	var a any
+	err := jsonfast.Unmarshal(v, &a)
+	if err != nil {
+		return nil, err
+	}
+	v, err = jsonfast.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
+}
+
+func SanitizeString(input string) string {
+	return strings.ReplaceAll(input, "\u0000", "")
 }
