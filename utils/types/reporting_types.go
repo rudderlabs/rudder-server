@@ -2,7 +2,6 @@ package types
 
 import (
 	"database/sql"
-	"encoding/json"
 	"time"
 )
 
@@ -52,7 +51,7 @@ type StatusDetail struct {
 	Count          int64             `json:"count"`
 	StatusCode     int               `json:"statusCode"`
 	SampleResponse string            `json:"sampleResponse"`
-	SampleEvent    json.RawMessage   `json:"sampleEvent"`
+	SampleEvent    string            `json:"sampleEvent"`
 	EventName      string            `json:"eventName"`
 	EventType      string            `json:"eventType"`
 	ErrorType      string            `json:"errorType"`
@@ -124,9 +123,9 @@ type EDErrorDetailsKey struct {
 
 type EDErrorDetails struct {
 	EDErrorDetailsKey
-	SampleResponse string          `json:"sampleResponse"`
-	SampleEvent    json.RawMessage `json:"sampleEvent"`
-	ErrorCount     int64           `json:"count"`
+	SampleResponse string `json:"sampleResponse"`
+	SampleEvent    string `json:"sampleEvent"`
+	ErrorCount     int64  `json:"count"`
 }
 
 type EDReportsDB struct {
@@ -142,7 +141,7 @@ type EDReportsDB struct {
 type EDReportMapValue struct {
 	Count          int64
 	SampleResponse string
-	SampleEvent    json.RawMessage
+	SampleEvent    string
 }
 
 // EDMetric The structure in which the error detail data is being sent to reporting service

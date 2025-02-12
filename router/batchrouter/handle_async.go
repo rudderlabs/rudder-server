@@ -639,7 +639,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 				Status:         status.JobState,
 				StatusCode:     errorCode,
 				SampleResponse: string(status.ErrorResponse),
-				SampleEvent:    sampleEvent,
+				SampleEvent:    string(sampleEvent),
 				EventName:      eventName,
 				EventType:      eventType,
 			}

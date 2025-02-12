@@ -707,9 +707,9 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			}
 			sd, ok := statusDetailsMap[key]
 			if !ok {
-				sampleEvent := job.EventPayload
+				sampleEvent := string(job.EventPayload)
 				if brt.transientSources.Apply(parameters.SourceID) {
-					sampleEvent = []byte(`{}`)
+					sampleEvent = misc.EmptyPayloadString
 				}
 				sd = &types.StatusDetail{
 					Status:         jobState,
