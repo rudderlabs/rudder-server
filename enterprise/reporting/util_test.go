@@ -269,7 +269,7 @@ func TestFloorFactor(t *testing.T) {
 }
 
 func TestGetSampleWithEventSampling(t *testing.T) {
-	sampleEvent := json.RawMessage(`{"event": "2"}`)
+	sampleEvent := json.RawMessage(`{"event":"2"}`)
 	sampleResponse := "sample response"
 	emptySampleEvent := json.RawMessage(`{}`)
 	emptySampleResponse := ""

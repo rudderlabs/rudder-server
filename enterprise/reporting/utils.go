@@ -1,15 +1,13 @@
 package reporting
 
 import (
-	"bytes"
 	"encoding/json"
 	"sort"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -60,7 +58,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 	if !eventSamplingEnabled || eventSampler == nil {
 		// Sanitize both sample event and response before returning
 		if sampleEvent != nil {
-			sampleEvent, err = sanitizeJSONForReports(sampleEvent)
+			sampleEvent, err = misc.SanitizeJSON(sampleEvent)
 			if err != nil {
 				return []byte(`{}`), "", err
 			}
@@ -91,7 +89,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 			}
 			// Sanitize both sample event and response before returning
 			if sampleEvent != nil {
-				sampleEvent, err = sanitizeJSONForReports(sampleEvent)
+				sampleEvent, err = misc.SanitizeJSON(sampleEvent)
 				if err != nil {
 					return []byte(`{}`), "", err
 				}
@@ -130,26 +128,4 @@ func getPIIColumnsToExclude() []string {
 		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
 	}
 	return piiColumnsToExclude
-}
-
-func sanitizeJSONForReports(input json.RawMessage) (json.RawMessage, error) {
-	// Remove null characters
-	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
-
-	if len(v) == 0 {
-		return []byte(`{}`), nil
-	}
-
-	// Validate JSON structure by unmarshaling and marshaling
-	var a any
-	err := jsoniter.ConfigCompatibleWithStandardLibrary.Unmarshal(v, &a)
-	if err != nil {
-		return nil, err
-	}
-	v, err = jsoniter.ConfigCompatibleWithStandardLibrary.Marshal(a)
-	if err != nil {
-		return nil, err
-	}
-
-	return v, nil
 }

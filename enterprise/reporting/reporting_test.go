@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -545,7 +546,7 @@ func TestSanitizeJSONForReports(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := sanitizeJSONForReports(tt.input)
+			got, err := misc.SanitizeJSON(tt.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("sanitizeJSONForReports() error = %v, wantErr %v", err, tt.wantErr)
 				return
