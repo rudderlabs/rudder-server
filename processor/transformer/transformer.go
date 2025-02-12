@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -144,17 +145,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
-	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: trans.config.timeoutDuration,
-		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
-		ClientType:    conf.GetString("Transformer.Client.type", "stdlib"),
-		PickerType:    conf.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
-	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = trans.config.disableKeepAlives
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = trans.config.maxHTTPConnections
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = trans.config.maxHTTPIdleConnections
-	transformerClientConfig.TransportConfig.IdleConnTimeout = trans.config.maxIdleConnDuration
-	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
+	trans.httpClient = transformerclient.NewClient(transformer_utils.TransformerClientConfig(conf))
 
 	for _, opt := range opts {
 		opt(&trans)

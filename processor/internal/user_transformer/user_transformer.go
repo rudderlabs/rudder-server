@@ -48,6 +48,14 @@ type UserTransformer struct {
 	guardConcurrency chan struct{}
 }
 
+type Opt func(*UserTransformer)
+
+func WithClient(client transformerclient.Client) Opt {
+	return func(s *UserTransformer) {
+		s.client = client
+	}
+}
+
 func (u *UserTransformer) SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	var dehydratedClientEvents []types.TransformerEvent
 	for _, clientEvent := range clientEvents {
@@ -57,7 +65,7 @@ func (u *UserTransformer) SendRequest(ctx context.Context, clientEvents []types.
 	return u.transform(ctx, dehydratedClientEvents, u.userTransformURL(), batchSize)
 }
 
-func NewUserTransformer(conf *config.Config, log logger.Logger, stat stats.Stats) *UserTransformer {
+func NewUserTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *UserTransformer {
 	handle := &UserTransformer{}
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
@@ -72,6 +80,11 @@ func NewUserTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
 	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
+
+	for _, opt := range opts {
+		opt(handle)
+	}
+
 	return handle
 }
 
