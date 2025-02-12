@@ -13,9 +13,9 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -675,13 +675,15 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
 				for _, jws := range jobsWithStats {
-					jws.stat.RequestEventsFailed(1, "storeFailed")
+					jws.stat.EventsFailed(1, "storeFailed")
 					jws.stat.Report(gw.stats)
 				}
+				stat.RequestFailed("storeFailed")
+				stat.Report(gw.stats)
 				goto requestError
 			}
 			for _, jws := range jobsWithStats {
-				jws.stat.RequestEventsSucceeded(1)
+				jws.stat.EventsSuccess(1)
 				jws.stat.Report(gw.stats)
 				// Sending events to config backend
 				if jws.stat.WriteKey == "" {
@@ -690,6 +692,8 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				}
 				gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
 			}
+			stat.RequestSucceeded()
+			stat.Report(gw.stats)
 		} else {
 			stat.RequestEventsSucceeded(0)
 			stat.Report(gw.stats)

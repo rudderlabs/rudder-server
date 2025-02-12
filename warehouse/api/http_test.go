@@ -306,6 +306,7 @@ func TestHTTPApi(t *testing.T) {
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
+		ExpiresAt: now.Add(1 * time.Hour),
 	})
 	require.NoError(t, err)
 

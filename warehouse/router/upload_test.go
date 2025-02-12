@@ -19,6 +19,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -136,16 +137,23 @@ func TestColumnCountStat(t *testing.T) {
 
 			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
+			db := sqlmiddleware.New(pgResource.DB)
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
 
 			uploadJobFactory := &UploadJobFactory{
 				logger:       logger.NOP,
 				statsFactory: statsStore,
 				conf:         conf,
-				db:           sqlmiddleware.New(pgResource.DB),
+				db:           db,
 			}
 			whManager, err := manager.New(warehouseutils.POSTGRES, conf, logger.NOP, statsStore)
 			require.NoError(t, err)
-			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{
+			ctx := context.Background()
+			j := uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
@@ -163,11 +171,12 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 			}, whManager)
-			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
+			err = j.schemaHandle.UpdateWarehouseTableSchema(ctx, tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
 				"test-column-3": "string",
 			})
+			require.NoError(t, err)
 
 			tags := j.buildTags()
 			tags["tableName"] = warehouseutils.TableNameForStats(tableName)
@@ -178,7 +187,9 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))
+				columnsCount, err := j.schemaHandle.GetColumnsCountInWarehouseSchema(ctx, tableName)
+				require.NoError(t, err)
+				require.EqualValues(t, m1.LastValue(), columnsCount)
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

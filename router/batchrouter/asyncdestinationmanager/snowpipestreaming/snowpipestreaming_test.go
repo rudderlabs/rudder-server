@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type mockAPI struct {
@@ -68,6 +69,22 @@ func (m *mockManager) CreateTable(context.Context, string, whutils.ModelTableSch
 	return nil
 }
 
+type mockValidator struct {
+	err error
+}
+
+func (m *mockValidator) Validate(_ context.Context, _ *backendconfig.DestinationT) *validations.DestinationValidationResponse {
+	if m.err != nil {
+		return &validations.DestinationValidationResponse{
+			Success: false,
+			Error:   m.err.Error(),
+		}
+	}
+	return &validations.DestinationValidationResponse{
+		Success: true,
+	}
+}
+
 var (
 	usersChannelResponse = &model.ChannelResponse{
 		ChannelID: "test-users-channel",
@@ -104,6 +121,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		},
 		Config: make(map[string]interface{}),
 	}
+	validations.Init()
 
 	t.Run("Upload with invalid file path", func(t *testing.T) {
 		statsStore, err := memstats.New()
@@ -216,6 +234,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1004","table":"PRODUCTS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
 		require.Equal(t, []int64{1001, 1003}, output.FailedJobIDs)
 		require.Equal(t, 2, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -245,10 +264,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = &mockAPI{
 			insertOutputMap: map[string]func() (*model.InsertResponse, error){
 				"test-users-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 				"test-products-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -269,6 +288,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -297,10 +317,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = &mockAPI{
 			insertOutputMap: map[string]func() (*model.InsertResponse, error){
 				"test-users-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 				"test-products-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -321,6 +341,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -402,34 +423,99 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.False(t, sm.isInBackoff())
 	})
 
-	t.Run("Upload with discards table authorization error should mark the job as failed", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-
-		sm := New(config.New(), logger.NOP, statsStore, destination)
-		sm.api = &mockAPI{
-			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
-				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
-					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
-				},
+	t.Run("destination config validation", func(t *testing.T) {
+		testCases := []struct {
+			name                 string
+			validationError      error
+			expectedFailedReason string
+		}{
+			{
+				name:                 "should return validation error",
+				validationError:      fmt.Errorf("missing permissions to do xyz"),
+				expectedFailedReason: "missing permissions to do xyz",
+			},
+			{
+				name:                 "should not return any error",
+				validationError:      nil,
+				expectedFailedReason: "failed to create schema",
 			},
 		}
-		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			mm := newMockManager(sf)
-			mm.createSchemaErr = fmt.Errorf("failed to create schema")
-			return mm, nil
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				sm := New(config.New(), logger.NOP, stats.NOP, destination)
+				sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+				sm.api = &mockAPI{
+					createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+						"USERS": func() (*model.ChannelResponse, error) {
+							return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
+						},
+					},
+				}
+				sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
+					sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+					mm := newMockManager(sf)
+					mm.createSchemaErr = fmt.Errorf("failed to create schema")
+					return mm, nil
+				}
+				sm.validator = &mockValidator{err: tc.validationError}
+				asyncDestStruct := &common.AsyncDestinationStruct{
+					Destination: destination,
+					FileName:    "testdata/successful_user_records.txt",
+				}
+				output := sm.Upload(asyncDestStruct)
+				require.Equal(t, 2, output.FailedCount)
+				require.Equal(t, 0, output.AbortCount)
+				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
+			})
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
-			ImportingJobIDs: []int64{1},
-			Destination:     destination,
-			FileName:        "testdata/successful_user_records.txt",
-		})
-		require.Equal(t, 1, output.FailedCount)
-		require.Equal(t, 0, output.AbortCount)
-		require.NotEmpty(t, output.FailedReason)
-		require.Empty(t, output.AbortReason)
-		require.Equal(t, true, sm.isInBackoff())
+	})
+
+	t.Run("Upload with discards table authorization error should mark the job as failed", func(t *testing.T) {
+		testCases := []struct {
+			name                 string
+			validationError      error
+			expectedFailedReason string
+		}{
+			{
+				name:                 "authorization error",
+				validationError:      fmt.Errorf("authorization error"),
+				expectedFailedReason: "failed to validate snowpipe credentials: authorization error",
+			},
+			{
+				name:                 "other error",
+				validationError:      nil,
+				expectedFailedReason: "failed to create schema",
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				sm := New(config.New(), logger.NOP, stats.NOP, destination)
+				sm.api = &mockAPI{
+					createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+						"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
+							return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
+						},
+					},
+				}
+				sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
+					sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+					mm := newMockManager(sf)
+					mm.createSchemaErr = fmt.Errorf("failed to create schema")
+					return mm, nil
+				}
+				sm.validator = &mockValidator{err: tc.validationError}
+				output := sm.Upload(&common.AsyncDestinationStruct{
+					ImportingJobIDs: []int64{1},
+					Destination:     destination,
+					FileName:        "testdata/successful_user_records.txt",
+				})
+				require.Equal(t, 1, output.FailedCount)
+				require.Equal(t, 0, output.AbortCount)
+				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
+				require.Empty(t, output.AbortReason)
+				require.Equal(t, true, sm.isInBackoff())
+			})
+		}
 	})
 
 	t.Run("Upload insert error for all events", func(t *testing.T) {
@@ -468,6 +554,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -520,7 +607,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -544,6 +631,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -595,7 +683,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -619,6 +707,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -694,6 +783,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Nil(t, output.ImportingParameters)
 		require.Equal(t, []int64{1001, 1003, 1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 4, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
@@ -837,7 +927,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 				"test-products-channel": func() (*model.InsertResponse, error) {
-					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: "error"}}}, nil
+					return &model.InsertResponse{Success: false, Errors: []model.InsertError{{Message: assert.AnError.Error()}}}, nil
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
@@ -858,6 +948,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, `{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
 		require.Equal(t, []int64{1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 2, output.FailedCount)
+		require.Contains(t, output.FailedReason, assert.AnError.Error())
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
