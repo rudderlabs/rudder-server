@@ -287,6 +287,21 @@ func TestTransformer(t *testing.T) {
 								"dest_id":   destinationConfig.ID,
 								"src_id":    metadata.SourceID,
 							}, m.Tags)
+
+							metricsToCheck := []string{
+								"transformer_client_request_total_bytes",
+								"transformer_client_response_total_bytes",
+								"transformer_client_request_total_events",
+								"transformer_client_response_total_events",
+								"transformer_client_total_durations_seconds",
+							}
+
+							expectedTags := labels.ToStatsTag()
+							for _, metricName := range metricsToCheck {
+								measurements := statsStore.GetByName(metricName)
+								require.NotEmpty(t, measurements, "metric %s should not be empty", metricName)
+								require.Equal(t, expectedTags, measurements[0].Tags, "metric %s tags mismatch", metricName)
+							}
 						}
 					}
 				}
