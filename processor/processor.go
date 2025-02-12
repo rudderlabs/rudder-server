@@ -1309,7 +1309,7 @@ func (proc *Handle) updateMetricMaps(
 				Status:         status,
 				StatusCode:     event.StatusCode,
 				SampleResponse: event.Error,
-				SampleEvent:    string(payload()),
+				SampleEvent:    payload(),
 				EventName:      eventName,
 				EventType:      eventType,
 				ErrorType:      ve.Type,
