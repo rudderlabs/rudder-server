@@ -413,9 +413,9 @@ func (proc *Handle) Setup(
 	proc.logger = logger.NewLogger().Child("processor")
 	proc.backendConfig = backendConfig
 	proc.transformerManager = transformer.NewCommunicationManager()
-	proc.transformerManager.RegisterService("user_transformer", user_transformer.NewUserTransformer(proc.conf, proc.logger, proc.statsFactory))
-	proc.transformerManager.RegisterService("destination_transformer", destination_transformer.NewDestTransformer(proc.conf, proc.logger, proc.statsFactory))
-	proc.transformerManager.RegisterService("trackingplan_validation", trackingplan_validation.NewTPValidator(proc.conf, proc.logger, proc.statsFactory))
+	proc.transformerManager.RegisterService(reportingTypes.USER_TRANSFORMER, user_transformer.NewUserTransformer(proc.conf, proc.logger, proc.statsFactory))
+	proc.transformerManager.RegisterService(reportingTypes.DEST_TRANSFORMER, destination_transformer.NewDestTransformer(proc.conf, proc.logger, proc.statsFactory))
+	proc.transformerManager.RegisterService(reportingTypes.TRACKINGPLAN_VALIDATOR, trackingplan_validation.NewTPValidator(proc.conf, proc.logger, proc.statsFactory))
 
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
@@ -2766,7 +2766,7 @@ func (proc *Handle) transformSrcDest(
 		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.UserTransform(ctx, eventList, proc.config.userTransformBatchSize.Load())
 		} else {
-			client, err := proc.transformerManager.GetServiceClient("user_transformer")
+			client, err := proc.transformerManager.GetServiceClient(reportingTypes.USER_TRANSFORMER)
 			if err != nil {
 				proc.logger.Error("Error getting destination transformer client", err)
 				panic(err)
@@ -2930,7 +2930,7 @@ func (proc *Handle) transformSrcDest(
 		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 		} else {
-			client, err := proc.transformerManager.GetServiceClient("destination_transformer")
+			client, err := proc.transformerManager.GetServiceClient(reportingTypes.DEST_TRANSFORMER)
 			if err != nil {
 				proc.logger.Error("Error getting destination transformer client", err)
 				panic(err)

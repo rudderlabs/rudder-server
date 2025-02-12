@@ -19,8 +19,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/internal/http_client"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -41,7 +41,7 @@ type DestTransformer struct {
 	conf             *config.Config
 	log              logger.Logger
 	stat             stats.Stats
-	client           http_client.HTTPDoer
+	client           transformerclient.Client
 }
 
 func (d *DestTransformer) SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
@@ -53,7 +53,7 @@ func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.conf = conf
 	handle.log = log
 	handle.stat = stat
-	handle.client = http_client.NewHTTPClient(conf)
+	handle.client = transformerclient.NewClient(transformer_utils.TransformerClientConfig(conf))
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")

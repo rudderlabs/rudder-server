@@ -99,7 +99,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
 		} else {
-			client, err := proc.transformerManager.GetServiceClient("trackingplan_validation")
+			client, err := proc.transformerManager.GetServiceClient(reportingTypes.TRACKINGPLAN_VALIDATOR)
 			if err != nil {
 				proc.logger.Error("Error getting trackingplan_validation client", err.Error())
 				panic(err)
