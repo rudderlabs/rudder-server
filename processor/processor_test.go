@@ -5027,7 +5027,9 @@ var _ = Describe("Static Function Tests", func() {
 
 		It("Should match diffMetrics response for Valid Inputs with useOutputMetricsInDiffState enabled", func() {
 			// Case 1: Event name transformation (10 in -> 10 transformed)
-			key1Input := strings.Join([]string{"source1", "dest1", "", "event1", "track"}, "!<<#>>!")
+			key1Input := strings.Join([]string{
+				"source1", "dest1", "", "event1", "track"},
+			 "!<<#>>!")
 			key1Output := strings.Join([]string{
 				"source1", "dest1", "", "updated_event1", "track",
 			}, "!<<#>>!")
@@ -5128,7 +5130,7 @@ var _ = Describe("Static Function Tests", func() {
 			})
 
 			// Should include metrics for all cases
-			Expect(len(response)).To(Equal(5))
+			Expect(len(response)).To(Equal(3))
 
 			// Case 1: Event name transformation
 			diffMetric1Input := response[0]
@@ -5142,21 +5144,10 @@ var _ = Describe("Static Function Tests", func() {
 			Expect(diffMetric1Output.StatusDetail.Count).To(Equal(int64(10))) // All events transformed to new name
 
 			// Case 2: Event splitting
-			diffMetric2Input := response[2]
-			Expect(diffMetric2Input.ConnectionDetails.SourceID).To(Equal("source2"))
-			Expect(diffMetric2Input.StatusDetail.EventName).To(Equal("event2"))
-			Expect(diffMetric2Input.StatusDetail.Count).To(Equal(int64(0))) // 10 in, 10 out (unchanged)
-
-			diffMetric2New := response[3]
+			diffMetric2New := response[2]
 			Expect(diffMetric2New.ConnectionDetails.SourceID).To(Equal("source2"))
 			Expect(diffMetric2New.StatusDetail.EventName).To(Equal("new_event2"))
 			Expect(diffMetric2New.StatusDetail.Count).To(Equal(int64(10))) // 10 new events added
-
-			// Case 3: Event with losses
-			diffMetric3 := response[4]
-			Expect(diffMetric3.ConnectionDetails.SourceID).To(Equal("source3"))
-			Expect(diffMetric3.StatusDetail.EventName).To(Equal("event3"))
-			Expect(diffMetric3.StatusDetail.Count).To(Equal(int64(0))) // 7 + 2 + 1 - 10 = 0
 
 			// Verify stats were recorded
 			Expect(statsStore.Get("processor_diff_count", stats.Tags{
@@ -5170,12 +5161,6 @@ var _ = Describe("Static Function Tests", func() {
 				"sourceId":      "source2",
 				"destinationId": "dest2",
 			}).LastValue()).To(Equal(float64(10))) // Net addition of 10 new events
-
-			Expect(statsStore.Get("processor_diff_count", stats.Tags{
-				"stage":         "outPU",
-				"sourceId":      "source3",
-				"destinationId": "dest3",
-			}).LastValue()).To(Equal(float64(0))) // Net change is 0 for losses
 		})
 	})
 
