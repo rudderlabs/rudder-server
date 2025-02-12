@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ type UserTransformer struct {
 		failOnError                config.ValueLoader[bool]
 		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
 		timeoutDuration            time.Duration
+		collectInstanceLevelStats  bool
 		maxConcurrency             int
 	}
 	conf             *config.Config
@@ -69,6 +71,7 @@ func NewUserTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
+	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
 	return handle
 }
 
@@ -291,9 +294,23 @@ func (u *UserTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 
 			resp, reqErr = u.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
+			duration := time.Since(requestStartTime)
 			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
 			if reqErr != nil {
 				return reqErr
+			}
+			headerResponseTime := resp.Header.Get("X-Response-Time")
+			instanceWorker := resp.Header.Get("X-Instance-ID")
+
+			if u.config.collectInstanceLevelStats && instanceWorker != "" {
+				newTags := lo.Assign(tags)
+				newTags["instanceWorker"] = instanceWorker
+				dur := duration.Milliseconds()
+				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
+				if err == nil {
+					diff := float64(dur) - headerTime
+					u.stat.NewTaggedStat("processor_transform_duration_diff_time", stats.TimerType, newTags).SendTiming(time.Duration(diff) * time.Millisecond)
+				}
 			}
 
 			if !transformer_utils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformer_utils.StatusCPDown {
