@@ -2,9 +2,11 @@ package processor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -142,7 +144,14 @@ func (w *worker) start() {
 }
 
 // Work picks the next set of jobs from the jobsdb and returns [true] if jobs were picked, [false] otherwise
-func (w *worker) Work() (worked bool) {
+func (w *worker) Work() bool {
+	// For backward compatibility, use WorkWithID with single worker setup
+	return w.WorkWithID(0, 1)
+}
+
+// WorkWithID implements the DistributedWorker interface.
+// It picks jobs from jobsdb and processes only those that hash to this worker's ID
+func (w *worker) WorkWithID(workerID, totalWorkers int) bool {
 	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
@@ -151,38 +160,52 @@ func (w *worker) Work() (worked bool) {
 	jobs := w.handle.getJobs(w.partition)
 	afterGetJobs := time.Now()
 	if len(jobs.Jobs) == 0 {
-		return
-	}
-	worked = true
-	for _, job := range jobs.Jobs {
-		if job.JobID <= w.lastJobID {
-			w.logger.Debugn(
-				"Out of order job_id",
-				logger.NewIntField("prev", w.lastJobID),
-				logger.NewIntField("cur", job.JobID),
-			)
-			w.handle.stats().statDBReadOutOfOrder(w.partition).Count(1)
-		} else if w.lastJobID != 0 && job.JobID != w.lastJobID+1 {
-			w.logger.Debugn(
-				"Out of sequence job_id",
-				logger.NewIntField("prev", w.lastJobID),
-				logger.NewIntField("cur", job.JobID),
-			)
-			w.handle.stats().statDBReadOutOfSequence(w.partition).Count(1)
-		}
-		w.lastJobID = job.JobID
+		return false
 	}
 
-	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
+	// Filter jobs based on user ID hash
+	filteredJobs := make([]*jobsdb.JobT, 0, len(jobs.Jobs))
+	filteredEventsCount := 0
+	for _, job := range jobs.Jobs {
+		// Extract userID from job
+		userID := job.UserID
+		if w.shouldProcessJob(userID, job.JobID, workerID, totalWorkers) {
+			filteredJobs = append(filteredJobs, job)
+			filteredEventsCount += job.EventCount
+
+			if job.JobID <= w.lastJobID {
+				w.logger.Debugn(
+					"Out of order job_id",
+					logger.NewIntField("prev", w.lastJobID),
+					logger.NewIntField("cur", job.JobID),
+				)
+				w.handle.stats().statDBReadOutOfOrder(w.partition).Count(1)
+			} else if w.lastJobID != 0 && job.JobID != w.lastJobID+1 {
+				w.logger.Debugn(
+					"Out of sequence job_id",
+					logger.NewIntField("prev", w.lastJobID),
+					logger.NewIntField("cur", job.JobID),
+				)
+				w.handle.stats().statDBReadOutOfSequence(w.partition).Count(1)
+			}
+			w.lastJobID = job.JobID
+		}
+	}
+
+	if len(filteredJobs) == 0 {
+		return false
+	}
+
+	if err := w.handle.markExecuting(w.partition, filteredJobs); err != nil {
 		w.logger.Error(err)
 		panic(err)
 	}
 
-	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
+	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(filteredEventsCount, time.Since(start)))
 
 	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
-	rsourcesStats.BeginProcessing(jobs.Jobs)
-	subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
+	rsourcesStats.BeginProcessing(filteredJobs)
+	subJobs := w.handle.jobSplitter(filteredJobs, rsourcesStats)
 	for _, subJob := range subJobs {
 		w.channel.preprocess <- subJob
 	}
@@ -191,12 +214,24 @@ func (w *worker) Work() (worked bool) {
 		readLoopSleep := w.handle.config().readLoopSleep
 		if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
 			if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep.Load()-elapsed); err != nil {
-				return
+				return true
 			}
 		}
 	}
 
-	return
+	return true
+}
+
+// shouldProcessJob determines if this worker should process the job based on the user ID hash
+func (w *worker) shouldProcessJob(userID string, jobID int64, workerID, totalWorkers int) bool {
+	if userID == "" {
+		// If no user ID is found, distribute based on job ID
+		return int(xxhash.Sum64String(fmt.Sprintf("%d", jobID)))%totalWorkers == workerID
+	}
+
+	// Use xxhash for fast hashing
+	hash := xxhash.Sum64String(userID)
+	return int(hash)%totalWorkers == workerID
 }
 
 func (w *worker) SleepDurations() (min, max time.Duration) {

@@ -67,13 +67,15 @@ const (
 	DestTransformation    = "DEST_TRANSFORMATION"
 	EventFilter           = "EVENT_FILTER"
 	sourceCategoryWebhook = "webhook"
+
+	defaultWorkersPerPartition = 10 // default number of workers per partition
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 	h := &Handle{transformer: transformer, conf: c}
-	h.loadConfig()
+	h.loadConfig(c)
 	return h
 }
 
@@ -167,6 +169,7 @@ type Handle struct {
 		credentialsMap                  map[string][]transformer.Credential
 		nonEventStreamSources           map[string]bool
 		enableWarehouseTransformations  config.ValueLoader[bool]
+		workersPerPartition             config.ValueLoader[int]
 	}
 
 	drainConfig struct {
@@ -783,7 +786,7 @@ func (proc *Handle) Shutdown() {
 	metric.Instance.Reset()
 }
 
-func (proc *Handle) loadConfig() {
+func (proc *Handle) loadConfig(c *config.Config) {
 	proc.config.mainLoopTimeout = 200 * time.Millisecond
 
 	defaultSubJobSize := 2000
@@ -794,7 +797,7 @@ func (proc *Handle) loadConfig() {
 	if config.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	proc.config.isolationMode = isolation.Mode(config.GetString("Processor.isolationMode", string(defaultIsolationMode)))
+	proc.config.isolationMode = isolation.Mode(c.GetString("Processor.isolationMode", string(defaultIsolationMode)))
 	// If isolation mode is not none, we need to reduce the values for some of the config variables to more sensible defaults
 	if proc.config.isolationMode != isolation.ModeNone {
 		defaultSubJobSize = 400
@@ -802,34 +805,35 @@ func (proc *Handle) loadConfig() {
 		defaultPayloadLimit = 20 * bytesize.MB
 	}
 
-	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
-	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
-	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.enablePipelining = c.GetBoolVar(true, "Processor.enablePipelining")
+	proc.config.pipelineBufferedItems = c.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
+	proc.config.subJobSize = c.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
 	// Enable dedup of incoming events by default
-	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
-	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
+	proc.config.enableDedup = c.GetBoolVar(false, "Dedup.enableDedup")
+	proc.config.eventSchemaV2Enabled = c.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
-	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
+	proc.config.transformTimesPQLength = c.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
-	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.GWCustomVal = c.GetStringVar("GW", "Gateway.CustomVal")
 
-	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
+	proc.loadReloadableConfig(c, defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
-func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
-	proc.payloadLimit = config.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
-	proc.config.maxLoopSleep = config.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
-	proc.config.storeTimeout = config.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
-	proc.config.pingerSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
-	proc.config.readLoopSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
-	proc.config.transformBatchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-	proc.config.userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
-	proc.config.enableEventCount = config.GetReloadableBoolVar(true, "Processor.enableEventCount")
-	proc.config.maxEventsToProcess = config.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
-	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
+func (proc *Handle) loadReloadableConfig(c *config.Config, defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
+	proc.payloadLimit = c.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
+	proc.config.maxLoopSleep = c.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
+	proc.config.storeTimeout = c.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
+	proc.config.pingerSleep = c.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
+	proc.config.readLoopSleep = c.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
+	proc.config.transformBatchSize = c.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
+	proc.config.userTransformBatchSize = c.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
+	proc.config.enableEventCount = c.GetReloadableBoolVar(true, "Processor.enableEventCount")
+	proc.config.maxEventsToProcess = c.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
+	proc.config.archivalEnabled = c.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
-	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
-	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	proc.config.captureEventNameStats = c.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
+	proc.config.enableWarehouseTransformations = c.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	proc.config.workersPerPartition = c.GetReloadableIntVar(defaultWorkersPerPartition, 1, "Processor.workersPerPartition")
 }
 
 type connection struct {

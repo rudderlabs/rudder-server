@@ -37,6 +37,16 @@ type Worker interface {
 	Stop()
 }
 
+// DistributedWorker extends Worker interface with support for work distribution across multiple workers
+type DistributedWorker interface {
+	Worker
+
+	// WorkWithID is called instead of Work() when the worker supports distribution
+	// workerID is the 0-based index of this worker in the partition
+	// totalWorkers is the total number of workers in the partition
+	WorkWithID(workerID, totalWorkers int) bool
+}
+
 // WithCleanupPeriod option sets the cleanup period for the worker pool
 func WithCleanupPeriod(cleanupPeriod time.Duration) func(*workerPool) {
 	return func(wp *workerPool) {
@@ -51,14 +61,28 @@ func WithIdleTimeout(idleTimeout time.Duration) func(*workerPool) {
 	}
 }
 
+// WithWorkersPerPartition option sets the number of workers per partition.
+// If count is less than 1, it will default to 1 to maintain backwards compatibility
+// where each partition has exactly one worker.
+func WithWorkersPerPartition(count int) func(*workerPool) {
+	return func(wp *workerPool) {
+		if count < 1 {
+			wp.logger.Warnf("invalid workers per partition count: %d, defaulting to 1", count)
+			count = 1
+		}
+		wp.workersPerPartition = count
+	}
+}
+
 // New creates a new worker pool
 func New(ctx context.Context, workerSupplier WorkerSupplier, logger logger.Logger, opts ...func(*workerPool)) WorkerPool {
 	wp := &workerPool{
-		logger:        logger.Child("worker-pool"),
-		supplier:      workerSupplier,
-		workers:       make(map[string]*internalWorker),
-		cleanupPeriod: 10 * time.Second,
-		idleTimeout:   5 * time.Minute,
+		logger:              logger.Child("worker-pool"),
+		supplier:            workerSupplier,
+		workers:             make(map[string][]*internalWorker),
+		cleanupPeriod:       10 * time.Second,
+		idleTimeout:         5 * time.Minute,
+		workersPerPartition: 1, // default to 1 worker per partition for backwards compatibility
 	}
 	for _, opt := range opts {
 		opt(wp)
@@ -70,14 +94,15 @@ func New(ctx context.Context, workerSupplier WorkerSupplier, logger logger.Logge
 
 // workerPool manages a pool of workers
 type workerPool struct {
-	logger   logger.Logger
-	supplier WorkerSupplier
+	logger              logger.Logger
+	supplier            WorkerSupplier
+	workersPerPartition int
 
 	cleanupPeriod time.Duration
 	idleTimeout   time.Duration
 
 	workersMu sync.RWMutex
-	workers   map[string]*internalWorker
+	workers   map[string][]*internalWorker
 
 	lifecycle struct {
 		ctx    context.Context
@@ -86,26 +111,51 @@ type workerPool struct {
 	}
 }
 
-// PingWorker pings the worker for the given partition
+// PingWorker pings all workers for the given partition
 func (wp *workerPool) PingWorker(partition string) {
-	wp.worker(partition).Ping()
+	workers := wp.getOrCreateWorkers(partition)
+	for _, w := range workers {
+		w := w // capture for goroutine
+		go func() {
+			if dw, ok := w.delegate.(DistributedWorker); ok {
+				// If it's a distributed worker, use WorkWithID
+				if ok := dw.WorkWithID(w.workerID, w.totalWorkers); !ok {
+					w.Ping()
+				}
+			} else {
+				// Fall back to regular Work() for backward compatibility
+				w.Ping()
+			}
+		}()
+	}
 }
 
-// Shutdown stops all workers in the pull and waits for them to stop
+// Shutdown stops all workers in the pool and waits for them to stop
 func (wp *workerPool) Shutdown() {
 	wp.logger.Info("shutting down worker pool")
 	start := time.Now()
 	var wg sync.WaitGroup
-	wg.Add(len(wp.workers))
-	for _, w := range wp.workers {
-		w := w
-		go func() {
-			wstart := time.Now()
-			w.Stop()
-			wg.Done()
-			wp.logger.Debugf("worker %s stopped in %s", w.partition, time.Since(wstart))
-		}()
+
+	wp.workersMu.RLock()
+	totalWorkers := 0
+	for _, workers := range wp.workers {
+		totalWorkers += len(workers)
 	}
+	wg.Add(totalWorkers)
+
+	for _, workers := range wp.workers {
+		for _, w := range workers {
+			w := w
+			go func() {
+				wstart := time.Now()
+				w.Stop()
+				wg.Done()
+				wp.logger.Debugf("worker %s stopped in %s", w.partition, time.Since(wstart))
+			}()
+		}
+	}
+	wp.workersMu.RUnlock()
+
 	wg.Wait()
 	wp.logger.Infof("all workers stopped in %s", time.Since(start))
 	wp.lifecycle.cancel()
@@ -113,24 +163,39 @@ func (wp *workerPool) Shutdown() {
 	wp.logger.Info("worker pool was shut down successfully")
 }
 
-// Size returns the number of workers in the pool
+// Size returns the total number of workers across all partitions
 func (wp *workerPool) Size() int {
 	wp.workersMu.RLock()
 	defer wp.workersMu.RUnlock()
-	return len(wp.workers)
+	total := 0
+	for _, workers := range wp.workers {
+		total += len(workers)
+	}
+	return total
 }
 
-// worker gets or creates a worker for the given partition
-func (wp *workerPool) worker(partition string) *internalWorker {
+// getOrCreateWorkers gets or creates workers for the given partition.
+// For backwards compatibility, it ensures at least one worker exists per partition.
+func (wp *workerPool) getOrCreateWorkers(partition string) []*internalWorker {
 	wp.workersMu.Lock()
 	defer wp.workersMu.Unlock()
-	w, ok := wp.workers[partition]
+
+	workers, ok := wp.workers[partition]
 	if !ok {
-		wp.logger.Debugf("adding worker in the pool for partition: %q", partition)
-		w = newInternalWorker(partition, wp.logger, wp.supplier(partition))
-		wp.workers[partition] = w
+		numWorkers := wp.workersPerPartition
+		if numWorkers < 1 {
+			numWorkers = 1 // ensure at least one worker for backwards compatibility
+		}
+		wp.logger.Debugf("adding %d workers in the pool for partition: %q", numWorkers, partition)
+		workers = make([]*internalWorker, 0, numWorkers)
+		for i := 0; i < numWorkers; i++ {
+			worker := newInternalWorker(partition, wp.logger, wp.supplier(partition))
+			worker.SetDistributionInfo(i, numWorkers)
+			workers = append(workers, worker)
+		}
+		wp.workers[partition] = workers
 	}
-	return w
+	return workers
 }
 
 // startCleanupLoop starts a loop that cleans up idle workers
@@ -145,13 +210,22 @@ func (wp *workerPool) startCleanupLoop() {
 			case <-time.After(wp.cleanupPeriod):
 			}
 			wp.workersMu.Lock()
-			for partition, w := range wp.workers {
-				idleTime := w.IdleSince()
-				if !idleTime.IsZero() && time.Since(idleTime) > wp.idleTimeout {
-					wp.logger.Debugf("destroying idle worker for partition: %q", partition)
-					w.Stop()
+			for partition, workers := range wp.workers {
+				allIdle := true
+				for _, w := range workers {
+					idleTime := w.IdleSince()
+					if idleTime.IsZero() || time.Since(idleTime) <= wp.idleTimeout {
+						allIdle = false
+						break
+					}
+				}
+				if allIdle {
+					wp.logger.Debugf("destroying idle workers for partition: %q", partition)
+					for _, w := range workers {
+						w.Stop()
+					}
 					delete(wp.workers, partition)
-					wp.logger.Debugf("removed idle worker from pool for partition: %q", partition)
+					wp.logger.Debugf("removed idle workers from pool for partition: %q", partition)
 				}
 			}
 			wp.workersMu.Unlock()

@@ -12,9 +12,11 @@ import (
 
 func newInternalWorker(partition string, logger logger.Logger, delegate Worker) *internalWorker {
 	w := &internalWorker{
-		partition: partition,
-		delegate:  delegate,
-		logger:    logger,
+		partition:    partition,
+		delegate:     delegate,
+		logger:       logger,
+		workerID:     0,
+		totalWorkers: 1, // default to single worker mode
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.ping = make(chan struct{}, 1)
@@ -38,6 +40,16 @@ type internalWorker struct {
 		idleMu    sync.RWMutex // idle mutex
 		idleSince time.Time    // idle since
 	}
+
+	// worker configuration
+	workerID     int // worker's ID within its partition (0-based)
+	totalWorkers int // total number of workers in the partition
+}
+
+// SetDistributionInfo updates the worker's distribution information
+func (w *internalWorker) SetDistributionInfo(workerID, totalWorkers int) {
+	w.workerID = workerID
+	w.totalWorkers = totalWorkers
 }
 
 // start starts the various worker goroutines
@@ -61,7 +73,16 @@ func (w *internalWorker) start() {
 			}
 
 			w.setIdleSince(time.Time{})
-			if w.delegate.Work() {
+			var didWork bool
+			if dw, ok := w.delegate.(DistributedWorker); ok {
+				// Use the worker's distribution info
+				didWork = dw.WorkWithID(w.workerID, w.totalWorkers)
+			} else {
+				// Fall back to regular Work() for backward compatibility
+				didWork = w.delegate.Work()
+			}
+
+			if didWork {
 				w.logger.Debugf("worker %q produced work", w.partition)
 				exponentialSleep.Reset()
 			} else {
