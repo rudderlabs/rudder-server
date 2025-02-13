@@ -23,7 +23,8 @@ type workerHandle interface {
 	getJobs(partition string) jobsdb.JobsResult
 	markExecuting(partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
-	processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error)
+	processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error)
+	generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error)
 	transformations(partition string, in *transformationMessage) *storeMessage
 	Store(partition string, in *storeMessage)
 }
