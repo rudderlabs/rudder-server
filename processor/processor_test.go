@@ -5028,8 +5028,8 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should match diffMetrics response for Valid Inputs with useOutputMetricsInDiffState enabled", func() {
 			// Case 1: Event name transformation (10 in -> 10 transformed)
 			key1Input := strings.Join([]string{
-				"source1", "dest1", "", "event1", "track"},
-			 "!<<#>>!")
+				"source1", "dest1", "", "event1", "track",
+			}, "!<<#>>!")
 			key1Output := strings.Join([]string{
 				"source1", "dest1", "", "updated_event1", "track",
 			}, "!<<#>>!")

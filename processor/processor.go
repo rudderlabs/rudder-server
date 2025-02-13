@@ -1148,6 +1148,7 @@ func (proc *Handle) getTransformerEvents(
 			},
 		)
 
+		// Update metadata with updated event name before reporting
 		if proc.config.enableUpdatedEventNameReporting.Load() {
 			updatedEventName := userTransformedEvent.Metadata.EventName
 			if en, ok := userTransformedEvent.Output["event"].(string); ok {
