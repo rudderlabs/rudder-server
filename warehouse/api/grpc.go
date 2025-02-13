@@ -87,7 +87,7 @@ type GRPC struct {
 		}
 		enableTunnelling              bool
 		defaultLatencyAggregationType model.LatencyAggregationType
-		minLatencyQueryLookbackDays   int
+		maxLatencyQueryLookbackDays   int
 	}
 }
 
@@ -120,7 +120,7 @@ func NewGRPCServer(
 	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
 	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
 	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
-	g.config.minLatencyQueryLookbackDays = conf.GetInt("Warehouse.grpc.minLatencyQueryLookbackDays", 90)
+	g.config.maxLatencyQueryLookbackDays = conf.GetInt("Warehouse.grpc.maxLatencyQueryLookbackDays", 90)
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
 		g.config.controlPlane.url,
@@ -1079,10 +1079,10 @@ func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyReq
 		return &proto.SyncLatencyResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time %s should be in correct %s format", request.GetStartTime(), time.RFC3339)
 	}
-	minStartTime := g.now().AddDate(0, -g.config.minLatencyQueryLookbackDays, 0)
+	minStartTime := g.now().AddDate(0, -g.config.maxLatencyQueryLookbackDays, 0)
 	if startTime.Before(minStartTime) {
 		return &proto.SyncLatencyResponse{},
-			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time cannot be older than %d days", g.config.minLatencyQueryLookbackDays)
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time cannot be older than %d days", g.config.maxLatencyQueryLookbackDays)
 	}
 
 	aggregationMinutes, err := strconv.Atoi(request.GetAggregationMinutes())
