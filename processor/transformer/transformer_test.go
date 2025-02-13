@@ -254,7 +254,6 @@ func TestTransformer(t *testing.T) {
 
 					labels := transformerMetricLabels{
 						Endpoint:         getEndpointFromURL(srv.URL),
-						Service:          destServiceName,
 						Stage:            "test-stage",
 						SourceID:         metadata.SourceID,
 						SourceType:       metadata.SourceType,
@@ -272,7 +271,6 @@ func TestTransformer(t *testing.T) {
 						for _, m := range metrics {
 							require.Equal(t, stats.Tags{
 								"endpoint":         getEndpointFromURL(srv.URL),
-								"service":          destServiceName,
 								"stage":            "test-stage",
 								"sourceId":         metadata.SourceID,
 								"sourceType":       metadata.SourceType,
@@ -404,7 +402,6 @@ func TestTransformer(t *testing.T) {
 							require.Panics(t, func() {
 								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 									Endpoint: getEndpointFromURL(srv.URL),
-									Service:  destServiceName,
 									Stage:    tc.stage,
 								}, events)
 							})
@@ -417,7 +414,6 @@ func TestTransformer(t *testing.T) {
 
 						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 							Endpoint: getEndpointFromURL(srv.URL),
-							Service:  destServiceName,
 							Stage:    tc.stage,
 						}, events)
 						require.Len(t, rsp, 1)
@@ -474,7 +470,6 @@ func TestTransformer(t *testing.T) {
 
 				rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 					Endpoint: getEndpointFromURL(srv.URL),
-					Service:  destServiceName,
 					Stage:    "test-stage",
 				}, events)
 				require.Equal(t, rsp, []TransformerResponse{
@@ -612,7 +607,6 @@ func TestTransformer(t *testing.T) {
 							require.Panics(t, func() {
 								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 									Endpoint: getEndpointFromURL(srv.URL),
-									Service:  destServiceName,
 									Stage:    "test-stage",
 								}, events)
 							})
@@ -622,7 +616,6 @@ func TestTransformer(t *testing.T) {
 
 						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 							Endpoint: getEndpointFromURL(srv.URL),
-							Service:  destServiceName,
 							Stage:    "test-stage",
 						}, events)
 						require.Equal(t, tc.expectedResponse, rsp)
@@ -721,7 +714,6 @@ func TestTransformer(t *testing.T) {
 							require.Panics(t, func() {
 								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 									Endpoint: getEndpointFromURL(srv.URL),
-									Service:  destServiceName,
 									Stage:    "test-stage",
 								}, events)
 							})
@@ -730,7 +722,6 @@ func TestTransformer(t *testing.T) {
 
 						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
 							Endpoint: getEndpointFromURL(srv.URL),
-							Service:  destServiceName,
 							Stage:    "test-stage",
 						}, events)
 						require.Equal(t, tc.expectedResponse, rsp)

@@ -39,12 +39,6 @@ const (
 )
 
 const (
-	userServiceName       = "user"
-	destServiceName       = "destination"
-	validationServiceName = "validation"
-)
-
-const (
 	StatusCPDown              = 809
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
@@ -132,7 +126,6 @@ type Credential struct {
 
 type transformerMetricLabels struct {
 	Endpoint         string // hostname of the service
-	Service          string // user, destination, validation
 	DestinationType  string // BQ, etc.
 	SourceType       string // webhook
 	Language         string // js, python
@@ -147,7 +140,6 @@ type transformerMetricLabels struct {
 func (t transformerMetricLabels) ToStatsTag() stats.Tags {
 	tags := stats.Tags{
 		"endpoint":         t.Endpoint,
-		"service":          t.Service,
 		"destinationType":  t.DestinationType,
 		"sourceType":       t.SourceType,
 		"language":         t.Language,
@@ -315,14 +307,13 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 		return Response{}
 	}
 
-	DestinationType := clientEvents[0].Destination.DestinationDefinition.Name
-	destURL := trans.destTransformURL(DestinationType)
+	destinationType := clientEvents[0].Destination.DestinationDefinition.Name
+	destURL := trans.destTransformURL(destinationType)
 
 	labels := transformerMetricLabels{
 		Endpoint:        getEndpointFromURL(destURL),
-		Service:         destServiceName,
 		Stage:           destTransformerStage,
-		DestinationType: DestinationType,
+		DestinationType: destinationType,
 		DestinationID:   clientEvents[0].Destination.ID,
 		SourceID:        clientEvents[0].Metadata.SourceID,
 		WorkspaceID:     clientEvents[0].Metadata.WorkspaceID,
@@ -333,6 +324,10 @@ func (trans *handle) Transform(ctx context.Context, clientEvents []TransformerEv
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
+	if len(clientEvents) == 0 {
+		return Response{}
+	}
+
 	var dehydratedClientEvents []TransformerEvent
 	for _, clientEvent := range clientEvents {
 		dehydratedClientEvent := clientEvent.GetVersionsOnly()
@@ -347,23 +342,26 @@ func (trans *handle) UserTransform(ctx context.Context, clientEvents []Transform
 	userURL := trans.userTransformURL()
 	labels := transformerMetricLabels{
 		Endpoint:         getEndpointFromURL(userURL),
-		Service:          userServiceName,
 		Stage:            userTransformerStage,
+		DestinationType:  clientEvents[0].Destination.DestinationDefinition.Name,
+		SourceType:       clientEvents[0].Metadata.SourceType,
+		WorkspaceID:      clientEvents[0].Metadata.WorkspaceID,
 		SourceID:         clientEvents[0].Metadata.SourceID,
 		DestinationID:    clientEvents[0].Destination.ID,
 		TransformationID: transformationID,
-		WorkspaceID:      clientEvents[0].Metadata.WorkspaceID,
-		SourceType:       clientEvents[0].Metadata.SourceType,
 	}
 	return trans.transform(ctx, dehydratedClientEvents, userURL, batchSize, labels)
 }
 
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []TransformerEvent, batchSize int) Response {
+	if len(clientEvents) == 0 {
+		return Response{}
+	}
+
 	validationURL := trans.trackingPlanValidationURL()
 	labels := transformerMetricLabels{
 		Endpoint:    getEndpointFromURL(validationURL),
-		Service:     validationServiceName,
 		Stage:       trackingPlanValidationStage,
 		SourceID:    clientEvents[0].Metadata.SourceID,
 		WorkspaceID: clientEvents[0].Metadata.WorkspaceID,
