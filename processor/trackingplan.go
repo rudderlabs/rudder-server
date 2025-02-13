@@ -12,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type TrackingPlanStatT struct {
@@ -69,9 +69,9 @@ func enhanceWithViolation(response types.Response, trackingPlanId string, tracki
 // The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsBySourceId
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingTypes.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
 	validatedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
-	validatedReportMetrics := make([]*reportingTypes.PUReportedMetric, 0)
+	validatedReportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
 	validatedErrorJobs := make([]*jobsdb.JobT, 0)
 	trackingPlanEnabledMap := make(map[SourceIDT]bool)
 
@@ -99,12 +99,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		if !proc.config.enableTransformationV2 {
 			response = proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
 		} else {
-			client, err := proc.transformerManager.GetServiceClient(reportingTypes.TRACKINGPLAN_VALIDATOR)
-			if err != nil {
-				proc.logger.Error("Error getting trackingplan_validation client", err.Error())
-				panic(err)
-			}
-			response = client.SendRequest(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
+			response = proc.transformerManager.TrackingPlan().Validate(context.TODO(), eventList)
 		}
 		validationStat.tpValidationTime.Since(validationStart)
 
@@ -122,9 +117,9 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		// This is being used to distinguish the flows in reporting service
 		trackingPlanEnabledMap[sourceId] = true
 
-		var successMetrics []*reportingTypes.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, backendconfig.Connection{}, reportingTypes.DESTINATION_FILTER, reportingTypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
-		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, reportingTypes.DESTINATION_FILTER, reportingTypes.TRACKINGPLAN_VALIDATOR)
+		var successMetrics []*reportingtypes.PUReportedMetric
+		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, backendconfig.Connection{}, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))

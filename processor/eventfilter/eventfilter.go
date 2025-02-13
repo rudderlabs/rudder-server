@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -142,7 +142,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 		)
 		// We will not allow the event
 		return false, &types.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: reportingTypes.FilterEventCode,
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Message type not supported",
 		}
@@ -166,7 +166,7 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 
 	if !allow {
 		return allow, &types.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: reportingTypes.FilterEventCode,
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Filtering event based on hybridModeFilter",
 		}

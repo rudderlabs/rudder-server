@@ -1,4 +1,4 @@
-package transformer_utils
+package utils
 
 import (
 	"context"

@@ -24,10 +24,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
+	transformer_utils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -455,8 +455,8 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
-		if reportingTypes.SupportedTransformerApiVersion != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingTypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
+		if reportingtypes.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingtypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

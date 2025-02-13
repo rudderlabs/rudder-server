@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -384,7 +384,7 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 				}
 				var isError bool
 				switch failedEvent.StatusCode {
-				case reportingTypes.FilterEventCode:
+				case reportingtypes.FilterEventCode:
 					eventAfter.IsDropped = true
 					isError = false
 				default:

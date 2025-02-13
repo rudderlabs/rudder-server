@@ -1,35 +1,51 @@
-//go:generate mockgen -destination=./../../mocks/processor/mock_transformer_manager.go -package=mock_transformer github.com/rudderlabs/rudder-server/processor/transformer ServiceClient
 package transformer
 
 import (
 	"context"
-	"errors"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/trackingplan_validation"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
-type ServiceClient interface {
-	SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response
+type DestinationClient interface {
+	Transform(ctx context.Context, events []types.TransformerEvent) types.Response
 }
 
-type CommunicationManager struct {
-	clients map[string]ServiceClient
+type UserClient interface {
+	Transform(ctx context.Context, events []types.TransformerEvent) types.Response
 }
 
-func NewCommunicationManager() *CommunicationManager {
-	return &CommunicationManager{
-		clients: make(map[string]ServiceClient),
+type TrackingPlanClient interface {
+	Validate(ctx context.Context, events []types.TransformerEvent) types.Response
+}
+
+type Clients struct {
+	user         UserClient
+	destination  DestinationClient
+	trackingplan TrackingPlanClient
+}
+
+func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats) *Clients {
+	return &Clients{
+		user:         user_transformer.New(conf, log, statsFactory),
+		destination:  destination_transformer.New(conf, log, statsFactory),
+		trackingplan: trackingplan_validation.New(conf, log, statsFactory),
 	}
 }
 
-func (m *CommunicationManager) RegisterService(name string, client ServiceClient) {
-	m.clients[name] = client
+func (c *Clients) User() UserClient {
+	return c.user
 }
 
-func (m *CommunicationManager) GetServiceClient(name string) (ServiceClient, error) {
-	client, exists := m.clients[name]
-	if !exists {
-		return nil, errors.New("service client not registered")
-	}
-	return client, nil
+func (c *Clients) Destination() DestinationClient {
+	return c.destination
+}
+
+func (c *Clients) TrackingPlan() TrackingPlanClient {
+	return c.trackingplan
 }

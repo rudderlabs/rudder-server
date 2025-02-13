@@ -21,14 +21,14 @@ import (
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type DestTransformer struct {
+type Client struct {
 	config struct {
 		destTransformationURL   string
 		maxRetry                config.ValueLoader[int]
@@ -36,6 +36,7 @@ type DestTransformer struct {
 		maxConcurrency          int
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
+		batchSize               config.ValueLoader[int]
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
@@ -44,24 +45,20 @@ type DestTransformer struct {
 	client           transformerclient.Client
 }
 
-type Opt func(*DestTransformer)
+type Opt func(*Client)
 
 func WithClient(client transformerclient.Client) Opt {
-	return func(s *DestTransformer) {
+	return func(s *Client) {
 		s.client = client
 	}
 }
 
-func (d *DestTransformer) SendRequest(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
-	return d.transform(ctx, clientEvents, d.destTransformURL(clientEvents[0].Destination.DestinationDefinition.Name), batchSize)
-}
-
-func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *DestTransformer {
-	handle := &DestTransformer{}
+func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
+	handle := &Client{}
 	handle.conf = conf
 	handle.log = log
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformer_utils.TransformerClientConfig(conf))
+	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf))
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
@@ -69,6 +66,7 @@ func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
+	handle.config.batchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -77,15 +75,12 @@ func NewDestTransformer(conf *config.Config, log logger.Logger, stat stats.Stats
 	return handle
 }
 
-func (d *DestTransformer) transform(
-	ctx context.Context,
-	clientEvents []types.TransformerEvent,
-	url string,
-	batchSize int,
-) types.Response {
+func (d *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	batchSize := d.config.batchSize.Load()
 	if len(clientEvents) == 0 {
 		return types.Response{}
 	}
+
 	sTags := stats.Tags{
 		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
 		"dest_id":   clientEvents[0].Destination.ID,
@@ -104,7 +99,7 @@ func (d *DestTransformer) transform(
 		for k, v := range sTags {
 			loggerCtx = append(loggerCtx, k, v)
 		}
-		transformer_utils.TrackLongRunningTransformation(ctx, "dest_transformer", d.config.timeoutDuration, d.log.With(loggerCtx...))
+		transformerutils.TrackLongRunningTransformation(ctx, "dest_transformer", d.config.timeoutDuration, d.log.With(loggerCtx...))
 		trackWg.Done()
 	}()
 
@@ -120,13 +115,17 @@ func (d *DestTransformer) transform(
 
 	var wg sync.WaitGroup
 	wg.Add(len(batches))
-
+	var err error
+	var foundError bool
 	lo.ForEach(
 		batches,
 		func(batch []types.TransformerEvent, i int) {
 			d.guardConcurrency <- struct{}{}
 			go func() {
-				transformResponse[i] = d.request(ctx, url, "dest_transformer", batch)
+				transformResponse[i], err = d.sendBatch(ctx, d.destTransformURL(batch[0].Destination.DestinationDefinition.Name), "dest_transformer", batch)
+				if err != nil {
+					foundError = true
+				}
 				<-d.guardConcurrency
 				wg.Done()
 			}()
@@ -134,6 +133,9 @@ func (d *DestTransformer) transform(
 	)
 	wg.Wait()
 
+	if foundError {
+		panic(err)
+	}
 	var outClientEvents []types.TransformerResponse
 	var failedEvents []types.TransformerResponse
 
@@ -159,7 +161,7 @@ func (d *DestTransformer) transform(
 	}
 }
 
-func (d *DestTransformer) request(ctx context.Context, url, stage string, data []types.TransformerEvent) []types.TransformerResponse {
+func (d *Client) sendBatch(ctx context.Context, url, stage string, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -172,7 +174,7 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 	}
 
 	if len(data) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var (
@@ -180,12 +182,15 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 		statusCode int
 	)
 
-	respData, statusCode = d.doPost(ctx, rawJSON, url, stats.Tags{
+	respData, statusCode, err = d.doPost(ctx, rawJSON, url, stats.Tags{
 		"destinationType": data[0].Destination.DestinationDefinition.Name,
 		"destinationId":   data[0].Destination.ID,
 		"sourceId":        data[0].Metadata.SourceID,
 		"stage":           stage,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	switch statusCode {
 	case http.StatusOK,
@@ -205,7 +210,7 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 	default:
 		for i := range data {
@@ -214,10 +219,10 @@ func (d *DestTransformer) request(ctx context.Context, url, stage string, data [
 			transformerResponses = append(transformerResponses, resp)
 		}
 	}
-	return transformerResponses
+	return transformerResponses, nil
 }
 
-func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string, tags stats.Tags) ([]byte, int) {
+func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags stats.Tags) ([]byte, int, error) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -250,7 +255,7 @@ func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 				return reqErr
 			}
 
-			if !transformer_utils.IsJobTerminated(resp.StatusCode) {
+			if !transformerutils.IsJobTerminated(resp.StatusCode) {
 				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
 			}
 
@@ -269,26 +274,26 @@ func (d *DestTransformer) doPost(ctx context.Context, rawJSON []byte, url string
 	)
 	if err != nil {
 		if d.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformer_utils.TransformerRequestFailure
+			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
 		} else {
-			panic(err)
+			return nil, 0, err
 		}
 	}
 
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
-		if reportingTypes.SupportedTransformerApiVersion != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingTypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
+		if reportingtypes.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingtypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
 			d.log.Error(unexpectedVersionError)
-			panic(unexpectedVersionError)
+			return nil, 0, unexpectedVersionError
 		}
 	}
 
-	return respData, resp.StatusCode
+	return respData, resp.StatusCode, nil
 }
 
-func (d *DestTransformer) destTransformURL(destType string) string {
+func (d *Client) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", d.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {

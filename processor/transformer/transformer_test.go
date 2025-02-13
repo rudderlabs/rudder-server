@@ -28,7 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -60,7 +60,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
 	require.NoError(t.t, json.NewEncoder(w).Encode(responses))
 }
@@ -134,7 +134,7 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
 	require.NoError(et.t, json.NewEncoder(w).Encode(responses))
 }
@@ -415,7 +415,7 @@ func TestTransformer(t *testing.T) {
 					maxRetryCount: 3,
 					statusCode:    StatusCPDown,
 					statusError:   "control plane not reachable",
-					apiVersion:    reportingTypes.SupportedTransformerApiVersion,
+					apiVersion:    reportingtypes.SupportedTransformerApiVersion,
 					t:             t,
 				}
 
@@ -546,7 +546,7 @@ func TestTransformer(t *testing.T) {
 							maxRetryCount: tc.maxRetryCount,
 							statusCode:    tc.statusCode,
 							statusError:   tc.statusError,
-							apiVersion:    reportingTypes.SupportedTransformerApiVersion,
+							apiVersion:    reportingtypes.SupportedTransformerApiVersion,
 							t:             t,
 						}
 
@@ -616,7 +616,7 @@ func TestTransformer(t *testing.T) {
 				}{
 					{
 						name:        "compatible api version",
-						apiVersion:  reportingTypes.SupportedTransformerApiVersion,
+						apiVersion:  reportingtypes.SupportedTransformerApiVersion,
 						expectPanic: false,
 						expectedResponse: []types.TransformerResponse{
 							{

@@ -1,4 +1,4 @@
-package trackingplan_validation
+package destination_transformer_test
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -26,10 +25,12 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer_utils"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type fakeTransformer struct {
@@ -60,7 +61,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
 	require.NoError(t.t, json.NewEncoder(w).Encode(responses))
 }
@@ -134,12 +135,12 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	w.Header().Set("apiVersion", strconv.Itoa(reportingTypes.SupportedTransformerApiVersion))
+	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
 	require.NoError(et.t, json.NewEncoder(w).Encode(responses))
 }
 
-func TestTrackingPlanValidator(t *testing.T) {
+func TestDestinationTransformer(t *testing.T) {
 	clientTypes := []string{"stdlib", "recycled", "httplb"}
 	for _, clientType := range clientTypes {
 		t.Run(fmt.Sprintf("with %s client", clientType), func(t *testing.T) {
@@ -173,18 +174,15 @@ func TestTrackingPlanValidator(t *testing.T) {
 					statsStore, err := memstats.New()
 					require.NoError(t, err)
 
-					tr := TPValidator{}
-					tr.stat = statsStore
-					tr.log = logger.NOP
-					tr.conf = conf
-					tr.client = srv.Client()
-					tr.guardConcurrency = make(chan struct{}, 200)
-					tr.config.timeoutDuration = 1 * time.Second
-					tr.config.failOnError = config.SingleValueLoader(true)
-					tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
-					tr.config.maxRetry = config.SingleValueLoader(1)
-
-					batchSize := tt.batchSize
+					conf.Set("Processor.maxConcurrency", 200)
+					conf.Set("Processor.Transformer.failOnUserTransformTimeout", true)
+					conf.Set("Processor.Transformer.failOnError", true)
+					conf.Set("Processor.Transformer.maxRetryBackoffInterval", 1*time.Second)
+					conf.Set("Processor.Transformer.maxRetry", 1)
+					conf.Set("Processor.Transformer.timeoutDuration", 1*time.Second)
+					conf.Set("DEST_TRANSFORM_URL", srv.URL)
+					conf.Set("Processor.transformBatchSize", tt.batchSize)
+					tr := destination_transformer.New(conf, logger.NOP, statsStore, destination_transformer.WithClient(srv.Client()))
 					eventsCount := tt.eventsCount
 					failEvery := tt.failEvery
 
@@ -248,7 +246,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 						}
 					}
 
-					rsp := tr.transform(context.TODO(), events, srv.URL, batchSize)
+					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
 					metrics := statsStore.GetByName("processor.transformer_request_time")
@@ -256,17 +254,17 @@ func TestTrackingPlanValidator(t *testing.T) {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {
 							require.Equal(t, stats.Tags{
-								"stage":            "trackingPlan_validation",
-								"sourceId":         Metadata.SourceID,
-								"destinationType":  destinationConfig.DestinationDefinition.Name,
-								"destinationId":    destinationConfig.ID,
-								"transformationId": destinationConfig.Transformations[0].ID,
+								"stage":           "dest_transformer",
+								"sourceId":        Metadata.SourceID,
+								"destinationType": destinationConfig.DestinationDefinition.Name,
+								"destinationId":   destinationConfig.ID,
 							}, m.Tags)
 						}
 					}
 				}
 			})
-			t.Run("endless retries in case of control plane down", func(t *testing.T) {
+
+			t.Run("timeout", func(t *testing.T) {
 				msgID := "messageID-0"
 				events := append([]types.TransformerEvent{}, types.TransformerEvent{
 					Metadata: types.Metadata{
@@ -285,39 +283,54 @@ func TestTrackingPlanValidator(t *testing.T) {
 					},
 				})
 
-				elt := &endlessLoopTransformer{
-					maxRetryCount: 3,
-					statusCode:    transformer_utils.StatusCPDown,
-					statusError:   "control plane not reachable",
-					apiVersion:    reportingTypes.SupportedTransformerApiVersion,
-					t:             t,
+				testCases := []struct {
+					name                       string
+					retries                    int
+					failOnUserTransformTimeout bool
+					expectPanic                bool
+				}{
+					{
+						name:                       "destination transformation timeout",
+						retries:                    3,
+						failOnUserTransformTimeout: false,
+						expectPanic:                true,
+					},
+					{
+						name:                       "destination transformation timeout with fail on timeout",
+						retries:                    3,
+						failOnUserTransformTimeout: true,
+						expectPanic:                false,
+					},
 				}
 
-				srv := httptest.NewServer(elt)
-				defer srv.Close()
+				for _, tc := range testCases {
+					tc := tc
 
-				tr := TPValidator{}
-				tr.stat = stats.Default
-				tr.log = logger.NOP
-				tr.conf = conf
-				tr.client = srv.Client()
-				tr.config.maxRetry = config.SingleValueLoader(1)
-				tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
-				tr.config.timeoutDuration = 1 * time.Second
+					t.Run(tc.name, func(t *testing.T) {
+						ch := make(chan struct{})
+						srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							<-ch
+						}))
+						defer srv.Close()
 
-				rsp := tr.request(context.TODO(), srv.URL, events)
-				require.Equal(t, rsp, []types.TransformerResponse{
-					{
-						Metadata: types.Metadata{
-							MessageID: msgID,
-						},
-						StatusCode: http.StatusOK,
-						Output: map[string]interface{}{
-							"src-key-1": msgID,
-						},
-					},
-				})
-				require.Equal(t, elt.retryCount, 3)
+						client := srv.Client()
+						client.Timeout = 1 * time.Millisecond
+
+						conf.Set("Processor.maxRetry", tc.retries)
+						conf.Set("Processor.Transformer.failOnError", tc.failOnUserTransformTimeout)
+						conf.Set("Processor.maxRetryBackoffInterval", 1*time.Second)
+						conf.Set("DEST_TRANSFORM_URL", srv.URL)
+						tr := destination_transformer.New(conf, logger.NOP, stats.Default, destination_transformer.WithClient(client))
+
+						if tc.expectPanic {
+							require.Panics(t, func() {
+								_ = tr.Transform(context.TODO(), events)
+							})
+							close(ch)
+							return
+						}
+					})
+				}
 			})
 
 			t.Run("retries", func(t *testing.T) {
@@ -355,7 +368,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					statusError      string
 					expectedRetries  int
 					expectPanic      bool
-					expectedResponse []types.TransformerResponse
+					expectedResponse types.Response
 					failOnError      bool
 				}{
 					{
@@ -376,74 +389,54 @@ func TestTrackingPlanValidator(t *testing.T) {
 						statusError:     "too many requests",
 						expectedRetries: 4,
 						expectPanic:     false,
-						expectedResponse: []types.TransformerResponse{
-							{
-								Metadata: types.Metadata{
-									MessageID: msgID,
+						expectedResponse: types.Response{
+							Events: nil,
+							FailedEvents: []types.TransformerResponse{
+								{
+									Metadata: types.Metadata{
+										MessageID: msgID,
+									},
+									StatusCode: transformerutils.TransformerRequestFailure,
+									Error:      "transformer request failed: transformer returned status code: 429",
 								},
-								StatusCode: transformer_utils.TransformerRequestFailure,
-								Error:      "transformer request failed: transformer returned status code: 429",
 							},
 						},
 						failOnError: true,
-					},
-					{
-						name:            "transient control plane error",
-						retries:         30,
-						maxRetryCount:   3,
-						statusCode:      transformer_utils.StatusCPDown,
-						statusError:     "control plane not reachable",
-						expectedRetries: 3,
-						expectPanic:     false,
-						expectedResponse: []types.TransformerResponse{
-							{
-								Metadata: types.Metadata{
-									MessageID: msgID,
-								},
-								StatusCode: http.StatusOK,
-								Output: map[string]interface{}{
-									"src-key-1": msgID,
-								},
-							},
-						},
-						failOnError: false,
 					},
 				}
 
 				for _, tc := range testCases {
 					tc := tc
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount: tc.maxRetryCount,
 							statusCode:    tc.statusCode,
 							statusError:   tc.statusError,
-							apiVersion:    reportingTypes.SupportedTransformerApiVersion,
+							apiVersion:    reportingtypes.SupportedTransformerApiVersion,
 							t:             t,
 						}
 
 						srv := httptest.NewServer(elt)
 						defer srv.Close()
 
-						tr := TPValidator{}
-						tr.stat = stats.Default
-						tr.log = logger.NOP
-						tr.conf = conf
-						tr.client = srv.Client()
-						tr.config.maxRetry = config.SingleValueLoader(tc.retries)
-						tr.config.failOnError = config.SingleValueLoader(tc.failOnError)
-						tr.config.timeoutDuration = 1 * time.Second
-						tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
+						conf.Set("DEST_TRANSFORM_URL", srv.URL)
+						conf.Set("Processor.maxRetry", tc.retries)
+						conf.Set("Processor.maxRetryBackoffInterval", 1*time.Second)
+						conf.Set("Processor.timeoutDuration", 1*time.Second)
+						conf.Set("Processor.Transformer.failOnUserTransformTimeout", false)
+						conf.Set("Processor.Transformer.failOnError", tc.failOnError)
+
+						tr := destination_transformer.New(conf, logger.NOP, stats.Default, destination_transformer.WithClient(srv.Client()))
 
 						if tc.expectPanic {
 							require.Panics(t, func() {
-								_ = tr.request(context.TODO(), srv.URL, events)
+								_ = tr.Transform(context.TODO(), events)
 							})
 							require.Equal(t, elt.retryCount, tc.expectedRetries)
 							return
 						}
 
-						rsp := tr.request(context.TODO(), srv.URL, events)
+						rsp := tr.Transform(context.TODO(), events)
 						require.Equal(t, tc.expectedResponse, rsp)
 						require.Equal(t, tc.expectedRetries, elt.retryCount)
 					})
@@ -482,20 +475,23 @@ func TestTrackingPlanValidator(t *testing.T) {
 					apiVersion       int
 					skipApiVersion   bool
 					expectPanic      bool
-					expectedResponse []types.TransformerResponse
+					expectedResponse types.Response
 				}{
 					{
 						name:        "compatible api version",
-						apiVersion:  reportingTypes.SupportedTransformerApiVersion,
+						apiVersion:  reportingtypes.SupportedTransformerApiVersion,
 						expectPanic: false,
-						expectedResponse: []types.TransformerResponse{
-							{
-								Metadata: types.Metadata{
-									MessageID: msgID,
-								},
-								StatusCode: http.StatusOK,
-								Output: map[string]interface{}{
-									"src-key-1": msgID,
+						expectedResponse: types.Response{
+							FailedEvents: nil,
+							Events: []types.TransformerResponse{
+								{
+									Metadata: types.Metadata{
+										MessageID: msgID,
+									},
+									StatusCode: http.StatusOK,
+									Output: map[string]interface{}{
+										"src-key-1": msgID,
+									},
 								},
 							},
 						},
@@ -526,23 +522,19 @@ func TestTrackingPlanValidator(t *testing.T) {
 						srv := httptest.NewServer(elt)
 						defer srv.Close()
 
-						tr := TPValidator{}
-						tr.client = srv.Client()
-						tr.stat = stats.Default
-						tr.conf = conf
-						tr.log = logger.NOP
-						tr.config.maxRetry = config.SingleValueLoader(1)
-						tr.config.timeoutDuration = 1 * time.Second
-						tr.config.maxRetryBackoffInterval = config.SingleValueLoader(1 * time.Second)
-
+						conf.Set("DEST_TRANSFORM_URL", srv.URL)
+						conf.Set("Processor.maxRetry", 1)
+						conf.Set("Processor.maxRetryBackoffInterval", 1*time.Second)
+						conf.Set("Processor.timeoutDuration", 1*time.Second)
+						tr := destination_transformer.New(conf, logger.NOP, stats.Default, destination_transformer.WithClient(srv.Client()))
 						if tc.expectPanic {
 							require.Panics(t, func() {
-								_ = tr.request(context.TODO(), srv.URL, events)
+								_ = tr.Transform(context.TODO(), events)
 							})
 							return
 						}
 
-						rsp := tr.request(context.TODO(), srv.URL, events)
+						rsp := tr.Transform(context.TODO(), events)
 						require.Equal(t, tc.expectedResponse, rsp)
 					})
 				}
@@ -591,9 +583,9 @@ func TestTrackingPlanValidator(t *testing.T) {
 					},
 				})
 
-				t.Run("Tracking Plan Validations", func(t *testing.T) {
+				t.Run("Destination transformations", func(t *testing.T) {
 					et := &endpointTransformer{
-						supportedPaths: []string{"/v0/validate"},
+						supportedPaths: []string{"/v0/destinations/test-destination"},
 						t:              t,
 					}
 
@@ -604,11 +596,80 @@ func TestTrackingPlanValidator(t *testing.T) {
 					c.Set("Processor.maxRetry", 1)
 					c.Set("DEST_TRANSFORM_URL", srv.URL)
 
-					tr := NewTPValidator(c, logger.NOP, stats.Default, WithClient(srv.Client()))
-					url, err := url.JoinPath(srv.URL, "/v0/validate")
-					require.NoError(t, err)
-					rsp := tr.transform(context.TODO(), events, url, 10)
+					tr := destination_transformer.New(c, logger.NOP, stats.Default, destination_transformer.WithClient(srv.Client()))
+					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, rsp, expectedResponse)
+				})
+
+				t.Run("Destination warehouse transformations", func(t *testing.T) {
+					testCases := []struct {
+						name            string
+						destinationType string
+					}{
+						{
+							name:            "rs",
+							destinationType: warehouseutils.RS,
+						},
+						{
+							name:            "clickhouse",
+							destinationType: warehouseutils.CLICKHOUSE,
+						},
+						{
+							name:            "snowflake",
+							destinationType: warehouseutils.SNOWFLAKE,
+						},
+					}
+
+					for _, tc := range testCases {
+						tc := tc
+
+						t.Run(tc.name, func(t *testing.T) {
+							et := &endpointTransformer{
+								supportedPaths: []string{`/v0/destinations/` + tc.name},
+								t:              t,
+							}
+
+							srv := httptest.NewServer(et)
+							defer srv.Close()
+
+							c := config.New()
+							c.Set("Processor.maxRetry", 1)
+							c.Set("DEST_TRANSFORM_URL", srv.URL)
+
+							tr := destination_transformer.New(c, logger.NOP, stats.Default, destination_transformer.WithClient(srv.Client()))
+
+							events := append([]types.TransformerEvent{}, types.TransformerEvent{
+								Metadata: types.Metadata{
+									MessageID: msgID,
+								},
+								Message: map[string]interface{}{
+									"src-key-1": msgID,
+								},
+								Destination: backendconfig.DestinationT{
+									DestinationDefinition: backendconfig.DestinationDefinitionT{
+										Name: tc.destinationType,
+									},
+									Transformations: []backendconfig.TransformationT{
+										{
+											ID:        "test-transformation",
+											VersionID: "test-version",
+										},
+									},
+								},
+								Credentials: []types.Credential{
+									{
+										ID:       "test-credential",
+										Key:      "test-key",
+										Value:    "test-value",
+										IsSecret: false,
+									},
+								},
+							})
+
+							rsp := tr.Transform(context.TODO(), events)
+							require.Equal(t, rsp, expectedResponse)
+						})
+					}
 				})
 			})
 		})
@@ -627,7 +688,7 @@ func TestLongRunningTransformation(t *testing.T) {
 		mockLogger := mock_logger.NewMockLogger(ctrl)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		transformer_utils.TrackLongRunningTransformation(ctx, "stage", time.Hour, mockLogger)
+		transformerutils.TrackLongRunningTransformation(ctx, "stage", time.Hour, mockLogger)
 	})
 
 	t.Run("log stmt", func(t *testing.T) {
@@ -644,7 +705,7 @@ func TestLongRunningTransformation(t *testing.T) {
 			fired.Store(true)
 		}).MinTimes(1)
 		ctx, cancel := context.WithCancel(context.Background())
-		go transformer_utils.TrackLongRunningTransformation(ctx, "stage", time.Millisecond, mockLogger)
+		go transformerutils.TrackLongRunningTransformation(ctx, "stage", time.Millisecond, mockLogger)
 		for !fired.Load() {
 			time.Sleep(time.Millisecond)
 		}

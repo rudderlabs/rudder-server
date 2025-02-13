@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	reportingTypes "github.com/rudderlabs/rudder-server/utils/types"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -39,7 +39,7 @@ import (
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
-	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -107,7 +107,7 @@ type testContext struct {
 	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
 	mockArchivalDB           *mocksJobsDB.MockJobsDB
-	MockReportingI           *mockReportingTypes.MockReporting
+	MockReportingI           *mockreportingtypes.MockReporting
 	MockDedup                *mockDedup.MockDedup
 	MockObserver             *mockObserver
 	MockRsourcesService      *rsources.MockJobService
@@ -138,7 +138,7 @@ func (c *testContext) Setup() {
 			close(ch)
 			return ch
 		})
-	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
+	c.MockReportingI = mockreportingtypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
 	c.mockTrackedUsersReporter = &mockTrackedUsersReporter{}
@@ -4831,8 +4831,8 @@ var _ = Describe("Processor", Ordered, func() {
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				reportingTypes.EVENT_FILTER,
-				reportingTypes.DEST_TRANSFORMER,
+				reportingtypes.EVENT_FILTER,
+				reportingtypes.DEST_TRANSFORMER,
 			)
 
 			key := strings.Join([]string{
@@ -4845,7 +4845,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
-			slices.SortFunc(m.failedMetrics, func(a, b *reportingTypes.PUReportedMetric) int {
+			slices.SortFunc(m.failedMetrics, func(a, b *reportingtypes.PUReportedMetric) int {
 				return a.StatusDetail.StatusCode - b.StatusDetail.StatusCode
 			})
 			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(299))
@@ -4964,22 +4964,22 @@ var _ = Describe("Static Function Tests", func() {
 				"some-key-2": 3,
 			}
 
-			expectedResponse := []*reportingTypes.PUReportedMetric{
+			expectedResponse := []*reportingtypes.PUReportedMetric{
 				{
-					ConnectionDetails: reportingTypes.ConnectionDetails{
+					ConnectionDetails: reportingtypes.ConnectionDetails{
 						SourceID:        "some-source-id-1",
 						DestinationID:   "some-destination-id-1",
 						SourceTaskRunID: "some-source-task-run-id-1",
 						SourceJobID:     "some-source-job-id-1",
 						SourceJobRunID:  "some-source-job-run-id-1",
 					},
-					PUDetails: reportingTypes.PUDetails{
+					PUDetails: reportingtypes.PUDetails{
 						InPU:       "some-string-1",
 						PU:         "some-string-2",
 						TerminalPU: false,
 						InitialPU:  false,
 					},
-					StatusDetail: &reportingTypes.StatusDetail{
+					StatusDetail: &reportingtypes.StatusDetail{
 						Status:         "diff",
 						Count:          5,
 						StatusCode:     0,
@@ -4988,20 +4988,20 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 				{
-					ConnectionDetails: reportingTypes.ConnectionDetails{
+					ConnectionDetails: reportingtypes.ConnectionDetails{
 						SourceID:        "some-source-id-2",
 						DestinationID:   "some-destination-id-2",
 						SourceTaskRunID: "some-source-task-run-id-2",
 						SourceJobID:     "some-source-job-id-2",
 						SourceJobRunID:  "some-source-job-run-id-2",
 					},
-					PUDetails: reportingTypes.PUDetails{
+					PUDetails: reportingtypes.PUDetails{
 						InPU:       "some-string-1",
 						PU:         "some-string-2",
 						TerminalPU: false,
 						InitialPU:  false,
 					},
-					StatusDetail: &reportingTypes.StatusDetail{
+					StatusDetail: &reportingtypes.StatusDetail{
 						Status:         "diff",
 						Count:          7,
 						StatusCode:     0,
@@ -5041,7 +5041,7 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should update metric maps", func() {
 			proc := NewHandle(config.Default, nil)
 			proc.reportingEnabled = true
-			proc.reporting = &mockReportingTypes.MockReporting{}
+			proc.reporting = &mockreportingtypes.MockReporting{}
 
 			inputEvent := &types.TransformerResponse{
 				Metadata: types.Metadata{
@@ -5083,7 +5083,7 @@ var _ = Describe("Static Function Tests", func() {
 				trackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
-			expectedConnectionDetails := &reportingTypes.ConnectionDetails{
+			expectedConnectionDetails := &reportingtypes.ConnectionDetails{
 				SourceID:                inputEvent.Metadata.SourceID,
 				DestinationID:           inputEvent.Metadata.DestinationID,
 				SourceJobRunID:          inputEvent.Metadata.SourceJobRunID,
@@ -5097,12 +5097,12 @@ var _ = Describe("Static Function Tests", func() {
 				TrackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
-			connectionDetailsMap := make(map[string]*reportingTypes.ConnectionDetails)
-			statusDetailsMap := make(map[string]map[string]*reportingTypes.StatusDetail)
+			connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+			statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingTypes.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingtypes.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))
@@ -6172,7 +6172,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 }
 
-func assertReportMetric(expectedMetric, actualMetric []*reportingTypes.PUReportedMetric) {
+func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReportedMetric) {
 	sort.Slice(expectedMetric, func(i, j int) bool {
 		return expectedMetric[i].ConnectionDetails.SourceID < expectedMetric[j].ConnectionDetails.SourceID
 	})
@@ -6756,7 +6756,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:       []*jobsdb.JobT{{JobID: 1}},
 		routerDestIDs:       []string{"1"},
-		reportMetrics:       []*reportingTypes.PUReportedMetric{{}},
+		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
 		dedupKeys:           map[string]struct{}{"1": {}},
 		totalEvents:         1,
@@ -6772,7 +6772,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:       []*jobsdb.JobT{{JobID: 2}},
 		routerDestIDs:       []string{"2"},
-		reportMetrics:       []*reportingTypes.PUReportedMetric{{}},
+		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
 		dedupKeys:           map[string]struct{}{"2": {}},
 		totalEvents:         1,
@@ -6790,7 +6790,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		[]*jobsdb.JobT{{JobID: 3}},
 		[]string{"3"},
-		[]*reportingTypes.PUReportedMetric{{}},
+		[]*reportingtypes.PUReportedMetric{{}},
 		map[dupStatKey]int{{sourceID: "1"}: 3},
 		map[string]struct{}{"3": {}},
 		1,
@@ -6854,7 +6854,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
 		routerDestIDs:  []string{"1", "2", "3"},
-		reportMetrics:  []*reportingTypes.PUReportedMetric{{}, {}, {}},
+		reportMetrics:  []*reportingtypes.PUReportedMetric{{}, {}, {}},
 		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},
 		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
 		totalEvents:    3,
