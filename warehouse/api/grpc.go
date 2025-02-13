@@ -41,6 +41,7 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -72,6 +73,7 @@ type GRPC struct {
 	bcManager          *bcm.BackendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
+	schemaRepo         *repo.WHSchema
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
@@ -109,6 +111,7 @@ func NewGRPCServer(
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db),
+		schemaRepo:         repo.NewWHSchemas(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
@@ -987,6 +990,24 @@ func (g *GRPC) RetryFailedBatches(
 		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
+}
+
+func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*proto.SyncWHSchemaResponse, error) {
+	log := g.logger.With(
+		lf.DestinationID, req.GetDestinationId(),
+	)
+	log.Infow("Syncing warehouse schema")
+	if req.DestinationId == "" {
+		return &proto.SyncWHSchemaResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
+	}
+	_, err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, timeutil.Now())
+	if err != nil {
+		log.Errorw("unable to set expiry for destination", obskit.Error(err))
+		return &proto.SyncWHSchemaResponse{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
+	}
+	return &proto.SyncWHSchemaResponse{}, nil
 }
 
 func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
