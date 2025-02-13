@@ -731,7 +731,6 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			logger.NewStringField("path", r.URL.Path),
 			logger.NewIntField("status", int64(status)),
 			logger.NewStringField("body", responseBody),
-			logger.NewStringField("request", string(body)),
 		)
 		http.Error(w, responseBody, status)
 	}

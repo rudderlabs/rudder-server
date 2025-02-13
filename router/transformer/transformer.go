@@ -163,7 +163,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	// Call remote transformation
 	rawJSON, err := jsonrs.Marshal(&transformMessageCopy)
 	if err != nil {
-		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
+		trans.logger.Errorw("problematic input for marshalling", "error", err)
 		panic(err)
 	}
 
@@ -340,8 +340,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		if invalidResponseReason != "" {
-
-			// trans.logger.Error(invalidResponseError)
 			stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
 				"destType": transformMessage.DestType,
 				"reason":   invalidResponseReason,
