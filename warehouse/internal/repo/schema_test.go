@@ -64,6 +64,7 @@ func TestWHSchemasRepo(t *testing.T) {
 			Schema:          schemaModel,
 			CreatedAt:       now,
 			UpdatedAt:       now,
+			ExpiresAt:       now.Add(time.Hour),
 		}
 	)
 

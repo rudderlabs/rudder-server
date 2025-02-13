@@ -32,9 +32,3 @@ type Step struct {
 type StepsResponse struct {
 	Steps []*Step `json:"steps"`
 }
-
-type DestinationValidationResponse struct {
-	Success bool    `json:"success"`
-	Error   string  `json:"error"`
-	Steps   []*Step `json:"steps"`
-}
