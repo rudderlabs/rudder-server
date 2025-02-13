@@ -4,20 +4,20 @@ import (
 	"math"
 	"sort"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 // MaxDurationInWindow calculates the maximum time duration in non-overlapping windows.
-func MaxDurationInWindow(durations []time.Duration, windowSize int64) []time.Duration {
+func MaxDurationInWindow(durations []time.Duration, windowSize int) []time.Duration {
 	if windowSize <= 0 {
 		return nil
 	}
 	var maxDurations []time.Duration
-	for i := 0; i < len(durations); i += int(windowSize) {
+	for i := 0; i < len(durations); i += windowSize {
 		maxValue := durations[i]
-		for j := 1; j < int(windowSize) && i+j < len(durations); j++ {
-			if durations[i+j] > maxValue {
-				maxValue = durations[i+j]
-			}
+		for j := 1; j < windowSize && i+j < len(durations); j++ {
+			maxValue = max(maxValue, durations[i+j])
 		}
 		maxDurations = append(maxDurations, maxValue)
 	}
@@ -32,10 +32,7 @@ func PercentileDurationInWindow(durations []time.Duration, windowSize int, perce
 
 	var percentileDurations []time.Duration
 	for i := 0; i < len(durations); i += windowSize {
-		end := i + windowSize
-		if end > len(durations) {
-			end = len(durations)
-		}
+		end := min(i+windowSize, len(durations))
 		window := append([]time.Duration{}, durations[i:end]...)
 
 		sort.Slice(window, func(a, b int) bool {
@@ -67,18 +64,9 @@ func AverageDurationInWindow(durations []time.Duration, windowSize int) []time.D
 
 	var avgDurations []time.Duration
 	for i := 0; i < len(durations); i += windowSize {
-		var sum time.Duration
-		var count int
-
-		end := i + windowSize
-		if end > len(durations) {
-			end = len(durations)
-		}
-
-		for _, d := range durations[i:end] {
-			sum += d
-			count++
-		}
+		end := min(i+windowSize, len(durations))
+		sum := lo.Sum(durations[i:end])
+		count := end - i
 
 		if count > 0 {
 			avgDurations = append(avgDurations, sum/time.Duration(count))

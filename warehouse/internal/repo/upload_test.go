@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -2665,10 +2664,10 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 	latencies := make([]time.Duration, 2000)
 	for i := 0; i < 2000; i++ {
 		createdAt := now.Add(time.Duration(i*30) * time.Minute)
-		lastExecAt := createdAt.Add(time.Duration(rand.Intn(10)) * time.Minute)
-		exportedUpdatedAt := lastExecAt.Add(time.Duration(rand.Intn(5)) * time.Minute)
-		abortedUpdatedAt := lastExecAt.Add(time.Duration(rand.Intn(5)) * time.Minute)
-		inProgressUpdatedAt := lastExecAt.Add(time.Duration(rand.Intn(5)) * time.Minute)
+		lastExecAt := createdAt.Add(time.Duration(i%10) * time.Minute)
+		exportedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
+		abortedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
+		inProgressUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
 
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return createdAt
@@ -2728,46 +2727,46 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name               string
-		aggregationMinutes int
-		aggregationType    model.LatencyAggregationType
-		expectedLatencies  []time.Duration
+		name                    string
+		aggregationMinutes      int
+		expectedAggregationType model.LatencyAggregationType
+		expectedLatencies       []time.Duration
 	}{
 		{
-			name:               "5 min interval (max)",
-			aggregationMinutes: 5,
-			aggregationType:    model.MaxLatency,
-			expectedLatencies:  latencies,
+			name:                    "5 min interval (max)",
+			aggregationMinutes:      5,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       latencies,
 		},
 		{
-			name:               "1 hour interval (max)",
-			aggregationMinutes: 60,
-			aggregationType:    model.MaxLatency,
-			expectedLatencies:  testhelper.MaxDurationInWindow(latencies, 2),
+			name:                    "1 hour interval (max)",
+			aggregationMinutes:      60,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       testhelper.MaxDurationInWindow(latencies, 2),
 		},
 		{
-			name:               "1 day interval (max)",
-			aggregationMinutes: 1440,
-			aggregationType:    model.MaxLatency,
-			expectedLatencies:  testhelper.MaxDurationInWindow(latencies, 48),
+			name:                    "1 day interval (max)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       testhelper.MaxDurationInWindow(latencies, 48),
 		},
 		{
-			name:               "1 day interval (p90)",
-			aggregationMinutes: 1440,
-			aggregationType:    model.P90Latency,
-			expectedLatencies:  testhelper.PercentileDurationInWindow(latencies, 48, 0.9),
+			name:                    "1 day interval (p90)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.P90Latency,
+			expectedLatencies:       testhelper.PercentileDurationInWindow(latencies, 48, 0.9),
 		},
 		{
-			name:               "1 day interval (p95)",
-			aggregationMinutes: 1440,
-			aggregationType:    model.P95Latency,
-			expectedLatencies:  testhelper.PercentileDurationInWindow(latencies, 48, 0.95),
+			name:                    "1 day interval (p95)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.P95Latency,
+			expectedLatencies:       testhelper.PercentileDurationInWindow(latencies, 48, 0.95),
 		},
 		{
-			name:               "1 day interval (avg)",
-			aggregationMinutes: 1440,
-			aggregationType:    model.AvgLatency,
-			expectedLatencies:  testhelper.AverageDurationInWindow(latencies, 48),
+			name:                    "1 day interval (avg)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.AvgLatency,
+			expectedLatencies:       testhelper.AverageDurationInWindow(latencies, 48),
 		},
 	}
 	for _, tc := range testCases {
@@ -2781,7 +2780,7 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 				WorkspaceID:        workspaceID,
 				StartTime:          now,
 				AggregationMinutes: int64(tc.aggregationMinutes),
-				AggregationType:    tc.aggregationType,
+				AggregationType:    tc.expectedAggregationType,
 			})
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLatencies, lo.Map(syncLatencies, func(item model.LatencyTimeSeriesDataPoint, index int) time.Duration {

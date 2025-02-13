@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -1042,6 +1043,9 @@ func (g *GRPC) GetFirstAbortedUploadInContinuousAbortsByDestination(
 	return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{Uploads: uploads}, nil
 }
 
+// GetSyncLatency returns the sync latency for the given workspace, destination, start time and aggregation minutes
+// If sourceID is provided, it will return the sync latency for the given sourceID
+// If sourceID is not provided, it will return the sync latency for all sources of the given destination
 func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyRequest) (*proto.SyncLatencyResponse, error) {
 	log := g.logger.Withn(
 		obskit.WorkspaceID(request.WorkspaceId),
@@ -1118,7 +1122,7 @@ func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyReq
 func (g *GRPC) getLatencyAggregationType(
 	srcMap map[string]model.Warehouse, sourceID string,
 ) (model.LatencyAggregationType, error) {
-	var syncFrequencies []int64
+	var minSyncFrequency int64 = math.MaxInt64
 	for _, src := range srcMap {
 		if len(sourceID) > 0 && src.Source.ID != sourceID {
 			continue
@@ -1128,11 +1132,12 @@ func (g *GRPC) getLatencyAggregationType(
 		if err != nil {
 			return 0, fmt.Errorf("unable to parse sync frequency: %v", err)
 		}
-		syncFrequencies = append(syncFrequencies, freqInMin)
+
+		minSyncFrequency = min(minSyncFrequency, freqInMin)
 	}
 
 	aggregationType := model.MaxLatency
-	if len(syncFrequencies) > 0 && lo.Min(syncFrequencies) < syncFrequencyThresholdMinutes {
+	if minSyncFrequency < syncFrequencyThresholdMinutes {
 		aggregationType = g.config.defaultLatencyAggForSyncThreshold
 	}
 	return aggregationType, nil
