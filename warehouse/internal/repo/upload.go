@@ -1390,12 +1390,12 @@ func (u *Uploads) GetSyncLatencies(ctx context.Context, request model.SyncLatenc
 	filterParams := []any{request.DestinationID, request.WorkspaceID, model.ExportedData, request.StartTime}
 
 	if request.SourceID != "" {
-		filterSQL.WriteString(` AND source_id = $` + strconv.Itoa(len(filterParams)+1))
 		filterParams = append(filterParams, request.SourceID)
+		filterSQL.WriteString(` AND source_id = $` + strconv.Itoa(len(filterParams)))
 	}
 
-	intervalParamIndex := len(filterParams) + 1
 	filterParams = append(filterParams, request.AggregationMinutes)
+	intervalParamIndex := len(filterParams)
 
 	query := fmt.Sprintf(`
 		SELECT

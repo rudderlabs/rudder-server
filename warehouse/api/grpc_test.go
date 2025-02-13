@@ -1850,6 +1850,21 @@ func TestGRPC(t *testing.T) {
 				require.Equal(t, codes.InvalidArgument, statusError.Code())
 				require.Equal(t, "start time invalid should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
 			})
+			t.Run("start time older than 90 days", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      destinationID,
+					StartTime:          now.AddDate(0, -120, 0).Format(time.RFC3339),
+					AggregationMinutes: "1440",
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "start time cannot be older than 90 days", statusError.Message())
+			})
 			t.Run("invalid interval", func(t *testing.T) {
 				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
 					WorkspaceId:        workspaceID,
@@ -1972,7 +1987,7 @@ func TestGRPC(t *testing.T) {
 					},
 				},
 				configOverride: map[string]any{
-					"Warehouse.grpc.defaultLatencyAggForSyncThreshold": "p90",
+					"Warehouse.grpc.defaultLatencyAggregationType": "p90",
 				},
 				aggregationType: model.P90Latency,
 			},
@@ -1980,7 +1995,7 @@ func TestGRPC(t *testing.T) {
 				name:   "empty srcMap",
 				srcMap: map[string]model.Warehouse{},
 				configOverride: map[string]any{
-					"Warehouse.grpc.defaultLatencyAggForSyncThreshold": "p90",
+					"Warehouse.grpc.defaultLatencyAggregationType": "p90",
 				},
 				aggregationType: model.MaxLatency,
 			},
@@ -2014,8 +2029,8 @@ func TestGRPC(t *testing.T) {
 				},
 				sourceID: "sid-2",
 				configOverride: map[string]any{
-					"Warehouse.grpc.defaultLatencyAggForSyncThreshold": "p90",
-					"Warehouse.pipelines.sid-2.did-1.syncFrequency":    "10",
+					"Warehouse.grpc.defaultLatencyAggregationType":  "p90",
+					"Warehouse.pipelines.sid-2.did-1.syncFrequency": "10",
 				},
 				aggregationType: model.MaxLatency,
 			},

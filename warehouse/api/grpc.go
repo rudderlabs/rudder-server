@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/samber/lo"
@@ -73,6 +74,7 @@ type GRPC struct {
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
+	now                func() time.Time
 
 	config struct {
 		region         string
@@ -83,8 +85,9 @@ type GRPC struct {
 			userName string
 			password string
 		}
-		enableTunnelling                  bool
-		defaultLatencyAggForSyncThreshold model.LatencyAggregationType
+		enableTunnelling              bool
+		defaultLatencyAggregationType model.LatencyAggregationType
+		minLatencyQueryLookbackDays   int
 	}
 }
 
@@ -107,6 +110,7 @@ func NewGRPCServer(
 		tableUploadsRepo:   repo.NewTableUploads(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
+		now:                timeutil.Now,
 	}
 
 	g.config.region = conf.GetString("region", "")
@@ -116,6 +120,7 @@ func NewGRPCServer(
 	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
 	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
 	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
+	g.config.minLatencyQueryLookbackDays = conf.GetInt("Warehouse.grpc.minLatencyQueryLookbackDays", 90)
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
 		g.config.controlPlane.url,
@@ -130,7 +135,7 @@ func NewGRPCServer(
 		return nil, fmt.Errorf("connection token: %w", err)
 	}
 
-	g.config.defaultLatencyAggForSyncThreshold, err = model.GetLatencyAggregationType(conf.GetString("Warehouse.grpc.defaultLatencyAggForSyncThreshold", "p90"))
+	g.config.defaultLatencyAggregationType, err = model.GetLatencyAggregationType(conf.GetString("Warehouse.grpc.defaultLatencyAggregationType", "p90"))
 	if err != nil {
 		return nil, fmt.Errorf("default latency aggregation type: %w", err)
 	}
@@ -1074,6 +1079,12 @@ func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyReq
 		return &proto.SyncLatencyResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time %s should be in correct %s format", request.GetStartTime(), time.RFC3339)
 	}
+	minStartTime := g.now().AddDate(0, -g.config.minLatencyQueryLookbackDays, 0)
+	if startTime.Before(minStartTime) {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time cannot be older than %d days", g.config.minLatencyQueryLookbackDays)
+	}
+
 	aggregationMinutes, err := strconv.Atoi(request.GetAggregationMinutes())
 	if err != nil {
 		return &proto.SyncLatencyResponse{},
@@ -1138,7 +1149,7 @@ func (g *GRPC) getLatencyAggregationType(
 
 	aggregationType := model.MaxLatency
 	if minSyncFrequency < syncFrequencyThresholdMinutes {
-		aggregationType = g.config.defaultLatencyAggForSyncThreshold
+		aggregationType = g.config.defaultLatencyAggregationType
 	}
 	return aggregationType, nil
 }
