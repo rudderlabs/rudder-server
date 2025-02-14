@@ -59,12 +59,30 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	if err != nil {
 		return payload, fmt.Errorf("unmarshalling event.fields: %w", err)
 	}
-	// validate for conversion time mscklid and conversion name
-	generalRequiredFields := []string{"microsoftClickId", "conversionName", "conversionTime"}
+	// validate for conversion time and conversion name
+	generalRequiredFields := []string{"conversionName", "conversionTime"}
 	for _, field := range generalRequiredFields {
 		err := validateField(fields, field)
 		if err != nil {
 			return payload, err
+		}
+	}
+	// validate for mscklid
+	clickID, hasClickID := fields["microsoftClickId"]
+	if !hasClickID || clickID == "" {
+		// Look for enhanced conversion fields: a non-empty email or phone field.
+		enhancedConversionProvided := false
+		for key, value := range fields {
+			if value == "" {
+				continue
+			}
+			if key == "email" || key == "phone" {
+				enhancedConversionProvided = true
+				break
+			}
+		}
+		if !enhancedConversionProvided {
+			return payload, fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
 		}
 	}
 	if event.Action != "insert" {
