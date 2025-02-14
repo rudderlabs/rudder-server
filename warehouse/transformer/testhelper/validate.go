@@ -2,12 +2,12 @@ package testhelper
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -41,7 +41,7 @@ func prepareEvents(t *testing.T, eventContexts []EventContext) []ptrans.Transfor
 	events := make([]ptrans.TransformerEvent, 0, len(eventContexts))
 	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
-		err := json.Unmarshal(eventContext.Payload, &singularEvent)
+		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
 		require.NoError(t, err)
 
 		events = append(events, ptrans.TransformerEvent{

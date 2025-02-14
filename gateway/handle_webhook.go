@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -10,6 +9,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 func (gw *Handle) webhookHandler() http.HandlerFunc {
@@ -31,7 +31,7 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 			"source_type": req.SourceType,
 			"reason":      req.Reason,
 		}
-		marshalledParams, err := json.Marshal(params)
+		marshalledParams, err := jsonrs.Marshal(params)
 		if err != nil {
 			gw.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
 			marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)

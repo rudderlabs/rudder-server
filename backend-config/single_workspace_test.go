@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
@@ -26,7 +26,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-			js, err := json.Marshal(sampleBackendConfig)
+			js, err := jsonrs.Marshal(sampleBackendConfig)
 			require.NoError(t, err)
 			w.WriteHeader(http.StatusAccepted)
 			w.Header().Set("Content-Type", "application/json")

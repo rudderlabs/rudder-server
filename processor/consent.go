@@ -6,6 +6,7 @@ import (
 	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -167,13 +168,13 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[stri
 		return genericConsentManagementData, nil
 	}
 
-	consentManagementConfigBytes, mErr := jsonfast.Marshal(dest.Config["consentManagement"])
+	consentManagementConfigBytes, mErr := jsonrs.Marshal(dest.Config["consentManagement"])
 	if mErr != nil {
 		return genericConsentManagementData, fmt.Errorf("error marshalling consentManagement: %v for destination ID: %s", mErr, dest.ID)
 	}
 
 	consentManagementConfig := make([]GenericConsentManagementProviderConfig, 0)
-	unmErr := jsonfast.Unmarshal(consentManagementConfigBytes, &consentManagementConfig)
+	unmErr := jsonrs.Unmarshal(consentManagementConfigBytes, &consentManagementConfig)
 
 	if unmErr != nil {
 		return genericConsentManagementData, fmt.Errorf("error unmarshalling consentManagementConfig: %v for destination ID: %s", unmErr, dest.ID)
@@ -205,12 +206,12 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[stri
 func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
-		consentManagementObjBytes, mErr := jsonfast.Marshal(consentManagement)
+		consentManagementObjBytes, mErr := jsonrs.Marshal(consentManagement)
 		if mErr != nil {
 			return consentManagementInfo, fmt.Errorf("error marshalling consentManagement: %v", mErr)
 		}
 
-		unmErr := jsonfast.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
+		unmErr := jsonrs.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
 		if unmErr != nil {
 			return consentManagementInfo, fmt.Errorf("error unmarshalling consentManagementInfo: %v", unmErr)
 		}

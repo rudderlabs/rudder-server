@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +25,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -526,16 +526,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -563,16 +563,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -596,16 +596,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -660,7 +660,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				statusCode := http.StatusResetContent
 				if tc.routerTransformResponses != nil {
 					var b []byte
-					b, err = json.Marshal(tc.routerTransformResponses)
+					b, err = jsonrs.Marshal(tc.routerTransformResponses)
 					outputJson, _ = sjson.SetRawBytes([]byte(`{}`), "output", b)
 					statusCode = http.StatusOK
 				}
@@ -697,6 +697,9 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				require.NotNil(t, transformerResponse)
 
 				for i, ex := range tc.expected {
+					for j := range transformerResponse[i].JobMetadataArray {
+						transformerResponse[i].JobMetadataArray[j].Secret = nil
+					}
 					require.Equalf(t, ex.Batched, transformerResponse[i].Batched, "[%i] Batched assertion failed", i)
 					require.Equalf(t, ex.Message, transformerResponse[i].Message, "[%i] Message assertion failed", i)
 					require.Equalf(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "[%i] AuthErrorCategory assertion failed", i)
@@ -1311,7 +1314,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: `,
 			ProxyRequestStatusCode:   http.StatusOK, // transformer returned response
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1687,9 +1690,9 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					return
 				}
 				if tc.proxyVersion == "v1" {
-					b, _ = json.Marshal(tc.transformerProxyResponseV1)
+					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV1)
 				} else if tc.proxyVersion == "v0" {
-					b, _ = json.Marshal(tc.transformerProxyResponseV0)
+					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV0)
 				} else {
 					b = []byte(tc.transformerResponse)
 				}
@@ -1754,8 +1757,8 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			require.Equal(t, tc.expected.ProxyRequestStatusCode, proxyResp.ProxyRequestStatusCode)
 			// Assert of ProxyRequestPayload
 			var expectedPrxResp, actualPrxResp ProxyRequestPayload
-			e1 := json.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
-			e2 := json.Unmarshal([]byte(proxyResp.ProxyRequestResponseBody), &actualPrxResp)
+			e1 := jsonrs.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
+			e2 := jsonrs.Unmarshal([]byte(proxyResp.ProxyRequestResponseBody), &actualPrxResp)
 			if e1 == nil && e2 == nil {
 				require.Equal(t, actualPrxResp, expectedPrxResp)
 			} else {
@@ -1770,13 +1773,13 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	config.Reset()
 	loggerOverride = logger.NOP
 	expectedTransformerResponse := []types.DestinationJobT{
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusOK},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(expectedTransformerResponse)
+		b, err := jsonrs.Marshal(expectedTransformerResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1851,7 +1854,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1892,7 +1895,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1936,13 +1939,13 @@ func TestDehydrateHydrate(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload types.TransformMessageT
-		err := json.NewDecoder(r.Body).Decode(&payload)
+		err := jsonrs.NewDecoder(r.Body).Decode(&payload)
 		require.NoError(t, err)
 		for i := range payload.Data {
 			require.Nil(t, payload.Data[i].JobMetadata.JobT, "JobT should be nil")
 		}
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1999,7 +2002,7 @@ func TestTransformerMetrics(t *testing.T) {
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
 			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
 		}
-		b, err := json.Marshal(response)
+		b, err := jsonrs.Marshal(response)
 		require.NoError(t, err)
 
 		// For BATCH transform type, don't wrap in output field

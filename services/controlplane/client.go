@@ -3,7 +3,6 @@ package controlplane
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/cenkalti/backoff"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -155,7 +155,7 @@ func (c *AdminClient) GetDestinationSSHKeyPair(ctx context.Context, destID strin
 			return fmt.Errorf("unexpected status code while getting ssh key pair: %d", resp.StatusCode)
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&kp); err != nil {
+		if err := jsonrs.NewDecoder(resp.Body).Decode(&kp); err != nil {
 			return fmt.Errorf("cannot decode ssh key pair response: %w", err)
 		}
 
@@ -185,7 +185,7 @@ func (c *Client) SendFeatures(ctx context.Context, component string, features []
 		},
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("could not marshal payload: %w", err)
 	}
@@ -267,7 +267,7 @@ func (c *Client) DestinationHistory(ctx context.Context, revisionID string) (bac
 			return err
 		}
 
-		err = json.NewDecoder(resp.Body).Decode(&destination)
+		err = jsonrs.NewDecoder(resp.Body).Decode(&destination)
 		if err != nil {
 			return fmt.Errorf("unmarshal response body: %w", err)
 		}

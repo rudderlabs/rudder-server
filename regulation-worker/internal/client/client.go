@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -71,7 +71,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		}
 
 		var jobSchema jobSchema
-		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
+		if err := jsonrs.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
 			pkgLogger.Errorf("error while decoding response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
@@ -120,7 +120,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if status.Error != nil {
 		statusSchema.Reason = status.Error.Error()
 	}
-	body, err := json.Marshal(statusSchema)
+	body, err := jsonrs.Marshal(statusSchema)
 	if err != nil {
 		pkgLogger.Errorf("error while marshalling status schema: %v", err)
 		return fmt.Errorf("error while marshalling status: %w", err)

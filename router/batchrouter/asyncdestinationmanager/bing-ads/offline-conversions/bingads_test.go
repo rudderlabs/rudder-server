@@ -2,6 +2,7 @@ package offline_conversions
 
 import (
 	"archive/zip"
+	"encoding/json"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksoauthservice "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -149,7 +151,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "unmarshalling parameters")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
@@ -157,7 +159,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				ImportingCount:      0,
 				FailedCount:         6,
 				AbortCount:          0,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
@@ -193,14 +195,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: unable to get bulk upload url, check your credentials,insert:error in getting bulk upload url: unable to get bulk upload url, check your credentials,delete:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
 				FailedCount:         6,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
@@ -257,14 +259,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in uploading the bulk file: Error in uploading bulk file,insert:error in uploading the bulk file: Error in uploading bulk file,delete:error in uploading the bulk file: Error in uploading bulk file\"}",
 				FailedCount:         6,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			received := bulkUploader.Upload(&asyncDestination)
 

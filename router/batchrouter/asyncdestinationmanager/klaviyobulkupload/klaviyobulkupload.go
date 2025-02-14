@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -17,6 +16,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -26,8 +26,6 @@ const (
 	MAXPAYLOADSIZE        = 4600000
 	IMPORT_ID_SEPARATOR   = ":"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func createFinalPayload(combinedProfiles []Profile, listId string) Payload {
 	payload := Payload{
@@ -78,7 +76,7 @@ func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements in
 	var chunkSize int = 0
 
 	for _, profile := range combinedProfiles {
-		profileJSON, err := json.Marshal(profile)
+		profileJSON, err := jsonrs.Marshal(profile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal profile: %w", err)
 		}
@@ -276,17 +274,17 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		var metadata Metadata
 		line := scanner.Text()
 
-		err := json.Unmarshal([]byte(gjson.Get(line, "message.body.JSON.data").String()), &data)
+		err := jsonrs.Unmarshal([]byte(gjson.Get(line, "message.body.JSON.data").String()), &data)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Data.", err, importingJobIDs, destinationID)
 		}
-		err = json.Unmarshal([]byte(gjson.Get(line, "metadata").String()), &metadata)
+		err = jsonrs.Unmarshal([]byte(gjson.Get(line, "metadata").String()), &metadata)
 		if err != nil {
 			return kbu.generateKlaviyoErrorOutput("Error while parsing JSON Metadata.", err, importingJobIDs, destinationID)
 		}
 		profileStructure := kbu.ExtractProfile(data)
 		// if profileStructure length is more than 500 kB, throw an error
-		profileStructureJSON, _ := json.Marshal(profileStructure)
+		profileStructureJSON, _ := jsonrs.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
 		profileSizeStat.Observe(profileSize) // Record the size in the histogram
 		if len(profileStructureJSON) >= MAXALLOWEDPROFILESIZE {
@@ -314,7 +312,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 
 		importIds = append(importIds, uploadResp.Data.Id)
 	}
-	importParameters, err := json.Marshal(common.ImportParameters{
+	importParameters, err := jsonrs.Marshal(common.ImportParameters{
 		ImportId: strings.Join(importIds, IMPORT_ID_SEPARATOR),
 	})
 	if err != nil {

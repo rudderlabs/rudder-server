@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -116,13 +117,13 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 
 	m := metadataFromStagingFile(&stagingFile.StagingFile)
-	rawMetadata, err := json.Marshal(&m)
+	rawMetadata, err := jsonrs.Marshal(&m)
 	if err != nil {
 		return id, fmt.Errorf("marshaling metadata: %w", err)
 	}
 	now := sf.now()
 
-	schemaPayload, err := json.Marshal(stagingFile.Schema)
+	schemaPayload, err := jsonrs.Marshal(stagingFile.Schema)
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
@@ -217,7 +218,7 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 		}
 
 		var m metadataSchema
-		err = json.Unmarshal(metadataRaw, &m)
+		err = jsonrs.Unmarshal(metadataRaw, &m)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal metadata: %w", err)
 		}
@@ -274,7 +275,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 		if err := rows.Scan(&rawSchema); err != nil {
 			return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
 		}
-		if err := json.Unmarshal(rawSchema, &schema); err != nil {
+		if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
 			return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
 		}
 

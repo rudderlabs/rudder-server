@@ -19,6 +19,7 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -535,7 +536,7 @@ func FuzzTransformer(f *testing.F) {
 		}
 
 		var destConfig map[string]any
-		err = json.Unmarshal([]byte(destConfigJSON), &destConfig)
+		err = jsonrs.Unmarshal([]byte(destConfigJSON), &destConfig)
 		if err != nil {
 			return
 		}
@@ -605,7 +606,7 @@ func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransform
 	events := make([]ptrans.TransformerEvent, 0, len(eventContexts))
 	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
-		err := json.Unmarshal(eventContext.Payload, &singularEvent)
+		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
 		require.NoError(t, err)
 
 		events = append(events, ptrans.TransformerEvent{
@@ -657,10 +658,10 @@ func sanitizePayload(input string) (string, error) {
 	}
 
 	var result types.SingularEventT
-	if err := json.Unmarshal([]byte(sanitized), &result); err != nil {
+	if err := jsonrs.Unmarshal([]byte(sanitized), &result); err != nil {
 		return "", errors.New("invalid JSON format")
 	}
-	output, err := json.Marshal(result)
+	output, err := jsonrs.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("marshalling error: %w", err)
 	}

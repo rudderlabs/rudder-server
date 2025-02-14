@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -26,6 +25,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica/augmenter"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -35,14 +35,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	json        = jsoniter.ConfigCompatibleWithStandardLibrary
-	idClientMap = map[string]string{
-		"ClientId": "CLIENT_ID",
-		"Yclid":    "YCLID",
-		"UserId":   "USER_ID",
-	}
-)
+var idClientMap = map[string]string{
+	"ClientId": "CLIENT_ID",
+	"Yclid":    "YCLID",
+	"UserId":   "USER_ID",
+}
 
 type yandexMetricaMessageBody struct {
 	ClientID any     `json:"ClientId"`
@@ -137,7 +134,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	// Define an empty map to store the parsed JSON data
 	var ymMsgs []yandexMetricaMessage
 	inputData := gjson.GetBytes(jsonData, "input").String()
-	err := json.Unmarshal([]byte(inputData), &ymMsgs)
+	err := jsonrs.Unmarshal([]byte(inputData), &ymMsgs)
 	if err != nil {
 		return "", "", fmt.Errorf("unmarshalling transformed response: %v", err)
 	}
@@ -283,7 +280,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
-	destConfig, err := json.Marshal(destination.Config)
+	destConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return ym.generateErrorOutput("Error while marshalling destination config. ", err, asyncDestStruct.ImportingJobIDs)
 	}
@@ -299,7 +296,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	}
 	defer file.Close()
 	var input []common.AsyncJob
-	decoder := json.NewDecoder(file)
+	decoder := jsonrs.NewDecoder(file)
 
 	for decoder.More() {
 		var tempJob common.AsyncJob
@@ -309,7 +306,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 		}
 		input = append(input, tempJob)
 	}
-	ympayload, err := json.Marshal(common.AsyncUploadT{
+	ympayload, err := jsonrs.Marshal(common.AsyncUploadT{
 		Input:    input,
 		Config:   destination.Config,
 		DestType: strings.ToLower(destType),
@@ -357,7 +354,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	var transResp oauthv2.TransportResponse
 	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 	// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
-	err = json.Unmarshal(bodyBytes, &transResp)
+	err = jsonrs.Unmarshal(bodyBytes, &transResp)
 	if err == nil && transResp.OriginalResponse != "" {
 		bodyBytes = []byte(transResp.OriginalResponse) // re-assign originalResponse
 	}

@@ -117,8 +117,7 @@ func TestNewProducer(t *testing.T) {
 			"Error while unmarshalling destination configuration "+
 				"map[avroSchemas:[map[schemaId:schema001] map[schema:map[name:MyClass]]] "+
 				"convertToAvro:true hostname:some-hostname port:1234 topic:some-topic], "+
-				"got error: json: cannot unmarshal object into Go struct field "+
-				"avroSchema.AvroSchemas.Schema of type string"),
+				"got error: "),
 		)
 		t.Run("invalid ssh config", func(t *testing.T) {
 			t.Run("missing ssh host", buildTest(
@@ -720,8 +719,8 @@ func TestProduce(t *testing.T) {
 		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
 		sc, res, err := pm.Produce(nil, destConfig)
 		require.Equal(t, 400, sc)
-		require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
-		require.Equal(t, "json: unsupported type: chan struct {}", err)
+		require.Contains(t, res, "unsupported type")
+		require.Contains(t, err, "unsupported type")
 	})
 
 	t.Run("empty destination configuration", func(t *testing.T) {
@@ -809,8 +808,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while unmarshalling json data: "+
-			"invalid character '{' looking for beginning of object key string", err)
+		require.Contains(t, err, "Error while unmarshalling json data:")
 	})
 
 	t.Run("invalid data", func(t *testing.T) {
@@ -822,8 +820,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while unmarshalling json data: "+
-			"json: cannot unmarshal object into Go value of type []map[string]interface {}", err)
+		require.Contains(t, err, "Error while unmarshalling json data: ")
 	})
 
 	t.Run("publisher error", func(t *testing.T) {

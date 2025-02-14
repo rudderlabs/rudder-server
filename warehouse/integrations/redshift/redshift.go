@@ -3,7 +3,6 @@ package redshift
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -22,6 +21,7 @@ import (
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
@@ -369,7 +369,7 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 		return manifestEntry
 	})
 
-	manifestJSON, err := json.Marshal(&s3Manifest{
+	manifestJSON, err := jsonrs.Marshal(&s3Manifest{
 		Entries: entries,
 	})
 	if err != nil {

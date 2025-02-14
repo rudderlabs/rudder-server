@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -131,7 +132,7 @@ func TestSlave(t *testing.T) {
 		LoadFileType:                 "csv",
 	}
 
-	payloadJson, err := json.Marshal(p)
+	payloadJson, err := jsonrs.Marshal(p)
 	require.NoError(t, err)
 
 	claim := &notifier.ClaimJob{
@@ -159,7 +160,7 @@ func TestSlave(t *testing.T) {
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
-			err := json.Unmarshal(response.Payload, &uploadPayload)
+			err := jsonrs.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
 			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
@@ -235,7 +236,7 @@ func stagingSchema(t testing.TB) model.Schema {
 		lineBytes := scanner.Bytes()
 
 		var stagingEvent event
-		err := json.Unmarshal(lineBytes, &stagingEvent)
+		err := jsonrs.Unmarshal(lineBytes, &stagingEvent)
 		require.NoError(t, err)
 
 		stagingEvents = append(stagingEvents, stagingEvent)

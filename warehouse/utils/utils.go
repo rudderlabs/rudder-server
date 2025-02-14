@@ -17,6 +17,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -433,7 +434,7 @@ func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 
 func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
 	schema := make(model.Schema)
-	err := json.Unmarshal(rawMsg, &schema)
+	err := jsonrs.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}

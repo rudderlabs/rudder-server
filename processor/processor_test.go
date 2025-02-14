@@ -32,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
@@ -3859,17 +3860,17 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				err := json.Unmarshal(job.Parameters, &paramsMap)
+				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
 				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, SourceIDEnabled, i+1))
-				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err = json.Unmarshal(job.EventPayload, &payload)
+				err = jsonrs.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(1))
 				message := messages[fmt.Sprintf(`message-%v`, i+1)]
@@ -3990,17 +3991,17 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				err := json.Unmarshal(job.Parameters, &paramsMap)
+				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
 				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`, SourceIDEnabled))
-				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err = json.Unmarshal(job.EventPayload, &payload)
+				err = jsonrs.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(2))
 				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
@@ -4386,7 +4387,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err1 := json.Marshal(eventWithDeniedConsents)
+			_, err1 := jsonrs.Marshal(eventWithDeniedConsents)
 			Expect(err1).To(BeNil())
 
 			eventWithoutDeniedConsents := types.SingularEventT{
@@ -4413,7 +4414,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err2 := json.Marshal(eventWithoutDeniedConsents)
+			_, err2 := jsonrs.Marshal(eventWithoutDeniedConsents)
 			Expect(err2).To(BeNil())
 
 			eventWithoutConsentManagementData := types.SingularEventT{
@@ -4436,7 +4437,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4520,7 +4521,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err := json.Marshal(event)
+			_, err := jsonrs.Marshal(event)
 			Expect(err).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4566,7 +4567,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
 			eventWithDeniedConsentsGCM := types.SingularEventT{
@@ -4596,7 +4597,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err4 := json.Marshal(eventWithDeniedConsentsGCM)
+			_, err4 := jsonrs.Marshal(eventWithDeniedConsentsGCM)
 			Expect(err4).To(BeNil())
 
 			eventWithoutDeniedConsentsGCM := types.SingularEventT{
@@ -4626,7 +4627,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err5 := json.Marshal(eventWithoutDeniedConsentsGCM)
+			_, err5 := jsonrs.Marshal(eventWithoutDeniedConsentsGCM)
 			Expect(err5).To(BeNil())
 
 			eventWithCustomConsentsGCM := types.SingularEventT{
@@ -4655,7 +4656,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err6 := json.Marshal(eventWithCustomConsentsGCM)
+			_, err6 := jsonrs.Marshal(eventWithCustomConsentsGCM)
 			Expect(err6).To(BeNil())
 
 			eventWithDeniedConsentsGCMKetch := types.SingularEventT{
@@ -4685,7 +4686,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err7 := json.Marshal(eventWithDeniedConsentsGCMKetch)
+			_, err7 := jsonrs.Marshal(eventWithDeniedConsentsGCMKetch)
 			Expect(err7).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -6260,7 +6261,7 @@ type transformExpectation struct {
 }
 
 func createMessagePayload(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q,"recordId":{"id":"record_id_1"},"context":{"sources":`+
@@ -6271,7 +6272,7 @@ func createMessagePayload(e mockEventData) string {
 }
 
 func createMessagePayloadWithoutSources(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q,"context":{}}`,
@@ -6280,7 +6281,7 @@ func createMessagePayloadWithoutSources(e mockEventData) string {
 }
 
 func createMessagePayloadWithSameMessageId(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q}`, "some-id", integrationsBytes, e.id, e.originalTimestamp, e.sentAt,
@@ -6377,7 +6378,7 @@ func assertDestinationTransform(
 				Expect(event.Metadata.MessageID).To(Equal(messageID))
 				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
 				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
-				rawEvent, err := json.Marshal(event)
+				rawEvent, err := jsonrs.Marshal(event)
 				Expect(err).ToNot(HaveOccurred())
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
 				if recordID == nil {
@@ -6702,8 +6703,8 @@ var _ = Describe("TestConfigFilter", func() {
 					"configFilters": ["long_config1", "long_config2"]
 				}
 			}`
-			Expect(json.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
-			Expect(json.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
+			Expect(jsonrs.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
+			Expect(jsonrs.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
 			intgConfig.DestinationDefinition = destDef
 			expectedEvent := transformer.TransformerEvent{
 				Message: types.SingularEventT{

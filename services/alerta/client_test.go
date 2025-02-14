@@ -2,7 +2,6 @@ package alerta_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 )
 
@@ -66,7 +66,7 @@ func TestSendFeatures(t *testing.T) {
 
 			var a alerta.Alert
 
-			err = json.Unmarshal(body, &a)
+			err = jsonrs.Unmarshal(body, &a)
 			require.NoError(t, err)
 
 			require.Equal(t, a.Resource, testResource)

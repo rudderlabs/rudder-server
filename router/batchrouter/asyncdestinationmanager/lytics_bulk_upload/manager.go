@@ -1,7 +1,6 @@
 package lyticsBulkUpload
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -9,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -27,11 +27,11 @@ func NewLyticsBulkUploader(logger logger.Logger, statsFactory stats.Stats, desti
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
 	destConfig := DestinationConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("error in marshalling destination config: %v", err)
 	}
-	err = json.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}
