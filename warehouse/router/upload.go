@@ -408,7 +408,7 @@ func (job *UploadJob) run() (err error) {
 					Status:      jobsdb.Succeeded.State,
 					StatusCode:  200,
 					Count:       rowCount,
-					SampleEvent: []byte("{}"),
+					SampleEvent: misc.EmptyPayloadString,
 				},
 			}
 			uploadStatusOpts.ReportingMetric = reportingMetric
@@ -733,7 +733,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 			Status:         reportingStatus,
 			StatusCode:     400, // TODO: Change this to error specific code
 			Count:          failCount,
-			SampleEvent:    []byte("{}"),
+			SampleEvent:    misc.EmptyPayloadString,
 			SampleResponse: string(serializedErr),
 		},
 	}}
@@ -755,7 +755,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 				Status:         jobsdb.Succeeded.State,
 				StatusCode:     200, // TODO: Change this to error specific code
 				Count:          outputCount,
-				SampleEvent:    []byte("{}"),
+				SampleEvent:    misc.EmptyPayloadString,
 				SampleResponse: string(serializedErr),
 			},
 		})

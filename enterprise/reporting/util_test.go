@@ -1,7 +1,6 @@
 package reporting
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -226,7 +225,7 @@ func TestGetAggregationBucket(t *testing.T) {
 }
 
 func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
-	inputSampleEvent := json.RawMessage(`{"event": "1"}`)
+	inputSampleEvent := `{"event": "1"}`
 	inputSampleResponse := "response"
 	metric := types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
@@ -269,9 +268,9 @@ func TestFloorFactor(t *testing.T) {
 }
 
 func TestGetSampleWithEventSampling(t *testing.T) {
-	sampleEvent := json.RawMessage(`{"event": "2"}`)
+	sampleEvent := `{"event": "2"}`
 	sampleResponse := "sample response"
-	emptySampleEvent := json.RawMessage(`{}`)
+	emptySampleEvent := `{}`
 	emptySampleResponse := ""
 
 	tests := []struct {
@@ -284,19 +283,6 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 		shouldPut  bool
 		putError   error
 	}{
-		{
-			name: "Nil sample event",
-			metric: types.PUReportedMetric{
-				StatusDetail: &types.StatusDetail{
-					SampleEvent: nil,
-				},
-			},
-			wantMetric: types.PUReportedMetric{
-				StatusDetail: &types.StatusDetail{
-					SampleEvent: nil,
-				},
-			},
-		},
 		{
 			name: "Empty sample event",
 			metric: types.PUReportedMetric{
