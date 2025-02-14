@@ -691,11 +691,12 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 						"event": "track" + strconv.Itoa(index+i+1),
 					},
 					Metadata: ptrans.Metadata{
-						MessageID:       strconv.Itoa(index + i + 1),
-						SourceID:        "sourceID",
-						DestinationID:   "destinationID",
-						SourceType:      "sourceType",
-						DestinationType: "destinationType",
+						MessageID:            strconv.Itoa(index + i + 1),
+						SourceID:             "sourceID",
+						DestinationID:        "destinationID",
+						SourceType:           "sourceType",
+						DestinationType:      "destinationType",
+						SourceDefinitionType: "sourceDefinitionType",
 					},
 				}
 			}),
@@ -714,6 +715,9 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	differingEvents := strings.Split(strings.Trim(string(data), "\n"), "\n")
+	differingEvents = lo.Filter(differingEvents, func(item string, index int) bool {
+		return strings.Contains(item, "message")
+	})
 	require.Len(t, differingEvents, maxLoggedEvents)
 
 	for i := 0; i < maxLoggedEvents; i++ {
