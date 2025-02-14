@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo/mutable"
-
 	"github.com/samber/lo"
+	"github.com/samber/lo/mutable"
 
 	"github.com/stretchr/testify/require"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -2635,6 +2635,159 @@ func TestUploads_Update(t *testing.T) {
 		})
 		require.ErrorIs(t, err, context.Canceled)
 	})
+}
+
+func TestUploads_GetSyncLatencies(t *testing.T) {
+	const (
+		sourceID        = "source_id"
+		destinationID   = "destination_id"
+		destinationType = "destination_type"
+		workspaceID     = "workspace_id"
+	)
+
+	db, ctx := setupDB(t), context.Background()
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+	require.NoError(t, err)
+
+	stagingFile := model.StagingFile{
+		ID:            stagingID,
+		SourceID:      sourceID,
+		DestinationID: destinationID,
+		WorkspaceID:   workspaceID,
+	}
+
+	latencies := make([]time.Duration, 2000)
+	for i := 0; i < 2000; i++ {
+		createdAt := now.Add(time.Duration(i*30) * time.Minute)
+		lastExecAt := createdAt.Add(time.Duration(i%10) * time.Minute)
+		exportedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
+		abortedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
+		inProgressUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
+
+		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			return createdAt
+		}))
+
+		exportedUploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+		}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+		require.NoError(t, err)
+		abortedUploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+		}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+		require.NoError(t, err)
+		inProgressUploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+		}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+		require.NoError(t, err)
+		_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        sourceID,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			WorkspaceID:     workspaceID,
+			Status:          model.Waiting,
+		}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+		require.NoError(t, err)
+
+		require.NoError(t, repoUpload.Update(ctx, exportedUploadID, []repo.UpdateKeyValue{
+			repo.UploadFieldStatus(model.ExportedData),
+			repo.UploadFieldLastExecAt(lastExecAt),
+			repo.UploadFieldUpdatedAt(exportedUpdatedAt),
+		}))
+		require.NoError(t, repoUpload.Update(ctx, abortedUploadID, []repo.UpdateKeyValue{
+			repo.UploadFieldStatus(model.Aborted),
+			repo.UploadFieldLastExecAt(lastExecAt),
+			repo.UploadFieldUpdatedAt(abortedUpdatedAt),
+		}))
+		require.NoError(t, repoUpload.Update(ctx, inProgressUploadID, []repo.UpdateKeyValue{
+			repo.UploadFieldStatus(model.ExportingData),
+			repo.UploadFieldInProgress(true),
+			repo.UploadFieldLastExecAt(lastExecAt),
+			repo.UploadFieldUpdatedAt(inProgressUpdatedAt),
+		}))
+
+		latencies[i] = exportedUpdatedAt.Sub(createdAt) / time.Second
+	}
+
+	testCases := []struct {
+		name                    string
+		aggregationMinutes      int
+		expectedAggregationType model.LatencyAggregationType
+		expectedLatencies       []time.Duration
+	}{
+		{
+			name:                    "5 min interval (max)",
+			aggregationMinutes:      5,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       latencies,
+		},
+		{
+			name:                    "1 hour interval (max)",
+			aggregationMinutes:      60,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       testhelper.MaxDurationInWindow(latencies, 2),
+		},
+		{
+			name:                    "1 day interval (max)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.MaxLatency,
+			expectedLatencies:       testhelper.MaxDurationInWindow(latencies, 48),
+		},
+		{
+			name:                    "1 day interval (p90)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.P90Latency,
+			expectedLatencies:       testhelper.PercentileDurationInWindow(latencies, 48, 0.9),
+		},
+		{
+			name:                    "1 day interval (p95)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.P95Latency,
+			expectedLatencies:       testhelper.PercentileDurationInWindow(latencies, 48, 0.95),
+		},
+		{
+			name:                    "1 day interval (avg)",
+			aggregationMinutes:      1440,
+			expectedAggregationType: model.AvgLatency,
+			expectedLatencies:       testhelper.AverageDurationInWindow(latencies, 48),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				return now
+			}))
+			syncLatencies, err := repoUpload.GetSyncLatencies(ctx, model.SyncLatencyRequest{
+				SourceID:           sourceID,
+				DestinationID:      destinationID,
+				WorkspaceID:        workspaceID,
+				StartTime:          now,
+				AggregationMinutes: int64(tc.aggregationMinutes),
+				AggregationType:    tc.expectedAggregationType,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedLatencies, lo.Map(syncLatencies, func(item model.LatencyTimeSeriesDataPoint, index int) time.Duration {
+				return time.Duration(int(item.LatencySeconds))
+			}))
+		})
+	}
 }
 
 func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
