@@ -6,6 +6,7 @@ var botKeyWords = []string{
 	"bot",
 	"crawler",
 	"spider",
+	"google-api",
 }
 
 func IsBotUserAgent(userAgent string) bool {
