@@ -992,22 +992,22 @@ func (g *GRPC) RetryFailedBatches(
 	return resp, nil
 }
 
-func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*proto.SyncWHSchemaResponse, error) {
+func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*emptypb.Empty, error) {
 	log := g.logger.With(
 		lf.DestinationID, req.GetDestinationId(),
 	)
 	log.Infow("Syncing warehouse schema")
 	if req.DestinationId == "" {
-		return &proto.SyncWHSchemaResponse{},
+		return &emptypb.Empty{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
 	}
-	_, err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, timeutil.Now())
+	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, timeutil.Now())
 	if err != nil {
 		log.Errorw("unable to set expiry for destination", obskit.Error(err))
-		return &proto.SyncWHSchemaResponse{},
+		return &emptypb.Empty{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
 	}
-	return &proto.SyncWHSchemaResponse{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {

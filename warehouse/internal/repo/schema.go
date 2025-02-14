@@ -255,19 +255,12 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 	return tables, nil
 }
 
-func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) (int, error) {
+func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) error {
 	query := `
 		UPDATE ` + whSchemaTableName + `
 		SET expires_at = $1, updated_at = $2
 		WHERE destination_id = $3
 	`
-	result, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
-	if err != nil {
-		return 0, fmt.Errorf("updating expiry: %w", err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("getting rows affected: %w", err)
-	}
-	return int(rowsAffected), nil
+	_, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
+	return err
 }

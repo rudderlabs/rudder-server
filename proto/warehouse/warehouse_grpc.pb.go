@@ -33,7 +33,7 @@ const (
 	Warehouse_RetrieveFailedBatches_FullMethodName                                = "/proto.Warehouse/RetrieveFailedBatches"
 	Warehouse_RetryFailedBatches_FullMethodName                                   = "/proto.Warehouse/RetryFailedBatches"
 	Warehouse_GetFirstAbortedUploadInContinuousAbortsByDestination_FullMethodName = "/proto.Warehouse/GetFirstAbortedUploadInContinuousAbortsByDestination"
-	Warehouse_GetSyncLatency_FullMethodName                                       = "/proto.Warehouse/GetSyncLatency"
+	Warehouse_SyncWHSchema_FullMethodName                                         = "/proto.Warehouse/SyncWHSchema"
 )
 
 // WarehouseClient is the client API for Warehouse service.
@@ -52,7 +52,7 @@ type WarehouseClient interface {
 	RetrieveFailedBatches(ctx context.Context, in *RetrieveFailedBatchesRequest, opts ...grpc.CallOption) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error)
 	GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, in *FirstAbortedUploadInContinuousAbortsByDestinationRequest, opts ...grpc.CallOption) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
-	GetSyncLatency(ctx context.Context, in *SyncLatencyRequest, opts ...grpc.CallOption) (*SyncLatencyResponse, error)
+	SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type warehouseClient struct {
@@ -171,9 +171,9 @@ func (c *warehouseClient) GetFirstAbortedUploadInContinuousAbortsByDestination(c
 	return out, nil
 }
 
-func (c *warehouseClient) GetSyncLatency(ctx context.Context, in *SyncLatencyRequest, opts ...grpc.CallOption) (*SyncLatencyResponse, error) {
-	out := new(SyncLatencyResponse)
-	err := c.cc.Invoke(ctx, Warehouse_GetSyncLatency_FullMethodName, in, out, opts...)
+func (c *warehouseClient) SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Warehouse_SyncWHSchema_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ type WarehouseServer interface {
 	RetrieveFailedBatches(context.Context, *RetrieveFailedBatchesRequest) (*RetrieveFailedBatchesResponse, error)
 	RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error)
 	GetFirstAbortedUploadInContinuousAbortsByDestination(context.Context, *FirstAbortedUploadInContinuousAbortsByDestinationRequest) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
-	GetSyncLatency(context.Context, *SyncLatencyRequest) (*SyncLatencyResponse, error)
+	SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -240,8 +240,8 @@ func (UnimplementedWarehouseServer) RetryFailedBatches(context.Context, *RetryFa
 func (UnimplementedWarehouseServer) GetFirstAbortedUploadInContinuousAbortsByDestination(context.Context, *FirstAbortedUploadInContinuousAbortsByDestinationRequest) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetFirstAbortedUploadInContinuousAbortsByDestination not implemented")
 }
-func (UnimplementedWarehouseServer) GetSyncLatency(context.Context, *SyncLatencyRequest) (*SyncLatencyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetSyncLatency not implemented")
+func (UnimplementedWarehouseServer) SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncWHSchema not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -472,20 +472,20 @@ func _Warehouse_GetFirstAbortedUploadInContinuousAbortsByDestination_Handler(srv
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Warehouse_GetSyncLatency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SyncLatencyRequest)
+func _Warehouse_SyncWHSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncWHSchemaRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WarehouseServer).GetSyncLatency(ctx, in)
+		return srv.(WarehouseServer).SyncWHSchema(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Warehouse_GetSyncLatency_FullMethodName,
+		FullMethod: Warehouse_SyncWHSchema_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WarehouseServer).GetSyncLatency(ctx, req.(*SyncLatencyRequest))
+		return srv.(WarehouseServer).SyncWHSchema(ctx, req.(*SyncWHSchemaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -546,8 +546,8 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Warehouse_GetFirstAbortedUploadInContinuousAbortsByDestination_Handler,
 		},
 		{
-			MethodName: "GetSyncLatency",
-			Handler:    _Warehouse_GetSyncLatency_Handler,
+			MethodName: "SyncWHSchema",
+			Handler:    _Warehouse_SyncWHSchema_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

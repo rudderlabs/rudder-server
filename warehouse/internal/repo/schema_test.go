@@ -164,17 +164,15 @@ func TestWHSchemasRepo(t *testing.T) {
 	})
 
 	t.Run("SetExpiryForDestination", func(t *testing.T) {
-		count, err := r.SetExpiryForDestination(ctx, destinationID, now)
+		err := r.SetExpiryForDestination(ctx, destinationID, now)
 		require.NoError(t, err)
-		require.Equal(t, 0, count)
 
 		_, err = r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		expiryTime := now.Add(2 * time.Hour)
-		count, err = r.SetExpiryForDestination(ctx, destinationID, expiryTime)
+		err = r.SetExpiryForDestination(ctx, destinationID, expiryTime)
 		require.NoError(t, err)
-		require.Equal(t, 1, count)
 
 		updatedSchema, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
 		require.NoError(t, err)
