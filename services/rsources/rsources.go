@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 )
 
-//go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
+//go:generate go tool mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
 
 type JobFilter struct {
 	TaskRunID []string

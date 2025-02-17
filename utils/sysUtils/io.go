@@ -16,7 +16,7 @@ var	IoUtil sysUtils.IoUtilI = sysUtils.NewIoUtil()
 Io.Copy(...)
 IoUtil.Copy(...)
 */
-//go:generate mockgen -destination=../../mocks/utils/sysUtils/mock_io.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils IoI,IoUtilI
+//go:generate go tool mockgen -destination=../../mocks/utils/sysUtils/mock_io.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils IoI,IoUtilI
 
 package sysUtils
 

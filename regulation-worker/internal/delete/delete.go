@@ -10,7 +10,7 @@ import (
 
 var pkgLogger = logger.NewLogger().Child("client")
 
-//go:generate mockgen -source=delete.go -destination=mock_delete_test.go -package=delete github.com/rudderlabs/rudder-server/regulation-worker/internal/delete
+//go:generate go tool mockgen -source=delete.go -destination=mock_delete_test.go -package=delete github.com/rudderlabs/rudder-server/regulation-worker/internal/delete
 type deleteManager interface {
 	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
 	GetSupportedDestinations() []string

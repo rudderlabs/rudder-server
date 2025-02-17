@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/services/debugger/uploader.go -package mock_debugger github.com/rudderlabs/rudder-server/services/debugger TransformerAny
+//go:generate go tool mockgen -destination=../../mocks/services/debugger/uploader.go -package mock_debugger github.com/rudderlabs/rudder-server/services/debugger TransformerAny
 
 package debugger
 

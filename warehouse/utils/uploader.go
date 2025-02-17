@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
-//go:generate mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
+//go:generate go tool mockgen -destination=../internal/mocks/utils/mock_uploader.go -package mock_uploader github.com/rudderlabs/rudder-server/warehouse/utils Uploader
 type Uploader interface {
 	IsWarehouseSchemaEmpty() bool
 	GetLocalSchema(ctx context.Context) (model.Schema, error)

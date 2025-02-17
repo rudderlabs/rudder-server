@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app App
+//go:generate go tool mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app App
 
 import (
 	"fmt"

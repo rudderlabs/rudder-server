@@ -11,7 +11,7 @@ package mock_sysUtils
 
 import (
 	io "io"
-	fs "io/fs"
+	os "os"
 	reflect "reflect"
 
 	gomock "go.uber.org/mock/gomock"
@@ -125,7 +125,7 @@ func (mr *MockIoUtilIMockRecorder) ReadFile(filename any) *gomock.Call {
 }
 
 // WriteFile mocks base method.
-func (m *MockIoUtilI) WriteFile(filename string, data []byte, perm fs.FileMode) error {
+func (m *MockIoUtilI) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "WriteFile", filename, data, perm)
 	ret0, _ := ret[0].(error)

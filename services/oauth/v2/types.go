@@ -1,6 +1,6 @@
 package v2
 
-//go:generate mockgen -destination=../../../mocks/services/oauthV2/mock_oauthV2.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2 TokenProvider
+//go:generate go tool mockgen -destination=../../../mocks/services/oauthV2/mock_oauthV2.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2 TokenProvider
 
 import (
 	"encoding/json"

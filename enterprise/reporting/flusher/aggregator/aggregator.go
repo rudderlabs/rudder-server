@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=./aggregator_mock.go -package=aggregator -source=./aggregator.go Aggregator
+//go:generate go tool mockgen -destination=./aggregator_mock.go -package=aggregator -source=./aggregator.go Aggregator
 package aggregator
 
 import (

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/firehose/mock_eventbride.go -package mock_eventbride github.com/rudderlabs/rudder-server/services/streammanager/firehose FireHoseClient
+//go:generate go tool mockgen -destination=../../../mocks/services/streammanager/firehose/mock_eventbride.go -package mock_eventbride github.com/rudderlabs/rudder-server/services/streammanager/firehose FireHoseClient
 
 package firehose
 

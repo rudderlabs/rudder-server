@@ -1,6 +1,6 @@
 package eloqua
 
-//go:generate mockgen -destination=../../../../mocks/router/eloqua/mock_eloqua.go -package=mock_bulkservice github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua EloquaService
+//go:generate go tool mockgen -destination=../../../../mocks/router/eloqua/mock_eloqua.go -package=mock_bulkservice github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua EloquaService
 
 import (
 	"io"

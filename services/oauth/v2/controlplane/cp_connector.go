@@ -1,6 +1,6 @@
 package controlplane
 
-//go:generate mockgen -destination=../../../../mocks/services/oauthV2/mock_cp_connector.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane Connector
+//go:generate go tool mockgen -destination=../../../../mocks/services/oauthV2/mock_cp_connector.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane Connector
 
 import (
 	"bytes"

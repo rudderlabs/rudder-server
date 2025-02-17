@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
-//go:generate mockgen -source=service.go -destination=mock_service.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
+//go:generate go tool mockgen -source=service.go -destination=mock_service.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
 type APIClient interface {
 	Get(ctx context.Context) (model.Job, error)
 	UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error

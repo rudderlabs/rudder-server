@@ -13,7 +13,7 @@ var	Zip sysUtils.ZipI = sysUtils.NewZip()
 
 Zip.OpenReader(...)
 */
-//go:generate mockgen -destination=../../mocks/utils/sysUtils/mock_archive.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils ZipI
+//go:generate go tool mockgen -destination=../../mocks/utils/sysUtils/mock_archive.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils ZipI
 package sysUtils
 
 import (

@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/forwarder"
 )
 
-//go:generate mockgen -destination=../mocks/jobs-forwarder/mock_jobs_forwarder.go -package=mock_jobs_forwarder github.com/rudderlabs/rudder-server/schema-forwarder Forwarder
+//go:generate go tool mockgen -destination=../mocks/jobs-forwarder/mock_jobs_forwarder.go -package=mock_jobs_forwarder github.com/rudderlabs/rudder-server/schema-forwarder Forwarder
 
 type Forwarder interface {
 	Start() error
