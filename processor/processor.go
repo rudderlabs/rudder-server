@@ -1155,6 +1155,13 @@ func (proc *Handle) getTransformerEvents(
 				updatedEventName = en
 			}
 			userTransformedEvent.Metadata.EventName = updatedEventName
+
+			updatedEventType := userTransformedEvent.Metadata.EventType
+			if et, ok := userTransformedEvent.Output["type"].(string); ok {
+				updatedEventType = et
+			}
+			userTransformedEvent.Metadata.EventType = updatedEventType
+
 		}
 
 		for _, message := range messages {
