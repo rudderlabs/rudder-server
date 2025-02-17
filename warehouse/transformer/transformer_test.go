@@ -716,7 +716,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 
 	differingEvents := strings.Split(strings.Trim(string(data), "\n"), "\n")
 	differingEvents = lo.Filter(differingEvents, func(item string, index int) bool {
-		return strings.Contains(item, "message")
+		return strings.Contains(item, "message") // Filtering raw events as the file contains diff as well
 	})
 	require.Len(t, differingEvents, maxLoggedEvents)
 

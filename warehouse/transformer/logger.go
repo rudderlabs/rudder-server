@@ -48,7 +48,7 @@ func (t *Transformer) CompareAndLog(
 			Metadata: *metadata,
 		})
 	})
-	if err := t.write(logEntries, sampleDiff); err != nil {
+	if err := t.write(append([]string{sampleDiff}, logEntries...)); err != nil {
 		t.logger.Warnn("Error logging events", obskit.Error(err))
 		return
 	}
@@ -97,17 +97,14 @@ func (t *Transformer) differingEvents(
 	return differedSampleEvents, sampleDiff
 }
 
-func (t *Transformer) write(entries []string, sampleDiff string) error {
+func (t *Transformer) write(data []string) error {
 	writer, err := misc.CreateGZ(t.loggedFileName)
 	if err != nil {
 		return fmt.Errorf("creating buffered writer: %w", err)
 	}
 	defer func() { _ = writer.Close() }()
 
-	if _, err := writer.Write([]byte(sampleDiff + "\n")); err != nil {
-		return fmt.Errorf("writing diff: %w", err)
-	}
-	for _, entry := range entries {
+	for _, entry := range data {
 		if _, err := writer.Write([]byte(entry + "\n")); err != nil {
 			return fmt.Errorf("writing log entry: %w", err)
 		}
