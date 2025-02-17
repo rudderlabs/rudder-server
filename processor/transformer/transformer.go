@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -156,6 +157,20 @@ func (t transformerMetricLabels) ToStatsTag() stats.Tags {
 	}
 
 	return tags
+}
+
+// ToLoggerFields converts the metric labels to a slice of logger.Fields
+func (t transformerMetricLabels) ToLoggerFields() []logger.Field {
+	return []logger.Field{
+		logger.NewStringField("endpoint", t.Endpoint),
+		logger.NewStringField("stage", t.Stage),
+		obskit.DestinationType(t.DestinationType),
+		obskit.SourceType(t.SourceType),
+		obskit.WorkspaceID(t.WorkspaceID),
+		obskit.DestinationID(t.DestinationID),
+		obskit.SourceID(t.SourceID),
+		logger.NewStringField("transformationId", t.TransformationID),
+	}
 }
 
 func isJobTerminated(status int) bool {
@@ -395,7 +410,8 @@ func (trans *handle) transform(
 
 	trackWg.Add(1)
 	go func() {
-		trackLongRunningTransformation(ctx, labels.Stage, trans.config.timeoutDuration, trans.logger.With(labels.ToStatsTag()))
+		l := trans.logger.Withn(labels.ToLoggerFields()...)
+		trackLongRunningTransformation(ctx, labels.Stage, trans.config.timeoutDuration, l)
 		trackWg.Done()
 	}()
 
