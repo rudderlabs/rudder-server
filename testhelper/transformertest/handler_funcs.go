@@ -136,3 +136,120 @@ func WarehouseTransformerHandler(tableName string, code int, err string) Transfo
 		return
 	}
 }
+
+// FilteredTransformerHandler returns nil for all events, marking them as filtered
+var FilteredTransformerHandler TransformerHandler = func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+	for i := range request {
+		response = append(response, transformer.TransformerResponse{
+			Metadata:   request[i].Metadata,
+			Output:     nil,
+			StatusCode: 298, // Status code for filtered events
+		})
+	}
+	return
+}
+
+
+// AddEventHandler creates a new event with the specified name while keeping the original event
+func AddEventHandler(newEventName string) TransformerHandler {
+	return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+		for _, req := range request {
+			// Original event
+			response = append(response, transformer.TransformerResponse{
+				Metadata:   req.Metadata,
+				Output:     req.Message,
+				StatusCode: http.StatusOK,
+			})
+
+			// New event
+			output := make(map[string]interface{})
+			for k, v := range req.Message {
+				output[k] = v
+			}
+			output["event"] = newEventName
+			response = append(response, transformer.TransformerResponse{
+				Metadata:   req.Metadata,
+				Output:     output,
+				StatusCode: http.StatusOK,
+			})
+		}
+		return
+	}
+}
+
+// RenameEventToString renames the event to the specified string
+func RenameEventToString(newEventName string) TransformerHandler {
+    return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+        for _, req := range request {
+            output := make(map[string]interface{})
+            for k, v := range req.Message {
+                output[k] = v
+            }
+            output["event"] = newEventName
+            response = append(response, transformer.TransformerResponse{
+                Metadata:   req.Metadata,
+                Output:     output,
+                StatusCode: http.StatusOK,
+            })
+        }
+        return
+    }
+}
+
+// RenameEventToFloat updates the event to a float value
+func RenameEventToFloat(value float64) TransformerHandler {
+    return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+        for _, req := range request {
+            output := make(map[string]interface{})
+            for k, v := range req.Message {
+                output[k] = v
+            }
+            output["event"] = value
+            response = append(response, transformer.TransformerResponse{
+                Metadata:   req.Metadata,
+                Output:     output,
+                StatusCode: http.StatusOK,
+            })
+        }
+        return
+    }
+}
+
+// RenameEventToObject updates the event to an object
+func RenameEventToObject(obj map[string]interface{}) TransformerHandler {
+    return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+        for _, req := range request {
+            output := make(map[string]interface{})
+            for k, v := range req.Message {
+                output[k] = v
+            }
+            output["event"] = obj
+            response = append(response, transformer.TransformerResponse{
+                Metadata:   req.Metadata,
+                Output:     output,
+                StatusCode: http.StatusOK,
+            })
+        }
+        return
+    }
+}
+
+// RemoveEventKey removes the event key from the message
+func RemoveEventKey() TransformerHandler {
+    return func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+        for _, req := range request {
+            output := make(map[string]interface{})
+            for k, v := range req.Message {
+                if k != "event" {
+                    output[k] = v
+                }
+            }
+            response = append(response, transformer.TransformerResponse{
+                Metadata:   req.Metadata,
+                Output:     output,
+                StatusCode: http.StatusOK,
+            })
+        }
+        return
+    }
+}

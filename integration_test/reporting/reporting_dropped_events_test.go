@@ -1,4 +1,4 @@
-package reportingfailedmessages_test
+package reporting_test
 
 import (
 	"bytes"
@@ -24,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -72,7 +71,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		})
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-		err = sendEvents(10, "identify", "writekey-1", url)
+		err = sendEvents(10, "identify", "", "writekey-1", url)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -145,7 +144,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		})
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-		err = sendEvents(10, "identify", "writekey-1", url)
+		err = sendEvents(10, "identify", "", "writekey-1", url)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -214,7 +213,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			})
 			url := fmt.Sprintf("http://localhost:%d", gwPort)
 			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-			err = sendEvents(10, "identify", "writekey-1", url)
+			err = sendEvents(10, "identify", "", "writekey-1", url)
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
@@ -283,7 +282,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			})
 			url := fmt.Sprintf("http://localhost:%d", gwPort)
 			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-			err = sendEvents(10, "identify", "writekey-1", url)
+			err = sendEvents(10, "identify", "", "writekey-1", url)
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
@@ -353,7 +352,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		})
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-		err = sendEvents(10, "identify", "writekey-1", url)
+		err = sendEvents(10, "identify", "", "writekey-1", url)
 		require.NoError(t, err)
 
 		require.Eventually(t, func() bool {
@@ -428,7 +427,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			})
 			url := fmt.Sprintf("http://localhost:%d", gwPort)
 			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-			err = sendEvents(10, "identify", "writekey-1", url)
+			err = sendEvents(10, "identify", "", "writekey-1", url)
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
@@ -512,7 +511,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			})
 			url := fmt.Sprintf("http://localhost:%d", gwPort)
 			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-			err = sendEvents(10, "identify", "writekey-1", url)
+			err = sendEvents(10, "identify", "", "writekey-1", url)
 			require.NoError(t, err)
 
 			require.Eventually(t, func() bool {
@@ -569,6 +568,7 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.
 	config.Set("recovery.enabled", false)
 	config.Set("Profiler.Enabled", false)
 	config.Set("Gateway.enableSuppressUserFeature", false)
+	config.Set("Reporting.URL", "http://WRONG-URL")
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -583,27 +583,30 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.
 	return
 }
 
-func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unparam
+
+func sendEvents(num int, eventType, eventName, writeKey, url string) error { // nolint:unparam
 	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`{"batch": [{
-			"userId": %[1]q,
-			"type": %[2]q,
-			"context":
-			{
-				"traits":
-				{
+		eventStr := fmt.Sprintf(`{
+			"userId": "user-%d",
+			"type": %q,
+			"context": {
+				"traits": {
 					"trait1": "new-val"
 				},
 				"ip": "14.5.67.21",
-				"library":
-				{
+				"library": {
 					"name": "http"
 				}
 			},
-			"timestamp": "2020-02-02T00:23:09.544Z"
-			}]}`,
-			rand.String(10),
-			eventType))
+			"timestamp": "2020-02-02T00:23:09.544Z"`, i, eventType)
+
+		if eventName != "" {
+			eventStr += fmt.Sprintf(`,
+			"event": %q`, eventName)
+		}
+		eventStr += "}"
+
+		payload := []byte(fmt.Sprintf(`{"batch": [%s]}`, eventStr))
 		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

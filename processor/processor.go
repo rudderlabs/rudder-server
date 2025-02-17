@@ -167,7 +167,7 @@ type Handle struct {
 		credentialsMap                  map[string][]transformer.Credential
 		nonEventStreamSources           map[string]bool
 		enableWarehouseTransformations  config.ValueLoader[bool]
-		enableUpdatedEventNameReporting config.ValueLoader[bool]
+		useSuccessMetricsInDiffMetrics config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -831,7 +831,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
-	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
+	proc.config.useSuccessMetricsInDiffMetrics = config.GetReloadableBoolVar(false, "Processor.useSuccessMetricsInDiffMetrics")
 }
 
 type connection struct {
@@ -1147,15 +1147,6 @@ func (proc *Handle) getTransformerEvents(
 				return eventsByMessageID[msgID].SingularEvent
 			},
 		)
-
-		// Update metadata with updated event name before reporting
-		if proc.config.enableUpdatedEventNameReporting.Load() {
-			updatedEventName := userTransformedEvent.Metadata.EventName
-			if en, ok := userTransformedEvent.Output["event"].(string); ok {
-				updatedEventName = en
-			}
-			userTransformedEvent.Metadata.EventName = updatedEventName
-		}
 
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
@@ -1658,6 +1649,7 @@ func getDiffMetrics(
 				continue
 			}
 
+			// Emit success metrics as diff metrics because these events are not part of the input metrics
 			successCount := successCountMap[key]
 			if successCount > 0 {
 				metric := createMetricAndRecordStats(successMetadata, key, successCount)
@@ -2146,7 +2138,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 			map[string]int64{},
 			map[string]int64{},
 			proc.statsFactory,
-			proc.config.enableUpdatedEventNameReporting.Load(),
+			proc.config.useSuccessMetricsInDiffMetrics.Load(),
 		)
 		preTrans.reportMetrics = append(preTrans.reportMetrics, diffMetrics...)
 	}
@@ -2825,7 +2817,7 @@ func (proc *Handle) transformSrcDest(
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
-					proc.config.enableUpdatedEventNameReporting.Load(),
+					proc.config.useSuccessMetricsInDiffMetrics.Load(),
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2912,7 +2904,7 @@ func (proc *Handle) transformSrcDest(
 			nonSuccessMetrics.failedCountMap,
 			nonSuccessMetrics.filteredCountMap,
 			proc.statsFactory,
-			proc.config.enableUpdatedEventNameReporting.Load(),
+			proc.config.useSuccessMetricsInDiffMetrics.Load(),
 		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -3012,7 +3004,7 @@ func (proc *Handle) transformSrcDest(
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
-					proc.config.enableUpdatedEventNameReporting.Load(),
+					proc.config.useSuccessMetricsInDiffMetrics.Load(),
 				)
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)

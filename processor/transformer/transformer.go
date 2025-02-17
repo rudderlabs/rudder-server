@@ -250,6 +250,8 @@ type handle struct {
 
 		destTransformationURL string
 		userTransformationURL string
+
+		enableUpdatedEventNameReporting config.ValueLoader[bool]
 	}
 }
 
@@ -279,6 +281,8 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
 	trans.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
 	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
+
+	trans.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.Transformer.enableUpdatedEventNameReporting")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 
@@ -438,6 +442,24 @@ func (trans *handle) transform(
 			if transformerResponse.Metadata.OriginalSourceID != "" {
 				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
+
+			if trans.config.enableUpdatedEventNameReporting.Load() && transformerResponse.StatusCode == http.StatusOK {
+				var updatedEventName string
+
+				// Event name and type can be updated (to a string, object or any other type like int, float etc.) or removed
+				// If updated, the updated value is stored in the output field of the transformer response
+				// If removed, it is set as empty string
+				if eventValue, exists := transformerResponse.Output["event"]; exists && eventValue != nil {
+					if str, ok := eventValue.(string); ok {
+						updatedEventName = str
+					} else if jsonBytes, err := json.Marshal(eventValue); err == nil {
+						updatedEventName = string(jsonBytes)
+					}
+				}
+
+				transformerResponse.Metadata.EventName = updatedEventName
+			}
+
 			switch transformerResponse.StatusCode {
 			case http.StatusOK:
 				outClientEvents = append(outClientEvents, transformerResponse)
