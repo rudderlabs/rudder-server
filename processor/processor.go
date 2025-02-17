@@ -167,6 +167,7 @@ type Handle struct {
 		credentialsMap                  map[string][]transformer.Credential
 		nonEventStreamSources           map[string]bool
 		enableWarehouseTransformations  config.ValueLoader[bool]
+		enableUpdatedEventNameReporting config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -830,6 +831,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
 }
 
 type connection struct {
@@ -1145,6 +1147,22 @@ func (proc *Handle) getTransformerEvents(
 				return eventsByMessageID[msgID].SingularEvent
 			},
 		)
+
+		// Update metadata with updated event name before reporting
+		if proc.config.enableUpdatedEventNameReporting.Load() {
+			updatedEventName := userTransformedEvent.Metadata.EventName
+			if en, ok := userTransformedEvent.Output["event"].(string); ok {
+				updatedEventName = en
+			}
+			userTransformedEvent.Metadata.EventName = updatedEventName
+
+			updatedEventType := userTransformedEvent.Metadata.EventType
+			if et, ok := userTransformedEvent.Output["type"].(string); ok {
+				updatedEventType = et
+			}
+			userTransformedEvent.Metadata.EventType = updatedEventType
+
+		}
 
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
@@ -1569,65 +1587,89 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 func getDiffMetrics(
 	inPU, pu string,
 	inCountMetadataMap map[string]MetricMetadata,
+	successCountMetadataMap map[string]MetricMetadata,
 	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
 	statFactory stats.Stats,
+	useOutputMetricsInDiffState bool,
 ) []*types.PUReportedMetric {
-	// Calculate diff and append to reportMetrics
-	// diff = successCount + abortCount - inCount
 	diffMetrics := make([]*types.PUReportedMetric, 0)
-	for key, inCount := range inCountMap {
+
+	// Helper function to create metric and record stats
+	createMetricAndRecordStats := func(metadata MetricMetadata, key string, count int64) *types.PUReportedMetric {
 		var eventName, eventType string
 		splitKey := strings.Split(key, MetricKeyDelimiter)
-		if len(splitKey) < 5 {
-			eventName = ""
-			eventType = ""
-		} else {
+		if len(splitKey) >= 5 {
 			eventName = splitKey[3]
 			eventType = splitKey[4]
 		}
+
+		metric := &types.PUReportedMetric{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:                metadata.sourceID,
+				DestinationID:           metadata.destinationID,
+				SourceTaskRunID:         metadata.sourceTaskRunID,
+				SourceJobID:             metadata.sourceJobID,
+				SourceJobRunID:          metadata.sourceJobRunID,
+				SourceDefinitionID:      metadata.sourceDefinitionID,
+				DestinationDefinitionID: metadata.destinationDefinitionID,
+				SourceCategory:          metadata.sourceCategory,
+				TransformationID:        metadata.transformationID,
+				TransformationVersionID: metadata.transformationVersionID,
+				TrackingPlanID:          metadata.trackingPlanID,
+				TrackingPlanVersion:     metadata.trackingPlanVersion,
+			},
+			PUDetails: types.PUDetails{
+				InPU: inPU,
+				PU:   pu,
+			},
+			StatusDetail: &types.StatusDetail{
+				Status:      types.DiffStatus,
+				Count:       count,
+				SampleEvent: []byte(`{}`),
+				EventName:   eventName,
+				EventType:   eventType,
+			},
+		}
+
+		statFactory.NewTaggedStat(
+			"processor_diff_count",
+			stats.CountType,
+			stats.Tags{
+				"stage":         metric.PU,
+				"sourceId":      metric.ConnectionDetails.SourceID,
+				"destinationId": metric.ConnectionDetails.DestinationID,
+			},
+		).Count(int(count))
+
+		return metric
+	}
+
+	// Process input metrics
+	for key, inCount := range inCountMap {
 		successCount := successCountMap[key]
 		failedCount := failedCountMap[key]
 		filteredCount := filteredCountMap[key]
 		diff := successCount + failedCount + filteredCount - inCount
+
 		if diff != 0 {
-			metricMetadata := inCountMetadataMap[key]
-			metric := &types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:                metricMetadata.sourceID,
-					DestinationID:           metricMetadata.destinationID,
-					SourceTaskRunID:         metricMetadata.sourceTaskRunID,
-					SourceJobID:             metricMetadata.sourceJobID,
-					SourceJobRunID:          metricMetadata.sourceJobRunID,
-					SourceDefinitionID:      metricMetadata.sourceDefinitionID,
-					DestinationDefinitionID: metricMetadata.destinationDefinitionID,
-					SourceCategory:          metricMetadata.sourceCategory,
-					TransformationID:        metricMetadata.transformationID,
-					TransformationVersionID: metricMetadata.transformationVersionID,
-					TrackingPlanID:          metricMetadata.trackingPlanID,
-					TrackingPlanVersion:     metricMetadata.trackingPlanVersion,
-				},
-				PUDetails: types.PUDetails{
-					InPU: inPU,
-					PU:   pu,
-				},
-				StatusDetail: &types.StatusDetail{
-					Status:      types.DiffStatus,
-					Count:       diff,
-					SampleEvent: []byte(`{}`),
-					EventName:   eventName,
-					EventType:   eventType,
-				},
-			}
+			metric := createMetricAndRecordStats(inCountMetadataMap[key], key, diff)
 			diffMetrics = append(diffMetrics, metric)
-			statFactory.NewTaggedStat(
-				"processor_diff_count",
-				stats.CountType,
-				stats.Tags{
-					"stage":         metric.PU,
-					"sourceId":      metric.ConnectionDetails.SourceID,
-					"destinationId": metric.ConnectionDetails.DestinationID,
-				},
-			).Count(int(-diff))
+		}
+	}
+
+	// Process success metrics if enabled
+	if useOutputMetricsInDiffState {
+		for key, successMetadata := range successCountMetadataMap {
+			// Skip if this key was already processed from input metrics
+			if _, exists := inCountMap[key]; exists {
+				continue
+			}
+
+			successCount := successCountMap[key]
+			if successCount > 0 {
+				metric := createMetricAndRecordStats(successMetadata, key, successCount)
+				diffMetrics = append(diffMetrics, metric)
+			}
 		}
 	}
 
@@ -2105,11 +2147,13 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 			types.GATEWAY,
 			types.DESTINATION_FILTER,
 			preTrans.inCountMetadataMap,
+			map[string]MetricMetadata{},
 			preTrans.inCountMap,
 			preTrans.outCountMap,
 			map[string]int64{},
 			map[string]int64{},
 			proc.statsFactory,
+			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		preTrans.reportMetrics = append(preTrans.reportMetrics, diffMetrics...)
 	}
@@ -2782,11 +2826,13 @@ func (proc *Handle) transformSrcDest(
 					types.DESTINATION_FILTER,
 					types.USER_TRANSFORMER,
 					inCountMetadataMap,
+					successCountMetadataMap,
 					inCountMap,
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
+					proc.config.enableUpdatedEventNameReporting.Load(),
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2867,11 +2913,13 @@ func (proc *Handle) transformSrcDest(
 			inPU,
 			types.EVENT_FILTER,
 			inCountMetadataMap,
+			successCountMetadataMap,
 			inCountMap,
 			successCountMap,
 			nonSuccessMetrics.failedCountMap,
 			nonSuccessMetrics.filteredCountMap,
 			proc.statsFactory,
+			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -2965,11 +3013,13 @@ func (proc *Handle) transformSrcDest(
 					types.EVENT_FILTER,
 					types.DEST_TRANSFORMER,
 					inCountMetadataMap,
+					successCountMetadataMap,
 					inCountMap,
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
+					proc.config.enableUpdatedEventNameReporting.Load(),
 				)
 
 				reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)

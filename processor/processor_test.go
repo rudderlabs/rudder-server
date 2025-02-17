@@ -4919,11 +4919,13 @@ var _ = Describe("Static Function Tests", func() {
 				"some-string-1",
 				"some-string-2",
 				map[string]MetricMetadata{},
+				map[string]MetricMetadata{},
 				map[string]int64{},
 				map[string]int64{},
 				map[string]int64{},
 				map[string]int64{},
 				stats.NOP,
+				false,
 			)
 			Expect(len(response)).To(Equal(0))
 		})
@@ -5016,23 +5018,163 @@ var _ = Describe("Static Function Tests", func() {
 				"some-string-1",
 				"some-string-2",
 				inCountMetadataMap,
+				map[string]MetricMetadata{},
 				inCountMap,
 				successCountMap,
 				failedCountMap,
 				filteredCountMap,
 				statsStore,
+				false,
 			)
 			Expect(statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "some-string-2",
 				"sourceId":      "some-source-id-1",
 				"destinationId": "some-destination-id-1",
-			}).LastValue()).To(Equal(float64(-5)))
+			}).LastValue()).To(Equal(float64(5)))
 			Expect(statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "some-string-2",
 				"sourceId":      "some-source-id-2",
 				"destinationId": "some-destination-id-2",
-			}).LastValue()).To(Equal(float64(-7)))
+			}).LastValue()).To(Equal(float64(7)))
 			assertReportMetric(expectedResponse, response)
+		})
+
+		It("Should match diffMetrics response for Valid Inputs with useOutputMetricsInDiffState enabled", func() {
+			// Case 1: Event name transformation (10 in -> 10 transformed)
+			key1Input := strings.Join([]string{
+				"source1", "dest1", "", "event1", "track",
+			}, "!<<#>>!")
+			key1Output := strings.Join([]string{
+				"source1", "dest1", "", "updated_event1", "track",
+			}, "!<<#>>!")
+
+			// Case 2: Event splitting (10 in -> 10 original + 10 new)
+			key2Input := strings.Join([]string{
+				"source2", "dest2", "", "event2", "track",
+			}, "!<<#>>!")
+			key2NewEvent := strings.Join([]string{
+				"source2", "dest2", "", "new_event2", "track",
+			}, "!<<#>>!")
+
+			// Case 3: Event with losses (10 in -> 7 success, 2 filtered, 1 dropped)
+			key3 := strings.Join([]string{
+				"source3", "dest3", "", "event3", "track",
+			}, "!<<#>>!")
+
+			inCountMetadataMap := map[string]MetricMetadata{
+				key1Input: {
+					sourceID:      "source1",
+					destinationID: "dest1",
+				},
+				key2Input: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key3: {
+					sourceID:      "source3",
+					destinationID: "dest3",
+				},
+			}
+
+			successCountMetadataMap := map[string]MetricMetadata{
+				key1Output: {
+					sourceID:      "source1",
+					destinationID: "dest1",
+				},
+				key2Input: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key2NewEvent: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key3: {
+					sourceID:      "source3",
+					destinationID: "dest3",
+				},
+			}
+
+			inCountMap := map[string]int64{
+				key1Input: 10, // Case 1: 10 input events
+				key2Input: 10, // Case 2: 10 input events
+				key3:      10, // Case 3: 10 input events
+			}
+
+			successCountMap := map[string]int64{
+				key1Output:   10, // Case 1: 10 transformed events
+				key2Input:    10, // Case 2: 10 original events
+				key2NewEvent: 10, // Case 2: 10 new events
+				key3:         7,  // Case 3: 7 successful events
+			}
+
+			failedCountMap := map[string]int64{
+				key1Input: 0,
+				key2Input: 0,
+				key3:      1, // Case 3: 1 dropped event
+			}
+
+			filteredCountMap := map[string]int64{
+				key1Input: 0,
+				key2Input: 0,
+				key3:      2, // Case 3: 2 filtered events
+			}
+
+			statsStore, err := memstats.New()
+			Expect(err).To(BeNil())
+			response := getDiffMetrics(
+				"inPU",
+				"outPU",
+				inCountMetadataMap,
+				successCountMetadataMap,
+				inCountMap,
+				successCountMap,
+				failedCountMap,
+				filteredCountMap,
+				statsStore,
+				true,
+			)
+
+			// Sort the response for consistent testing
+			sort.Slice(response, func(i, j int) bool {
+				if response[i].ConnectionDetails.SourceID == response[j].ConnectionDetails.SourceID {
+					return response[i].StatusDetail.EventName < response[j].StatusDetail.EventName
+				}
+				return response[i].ConnectionDetails.SourceID < response[j].ConnectionDetails.SourceID
+			})
+
+			// Should include metrics for all cases
+			Expect(len(response)).To(Equal(3))
+
+			// Case 1: Event name transformation
+			diffMetric1Input := response[0]
+			Expect(diffMetric1Input.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Input.StatusDetail.EventName).To(Equal("event1"))
+			Expect(diffMetric1Input.StatusDetail.Count).To(Equal(int64(-10))) // All input events transformed
+
+			diffMetric1Output := response[1]
+			Expect(diffMetric1Output.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Output.StatusDetail.EventName).To(Equal("updated_event1"))
+			Expect(diffMetric1Output.StatusDetail.Count).To(Equal(int64(10))) // All events transformed to new name
+
+			// Case 2: Event splitting
+			diffMetric2New := response[2]
+			Expect(diffMetric2New.ConnectionDetails.SourceID).To(Equal("source2"))
+			Expect(diffMetric2New.StatusDetail.EventName).To(Equal("new_event2"))
+			Expect(diffMetric2New.StatusDetail.Count).To(Equal(int64(10))) // 10 new events added
+
+			// Verify stats were recorded
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "outPU",
+				"sourceId":      "source1",
+				"destinationId": "dest1",
+			}).LastValue()).To(Equal(float64(0))) // Net change is 0 for transformation
+
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "outPU",
+				"sourceId":      "source2",
+				"destinationId": "dest2",
+			}).LastValue()).To(Equal(float64(10))) // Net addition of 10 new events
 		})
 	})
 
