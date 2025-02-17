@@ -539,9 +539,20 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
 
-		It("Transform() Test -> microsoftClickId is required but not present", func() {
+		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
 			job := &jobsdb.JobT{
 				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> microsoftClickId is required(email and phone empty) but not present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"\"}}"),
 			}
 			uploader := &BingAdsBulkUploader{}
 			// Execute
