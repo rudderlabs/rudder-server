@@ -1,6 +1,8 @@
 package misc
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -787,4 +789,89 @@ func Test_GetInstanceID(t *testing.T) {
 
 	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs-gw-ha-12-234234-10")
 	require.Equal(t, "12", GetInstanceID())
+}
+
+func TestSanitizeJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   json.RawMessage
+		want    json.RawMessage
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   json.RawMessage(``),
+			want:    json.RawMessage(`{}`),
+			wantErr: false,
+		},
+		{
+			name:    "valid json",
+			input:   json.RawMessage(`{"key":"value"}`),
+			want:    json.RawMessage(`{"key":"value"}`),
+			wantErr: false,
+		},
+		{
+			name:    "json with null characters",
+			input:   json.RawMessage(`{"key":"\u0000value\u0000"}`),
+			want:    json.RawMessage(`{"key":"value"}`),
+			wantErr: false,
+		},
+		{
+			name:    "json with html entities",
+			input:   json.RawMessage(`{"key":"\u0026\u0000value\u003ctest\u003e"}`),
+			want:    json.RawMessage(`{"key":"\u0026value\u003ctest\u003e"}`),
+			wantErr: false,
+		},
+		{
+			name:    "invalid json",
+			input:   json.RawMessage(`{"key":"value`),
+			want:    nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SanitizeJSON(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("sanitizeJSONForReports() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && !bytes.Equal(got, tt.want) {
+				t.Errorf("sanitizeJSONForReports() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeString(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:  "empty string",
+			input: "",
+		},
+		{
+			name:     "with unicode characters",
+			input:    "Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End",
+			expected: "Start:  : End",
+		},
+		{
+			name:     "without unicode characters",
+			input:    "Start:  : End",
+			expected: "Start:  : End",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tc.expected, SanitizeString(tc.input))
+		})
+	}
 }

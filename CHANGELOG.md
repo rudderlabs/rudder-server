@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.5](https://github.com/rudderlabs/rudder-server/compare/v1.42.4...v1.42.5) (2025-02-13)
+
+
+### Miscellaneous
+
+* sanitise sample event payload and sample response before inserting in reports table ([#5493](https://github.com/rudderlabs/rudder-server/issues/5493)) ([a7e2873](https://github.com/rudderlabs/rudder-server/commit/a7e2873f0bb5ced1e4ba6d1a16666f5d46399b2f))
+
 ## [1.42.4](https://github.com/rudderlabs/rudder-server/compare/v1.42.3...v1.42.4) (2025-02-10)
 
 
