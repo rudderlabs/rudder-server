@@ -1706,7 +1706,7 @@ type preTransformationMessage struct {
 	dedupKeys                    map[string]struct{}
 }
 
-func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*transformationMessage, error) {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -2028,36 +2028,35 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*trans
 	}
 
 	if len(statusList) != len(jobList) {
-		panic(fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList)))
+		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
-	return proc.generateTransformationMessage(
-		&preTransformationMessage{
-			partition:                    partition,
-			subJobs:                      subJobs,
-			eventSchemaJobs:              eventSchemaJobs,
-			archivalJobs:                 archivalJobs,
-			connectionDetailsMap:         connectionDetailsMap,
-			statusDetailsMap:             statusDetailsMap,
-			reportMetrics:                reportMetrics,
-			destFilterStatusDetailMap:    destFilterStatusDetailMap,
-			inCountMetadataMap:           inCountMetadataMap,
-			inCountMap:                   inCountMap,
-			outCountMap:                  outCountMap,
-			totalEvents:                  totalEvents,
-			marshalStart:                 marshalStart,
-			groupedEventsBySourceId:      groupedEventsBySourceId,
-			eventsByMessageID:            eventsByMessageID,
-			procErrorJobs:                procErrorJobs,
-			jobIDToSpecificDestMapOnly:   jobIDToSpecificDestMapOnly,
-			groupedEvents:                groupedEvents,
-			uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
-			statusList:                   statusList,
-			jobList:                      jobList,
-			start:                        start,
-			sourceDupStats:               sourceDupStats,
-			dedupKeys:                    dedupKeys,
-		})
+	return &preTransformationMessage{
+		partition:                    partition,
+		subJobs:                      subJobs,
+		eventSchemaJobs:              eventSchemaJobs,
+		archivalJobs:                 archivalJobs,
+		connectionDetailsMap:         connectionDetailsMap,
+		statusDetailsMap:             statusDetailsMap,
+		reportMetrics:                reportMetrics,
+		destFilterStatusDetailMap:    destFilterStatusDetailMap,
+		inCountMetadataMap:           inCountMetadataMap,
+		inCountMap:                   inCountMap,
+		outCountMap:                  outCountMap,
+		totalEvents:                  totalEvents,
+		marshalStart:                 marshalStart,
+		groupedEventsBySourceId:      groupedEventsBySourceId,
+		eventsByMessageID:            eventsByMessageID,
+		procErrorJobs:                procErrorJobs,
+		jobIDToSpecificDestMapOnly:   jobIDToSpecificDestMapOnly,
+		groupedEvents:                groupedEvents,
+		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
+		statusList:                   statusList,
+		jobList:                      jobList,
+		start:                        start,
+		sourceDupStats:               sourceDupStats,
+		dedupKeys:                    dedupKeys,
+	}, nil
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
@@ -2110,7 +2109,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 	})
 
 	if err := g.Wait(); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	// REPORTING - GATEWAY metrics - START
@@ -3361,11 +3360,18 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 
 	var transMessage *transformationMessage
 	var err error
-	transMessage, err = proc.processJobsForDest(partition, subJob{
-		subJobs:       unprocessedList.Jobs,
-		hasMore:       false,
-		rsourcesStats: rsourcesStats,
-	})
+	preTransMessage, err := proc.processJobsForDest(
+		partition,
+		subJob{
+			subJobs:       unprocessedList.Jobs,
+			hasMore:       false,
+			rsourcesStats: rsourcesStats,
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+	transMessage, err = proc.generateTransformationMessage(preTransMessage)
 	if err != nil {
 		panic(err)
 	}

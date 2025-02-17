@@ -204,6 +204,7 @@ func TestTransformer(t *testing.T) {
 						SourceID:         rand.String(10),
 						DestinationID:    destinationConfig.ID,
 						TransformationID: destinationConfig.Transformations[0].ID,
+						SourceType:       "webhook",
 					}
 
 					for i := range events {
@@ -251,7 +252,17 @@ func TestTransformer(t *testing.T) {
 						}
 					}
 
-					rsp := tr.transform(context.TODO(), events, srv.URL, batchSize, "test-stage")
+					labels := transformerMetricLabels{
+						Endpoint:         getEndpointFromURL(srv.URL),
+						Stage:            "test-stage",
+						SourceID:         metadata.SourceID,
+						SourceType:       metadata.SourceType,
+						DestinationType:  destinationConfig.DestinationDefinition.Name,
+						DestinationID:    destinationConfig.ID,
+						WorkspaceID:      metadata.WorkspaceID,
+						TransformationID: destinationConfig.Transformations[0].ID,
+					}
+					rsp := tr.transform(context.TODO(), events, srv.URL, batchSize, labels)
 					require.Equal(t, expectedResponse, rsp)
 
 					metrics := statsStore.GetByName("processor.transformer_request_time")
@@ -259,17 +270,36 @@ func TestTransformer(t *testing.T) {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {
 							require.Equal(t, stats.Tags{
+								"endpoint":         getEndpointFromURL(srv.URL),
 								"stage":            "test-stage",
 								"sourceId":         metadata.SourceID,
+								"sourceType":       metadata.SourceType,
 								"destinationType":  destinationConfig.DestinationDefinition.Name,
 								"destinationId":    destinationConfig.ID,
 								"transformationId": destinationConfig.Transformations[0].ID,
+								"workspaceId":      metadata.WorkspaceID,
+								"language":         "",
 
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,
 								"dest_id":   destinationConfig.ID,
 								"src_id":    metadata.SourceID,
 							}, m.Tags)
+
+							metricsToCheck := []string{
+								"transformer_client_request_total_bytes",
+								"transformer_client_response_total_bytes",
+								"transformer_client_request_total_events",
+								"transformer_client_response_total_events",
+								"transformer_client_total_durations_seconds",
+							}
+
+							expectedTags := labels.ToStatsTag()
+							for _, metricName := range metricsToCheck {
+								measurements := statsStore.GetByName(metricName)
+								require.NotEmpty(t, measurements, "metric %s should not be empty", metricName)
+								require.Equal(t, expectedTags, measurements[0].Tags, "metric %s tags mismatch", metricName)
+							}
 						}
 					}
 				}
@@ -370,7 +400,10 @@ func TestTransformer(t *testing.T) {
 
 						if tc.expectPanic {
 							require.Panics(t, func() {
-								_ = tr.request(context.TODO(), srv.URL, tc.stage, events)
+								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+									Endpoint: getEndpointFromURL(srv.URL),
+									Stage:    tc.stage,
+								}, events)
 							})
 							close(ch)
 							return
@@ -379,7 +412,10 @@ func TestTransformer(t *testing.T) {
 						_, err := url.Parse(srv.URL)
 						require.NoError(t, err)
 
-						rsp := tr.request(context.TODO(), srv.URL, tc.stage, events)
+						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+							Endpoint: getEndpointFromURL(srv.URL),
+							Stage:    tc.stage,
+						}, events)
 						require.Len(t, rsp, 1)
 						require.Equal(t, rsp[0].StatusCode, TransformerRequestTimeout)
 						require.Equal(t, rsp[0].Metadata, Metadata{
@@ -432,7 +468,10 @@ func TestTransformer(t *testing.T) {
 				tr.config.failOnUserTransformTimeout = config.SingleValueLoader(false)
 				tr.cpDownGauge = tr.stat.NewStat("control_plane_down", stats.GaugeType)
 
-				rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
+				rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+					Endpoint: getEndpointFromURL(srv.URL),
+					Stage:    "test-stage",
+				}, events)
 				require.Equal(t, rsp, []TransformerResponse{
 					{
 						Metadata: Metadata{
@@ -566,13 +605,19 @@ func TestTransformer(t *testing.T) {
 
 						if tc.expectPanic {
 							require.Panics(t, func() {
-								_ = tr.request(context.TODO(), srv.URL, "test-stage", events)
+								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+									Endpoint: getEndpointFromURL(srv.URL),
+									Stage:    "test-stage",
+								}, events)
 							})
 							require.Equal(t, elt.retryCount, tc.expectedRetries)
 							return
 						}
 
-						rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
+						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+							Endpoint: getEndpointFromURL(srv.URL),
+							Stage:    "test-stage",
+						}, events)
 						require.Equal(t, tc.expectedResponse, rsp)
 						require.Equal(t, tc.expectedRetries, elt.retryCount)
 					})
@@ -667,12 +712,18 @@ func TestTransformer(t *testing.T) {
 
 						if tc.expectPanic {
 							require.Panics(t, func() {
-								_ = tr.request(context.TODO(), srv.URL, "test-stage", events)
+								_ = tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+									Endpoint: getEndpointFromURL(srv.URL),
+									Stage:    "test-stage",
+								}, events)
 							})
 							return
 						}
 
-						rsp := tr.request(context.TODO(), srv.URL, "test-stage", events)
+						rsp := tr.request(context.TODO(), srv.URL, transformerMetricLabels{
+							Endpoint: getEndpointFromURL(srv.URL),
+							Stage:    "test-stage",
+						}, events)
 						require.Equal(t, tc.expectedResponse, rsp)
 					})
 				}
