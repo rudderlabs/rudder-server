@@ -6,7 +6,7 @@ TESTFILE=_testok
 MOUNT_PATH=/local
 
 # go tools versions
-GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.0
+GOLANGCI=github.com/golangci/golangci-lint/cmd/golangci-lint@v1.63.4
 gofumpt=mvdan.cc/gofumpt@latest
 govulncheck=golang.org/x/vuln/cmd/govulncheck@latest
 goimports=golang.org/x/tools/cmd/goimports@latest
@@ -132,5 +132,3 @@ generate-openapi-spec: install-tools
 sec: ## Run security checks
 	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
-	./build/scan_docker.sh
-	./build/scan_docker.sh -f ./suppression-backup-service/Dockerfile

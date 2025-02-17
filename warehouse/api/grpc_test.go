@@ -115,6 +115,9 @@ func TestGRPC(t *testing.T) {
 									{
 										ID:      destinationID,
 										Enabled: true,
+										Config: map[string]interface{}{
+											"syncFrequency": "30",
+										},
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
 											Name: whutils.POSTGRES,
 										},
@@ -133,6 +136,9 @@ func TestGRPC(t *testing.T) {
 									{
 										ID:      unusedDestinationID,
 										Enabled: true,
+										Config: map[string]interface{}{
+											"syncFrequency": "30",
+										},
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
 											Name: whutils.POSTGRES,
 										},
@@ -1745,6 +1751,167 @@ func TestGRPC(t *testing.T) {
 			})
 		})
 
+		t.Run("GetSyncLatency", func(t *testing.T) {
+			cleanUpTables()
+
+			now := time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC)
+
+			uploads := []model.Upload{
+				{
+					WorkspaceID:     workspaceID,
+					SourceID:        sourceID,
+					DestinationID:   destinationID,
+					DestinationType: destinationType,
+					Status:          model.ExportedData,
+					Namespace:       "namespace",
+					SourceTaskRunID: "task_run_id",
+					LastEventAt:     now,
+					FirstEventAt:    now,
+				},
+			}
+
+			for i := range uploads {
+				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+					return now
+				}))
+				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+					return now.Add(time.Duration(i) * time.Hour)
+				}))
+
+				stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+				require.NoError(t, err)
+
+				id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []*model.StagingFile{{
+					ID:              stagingID,
+					SourceID:        uploads[i].SourceID,
+					DestinationID:   uploads[i].DestinationID,
+					SourceTaskRunID: uploads[i].SourceTaskRunID,
+					FirstEventAt:    uploads[i].FirstEventAt,
+					LastEventAt:     uploads[i].LastEventAt,
+					Status:          uploads[i].Status,
+					WorkspaceID:     uploads[i].WorkspaceID,
+				}})
+				require.NoError(t, err)
+
+				require.NoError(t, repoUpload.Update(ctx, id, []repo.UpdateKeyValue{
+					repo.UploadFieldUpdatedAt(now.Add(time.Duration(i+1) * time.Minute)),
+				}))
+			}
+
+			t.Run("no destination + workspace", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "workspaceID and destinationID cannot be empty", statusError.Message())
+			})
+			t.Run("no start time", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:   workspaceID,
+					DestinationId: destinationID,
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "start time cannot be empty", statusError.Message())
+			})
+			t.Run("no aggregation minutes", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:   workspaceID,
+					DestinationId: destinationID,
+					StartTime:     now.Format(time.RFC3339),
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "aggregation minutes cannot be empty", statusError.Message())
+			})
+			t.Run("invalid start time", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      destinationID,
+					StartTime:          "invalid",
+					AggregationMinutes: "1440",
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "start time invalid should be in correct 2006-01-02T15:04:05Z07:00 format", statusError.Message())
+			})
+			t.Run("start time older than 90 days", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      destinationID,
+					StartTime:          now.AddDate(0, -120, 0).Format(time.RFC3339),
+					AggregationMinutes: "1440",
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "start time cannot be older than 90 days", statusError.Message())
+			})
+			t.Run("invalid interval", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      destinationID,
+					StartTime:          now.Format(time.RFC3339),
+					AggregationMinutes: "invalid",
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.InvalidArgument, statusError.Code())
+				require.Equal(t, "aggregation minutes invalid should be an integer", statusError.Message())
+			})
+			t.Run("no sources", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      "unknown_destination_id",
+					StartTime:          now.Format(time.RFC3339),
+					AggregationMinutes: "1440",
+					SourceId:           sourceID,
+				})
+				require.Error(t, err)
+				require.Empty(t, res)
+
+				statusError, ok := status.FromError(err)
+				require.True(t, ok)
+				require.Equal(t, codes.Unauthenticated, statusError.Code())
+				require.Equal(t, "unauthorized request", statusError.Message())
+			})
+			t.Run("success", func(t *testing.T) {
+				res, err := grpcClient.GetSyncLatency(ctx, &proto.SyncLatencyRequest{
+					WorkspaceId:        workspaceID,
+					DestinationId:      destinationID,
+					StartTime:          now.Format(time.RFC3339),
+					AggregationMinutes: "60",
+					SourceId:           sourceID,
+				})
+				require.NoError(t, err)
+				require.NotEmpty(t, res)
+				require.Equal(t, 1, len(res.GetTimeSeriesDataPoints()))
+				require.Equal(t, float64(1609462800000), res.GetTimeSeriesDataPoints()[0].GetTimestampMillis().GetValue())
+				require.Equal(t, float64(60), res.GetTimeSeriesDataPoints()[0].GetLatencySeconds().GetValue())
+			})
+		})
+
 		server.GracefulStop()
 
 		setupCh := make(chan struct{})
@@ -1756,5 +1923,137 @@ func TestGRPC(t *testing.T) {
 
 		stopTest()
 		<-setupCh
+	})
+
+	t.Run("getLatencyAggregationType", func(t *testing.T) {
+		testCases := []struct {
+			name            string
+			srcMap          map[string]model.Warehouse
+			sourceID        string
+			configOverride  map[string]any
+			aggregationType model.LatencyAggregationType
+			wantErr         bool
+		}{
+			{
+				name: "empty sourceID",
+				srcMap: map[string]model.Warehouse{
+					"sid-1": {
+						WorkspaceID: "wid1",
+						Source: backendconfig.SourceT{
+							ID: "sid-1",
+						},
+						Destination: backendconfig.DestinationT{
+							ID: "did-1",
+							Config: map[string]interface{}{
+								"syncFrequency": "60",
+							},
+						},
+					},
+				},
+				aggregationType: model.MaxLatency,
+			},
+			{
+				name: "unable to parse sync frequency",
+				srcMap: map[string]model.Warehouse{
+					"sid-1": {
+						WorkspaceID: "wid1",
+						Source: backendconfig.SourceT{
+							ID: "sid-1",
+						},
+						Destination: backendconfig.DestinationT{
+							ID: "did-1",
+							Config: map[string]interface{}{
+								"syncFrequency": "abc",
+							},
+						},
+					},
+				},
+				wantErr: true,
+			},
+			{
+				name: "min threshold",
+				srcMap: map[string]model.Warehouse{
+					"sid-1": {
+						WorkspaceID: "wid1",
+						Source: backendconfig.SourceT{
+							ID: "sid-1",
+						},
+						Destination: backendconfig.DestinationT{
+							ID: "did-1",
+							Config: map[string]interface{}{
+								"syncFrequency": "5",
+							},
+						},
+					},
+				},
+				configOverride: map[string]any{
+					"Warehouse.grpc.defaultLatencyAggregationType": "p90",
+				},
+				aggregationType: model.P90Latency,
+			},
+			{
+				name:   "empty srcMap",
+				srcMap: map[string]model.Warehouse{},
+				configOverride: map[string]any{
+					"Warehouse.grpc.defaultLatencyAggregationType": "p90",
+				},
+				aggregationType: model.MaxLatency,
+			},
+			{
+				name: "some sourceID and syncFrequency override",
+				srcMap: map[string]model.Warehouse{
+					"sid-1": {
+						WorkspaceID: "wid1",
+						Source: backendconfig.SourceT{
+							ID: "sid-1",
+						},
+						Destination: backendconfig.DestinationT{
+							ID: "did-1",
+							Config: map[string]interface{}{
+								"syncFrequency": "60",
+							},
+						},
+					},
+					"sid-2": {
+						WorkspaceID: "wid1",
+						Source: backendconfig.SourceT{
+							ID: "sid-2",
+						},
+						Destination: backendconfig.DestinationT{
+							ID: "did-1",
+							Config: map[string]interface{}{
+								"syncFrequency": "60",
+							},
+						},
+					},
+				},
+				sourceID: "sid-2",
+				configOverride: map[string]any{
+					"Warehouse.grpc.defaultLatencyAggregationType":  "p90",
+					"Warehouse.pipelines.sid-2.did-1.syncFrequency": "10",
+				},
+				aggregationType: model.MaxLatency,
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				c := config.New()
+				for k, v := range tc.configOverride {
+					c.Set(k, v)
+				}
+
+				g, err := NewGRPCServer(c, logger.NOP, stats.NOP, nil, nil, nil, nil)
+				require.NoError(t, err)
+
+				aggType, err := g.getLatencyAggregationType(tc.srcMap, tc.sourceID)
+				if tc.wantErr {
+					require.Zero(t, aggType)
+					require.Error(t, err)
+				} else {
+					require.Equal(t, tc.aggregationType, aggType)
+					require.NoError(t, err)
+				}
+			})
+		}
 	})
 }

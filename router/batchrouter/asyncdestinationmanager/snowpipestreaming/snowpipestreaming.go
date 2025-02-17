@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -57,6 +58,7 @@ func New(
 		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
+		validator:           validations.NewDestinationValidator(),
 	}
 
 	m.config.client.url = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
@@ -138,6 +140,15 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 	return client
 }
 
+func (m *Manager) validateConfig(ctx context.Context, dest *backendconfig.DestinationT) error {
+	dest.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
+	response := m.validator.Validate(ctx, dest)
+	if response.Success {
+		return nil
+	}
+	return errors.New(response.Error)
+}
+
 func (m *Manager) Now() time.Time {
 	return m.now()
 }
@@ -176,6 +187,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		switch {
 		case errors.Is(err, errAuthz):
 			m.setBackOff(err)
+			validationError := m.validateConfig(ctx, asyncDest.Destination)
+			if validationError != nil {
+				err = fmt.Errorf("failed to validate snowpipe credentials: %s", validationError.Error())
+			}
 			return m.failedJobs(asyncDest, err.Error())
 		case errors.Is(err, errBackoff):
 			return m.failedJobs(asyncDest, err.Error())
@@ -225,6 +240,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				if !isBackoffSet {
 					isBackoffSet = true
 					m.setBackOff(err)
+					validationError := m.validateConfig(ctx, asyncDest.Destination)
+					if validationError != nil && failedReason == "" {
+						failedReason = fmt.Sprintf("failed to validate snowpipe credentials: %s", validationError.Error())
+					}
 				}
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false

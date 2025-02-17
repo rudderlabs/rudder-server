@@ -170,6 +170,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 			f.conf,
 			f.logger.Child("warehouse"),
 			f.statsFactory,
+			whManager,
 		),
 
 		upload:         dto.Upload,
@@ -894,11 +895,11 @@ func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName s
 }
 
 func (job *UploadJob) IsWarehouseSchemaEmpty() bool {
-	return job.schemaHandle.IsWarehouseSchemaEmpty()
+	return job.schemaHandle.IsWarehouseSchemaEmpty(job.ctx)
 }
 
 func (job *UploadJob) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
-	return job.schemaHandle.GetTableSchemaInWarehouse(tableName)
+	return job.schemaHandle.GetTableSchemaInWarehouse(job.ctx, tableName)
 }
 
 func (job *UploadJob) GetTableSchemaInUpload(tableName string) model.TableSchema {

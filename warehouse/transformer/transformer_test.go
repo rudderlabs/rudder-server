@@ -626,7 +626,7 @@ func getTrackMetadata(destinationType, sourceCategory string) ptrans.Metadata {
 }
 
 func TestTransformer_CompareAndLog(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt")
+	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt.gz")
 	require.NoError(t, err)
 	require.NoError(t, tmpFile.Close())
 

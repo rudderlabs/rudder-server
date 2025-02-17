@@ -21,6 +21,7 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
+	w.channel.preTransform = make(chan *preTransformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess.Load()/w.handle.config().subJobSize+1))
 	w.start()
@@ -45,9 +46,10 @@ type worker struct {
 		wg     sync.WaitGroup     // worker wait group
 	}
 	channel struct { // worker channels
-		preprocess chan subJob                 // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		transform  chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
-		store      chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
+		preprocess   chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		preTransform chan *preTransformationMessage // preTransform is used to send jobs to store to arc, esch and tracking plan validation
+		transform    chan *transformationMessage    // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
+		store        chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
 }
 
@@ -69,12 +71,24 @@ func (w *worker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.transform)
+		defer close(w.channel.preTransform)
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 		for jobs := range w.channel.preprocess {
-			var val *transformationMessage
-			var err error
-			val, err = w.handle.processJobsForDest(w.partition, jobs)
+			val, err := w.handle.processJobsForDest(w.partition, jobs)
+			if err != nil {
+				panic(err)
+			}
+			w.channel.preTransform <- val
+		}
+	})
+
+	w.lifecycle.wg.Add(1)
+	rruntime.Go(func() {
+		defer w.lifecycle.wg.Done()
+		defer close(w.channel.transform)
+		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
+		for processedMessage := range w.channel.preTransform {
+			val, err := w.handle.generateTransformationMessage(processedMessage)
 			if err != nil {
 				panic(err)
 			}
