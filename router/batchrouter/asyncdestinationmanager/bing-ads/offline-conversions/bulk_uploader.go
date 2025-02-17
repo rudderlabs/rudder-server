@@ -69,22 +69,23 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	}
 	// validate for mscklid
 	clickID, hasClickID := fields["microsoftClickId"]
-	if !hasClickID || clickID == "" {
-		// Look for enhanced conversion fields: a non-empty email or phone field.
-		enhancedConversionProvided := false
-		for key, value := range fields {
-			if value == "" {
-				continue
-			}
-			if key == "email" || key == "phone" {
-				enhancedConversionProvided = true
-				break
-			}
+	enhancedConversionProvided := hasClickID && clickID != ""
+
+	// Check for enhanced conversion fields: email or phone.
+	if !enhancedConversionProvided {
+		if email, hasEmail := fields["email"]; hasEmail && email != "" {
+			enhancedConversionProvided = true
 		}
-		if !enhancedConversionProvided {
-			return payload, fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+		if phone, hasPhone := fields["phone"]; hasPhone && phone != "" {
+			enhancedConversionProvided = true
 		}
 	}
+
+	// Return error if no valid input is found.
+	if !enhancedConversionProvided {
+		return payload, fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+	}
+
 	if event.Action != "insert" {
 		// validate for adjusted time
 		err := validateField(fields, "adjustedConversionTime")
