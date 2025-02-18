@@ -11,6 +11,8 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -432,6 +434,17 @@ func (sh *schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		}
+	}
+	if diff.Exists {
+		sh.log.Infon("Table schema diff",
+			obskit.WorkspaceID(sh.warehouse.WorkspaceID),
+			obskit.DestinationType(sh.warehouse.Type),
+			obskit.DestinationID(sh.warehouse.Destination.ID),
+			obskit.Namespace(sh.warehouse.Namespace),
+			logger.NewStringField(logfield.TableName, tableName),
+			logger.NewIntField("GetTableSchemaInUploadCount", int64(len(tableSchema))),
+			logger.NewIntField("GetTableSchemaInWarehouseCount", int64(len(currentTableSchema))),
+		)
 	}
 	return diff
 }

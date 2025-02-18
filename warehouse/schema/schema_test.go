@@ -513,6 +513,7 @@ func TestSchema_TableSchemaDiff(t *testing.T) {
 
 			s := schema{
 				schemaInWarehouse: tc.currentSchema,
+				log:               logger.NOP,
 			}
 			diff := s.TableSchemaDiff(tc.tableName, tc.uploadTableSchema)
 			require.EqualValues(t, diff, tc.expected)

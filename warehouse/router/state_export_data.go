@@ -10,6 +10,9 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -394,7 +397,15 @@ func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string,
 }
 
 func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) (err error) {
-	job.logger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	job.logger.Infon("Adding columns",
+		obskit.WorkspaceID(job.warehouse.WorkspaceID),
+		obskit.DestinationType(job.warehouse.Type),
+		obskit.DestinationID(job.warehouse.Destination.ID),
+		obskit.Namespace(job.warehouse.Namespace),
+		logger.NewStringField(logfield.TableName, tName),
+		logger.NewIntField("columnsCount", int64(len(columnsMap))),
+		logger.NewField("columnsMap", columnsMap),
+	)
 
 	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
