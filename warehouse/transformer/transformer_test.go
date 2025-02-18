@@ -626,7 +626,7 @@ func getTrackMetadata(destinationType, sourceCategory string) ptrans.Metadata {
 }
 
 func TestTransformer_CompareAndLog(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt")
+	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt.gz")
 	require.NoError(t, err)
 	require.NoError(t, tmpFile.Close())
 
@@ -691,11 +691,12 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 						"event": "track" + strconv.Itoa(index+i+1),
 					},
 					Metadata: ptrans.Metadata{
-						MessageID:       strconv.Itoa(index + i + 1),
-						SourceID:        "sourceID",
-						DestinationID:   "destinationID",
-						SourceType:      "sourceType",
-						DestinationType: "destinationType",
+						MessageID:            strconv.Itoa(index + i + 1),
+						SourceID:             "sourceID",
+						DestinationID:        "destinationID",
+						SourceType:           "sourceType",
+						DestinationType:      "destinationType",
+						SourceDefinitionType: "sourceDefinitionType",
 					},
 				}
 			}),
@@ -714,6 +715,9 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	differingEvents := strings.Split(strings.Trim(string(data), "\n"), "\n")
+	differingEvents = lo.Filter(differingEvents, func(item string, index int) bool {
+		return strings.Contains(item, "message") // Filtering raw events as the file contains sample diff as well
+	})
 	require.Len(t, differingEvents, maxLoggedEvents)
 
 	for i := 0; i < maxLoggedEvents; i++ {

@@ -20,6 +20,7 @@ type (
 
 		stats struct {
 			comparisionTime  stats.Timer
+			matchedEvents    stats.Histogram
 			mismatchedEvents stats.Histogram
 		}
 		config struct {
