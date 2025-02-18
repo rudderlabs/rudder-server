@@ -3,7 +3,6 @@ package source
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -226,7 +226,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.Code)
 
 		var insertResponse insertJobResponse
-		err = json.NewDecoder(resp.Body).Decode(&insertResponse)
+		err = jsonrs.NewDecoder(resp.Body).Decode(&insertResponse)
 		require.NoError(t, err)
 		require.Nil(t, insertResponse.Err)
 		require.Len(t, insertResponse.JobIds, 5)
@@ -309,7 +309,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.Code)
 
 		var statusResponse jobStatusResponse
-		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
+		err = jsonrs.NewDecoder(resp.Body).Decode(&statusResponse)
 		require.NoError(t, err)
 		require.Equal(t, statusResponse.Status, model.SourceJobStatusWaiting.String())
 		require.Empty(t, statusResponse.Err)
@@ -337,7 +337,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.Code)
 
 		var statusResponse jobStatusResponse
-		err = json.NewDecoder(resp.Body).Decode(&statusResponse)
+		err = jsonrs.NewDecoder(resp.Body).Decode(&statusResponse)
 		require.NoError(t, err)
 		require.Equal(t, statusResponse.Status, model.SourceJobStatusAborted.String())
 		require.Equal(t, statusResponse.Err, errors.New("test error").Error())

@@ -50,6 +50,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -1406,7 +1407,7 @@ func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
 	ctx := context.TODO()
 	// Mark the start of operation. If we crash somewhere here, we delete the
 	// DS being added
-	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
+	opPayload, err := jsonrs.Marshal(&journalOpPayloadT{To: newDS})
 	if err != nil {
 		return err
 	}
@@ -2716,7 +2717,7 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 
 	// Need to recover the last failed operation
 	// Get the payload and undo
-	err = json.Unmarshal(opPayload, &opPayloadJSON)
+	err = jsonrs.Unmarshal(opPayload, &opPayloadJSON)
 	jd.assertError(err)
 
 	switch opType {

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -27,6 +26,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -44,8 +44,6 @@ const (
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Metadata struct {
 	SourceID            string                            `json:"sourceId"`
@@ -482,7 +480,7 @@ func (trans *handle) request(ctx context.Context, url string, labels transformer
 	)
 
 	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
+		rawJSON, err = jsonrs.Marshal(data)
 	})
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
@@ -538,7 +536,7 @@ func (trans *handle) request(ctx context.Context, url string, labels transformer
 
 		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
 		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = json.Unmarshal(respData, &transformerResponses)
+			err = jsonrs.Unmarshal(respData, &transformerResponses)
 		})
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays

@@ -19,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -57,7 +58,7 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 		},
 	}
 
-	return json.Marshal(v1TransformerEvent)
+	return jsonrs.Marshal(v1TransformerEvent)
 }
 
 func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
@@ -95,7 +96,7 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 		},
 	}
 
-	return json.Marshal(v2TransformerEvent)
+	return jsonrs.Marshal(v2TransformerEvent)
 }
 
 func (v2 *v2Adapter) getTransformerURL(sourceType string) (string, error) {
@@ -153,7 +154,7 @@ func prepareTransformerEventRequestV2(req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 
-	return json.Marshal(requestJson)
+	return jsonrs.Marshal(requestJson)
 }
 
 type outputToSource struct {
@@ -266,7 +267,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 		]
 	*/
 	var responses []transformerResponse
-	err = json.Unmarshal(respBody, &responses)
+	err = jsonrs.Unmarshal(respBody, &responses)
 	if err != nil {
 		statusCode := response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat)
 		err := errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat))

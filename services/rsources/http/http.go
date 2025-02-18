@@ -6,9 +6,9 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
@@ -270,7 +270,7 @@ func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []str
 }
 
 func marshalAndWriteResponse(w http.ResponseWriter, response interface{}) (err error) {
-	body, err := jsoniter.Marshal(response)
+	body, err := jsonrs.Marshal(response)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return err

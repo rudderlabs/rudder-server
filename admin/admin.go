@@ -33,7 +33,6 @@ package admin
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -44,6 +43,7 @@ import (
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -98,7 +98,7 @@ func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 		}
 	}()
 	loggingConfigMap := logger.GetLoggingConfig()
-	formattedOutput, err := json.MarshalIndent(loggingConfigMap, "", "  ")
+	formattedOutput, err := jsonrs.MarshalIndent(loggingConfigMap, "", "  ")
 	*reply = string(formattedOutput)
 	return err
 }

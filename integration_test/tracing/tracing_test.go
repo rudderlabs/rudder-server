@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -672,7 +672,7 @@ func getZipkinTraces(t *testing.T, zipkinTracesURL string) [][]tracemodel.Zipkin
 	spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
 
 	var zipkinTraces [][]tracemodel.ZipkinTrace
-	require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
+	require.NoError(t, jsonrs.Unmarshal([]byte(spansBody), &zipkinTraces))
 
 	for _, zipkinTrace := range zipkinTraces {
 		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {

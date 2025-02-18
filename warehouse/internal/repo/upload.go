@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,17 +14,15 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
 
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var syncStatusMap = map[string]string{
 	"success": model.ExportedData,
@@ -147,7 +146,7 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 		NextRetryTime:    upload.NextRetryTime,
 	}
 
-	metadata, err := json.Marshal(metadataMap)
+	metadata, err := jsonrs.Marshal(metadataMap)
 	if err != nil {
 		return 0, err
 	}
@@ -436,7 +435,7 @@ func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts Pro
 // UploadTimings returns the timings for an upload.
 func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
 	var (
-		rawJSON jsoniter.RawMessage
+		rawJSON json.RawMessage
 		timings model.Timings
 	)
 
@@ -455,7 +454,7 @@ func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timi
 		return timings, err
 	}
 
-	err = json.Unmarshal(rawJSON, &timings)
+	err = jsonrs.Unmarshal(rawJSON, &timings)
 	if err != nil {
 		return timings, err
 	}
@@ -513,16 +512,16 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 	upload.FirstEventAt = firstEventAt.Time.UTC()
 	upload.LastEventAt = lastEventAt.Time.UTC()
 
-	if err := json.Unmarshal(schema, &upload.UploadSchema); err != nil {
+	if err := jsonrs.Unmarshal(schema, &upload.UploadSchema); err != nil {
 		return fmt.Errorf("unmarshal upload schema: %w", err)
 	}
 	var metadata UploadMetadata
-	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+	if err := jsonrs.Unmarshal(metadataRaw, &metadata); err != nil {
 		return fmt.Errorf("unmarshal metadata: %w", err)
 	}
 
 	if len(timingsRaw) > 0 {
-		if err := json.Unmarshal(timingsRaw, &upload.Timings); err != nil {
+		if err := jsonrs.Unmarshal(timingsRaw, &upload.Timings); err != nil {
 			return fmt.Errorf("unmarshal timings: %w", err)
 		}
 	}
@@ -814,7 +813,7 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 
 		// set error only for failed uploads. skip for retried and then successful uploads
 		if uploadInfo.Status != model.ExportedData && len(timingsRaw) > 0 {
-			_ = json.Unmarshal(timingsRaw, &timings)
+			_ = jsonrs.Unmarshal(timingsRaw, &timings)
 
 			errs := gjson.Get(
 				uploadInfo.Error,
@@ -1207,7 +1206,7 @@ func (u *Uploads) RetrieveFailedBatches(
 		failedBatch.FirstHappenedAt = failedBatch.FirstHappenedAt.UTC()
 
 		if len(timingsRaw) > 0 {
-			_ = json.Unmarshal(timingsRaw, &timings)
+			_ = jsonrs.Unmarshal(timingsRaw, &timings)
 
 			errs := gjson.Get(
 				failedBatch.Error,

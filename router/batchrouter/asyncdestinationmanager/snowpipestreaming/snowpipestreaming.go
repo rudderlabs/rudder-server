@@ -15,7 +15,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -28,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	snowpipeapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
@@ -37,8 +37,6 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(
 	conf *config.Config,
@@ -278,7 +276,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	var importParameters stdjson.RawMessage
 	if len(importInfos) > 0 {
-		importIDBytes, err := json.Marshal(importInfos)
+		importIDBytes, err := jsonrs.Marshal(importInfos)
 		if err != nil {
 			return m.abortJobs(asyncDest, fmt.Errorf("failed to marshal import id: %w", err).Error())
 		}
@@ -318,7 +316,7 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 
 	for scanner.Scan() {
 		var e event
-		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+		if err := jsonrs.Unmarshal(scanner.Bytes(), &e); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 		}
 		e.setUUIDTimestamp(formattedTS)
@@ -447,7 +445,7 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
 	var importInfos []*importInfo
-	err := json.Unmarshal([]byte(pollInput.ImportId), &importInfos)
+	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &importInfos)
 	if err != nil {
 		return common.PollStatusResponse{
 			InProgress: false,
@@ -585,7 +583,7 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 	m.logger.Infon("Getting import stats for snowpipe streaming destination")
 
 	var importInfos []*importInfo
-	err := json.Unmarshal([]byte(input.FailedJobParameters), &importInfos)
+	err := jsonrs.Unmarshal([]byte(input.FailedJobParameters), &importInfos)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: http.StatusBadRequest,

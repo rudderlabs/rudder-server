@@ -29,12 +29,12 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -968,7 +968,8 @@ func GetInstanceID() string {
 	return ""
 }
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+// explicitly using json-iter due to its unique behaviour with respect to handling invalid characters
+var jsonfast jsonrs.JSON = jsonrs.NewWithLibrary(jsonrs.JsoniterLib)
 
 // SanitizeJSON makes a json payload safe for writing into postgres.
 // 1. Removes any \u0000 string from the payload

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -98,7 +98,7 @@ func TestTransformerContract(t *testing.T) {
 		bcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/workspaceConfig":
-				response, _ := json.Marshal(workspaceConfig)
+				response, _ := jsonrs.Marshal(workspaceConfig)
 				_, _ = w.Write(response)
 			default:
 				w.WriteHeader(http.StatusNotFound)

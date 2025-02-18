@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -28,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -39,8 +39,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	BATCH            = "BATCH"
@@ -164,7 +162,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	transformMessageCopy, jobs := transformMessage.Dehydrate()
 
 	// Call remote transformation
-	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
+	rawJSON, err := jsonrs.Marshal(&transformMessageCopy)
 	if err != nil {
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
@@ -276,7 +274,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	if trans.oAuthV2EnabledLoader.Load() {
 		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 		// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
-		err = json.Unmarshal(respData, &transResp)
+		err = jsonrs.Unmarshal(respData, &transResp)
 		if err == nil && transResp.OriginalResponse != "" {
 			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
 		}
@@ -296,11 +294,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
-			err = jsonfast.Unmarshal(respData, &destinationJobs)
+			err = jsonrs.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
 			integrations.CollectIntgTransformErrorStats(rawResp)
-			err = jsonfast.Unmarshal(rawResp, &destinationJobs)
+			err = jsonrs.Unmarshal(rawResp, &destinationJobs)
 		}
 
 		// Record response events metric
@@ -480,7 +478,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
 	if trans.oAuthV2EnabledLoader.Load() {
-		_ = json.Unmarshal(respData, &transportResponse)
+		_ = jsonrs.Unmarshal(respData, &transportResponse)
 		// unmarshal unsuccessful scenarios
 		// if respData is not a valid json
 		if transportResponse.OriginalResponse != "" {
@@ -725,7 +723,7 @@ type transformerResponse struct {
 // {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
 func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
 	var transformedJobs []transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	err := jsonrs.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}
@@ -741,7 +739,7 @@ func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) 
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
 	var transformedJobs transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	err := jsonrs.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}

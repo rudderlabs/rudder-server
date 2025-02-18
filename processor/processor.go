@@ -15,13 +15,13 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -68,8 +68,6 @@ const (
 	EventFilter           = "EVENT_FILTER"
 	sourceCategoryWebhook = "webhook"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
 	h := &Handle{transformer: transformer, conf: c}
@@ -1073,7 +1071,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 		}
 		for _, job := range jobs {
 			var params map[string]interface{}
-			err := jsonfast.Unmarshal(job.Parameters, &params)
+			err := jsonrs.Unmarshal(job.Parameters, &params)
 			if err != nil {
 				proc.logger.Errorf("Error while UnMarshaling live event parameters: %v", err)
 				continue
@@ -1086,14 +1084,14 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			statusCode := fmt.Sprint(params["status_code"])
 			sentAt := time.Now().Format(misc.RFC3339Milli)
 			events := make([]map[string]interface{}, 0)
-			err = jsonfast.Unmarshal(job.EventPayload, &events)
+			err = jsonrs.Unmarshal(job.EventPayload, &events)
 			if err != nil {
 				proc.logger.Errorf("Error while UnMarshaling live event payload: %v", err)
 				continue
 			}
 			for i := range events {
 				event := &events[i]
-				eventPayload, err := jsonfast.Marshal(*event)
+				eventPayload, err := jsonrs.Marshal(*event)
 				if err != nil {
 					proc.logger.Errorf("Error while Marshaling live event payload: %v", err)
 					continue
@@ -1173,7 +1171,7 @@ func (proc *Handle) getTransformerEvents(
 					return []byte(`{}`)
 				}
 
-				sampleEvent, err := jsonfast.Marshal(message)
+				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
 					sampleEvent = []byte(`{}`)
@@ -1453,7 +1451,7 @@ func (proc *Handle) getTransformationMetrics(
 				return eventsByMessageID[msgID].SingularEvent
 			},
 		)
-		payload, err := jsonfast.Marshal(messages)
+		payload, err := jsonrs.Marshal(messages)
 		if err != nil {
 			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
 			continue
@@ -1472,7 +1470,7 @@ func (proc *Handle) getTransformationMetrics(
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
 						return []byte(`{}`)
 					}
-					sampleEvent, err := jsonfast.Marshal(message)
+					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
 						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
 						sampleEvent = []byte(`{}`)
@@ -1501,7 +1499,7 @@ func (proc *Handle) getTransformationMetrics(
 		if eventContext, castOk := failedEvent.Output["context"].(map[string]interface{}); castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
 		}
-		marshalledParams, err := jsonfast.Marshal(params)
+		marshalledParams, err := jsonrs.Marshal(params)
 		if err != nil {
 			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
 			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
@@ -1788,7 +1786,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 	var dedupKeysWithWorkspaceID []dedupTypes.KeyValue
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
-		if err := jsonfast.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
+		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
 			return nil, err
 		}
 
@@ -1821,7 +1819,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 
 		parameters := batchEvent.Parameters
 		var gatewayBatchEvent types.GatewayBatchRequest
-		if err := jsonfast.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent); err != nil {
+		if err := jsonrs.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent); err != nil {
 			if span != nil {
 				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
 			}
@@ -1854,7 +1852,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		for _, singularEvent := range gatewayBatchEvent.Batch {
 			messageId := stringify.Any(singularEvent["messageId"])
 			payloadFunc := ro.Memoize(func() json.RawMessage {
-				payloadBytes, err := jsonfast.Marshal(singularEvent)
+				payloadBytes, err := jsonrs.Marshal(singularEvent)
 				if err != nil {
 					return nil
 				}
@@ -3034,7 +3032,7 @@ func (proc *Handle) transformSrcDest(
 	trace.WithRegion(ctx, "MarshalForDB", func() {
 		// Save the JSON in DB. This is what the router uses
 		for i := range response.Events {
-			destEventJSON, err := jsonfast.Marshal(response.Events[i].Output)
+			destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
 			// Should be a valid JSON since it's our transformation, but we handle it anyway
 			if err != nil {
 				continue
@@ -3089,7 +3087,7 @@ func (proc *Handle) transformSrcDest(
 				WorkspaceId:             workspaceId,
 				TraceParent:             metadata.TraceParent,
 			}
-			marshalledParams, err := jsonfast.Marshal(params)
+			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
 				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
 				panic(err)

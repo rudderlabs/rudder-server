@@ -3,7 +3,6 @@ package warehouse_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -44,6 +43,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -322,7 +322,7 @@ func TestUploads(t *testing.T) {
 				}()
 
 				require.Equal(t, http.MethodGet, r.Method)
-				body, err := json.Marshal(backendconfig.DestinationT{
+				body, err := jsonrs.Marshal(backendconfig.DestinationT{
 					ID:      destinationID,
 					Enabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -1759,8 +1759,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -1793,7 +1792,7 @@ func TestDestinationTransformation(t *testing.T) {
 			require.NoError(t, err)
 
 			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
@@ -1893,8 +1892,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -1924,7 +1922,7 @@ func TestDestinationTransformation(t *testing.T) {
 			require.NoError(t, err)
 
 			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
@@ -2012,8 +2010,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -2049,7 +2046,7 @@ func TestDestinationTransformation(t *testing.T) {
 			require.NoError(t, err)
 
 			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)

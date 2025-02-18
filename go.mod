@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.23.5
+go 1.23.6
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -94,6 +94,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.7.1
 	github.com/stretchr/testify v1.10.0
+	github.com/sugawarayuuta/sonnet v0.0.0-20231004000330-239c7b6e4ce8
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
 	github.com/trinodb/trino-go-client v0.321.0

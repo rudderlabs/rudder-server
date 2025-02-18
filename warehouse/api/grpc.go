@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -613,7 +614,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 		}
 	)
 
-	err = json.Unmarshal(json.RawMessage(req.Body), &reqModel)
+	err = jsonrs.Unmarshal(json.RawMessage(req.Body), &reqModel)
 	if err != nil {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body")
@@ -691,14 +692,14 @@ func (err invalidDestinationCredErr) Error() string {
 func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
 
-	byt, err := json.Marshal(request)
+	byt, err := jsonrs.Marshal(request)
 	if err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with error: \n%s", err.Error())
 	}
 
 	var validateRequest validateObjectStorageRequest
-	if err := json.Unmarshal(byt, &validateRequest); err != nil {
+	if err := jsonrs.Unmarshal(byt, &validateRequest); err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with error: \n%s", err)
 	}

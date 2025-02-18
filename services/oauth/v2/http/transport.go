@@ -16,6 +16,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
@@ -151,7 +152,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 			OriginalResponse:    string(respData),
 			InterceptorResponse: interceptorResp,
 		}
-		interceptorRespBytes, _ = json.Marshal(transResp)
+		interceptorRespBytes, _ = jsonrs.Marshal(transResp)
 		rts.res.Body = io.NopCloser(bytes.NewReader(interceptorRespBytes))
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -26,8 +25,6 @@ const (
 	violationErrors     = "violationErrors"
 	redshiftStringLimit = 512
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *Transformer {
 	t := &Transformer{

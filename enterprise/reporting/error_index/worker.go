@@ -2,7 +2,6 @@ package error_index
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -177,7 +177,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 	jobWithPayloadsMap := make(map[string][]jobWithPayload)
 	for _, job := range jobs {
 		var p payload
-		if err := json.Unmarshal(job.EventPayload, &p); err != nil {
+		if err := jsonrs.Unmarshal(job.EventPayload, &p); err != nil {
 			return nil, fmt.Errorf("unmarshalling payload: %w", err)
 		}
 
