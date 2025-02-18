@@ -59,17 +59,17 @@ const (
 )
 
 var (
-	UploadFieldStatus          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"status", v} }
-	UploadFieldStartLoadFileID UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"start_load_file_id", v} }
-	UploadFieldEndLoadFileID   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"end_load_file_id", v} }
-	UploadFieldUpdatedAt       UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"updated_at", v} }
-	UploadFieldTimings         UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"timings", v} }
-	UploadFieldSchema          UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"schema", v} }
-	UploadFieldLastExecAt      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"last_exec_at", v} }
-	UploadFieldInProgress      UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"in_progress", v} }
-	UploadFieldMetadata        UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"metadata", v} }
-	UploadFieldError           UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error", v} }
-	UploadFieldErrorCategory   UpdateField = func(v interface{}) UpdateKeyValue { return keyValue{"error_category", v} }
+	UploadFieldStatus          UpdateField = func(v any) UpdateKeyValue { return keyValue{"status", v} }
+	UploadFieldStartLoadFileID UpdateField = func(v any) UpdateKeyValue { return keyValue{"start_load_file_id", v} }
+	UploadFieldEndLoadFileID   UpdateField = func(v any) UpdateKeyValue { return keyValue{"end_load_file_id", v} }
+	UploadFieldUpdatedAt       UpdateField = func(v any) UpdateKeyValue { return keyValue{"updated_at", v} }
+	UploadFieldTimings         UpdateField = func(v any) UpdateKeyValue { return keyValue{"timings", v} }
+	UploadFieldSchema          UpdateField = func(v any) UpdateKeyValue { return keyValue{"schema", v} }
+	UploadFieldLastExecAt      UpdateField = func(v any) UpdateKeyValue { return keyValue{"last_exec_at", v} }
+	UploadFieldInProgress      UpdateField = func(v any) UpdateKeyValue { return keyValue{"in_progress", v} }
+	UploadFieldMetadata        UpdateField = func(v any) UpdateKeyValue { return keyValue{"metadata", v} }
+	UploadFieldError           UpdateField = func(v any) UpdateKeyValue { return keyValue{"error", v} }
+	UploadFieldErrorCategory   UpdateField = func(v any) UpdateKeyValue { return keyValue{"error_category", v} }
 )
 
 type Uploads repo
@@ -229,14 +229,14 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 
 type FilterBy struct {
 	Key       string
-	Value     interface{}
+	Value     any
 	NotEquals bool
 }
 
 func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
 
-	args := make([]interface{}, 0)
+	args := make([]any, 0)
 	for i, filter := range filters {
 
 		if filter.NotEquals {
@@ -332,7 +332,7 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 		opts.SkipWorkspaces = []string{}
 	}
 
-	args := []interface{}{
+	args := []any{
 		destType,
 		model.ExportedData,
 		model.Aborted,
@@ -738,7 +738,7 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 		len(filterArgs)+1,
 		len(filterArgs)+2,
 	)
-	stmtArgs := append([]interface{}{}, append(filterArgs, limit, offset)...)
+	stmtArgs := append([]any{}, append(filterArgs, limit, offset)...)
 
 	rows, err := u.db.QueryContext(ctx, stmt, stmtArgs...)
 	if err != nil {
@@ -834,9 +834,9 @@ func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.S
 	return uploadInfos, totalUploads, nil
 }
 
-func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []interface{}) {
+func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []any) {
 	var queryFilters string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	if suo.SourceIDs != nil {
 		queryFilters += fmt.Sprintf(" AND source_id = ANY($%d)", len(queryArgs)+1)
@@ -933,7 +933,7 @@ func (u *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, er
 		len(filterArgs)+2,
 		filterQuery,
 	)
-	stmtArgs := append([]interface{}{}, append(filterArgs, model.Waiting, u.now())...)
+	stmtArgs := append([]any{}, append(filterArgs, model.Waiting, u.now())...)
 
 	r, err := u.db.ExecContext(ctx, stmt, stmtArgs...)
 	if err != nil {
@@ -942,9 +942,9 @@ func (u *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, er
 	return r.RowsAffected()
 }
 
-func retryQueryArgs(ro *model.RetryOptions) (string, []interface{}) {
+func retryQueryArgs(ro *model.RetryOptions) (string, []any) {
 	var queryFilters string
-	var queryArgs []interface{}
+	var queryArgs []any
 
 	if ro.WorkspaceID != "" {
 		queryFilters += fmt.Sprintf(" AND workspace_id = $%d", len(queryArgs)+1)
@@ -1170,7 +1170,7 @@ func (u *Uploads) RetrieveFailedBatches(
 		end = u.now()
 	}
 
-	stmtArgs := []interface{}{
+	stmtArgs := []any{
 		req.DestinationID, req.WorkspaceID, start, end,
 		pq.Array([]string{model.Waiting, "%" + model.Failed + "%", model.Aborted}),
 		warehouseutils.DiscardsTable,
@@ -1247,7 +1247,7 @@ func (u *Uploads) RetryFailedBatches(
 		end = u.now()
 	}
 
-	stmtArgs := []interface{}{
+	stmtArgs := []any{
 		req.DestinationID, req.WorkspaceID, start, end,
 		model.Waiting, u.now(),
 	}
@@ -1290,7 +1290,7 @@ func (u *Uploads) UpdateWithTx(ctx context.Context, tx *sqlmiddleware.Tx, id int
 
 func (u *Uploads) update(
 	ctx context.Context,
-	exec func(context.Context, string, ...interface{}) (sql.Result, error),
+	exec func(context.Context, string, ...any) (sql.Result, error),
 	id int64,
 	fields []UpdateKeyValue,
 ) error {
@@ -1301,7 +1301,7 @@ func (u *Uploads) update(
 	filters := strings.Join(lo.Map(fields, func(item UpdateKeyValue, index int) string {
 		return fmt.Sprintf(" %s = $%d ", item.key(), index+1)
 	}), ", ")
-	filtersArgs := lo.Map(fields, func(item UpdateKeyValue, index int) interface{} {
+	filtersArgs := lo.Map(fields, func(item UpdateKeyValue, index int) any {
 		return item.value()
 	})
 
@@ -1380,4 +1380,70 @@ func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx conte
 	}
 
 	return abortedUploadsInfo, nil
+}
+
+func (u *Uploads) GetSyncLatencies(ctx context.Context, request model.SyncLatencyRequest) ([]model.LatencyTimeSeriesDataPoint, error) {
+	aggregationSQL := getLatencyAggregationSQL(request.AggregationType)
+
+	var filterSQL strings.Builder
+	filterSQL.WriteString(`destination_id = $1 AND workspace_id = $2 AND status = $3 AND created_at >= $4`)
+	filterParams := []any{request.DestinationID, request.WorkspaceID, model.ExportedData, request.StartTime}
+
+	if request.SourceID != "" {
+		filterParams = append(filterParams, request.SourceID)
+		filterSQL.WriteString(` AND source_id = $` + strconv.Itoa(len(filterParams)))
+	}
+
+	filterParams = append(filterParams, request.AggregationMinutes)
+	intervalParamIndex := len(filterParams)
+
+	query := fmt.Sprintf(`
+		SELECT
+			FLOOR(EXTRACT(EPOCH FROM created_at) / ($%[1]d * 60)) * ($%[1]d * 60) * 1000 AS bucket,
+			%s
+		FROM wh_uploads
+		WHERE %s
+		GROUP BY bucket
+		ORDER BY bucket;
+	`,
+		intervalParamIndex,
+		aggregationSQL,
+		filterSQL.String(),
+	)
+
+	rows, err := u.db.QueryContext(ctx, query, filterParams...)
+	if err != nil {
+		return nil, fmt.Errorf("querying sync latencies: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var syncLatencies []model.LatencyTimeSeriesDataPoint
+	for rows.Next() {
+		var bucket, latency float64
+		if err := rows.Scan(&bucket, &latency); err != nil {
+			return nil, fmt.Errorf("scanning sync latencies: %w", err)
+		}
+
+		syncLatencies = append(syncLatencies, model.LatencyTimeSeriesDataPoint{
+			TimestampMillis: bucket,
+			LatencySeconds:  latency,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sync latencies: iterating rows: %w", err)
+	}
+	return syncLatencies, nil
+}
+
+func getLatencyAggregationSQL(aggType model.LatencyAggregationType) string {
+	switch aggType {
+	case model.P90Latency:
+		return "PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - created_at)))"
+	case model.P95Latency:
+		return "PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (updated_at - created_at)))"
+	case model.AvgLatency:
+		return "AVG(EXTRACT(EPOCH FROM (updated_at - created_at)))"
+	default:
+		return "MAX(EXTRACT(EPOCH FROM (updated_at - created_at)))" // Default to max
+	}
 }

@@ -3,6 +3,10 @@ package types
 import (
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -137,4 +141,52 @@ type EventParams struct {
 	SourceTaskRunId string `json:"source_task_run_id"`
 	TraceParent     string `json:"traceparent"`
 	DestinationID   string `json:"destination_id"`
+}
+
+type TransformerMetricLabels struct {
+	Endpoint         string // hostname of the service
+	DestinationType  string // BQ, etc.
+	SourceType       string // webhook
+	Language         string // js, python
+	Stage            string // processor, router, gateway
+	WorkspaceID      string // workspace identifier
+	SourceID         string // source identifier
+	DestinationID    string // destination identifier
+	TransformationID string // transformation identifier
+}
+
+// ToStatsTag converts transformerMetricLabels to stats.Tags and includes legacy tags for backwards compatibility
+func (t TransformerMetricLabels) ToStatsTag() stats.Tags {
+	tags := stats.Tags{
+		"endpoint":         t.Endpoint,
+		"destinationType":  t.DestinationType,
+		"sourceType":       t.SourceType,
+		"language":         t.Language,
+		"stage":            t.Stage,
+		"workspaceId":      t.WorkspaceID,
+		"destinationId":    t.DestinationID,
+		"sourceId":         t.SourceID,
+		"transformationId": t.TransformationID,
+
+		// Legacy tags: to be removed
+		"dest_type": t.DestinationType,
+		"dest_id":   t.DestinationID,
+		"src_id":    t.SourceID,
+	}
+
+	return tags
+}
+
+// ToLoggerFields converts the metric labels to a slice of logger.Fields
+func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
+	return []logger.Field{
+		logger.NewStringField("endpoint", t.Endpoint),
+		logger.NewStringField("stage", t.Stage),
+		obskit.DestinationType(t.DestinationType),
+		obskit.SourceType(t.SourceType),
+		obskit.WorkspaceID(t.WorkspaceID),
+		obskit.DestinationID(t.DestinationID),
+		obskit.SourceID(t.SourceID),
+		logger.NewStringField("transformationId", t.TransformationID),
+	}
 }

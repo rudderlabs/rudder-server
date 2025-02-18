@@ -20,6 +20,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -1978,6 +1980,125 @@ func normalizeErrors(transformerResponse []types.DestinationJobT, prefix string)
 		job := &transformerResponse[i]
 		if strings.HasPrefix(job.Error, prefix) {
 			job.Error = prefix
+		}
+	}
+}
+
+func TestTransformerMetrics(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+	loggerOverride = logger.NOP
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	// Setup test server
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+		response := []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
+		}
+		b, err := json.Marshal(response)
+		require.NoError(t, err)
+
+		// For BATCH transform type, don't wrap in output field
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
+
+	t.Setenv("DEST_TRANSFORM_URL", srv.URL)
+	// Create transformer with stats store
+	tr := &handle{
+		stats:                     statsStore,
+		logger:                    logger.NOP,
+		client:                    srv.Client(),
+		proxyClient:               srv.Client(),
+		tr:                        &http.Transport{},
+		oAuthV2EnabledLoader:      isOAuthV2EnabledLoader,
+		expirationTimeDiff:        expTimeDiff,
+		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType), // Add this line
+	}
+
+	// Create test message
+	transformMessage := &types.TransformMessageT{
+		DestType: "test_destination", // Add this line
+		Data: []types.RouterJobT{
+			{
+				JobMetadata: types.JobMetadataT{
+					JobID:       1,
+					WorkspaceID: "workspace_1",
+					SourceID:    "source_1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "destination_1",
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "test_destination",
+					},
+				},
+			},
+			{
+				JobMetadata: types.JobMetadataT{
+					JobID:       2,
+					WorkspaceID: "workspace_1",
+					SourceID:    "source_1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "destination_1",
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "test_destination",
+					},
+				},
+			},
+		},
+	}
+	transformMessage.Data[0].JobMetadata.SourceCategory = "webhook"
+	transformMessage.Data[1].JobMetadata.SourceCategory = "webhook"
+
+	// Expected tags for metrics
+	expectedTags := stats.Tags{
+		"endpoint":        getEndpointFromURL(srv.URL),
+		"stage":           "router",
+		"destinationType": "test_destination",
+		"sourceType":      "webhook",
+		"workspaceId":     "workspace_1",
+		"destinationId":   "destination_1",
+		"sourceId":        "source_1",
+		"destType":        "test_destination", // Legacy tag
+	}
+
+	// Perform transformation
+	response := tr.Transform(BATCH, transformMessage)
+
+	// Verify response
+	require.NotNil(t, response)
+	require.Len(t, response, 2)
+	require.Equal(t, http.StatusOK, response[0].StatusCode)
+	require.Equal(t, http.StatusOK, response[1].StatusCode)
+
+	// Verify metrics
+	metricsToCheck := []string{
+		"transformer_client_request_total_bytes",
+		"transformer_client_response_total_bytes",
+		"transformer_client_request_total_events",
+		"transformer_client_response_total_events",
+		"transformer_client_total_durations_seconds",
+	}
+
+	for _, metricName := range metricsToCheck {
+		measurements := statsStore.GetByName(metricName)
+		require.NotEmpty(t, measurements, "metric %s should not be empty", metricName)
+		require.Equal(t, expectedTags, measurements[0].Tags, "metric %s tags mismatch", metricName)
+
+		// Verify counts for event metrics
+		if metricName == "transformer_client_request_total_events" ||
+			metricName == "transformer_client_response_total_events" {
+			require.Equal(t, float64(2), measurements[0].Value,
+				"metric %s should have count of 2 events", metricName)
 		}
 	}
 }

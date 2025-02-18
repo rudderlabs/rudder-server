@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime/trace"
 	"strconv"
@@ -22,9 +23,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	transformer_utils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -145,7 +146,18 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	trans.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.Transformer.maxRetryBackoffInterval")
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
-	trans.httpClient = transformerclient.NewClient(transformer_utils.TransformerClientConfig(conf))
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: conf.GetReloadableDurationVar(600, time.Second, "HttpClient.procTransformer.timeout"),
+		ClientTTL:     conf.GetReloadableDurationVar(10, time.Second, "Transformer.Client.ttl"),
+		ClientType:    conf.GetReloadableStringVar("stdlib", "Transformer.Client.type"),
+		PickerType:    conf.GetReloadableStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetReloadableBoolVar(true, "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetReloadableIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetReloadableIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetReloadableDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+
+	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
 
 	for _, opt := range opts {
 		opt(&trans)
@@ -156,23 +168,71 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 // Transform function is used to invoke destination transformer API
 func (trans *handle) Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
-	return trans.transform(ctx, clientEvents, trans.destTransformURL(clientEvents[0].Destination.DestinationDefinition.Name), batchSize, destTransformerStage)
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
+	destinationType := clientEvents[0].Destination.DestinationDefinition.Name
+	destURL := trans.destTransformURL(destinationType)
+
+	labels := types.TransformerMetricLabels{
+		Endpoint:        getEndpointFromURL(destURL),
+		Stage:           destTransformerStage,
+		DestinationType: destinationType,
+		DestinationID:   clientEvents[0].Destination.ID,
+		SourceID:        clientEvents[0].Metadata.SourceID,
+		WorkspaceID:     clientEvents[0].Metadata.WorkspaceID,
+		SourceType:      clientEvents[0].Metadata.SourceType,
+	}
+	return trans.transform(ctx, clientEvents, destURL, batchSize, labels)
 }
 
 // UserTransform function is used to invoke user transformer API
 func (trans *handle) UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
 	var dehydratedClientEvents []types.TransformerEvent
 	for _, clientEvent := range clientEvents {
 		dehydratedClientEvent := clientEvent.GetVersionsOnly()
 		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
 	}
 
-	return trans.transform(ctx, dehydratedClientEvents, trans.userTransformURL(), batchSize, userTransformerStage)
+	transformationID := ""
+	if len(clientEvents[0].Destination.Transformations) > 0 {
+		transformationID = clientEvents[0].Destination.Transformations[0].ID
+	}
+
+	userURL := trans.userTransformURL()
+	labels := types.TransformerMetricLabels{
+		Endpoint:         getEndpointFromURL(userURL),
+		Stage:            userTransformerStage,
+		DestinationType:  clientEvents[0].Destination.DestinationDefinition.Name,
+		SourceType:       clientEvents[0].Metadata.SourceType,
+		WorkspaceID:      clientEvents[0].Metadata.WorkspaceID,
+		SourceID:         clientEvents[0].Metadata.SourceID,
+		DestinationID:    clientEvents[0].Destination.ID,
+		TransformationID: transformationID,
+	}
+	return trans.transform(ctx, dehydratedClientEvents, userURL, batchSize, labels)
 }
 
 // Validate function is used to invoke tracking plan validation API
 func (trans *handle) Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
-	return trans.transform(ctx, clientEvents, trans.trackingPlanValidationURL(), batchSize, trackingPlanValidationStage)
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
+	validationURL := trans.trackingPlanValidationURL()
+	labels := types.TransformerMetricLabels{
+		Endpoint:    getEndpointFromURL(validationURL),
+		Stage:       trackingPlanValidationStage,
+		SourceID:    clientEvents[0].Metadata.SourceID,
+		WorkspaceID: clientEvents[0].Metadata.WorkspaceID,
+		SourceType:  clientEvents[0].Metadata.SourceType,
+	}
+	return trans.transform(ctx, clientEvents, validationURL, batchSize, labels)
 }
 
 func (trans *handle) transform(
@@ -180,7 +240,7 @@ func (trans *handle) transform(
 	clientEvents []types.TransformerEvent,
 	url string,
 	batchSize int,
-	stage string,
+	labels types.TransformerMetricLabels,
 ) types.Response {
 	if len(clientEvents) == 0 {
 		return types.Response{}
@@ -192,12 +252,6 @@ func (trans *handle) transform(
 			clientEvents[i].Metadata.OriginalSourceID, clientEvents[i].Metadata.SourceID = clientEvents[i].Metadata.SourceID, clientEvents[i].Metadata.OriginalSourceID
 		}
 	}
-	sTags := stats.Tags{
-		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
-		"dest_id":   clientEvents[0].Destination.ID,
-		"src_id":    clientEvents[0].Metadata.SourceID,
-		"stage":     stage,
-	}
 
 	var trackWg sync.WaitGroup
 	defer trackWg.Wait()
@@ -206,11 +260,8 @@ func (trans *handle) transform(
 
 	trackWg.Add(1)
 	go func() {
-		var loggerCtx []interface{}
-		for k, v := range sTags {
-			loggerCtx = append(loggerCtx, k, v)
-		}
-		trackLongRunningTransformation(ctx, stage, trans.config.timeoutDuration, trans.logger.With(loggerCtx...))
+		l := trans.logger.Withn(labels.ToLoggerFields()...)
+		trackLongRunningTransformation(ctx, labels.Stage, trans.config.timeoutDuration, l)
 		trackWg.Done()
 	}()
 
@@ -219,7 +270,7 @@ func (trans *handle) transform(
 	trans.stat.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
-		sTags,
+		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
@@ -234,7 +285,7 @@ func (trans *handle) transform(
 			trans.guardConcurrency <- struct{}{}
 			go func() {
 				trace.WithRegion(ctx, "request", func() {
-					transformResponse[i] = trans.request(ctx, url, stage, batch)
+					transformResponse[i] = trans.request(ctx, url, labels, batch)
 				})
 				<-trans.guardConcurrency
 				wg.Done()
@@ -271,7 +322,9 @@ func (trans *handle) transform(
 	}
 }
 
-func (trans *handle) request(ctx context.Context, url, stage string, data []types.TransformerEvent) []types.TransformerResponse {
+func (trans *handle) request(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
+	trans.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -303,23 +356,7 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []type
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
-			transformationID := ""
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-			}
-
-			respData, statusCode = trans.doPost(ctx, rawJSON, url, stage, stats.Tags{
-				"destinationType":  data[0].Destination.DestinationDefinition.Name,
-				"destinationId":    data[0].Destination.ID,
-				"sourceId":         data[0].Metadata.SourceID,
-				"transformationId": transformationID,
-				"stage":            stage,
-
-				// Legacy tags: to be removed
-				"dest_type": data[0].Destination.DestinationDefinition.Name,
-				"dest_id":   data[0].Destination.ID,
-				"src_id":    data[0].Metadata.SourceID,
-			})
+			respData, statusCode = trans.doPost(ctx, rawJSON, url, labels)
 			if statusCode == StatusCPDown {
 				trans.cpDownGauge.Gauge(1)
 				return fmt.Errorf("control plane not reachable")
@@ -329,14 +366,8 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []type
 		},
 		endlessBackoff,
 		func(err error, t time.Duration) {
-			var transformationID, transformationVersionID string
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-				transformationVersionID = data[0].Destination.Transformations[0].VersionID
-			}
-			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s, transformationID: %s, transformationVersionID: %s",
+			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s",
 				url, err, data[0].Metadata.WorkspaceID, data[0].Metadata.SourceID, data[0].Metadata.DestinationID,
-				transformationID, transformationVersionID,
 			)
 		},
 	)
@@ -366,17 +397,21 @@ func (trans *handle) request(ctx context.Context, url, stage string, data []type
 			trans.logger.Errorf("Transformer returned : %v", string(respData))
 			panic(err)
 		}
+		// Count successful response events
+		trans.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
+		// Count failed events
+		trans.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
 	return transformerResponses
 }
 
-func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage string, tags stats.Tags) ([]byte, int) {
+func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -406,14 +441,20 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 				resp, reqErr = trans.httpClient.Do(req)
 			})
 			duration := time.Since(requestStartTime)
-			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(duration)
+
+			// Record metrics with labels
+			tags := labels.ToStatsTag()
+			trans.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+
+			trans.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
+			trans.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 			if reqErr != nil {
 				return reqErr
 			}
 			headerResponseTime := resp.Header.Get("X-Response-Time")
 			instanceWorker := resp.Header.Get("X-Instance-ID")
 			if trans.config.collectInstanceLevelStats && instanceWorker != "" {
-				newTags := lo.Assign(tags)
+				newTags := lo.Assign(labels.ToStatsTag())
 				newTags["instanceWorker"] = instanceWorker
 				dur := duration.Milliseconds()
 				headerTime, err := strconv.ParseFloat(strings.TrimSuffix(headerResponseTime, "ms"), 64)
@@ -430,6 +471,11 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 			}
 
 			respData, reqErr = io.ReadAll(resp.Body)
+			if reqErr == nil {
+				trans.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
+				// We'll count response events after unmarshaling in the request method
+			}
+
 			return reqErr
 		},
 		backoff.WithMaxRetries(retryStrategy, uint64(trans.config.maxRetry.Load())),
@@ -443,7 +489,7 @@ func (trans *handle) doPost(ctx context.Context, rawJSON []byte, url, stage stri
 		},
 	)
 	if err != nil {
-		if trans.config.failOnUserTransformTimeout.Load() && stage == userTransformerStage && os.IsTimeout(err) {
+		if trans.config.failOnUserTransformTimeout.Load() && labels.Stage == userTransformerStage && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), TransformerRequestTimeout
 		} else if trans.config.failOnError.Load() {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
@@ -508,4 +554,13 @@ func trackLongRunningTransformation(ctx context.Context, stage string, timeout t
 				"duration", time.Since(start).String())
 		}
 	}
+}
+
+// getEndpointFromURL is a helper function to extract hostname from URL
+func getEndpointFromURL(urlStr string) string {
+	// Parse URL and extract hostname
+	if parsedURL, err := url.Parse(urlStr); err == nil {
+		return parsedURL.Host
+	}
+	return ""
 }

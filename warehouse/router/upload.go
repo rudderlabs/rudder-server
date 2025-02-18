@@ -675,7 +675,7 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
-	serializedErr = whutils.SanitizeJSON(serializedErr)
+	serializedErr, _ = misc.SanitizeJSON(serializedErr)
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
 	if err != nil {

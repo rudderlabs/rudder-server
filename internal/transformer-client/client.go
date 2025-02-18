@@ -13,23 +13,24 @@ import (
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 type ClientConfig struct {
 	TransportConfig struct {
-		DisableKeepAlives   bool          //	true
-		MaxConnsPerHost     int           //	100
-		MaxIdleConnsPerHost int           //	10
-		IdleConnTimeout     time.Duration //	30*time.Second
+		DisableKeepAlives   config.ValueLoader[bool]          //	true
+		MaxConnsPerHost     config.ValueLoader[int]           //	100
+		MaxIdleConnsPerHost config.ValueLoader[int]           //	10
+		IdleConnTimeout     config.ValueLoader[time.Duration] //	30*time.Second
 	}
 
-	ClientTimeout time.Duration //	600*time.Second
-	ClientTTL     time.Duration //	10*time.Second
+	ClientTimeout config.ValueLoader[time.Duration] //	600*time.Second
+	ClientTTL     config.ValueLoader[time.Duration] //	10*time.Second
 
-	ClientType string // stdlib(default), recycled, httplb
+	ClientType config.ValueLoader[string] // stdlib(default), recycled, httplb
 
-	PickerType string // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
+	PickerType config.ValueLoader[string] // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
 }
 
 type Client interface {
@@ -51,27 +52,27 @@ func NewClient(config *ClientConfig) Client {
 		return client
 	}
 
-	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
-	if config.TransportConfig.MaxConnsPerHost != 0 {
-		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives.Load()
+	if config.TransportConfig.MaxConnsPerHost.Load() != 0 {
+		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost.Load()
 	}
-	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
-		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+	if config.TransportConfig.MaxIdleConnsPerHost.Load() != 0 {
+		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost.Load()
 	}
-	if config.TransportConfig.IdleConnTimeout != 0 {
-		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+	if config.TransportConfig.IdleConnTimeout.Load() != 0 {
+		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout.Load()
 	}
 
-	if config.ClientTimeout != 0 {
-		client.Timeout = config.ClientTimeout
+	if config.ClientTimeout.Load() != 0 {
+		client.Timeout = config.ClientTimeout.Load()
 	}
 
 	clientTTL := 10 * time.Second
-	if config.ClientTTL != 0 {
-		clientTTL = config.ClientTTL
+	if config.ClientTTL.Load() != 0 {
+		clientTTL = config.ClientTTL.Load()
 	}
 
-	switch config.ClientType {
+	switch config.ClientType.Load() {
 	case "stdlib":
 		return client
 	case "recycled":
@@ -81,7 +82,7 @@ func NewClient(config *ClientConfig) Client {
 	case "httplb":
 		return httplb.NewClient(
 			httplb.WithRootContext(context.TODO()),
-			httplb.WithPicker(getPicker(config.PickerType)),
+			httplb.WithPicker(getPicker(config.PickerType.Load())),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
 			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),

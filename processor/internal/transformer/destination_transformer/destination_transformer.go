@@ -28,6 +28,36 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+type Opt func(*Client)
+
+func WithClient(client transformerclient.Client) Opt {
+	return func(s *Client) {
+		s.client = client
+	}
+}
+
+func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
+	handle := &Client{}
+	handle.conf = conf
+	handle.log = log
+	handle.stat = stat
+	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "DestinationTransformer"))
+	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
+	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
+	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
+	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.DestinationTransformer.maxRetry", "Processor.maxRetry")
+	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.failOnError", "Processor.Transformer.failOnError")
+	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
+	handle.config.batchSize = config.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
+
+	for _, opt := range opts {
+		opt(handle)
+	}
+
+	return handle
+}
+
 type Client struct {
 	config struct {
 		destTransformationURL   string
@@ -43,36 +73,6 @@ type Client struct {
 	log              logger.Logger
 	stat             stats.Stats
 	client           transformerclient.Client
-}
-
-type Opt func(*Client)
-
-func WithClient(client transformerclient.Client) Opt {
-	return func(s *Client) {
-		s.client = client
-	}
-}
-
-func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
-	handle := &Client{}
-	handle.conf = conf
-	handle.log = log
-	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf))
-	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
-	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
-	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.maxRetry")
-	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.Transformer.failOnError")
-	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.maxRetryBackoffInterval")
-	handle.config.batchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-
-	for _, opt := range opts {
-		opt(handle)
-	}
-
-	return handle
 }
 
 func (d *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {

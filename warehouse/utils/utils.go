@@ -1,7 +1,6 @@
 package warehouseutils
 
 import (
-	"bytes"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -315,18 +314,6 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
-}
-
-func SanitizeJSON(input json.RawMessage) json.RawMessage {
-	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
-	if len(v) == 0 {
-		v = []byte(`{}`)
-	}
-	return v
-}
-
-func SanitizeString(input string) string {
-	return strings.ReplaceAll(input, "\u0000", "")
 }
 
 // GetObjectName extracts object/key objectName from different buckets locations

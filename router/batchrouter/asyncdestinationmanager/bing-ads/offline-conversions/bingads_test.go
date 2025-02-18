@@ -538,6 +538,42 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			expectedResult := fmt.Errorf(" adjustedConversionTime field not defined")
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
+
+		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> microsoftClickId is required(email and phone empty) but not present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> successful even when microsoftClickId is missing as email/phone is present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"5/22/2023 6:27:54 AM\",\n    \"conversionValue\": \"100\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\":\"+911234567890\"\n  }\n}"),
+			}
+			uploader := &BingAdsBulkUploader{
+				isHashRequired: true,
+			}
+			expectedResp := `{"message":{"fields":{"conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(resp).To(Equal(expectedResp))
+			Expect(err).To(BeNil())
+		})
 	})
 })
 
