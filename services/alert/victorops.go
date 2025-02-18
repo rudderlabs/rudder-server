@@ -2,7 +2,6 @@ package alert
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 func (ops *VictorOps) Alert(message string) {
@@ -18,7 +18,7 @@ func (ops *VictorOps) Alert(message string) {
 		"entity_id":     ops.instanceName,
 		"state_message": message,
 	}
-	eventJSON, _ := json.Marshal(event)
+	eventJSON, _ := jsonrs.Marshal(event)
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.victorops.timeout", 30, time.Second)}
 	victorOpsUrl := fmt.Sprintf("https://alert.victorops.com/integrations/generic/20131114/alert/%s/rudderRecovery", ops.routingKey)
 	resp, err := client.Post(victorOpsUrl, "application/json", bytes.NewBuffer(eventJSON))

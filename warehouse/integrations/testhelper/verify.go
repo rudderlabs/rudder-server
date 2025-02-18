@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 
@@ -243,7 +243,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 		}
 
 		var jr jobResponse
-		if err = json.NewDecoder(res.Body).Decode(&jr); err != nil {
+		if err = jsonrs.NewDecoder(res.Body).Decode(&jr); err != nil {
 			return false
 		}
 		return jr.Status == model.SourceJobStatusSucceeded.String()

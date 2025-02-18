@@ -6,9 +6,6 @@ import (
 	"sync"
 	"time"
 
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -16,6 +13,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
@@ -66,8 +64,6 @@ type EventsAfterTransform struct {
 type UploadT struct {
 	Payload []*TransformStatusT `json:"payload"`
 }
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	configBackendURL               string
@@ -177,7 +173,7 @@ func (h *Handle) RecordTransformationStatus(transformStatus *TransformStatusT) {
 func (t *TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT) ([]byte, error) {
 	uploadT := UploadT{Payload: eventBuffer}
 
-	rawJSON, err := jsonfast.Marshal(uploadT)
+	rawJSON, err := jsonrs.Marshal(uploadT)
 	if err != nil {
 		t.log.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_bqstream "github.com/rudderlabs/rudder-server/mocks/services/streammanager/bqstream"
 
 	"github.com/stretchr/testify/assert"
@@ -44,11 +45,11 @@ func TestTimeout(t *testing.T) {
 	}
 	var bqCredentials BigQueryCredentials
 	var err error
-	err = json.Unmarshal([]byte(cred), &bqCredentials)
+	err = jsonrs.Unmarshal([]byte(cred), &bqCredentials)
 	if err != nil {
 		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
-	credentials, _ := json.Marshal(bqCredentials.Credentials)
+	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
 	config := map[string]interface{}{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
@@ -94,7 +95,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 	initBQTest()
 	var bqCredentials BigQueryCredentials
 	var err error
-	err = json.Unmarshal(
+	err = jsonrs.Unmarshal(
 		[]byte(`{
 			"projectID": "my-project",
 			"credentials": {
@@ -113,7 +114,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 			}
 		}`), &bqCredentials)
 	assert.NoError(t, err)
-	credentials, _ := json.Marshal(bqCredentials.Credentials)
+	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
 	config := map[string]interface{}{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
@@ -129,7 +130,7 @@ func TestInvalidCredentials(t *testing.T) {
 	initBQTest()
 	var bqCredentials BigQueryCredentials
 	var err error
-	err = json.Unmarshal(
+	err = jsonrs.Unmarshal(
 		[]byte(`{
 			"projectID": "my-project",
 			"credentials": {
@@ -138,7 +139,7 @@ func TestInvalidCredentials(t *testing.T) {
 			}
 		}`), &bqCredentials)
 	assert.NoError(t, err)
-	credentials, _ := json.Marshal(bqCredentials.Credentials)
+	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
 	config := map[string]interface{}{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
@@ -187,13 +188,13 @@ func TestProduceWithMissingTableId(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> array of objects
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"datasetId":  "bigquery_batching",
 		"properties": json.RawMessage(`[{"id":"25","name":"rudder"}, {"id":"50","name":"ruddertest"}]`),
 	})
 
 	var genericRecs []*bqstream.GenericRecord
-	_ = json.Unmarshal([]byte("[{\"id\":\"25\",\"name\":\"rudder\"}, {\"id\":\"50\",\"name\":\"ruddertest\"}]"), &genericRecs)
+	_ = jsonrs.Unmarshal([]byte("[{\"id\":\"25\",\"name\":\"rudder\"}, {\"id\":\"50\",\"name\":\"ruddertest\"}]"), &genericRecs)
 
 	mockClient.
 		EXPECT().
@@ -211,14 +212,14 @@ func TestProduceWithArrayOfRecords(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> array of objects
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`[{"id":"25","name":"rudder"}, {"id":"50","name":"ruddertest"}]`),
 	})
 
 	var genericRecs []*bqstream.GenericRecord
-	_ = json.Unmarshal([]byte("[{\"id\":\"25\",\"name\":\"rudder\"}, {\"id\":\"50\",\"name\":\"ruddertest\"}]"), &genericRecs)
+	_ = jsonrs.Unmarshal([]byte("[{\"id\":\"25\",\"name\":\"rudder\"}, {\"id\":\"50\",\"name\":\"ruddertest\"}]"), &genericRecs)
 
 	mockClient.
 		EXPECT().
@@ -236,7 +237,7 @@ func TestProduceWithWithSingleRecord(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> json objects
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`{"id":"25","name":"rudder"}`),
@@ -244,7 +245,7 @@ func TestProduceWithWithSingleRecord(t *testing.T) {
 
 	var genericRecs []*bqstream.GenericRecord
 	var genericRec *bqstream.GenericRecord
-	_ = json.Unmarshal([]byte("{\"id\":\"25\",\"name\":\"rudder\"}"), &genericRec)
+	_ = jsonrs.Unmarshal([]byte("{\"id\":\"25\",\"name\":\"rudder\"}"), &genericRec)
 	genericRecs = append(genericRecs, genericRec)
 
 	mockClient.
@@ -263,7 +264,7 @@ func TestProduceFailedCase(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> string
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`"id"`),

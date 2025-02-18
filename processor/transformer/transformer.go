@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -43,8 +43,6 @@ const (
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func isJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
@@ -332,7 +330,7 @@ func (trans *handle) request(ctx context.Context, url string, labels types.Trans
 	)
 
 	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
+		rawJSON, err = jsonrs.Marshal(data)
 	})
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
@@ -388,7 +386,7 @@ func (trans *handle) request(ctx context.Context, url string, labels types.Trans
 
 		trace.Logf(ctx, "Unmarshal", "response raw size: %d", len(respData))
 		trace.WithRegion(ctx, "Unmarshal", func() {
-			err = json.Unmarshal(respData, &transformerResponses)
+			err = jsonrs.Unmarshal(respData, &transformerResponses)
 		})
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays

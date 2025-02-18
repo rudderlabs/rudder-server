@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -75,11 +76,11 @@ func init() {
 
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		return nil, createErr(err, "error in BQStream while unmarshalling destination config")
 	}
@@ -114,13 +115,13 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{
 
 	var genericRecs []*GenericRecord
 	if props.IsArray() {
-		err := json.Unmarshal([]byte(props.String()), &genericRecs)
+		err := jsonrs.Unmarshal([]byte(props.String()), &genericRecs)
 		if err != nil {
 			return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 		}
 	} else {
 		var genericRec *GenericRecord
-		err := json.Unmarshal([]byte(props.String()), &genericRec)
+		err := jsonrs.Unmarshal([]byte(props.String()), &genericRec)
 		if err != nil {
 			return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
 		}

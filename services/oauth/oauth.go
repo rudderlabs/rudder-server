@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -316,7 +317,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats *OAuthStats, logTypeName string,
 ) (statusCode int) {
 	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", configBEURL, refTokenParams.WorkspaceId, refTokenParams.AccountId)
-	res, err := json.Marshal(refTokenBody)
+	res, err := jsonrs.Marshal(refTokenBody)
 	if err != nil {
 		panic(err)
 	}
@@ -390,7 +391,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 }
 
 func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
-	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
+	if err := jsonrs.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
@@ -511,7 +512,7 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	authErrHandler.logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
 
 	var authStatusToggleRes *AuthStatusToggleResponse
-	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusToggleRes)
+	unmarshalErr := jsonrs.Unmarshal([]byte(respBody), &authStatusToggleRes)
 	if router_utils.IsNotEmptyString(respBody) && (unmarshalErr != nil || !router_utils.IsNotEmptyString(authStatusToggleRes.Message) || statusCode != http.StatusOK) {
 		var msg string
 		if unmarshalErr != nil {

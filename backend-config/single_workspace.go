@@ -2,7 +2,6 @@ package backendconfig
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -112,7 +112,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	}
 
 	var sourcesJSON ConfigT
-	err = json.Unmarshal(respBody, &sourcesJSON)
+	err = jsonrs.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		wc.logger.Errorn("Error while parsing request", obskit.Error(err))
 		return conf, err
@@ -141,7 +141,7 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		return conf, err
 	}
 	var configJSON ConfigT
-	if err = json.Unmarshal(data, &configJSON); err != nil {
+	if err = jsonrs.Unmarshal(data, &configJSON); err != nil {
 		wc.logger.Errorn("Unable to parse backend config from file",
 			logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
 		)

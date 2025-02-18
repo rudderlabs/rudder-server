@@ -1,11 +1,12 @@
 package marketobulkupload
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type MarketoAccessToken struct {
@@ -48,7 +49,7 @@ func (m *MarketoAuthService) fetchOrUpdateAccessToken() error {
 	}
 
 	var accessToken MarketoAccessToken
-	err = json.Unmarshal(body, &accessToken)
+	err = jsonrs.Unmarshal(body, &accessToken)
 	if err != nil {
 		return err
 	}

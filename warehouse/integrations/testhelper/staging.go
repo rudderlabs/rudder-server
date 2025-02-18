@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
@@ -115,7 +115,7 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 
 	b := new(strings.Builder)
 
-	destinationJSON, err := json.Marshal(testConfig.Destination)
+	destinationJSON, err := jsonrs.Marshal(testConfig.Destination)
 	require.NoError(t, err)
 
 	err = tpl.Execute(b, map[string]any{
@@ -131,7 +131,7 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 	require.NoError(t, err)
 
 	var transformerEvents []types.TransformerEvent
-	err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+	err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 	require.NoError(t, err)
 
 	tr := transformer.NewTransformer(c, logger.NOP, stats.Default)
@@ -143,7 +143,7 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 
 	output := new(strings.Builder)
 	for _, responseOutput := range responseOutputs {
-		outputJSON, err := json.Marshal(responseOutput)
+		outputJSON, err := jsonrs.Marshal(responseOutput)
 		require.NoError(t, err)
 
 		_, err = output.WriteString(string(outputJSON) + "\n")
@@ -225,7 +225,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		lineBytes := scanner.Bytes()
 
 		var stagingEvent StagingEvent
-		err := json.Unmarshal(lineBytes, &stagingEvent)
+		err := jsonrs.Unmarshal(lineBytes, &stagingEvent)
 		require.NoError(t, err)
 
 		stagingEvents = append(stagingEvents, stagingEvent)

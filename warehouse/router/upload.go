@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -498,7 +499,7 @@ func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings, error
 	}
 	timing := map[string]time.Time{status: job.now()}
 	timings = append(timings, timing)
-	marshalledTimings, err := json.Marshal(timings)
+	marshalledTimings, err := jsonrs.Marshal(timings)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -582,7 +583,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 // from a particular upload.
 func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
 	var uploadErrors map[string]map[string]interface{}
-	err := json.Unmarshal(message, &uploadErrors)
+	err := jsonrs.Unmarshal(message, &uploadErrors)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
 	}
@@ -669,12 +670,12 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	metadata := repo.ExtractUploadMetadata(job.upload)
 
 	metadata.NextRetryTime = job.now().Add(job.durationBeforeNextAttempt(upload.Attempts + 1))
-	metadataJSON, err := json.Marshal(metadata)
+	metadataJSON, err := jsonrs.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
 	}
 
-	serializedErr, _ := json.Marshal(&uploadErrors)
+	serializedErr, _ := jsonrs.Marshal(&uploadErrors)
 	serializedErr, _ = misc.SanitizeJSON(serializedErr)
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})

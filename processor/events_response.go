@@ -6,7 +6,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -46,7 +46,7 @@ func (proc *Handle) getDroppedJobs(response types.Response, eventsToTransform []
 				DestinationID:   e.Metadata.DestinationID,
 				RecordID:        e.Metadata.RecordID,
 			}
-			marshalledParams, err := jsonfast.Marshal(params)
+			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
 				proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
 				marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)

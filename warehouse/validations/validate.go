@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -77,7 +78,7 @@ func (*destinationValidationImpl) Validate(ctx context.Context, dest *backendcon
 }
 
 func validateDestinationFunc(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) (json.RawMessage, error) {
-	return json.Marshal(validateDestination(ctx, dest, stepToValidate))
+	return jsonrs.Marshal(validateDestination(ctx, dest, stepToValidate))
 }
 
 func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) *DestinationValidationResponse {

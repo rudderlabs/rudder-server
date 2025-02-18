@@ -14,6 +14,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -29,7 +30,7 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	destinationID := destination.ID
 	partFileNumber := asyncDestStruct.PartFileNumber
 	destType := destination.DestinationDefinition.Name
-	destConfigJSON, err := json.Marshal(destination.Config)
+	destConfigJSON, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error marshalling destination config: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}

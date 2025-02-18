@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -17,14 +16,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // deprecatedColumnsRegex
 // This regex is used to identify deprecated columns in the warehouse
@@ -282,7 +280,7 @@ func (sh *schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
 func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
-	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
+	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}

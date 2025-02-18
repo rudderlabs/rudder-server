@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -119,7 +120,7 @@ func TestSlaveWorker(t *testing.T) {
 				LoadFileType:                 "csv",
 			}
 
-			payloadJson, err := json.Marshal(p)
+			payloadJson, err := jsonrs.Marshal(p)
 			require.NoError(t, err)
 
 			claim := &notifier.ClaimJob{
@@ -144,7 +145,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
-			err = json.Unmarshal(response.Payload, &uploadPayload)
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
 			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
@@ -221,7 +222,7 @@ func TestSlaveWorker(t *testing.T) {
 				LoadFileType:                 "csv",
 			}
 
-			payloadJson, err := json.Marshal(p)
+			payloadJson, err := jsonrs.Marshal(p)
 			require.NoError(t, err)
 
 			claim := &notifier.ClaimJob{
@@ -246,7 +247,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
-			err = json.Unmarshal(response.Payload, &uploadPayload)
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
 
 			for _, output := range uploadPayload.Output {
@@ -350,7 +351,7 @@ func TestSlaveWorker(t *testing.T) {
 				LoadFileType:                 "csv",
 			}
 
-			payloadJson, err := json.Marshal(p)
+			payloadJson, err := jsonrs.Marshal(p)
 			require.NoError(t, err)
 
 			claimJob := &notifier.ClaimJob{
@@ -431,7 +432,7 @@ func TestSlaveWorker(t *testing.T) {
 				LoadFileType:                 "csv",
 			}
 
-			payloadJson, err := json.Marshal(p)
+			payloadJson, err := jsonrs.Marshal(p)
 			require.NoError(t, err)
 
 			claim := &notifier.ClaimJob{
@@ -456,7 +457,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.NoError(t, response.Err)
 
 			var uploadPayload payload
-			err = json.Unmarshal(response.Payload, &uploadPayload)
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
 			require.Len(t, uploadPayload.Output, 9)
 
@@ -584,7 +585,7 @@ func TestSlaveWorker(t *testing.T) {
 				MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 			}
 
-			payloadJson, err := json.Marshal(p)
+			payloadJson, err := jsonrs.Marshal(p)
 			require.NoError(t, err)
 
 			claim := &notifier.ClaimJob{
@@ -609,7 +610,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.NoError(t, response.Err)
 
 			var notifierResponse source.NotifierResponse
-			err = json.Unmarshal(response.Payload, &notifierResponse)
+			err = jsonrs.Unmarshal(response.Payload, &notifierResponse)
 			require.NoError(t, err)
 
 			require.Equal(t, int64(1), notifierResponse.ID)
@@ -681,7 +682,7 @@ func TestSlaveWorker(t *testing.T) {
 						MetaData:      []byte(`{"job_run_id": "1", "task_run_id": "1", "start_time": "2020-01-01T00:00:00Z"}`),
 					}
 
-					payloadJson, err := json.Marshal(p)
+					payloadJson, err := jsonrs.Marshal(p)
 					require.NoError(t, err)
 
 					claim := &notifier.ClaimJob{

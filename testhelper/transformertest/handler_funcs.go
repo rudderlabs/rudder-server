@@ -1,9 +1,9 @@
 package transformertest
 
 import (
-	"encoding/json"
 	"net/http"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/types"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -87,9 +87,9 @@ func DestTransformerHandler(f func(event processorTypes.TransformerEvent) integr
 	return func(request []processorTypes.TransformerEvent) (res []processorTypes.TransformerResponse) {
 		for _, req := range request {
 			postParameters := f(req)
-			jsonString, _ := json.Marshal(postParameters)
+			jsonString, _ := jsonrs.Marshal(postParameters)
 			var output map[string]interface{}
-			_ = json.Unmarshal(jsonString, &output)
+			_ = jsonrs.Unmarshal(jsonString, &output)
 			res = append(res, processorTypes.TransformerResponse{
 				Metadata:   req.Metadata,
 				Output:     output,
