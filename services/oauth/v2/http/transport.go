@@ -1,6 +1,6 @@
 package v2
 
-//go:generate mockgen -destination=../../../../mocks/services/oauthV2/mock_roundtripper.go -package=mock_oauthV2 net/http RoundTripper
+//go:generate go tool mockgen -destination=../../../../mocks/services/oauthV2/mock_roundtripper.go -package=mock_oauthV2 net/http RoundTripper
 
 import (
 	"bytes"

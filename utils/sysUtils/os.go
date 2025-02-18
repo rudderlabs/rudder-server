@@ -14,7 +14,7 @@ var	Os sysUtils.OsI = sysUtils.NewOs()
 Os.UserHomeDir()
 */
 
-//go:generate mockgen -destination=../../mocks/utils/sysUtils/mock_os.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils OsI
+//go:generate go tool mockgen -destination=../../mocks/utils/sysUtils/mock_os.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils OsI
 package sysUtils
 
 import (

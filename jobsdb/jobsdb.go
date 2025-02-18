@@ -17,7 +17,7 @@ mostly serviced from memory cache.
 
 package jobsdb
 
-//go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
+//go:generate go tool mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
 	"context"

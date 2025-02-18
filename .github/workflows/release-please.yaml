@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Extract branch name
         shell: bash
-        run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")" >> $GITHUB_OUTPUT
+        run: echo "branch=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
         id: extract_branch
       - uses: google-github-actions/release-please-action@v3
         id: release
@@ -24,9 +24,9 @@ jobs:
       - name: Extract release version
         shell: bash
         run: |
-          tag_name=$(echo "${{ steps.release.outputs.tag_name }}")
-          version=$(echo "${tag_name#v}")
-          echo "version=${version}" >> $GITHUB_OUTPUT
+          tag_name="${{ steps.release.outputs.tag_name }}"
+          version="${tag_name#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
         id: extract_version
       - name: Trigger dispatch event - Enterprise
         uses: peter-evans/repository-dispatch@v3

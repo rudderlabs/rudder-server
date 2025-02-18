@@ -14,7 +14,7 @@ var	Http sysUtils.HttpI = sysUtils.NewHttp()
 Http.NewRequest(...)
 */
 
-//go:generate mockgen -destination=../../mocks/utils/sysUtils/mock_http.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils HttpI
+//go:generate go tool mockgen -destination=../../mocks/utils/sysUtils/mock_http.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils HttpI
 package sysUtils
 
 import (

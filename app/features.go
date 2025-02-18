@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app SuppressUserFeature
+//go:generate go tool mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app SuppressUserFeature
 
 import (
 	"context"

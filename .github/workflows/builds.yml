@@ -291,7 +291,7 @@ jobs:
 
             amd_tag=$(echo "${{ needs.docker-oss-meta.outputs.amd64_tags }}" | grep "$tag")
 
-            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+            docker buildx imagetools create -t "$tag" "$arm_tag" "$amd_tag"
 
           done <<< "${{ needs.docker-oss-meta.outputs.tags }}"
   create-manifest-docker-ent:
@@ -314,7 +314,7 @@ jobs:
 
             amd_tag=$(echo "${{ needs.docker-ent-meta.outputs.amd64_tags }}" | grep "$tag")
 
-            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+            docker buildx imagetools create -t "$tag" "$arm_tag" "$amd_tag"
 
           done <<< "${{ needs.docker-ent-meta.outputs.tags }}"
   create-manifest-docker-sbsvc:
@@ -337,6 +337,6 @@ jobs:
 
             amd_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}" | grep "$tag")
 
-            docker buildx imagetools create -t $tag $arm_tag $amd_tag
+            docker buildx imagetools create -t "$tag" "$arm_tag" "$amd_tag"
 
           done <<< "${{ needs.docker-sbsvc-meta.outputs.tags }}"

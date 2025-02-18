@@ -13,7 +13,7 @@ import (
 
 var pkgLogger = logger.NewLogger().Child("client")
 
-//go:generate mockgen -source=destination.go -destination=mock_destination.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
+//go:generate go tool mockgen -source=destination.go -destination=mock_destination.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destMiddleware interface {
 	Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel
 }

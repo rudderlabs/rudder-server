@@ -1,6 +1,6 @@
 package oauth
 
-//go:generate mockgen -destination=../../mocks/services/oauth/mock_oauth.go -package=mocks_oauth github.com/rudderlabs/rudder-server/services/oauth Authorizer
+//go:generate go tool mockgen -destination=../../mocks/services/oauth/mock_oauth.go -package=mocks_oauth github.com/rudderlabs/rudder-server/services/oauth Authorizer
 import (
 	"bytes"
 	"encoding/json"

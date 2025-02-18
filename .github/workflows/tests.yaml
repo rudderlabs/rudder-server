@@ -88,8 +88,8 @@ jobs:
         if: matrix.destination == 'redshift'
         run: |
           echo "Setting Redshift Ginkgo AWS Credentials..."
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> "$GITHUB_ENV"
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
         run: FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
@@ -192,8 +192,8 @@ jobs:
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
         run: |
-          name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
-          echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
+          name=$(echo -n "${{ matrix.package }}" | sed -e 's/[[:space:]:\/"<>|*?]/-/g' -e 's/--*/-/g')
+          echo "ARTIFACT_NAME=$name" >> "$GITHUB_ENV"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -218,7 +218,7 @@ jobs:
       - name: Merge Coverage
         run: |
           go install github.com/wadey/gocovmerge@latest
-          gocovmerge */coverage.txt > coverage.txt
+          gocovmerge ./**/coverage.txt > coverage.txt
       - uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: true

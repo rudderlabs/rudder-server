@@ -1,6 +1,6 @@
 package throttler
 
-//go:generate mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler Throttler
+//go:generate go tool mockgen -destination=../../mocks/gateway/throttler.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/throttler Throttler
 
 import (
 	"context"

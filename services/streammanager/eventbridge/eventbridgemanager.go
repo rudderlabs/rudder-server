@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbridge.go -package mock_eventbridge github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
+//go:generate go tool mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbridge.go -package mock_eventbridge github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
 
 package eventbridge
 

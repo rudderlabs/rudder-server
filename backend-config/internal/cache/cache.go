@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=./mock_cache.go -package=cache -source=./cache.go cache
+//go:generate go tool mockgen -destination=./mock_cache.go -package=cache -source=./cache.go cache
 package cache
 
 import (

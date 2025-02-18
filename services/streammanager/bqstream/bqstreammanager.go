@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/bqstream/mock_bqstream.go -package mock_bqstream github.com/rudderlabs/rudder-server/services/streammanager/bqstream BQClient
+//go:generate go tool mockgen -destination=../../../mocks/services/streammanager/bqstream/mock_bqstream.go -package mock_bqstream github.com/rudderlabs/rudder-server/services/streammanager/bqstream BQClient
 
 package bqstream
 

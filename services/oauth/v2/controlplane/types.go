@@ -1,6 +1,6 @@
 package controlplane
 
-//go:generate mockgen -destination=../../../../mocks/services/oauth/v2/http/mock_http_client.go -package=mock_http_client github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane HttpClient
+//go:generate go tool mockgen -destination=../../../../mocks/services/oauth/v2/http/mock_http_client.go -package=mock_http_client github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane HttpClient
 
 import (
 	"net/http"

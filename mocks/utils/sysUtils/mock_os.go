@@ -10,7 +10,6 @@
 package mock_sysUtils
 
 import (
-	fs "io/fs"
 	os "os"
 	reflect "reflect"
 
@@ -100,7 +99,7 @@ func (mr *MockOsIMockRecorder) LookupEnv(key any) *gomock.Call {
 }
 
 // MkdirAll mocks base method.
-func (m *MockOsI) MkdirAll(path string, perm fs.FileMode) error {
+func (m *MockOsI) MkdirAll(path string, perm os.FileMode) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MkdirAll", path, perm)
 	ret0, _ := ret[0].(error)
@@ -129,7 +128,7 @@ func (mr *MockOsIMockRecorder) Open(name any) *gomock.Call {
 }
 
 // OpenFile mocks base method.
-func (m *MockOsI) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
+func (m *MockOsI) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "OpenFile", name, flag, perm)
 	ret0, _ := ret[0].(*os.File)
@@ -158,10 +157,10 @@ func (mr *MockOsIMockRecorder) Remove(name any) *gomock.Call {
 }
 
 // Stat mocks base method.
-func (m *MockOsI) Stat(name string) (fs.FileInfo, error) {
+func (m *MockOsI) Stat(name string) (os.FileInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Stat", name)
-	ret0, _ := ret[0].(fs.FileInfo)
+	ret0, _ := ret[0].(os.FileInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

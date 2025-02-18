@@ -14,7 +14,7 @@ var	GZip sysUtils.GZipI = sysUtils.NewGZip()
 GZip.NewWriter(...)
 */
 
-//go:generate mockgen -destination=../../mocks/utils/sysUtils/mock_compress.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils GZipI
+//go:generate go tool mockgen -destination=../../mocks/utils/sysUtils/mock_compress.go -package mock_sysUtils github.com/rudderlabs/rudder-server/utils/sysUtils GZipI
 package sysUtils
 
 import (
