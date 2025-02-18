@@ -246,6 +246,16 @@ func TestUserTransformer(t *testing.T) {
 						}
 					}
 
+					labels := types.TransformerMetricLabels{
+						Endpoint:         transformerutils.GetEndpointFromURL(srv.URL),
+						Stage:            "user_transformer",
+						SourceID:         Metadata.SourceID,
+						SourceType:       Metadata.SourceType,
+						DestinationType:  destinationConfig.DestinationDefinition.Name,
+						DestinationID:    destinationConfig.ID,
+						WorkspaceID:      Metadata.WorkspaceID,
+						TransformationID: destinationConfig.Transformations[0].ID,
+					}
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
@@ -254,12 +264,35 @@ func TestUserTransformer(t *testing.T) {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {
 							require.Equal(t, stats.Tags{
+								"endpoint":         transformerutils.GetEndpointFromURL(srv.URL),
 								"stage":            "user_transformer",
 								"sourceId":         Metadata.SourceID,
-								"destinationType":  "",
-								"destinationId":    "",
-								"transformationId": "",
+								"sourceType":       Metadata.SourceType,
+								"destinationType":  destinationConfig.DestinationDefinition.Name,
+								"destinationId":    destinationConfig.ID,
+								"transformationId": destinationConfig.Transformations[0].ID,
+								"workspaceId":      Metadata.WorkspaceID,
+								"language":         "",
+
+								// Legacy tags: to be removed
+								"dest_type": destinationConfig.DestinationDefinition.Name,
+								"dest_id":   destinationConfig.ID,
+								"src_id":    Metadata.SourceID,
 							}, m.Tags)
+						}
+						metricsToCheck := []string{
+							"transformer_client_request_total_bytes",
+							"transformer_client_response_total_bytes",
+							"transformer_client_request_total_events",
+							"transformer_client_response_total_events",
+							"transformer_client_total_durations_seconds",
+						}
+
+						expectedTags := labels.ToStatsTag()
+						for _, metricName := range metricsToCheck {
+							measurements := statsStore.GetByName(metricName)
+							require.NotEmpty(t, measurements, "metric %s should not be empty", metricName)
+							require.Equal(t, expectedTags, measurements[0].Tags, "metric %s tags mismatch", metricName)
 						}
 					}
 				}

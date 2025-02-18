@@ -38,6 +38,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		loggedFileName: generateLogFileName(),
 	}
 
+	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
 	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.HistogramType)
 	t.stats.comparisionTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
 
@@ -81,6 +82,7 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 		}
 
 		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
+			clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 			return types.TransformerResponse{
 				Output:     item,
 				Metadata:   clientEvent.Metadata,

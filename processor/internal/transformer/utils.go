@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -53,4 +54,13 @@ func TrackLongRunningTransformation(ctx context.Context, stage string, timeout t
 				"duration", time.Since(start).String())
 		}
 	}
+}
+
+// GetEndpointFromURL is a helper function to extract hostname from URL
+func GetEndpointFromURL(urlStr string) string {
+	// Parse URL and extract hostname
+	if parsedURL, err := url.Parse(urlStr); err == nil {
+		return parsedURL.Host
+	}
+	return ""
 }

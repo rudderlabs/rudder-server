@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 
@@ -81,11 +83,17 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return types.Response{}
 	}
 
-	sTags := stats.Tags{
-		"dest_type": clientEvents[0].Destination.DestinationDefinition.Name,
-		"dest_id":   clientEvents[0].Destination.ID,
-		"src_id":    clientEvents[0].Metadata.SourceID,
-		"stage":     "dest_transformer",
+	destinationType := clientEvents[0].Destination.DestinationDefinition.Name
+	destURL := d.destTransformURL(destinationType)
+
+	labels := types.TransformerMetricLabels{
+		Endpoint:        transformerutils.GetEndpointFromURL(destURL),
+		Stage:           "dest_transformer",
+		DestinationType: destinationType,
+		DestinationID:   clientEvents[0].Destination.ID,
+		SourceID:        clientEvents[0].Metadata.SourceID,
+		WorkspaceID:     clientEvents[0].Metadata.WorkspaceID,
+		SourceType:      clientEvents[0].Metadata.SourceType,
 	}
 
 	var trackWg sync.WaitGroup
@@ -95,11 +103,8 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 	trackWg.Add(1)
 	go func() {
-		var loggerCtx []interface{}
-		for k, v := range sTags {
-			loggerCtx = append(loggerCtx, k, v)
-		}
-		transformerutils.TrackLongRunningTransformation(ctx, "dest_transformer", d.config.timeoutDuration, d.log.With(loggerCtx...))
+		l := d.log.Withn(labels.ToLoggerFields()...)
+		transformerutils.TrackLongRunningTransformation(ctx, labels.Stage, d.config.timeoutDuration, l)
 		trackWg.Done()
 	}()
 
@@ -108,7 +113,7 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	d.stat.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
-		sTags,
+		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
@@ -122,7 +127,7 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		func(batch []types.TransformerEvent, i int) {
 			d.guardConcurrency <- struct{}{}
 			go func() {
-				transformResponse[i], err = d.sendBatch(ctx, d.destTransformURL(batch[0].Destination.DestinationDefinition.Name), "dest_transformer", batch)
+				transformResponse[i], err = d.sendBatch(ctx, destURL, labels, batch)
 				if err != nil {
 					foundError = true
 				}
@@ -161,7 +166,8 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 }
 
-func (d *Client) sendBatch(ctx context.Context, url, stage string, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
+func (d *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
+	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -182,12 +188,7 @@ func (d *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 		statusCode int
 	)
 
-	respData, statusCode, err = d.doPost(ctx, rawJSON, url, stats.Tags{
-		"destinationType": data[0].Destination.DestinationDefinition.Name,
-		"destinationId":   data[0].Destination.ID,
-		"sourceId":        data[0].Metadata.SourceID,
-		"stage":           stage,
-	})
+	respData, statusCode, err = d.doPost(ctx, rawJSON, url, labels)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +199,7 @@ func (d *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
 	default:
-		d.log.Errorf("Transformer returned status code: %v", statusCode)
+		d.log.Errorn("Transformer returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 	}
 
 	var transformerResponses []types.TransformerResponse
@@ -212,17 +213,19 @@ func (d *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 		if err != nil {
 			return nil, err
 		}
+		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
+		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
 	return transformerResponses, nil
 }
 
-func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags stats.Tags) ([]byte, int, error) {
+func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -250,7 +253,14 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 
 			resp, reqErr = d.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
-			d.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
+			// Record metrics with labels
+			tags := labels.ToStatsTag()
+			duration := time.Since(requestStartTime)
+			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+
+			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
+			d.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+
 			if reqErr != nil {
 				return reqErr
 			}
@@ -260,6 +270,10 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 			}
 
 			respData, reqErr = io.ReadAll(resp.Body)
+			if reqErr == nil {
+				d.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
+				// We'll count response events after unmarshaling in the request method
+			}
 			return reqErr
 		},
 		backoff.WithMaxRetries(retryStrategy, uint64(d.config.maxRetry.Load())),
@@ -285,7 +299,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
 		if reportingtypes.SupportedTransformerApiVersion != transformerAPIVersion {
 			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingtypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
-			d.log.Error(unexpectedVersionError)
+			d.log.Errorn("Unexpected version", obskit.Error(unexpectedVersionError))
 			return nil, 0, unexpectedVersionError
 		}
 	}

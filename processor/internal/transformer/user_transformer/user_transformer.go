@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/cenkalti/backoff/v4"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
@@ -22,7 +24,7 @@ import (
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	transformer_utils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -43,7 +45,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformer_utils.TransformerClientConfig(conf, "UserTransformer"))
+	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
@@ -99,11 +101,22 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 			dehydratedClientEvents[i].Metadata.OriginalSourceID, dehydratedClientEvents[i].Metadata.SourceID = dehydratedClientEvents[i].Metadata.SourceID, dehydratedClientEvents[i].Metadata.OriginalSourceID
 		}
 	}
-	sTags := stats.Tags{
-		"dest_type": dehydratedClientEvents[0].Destination.DestinationDefinition.Name,
-		"dest_id":   dehydratedClientEvents[0].Destination.ID,
-		"src_id":    dehydratedClientEvents[0].Metadata.SourceID,
-		"stage":     "user_transformer",
+
+	transformationID := ""
+	if len(clientEvents[0].Destination.Transformations) > 0 {
+		transformationID = clientEvents[0].Destination.Transformations[0].ID
+	}
+
+	userURL := u.userTransformURL()
+	labels := types.TransformerMetricLabels{
+		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
+		Stage:            "user_transformer",
+		DestinationType:  clientEvents[0].Destination.DestinationDefinition.Name,
+		SourceType:       clientEvents[0].Metadata.SourceType,
+		WorkspaceID:      clientEvents[0].Metadata.WorkspaceID,
+		SourceID:         clientEvents[0].Metadata.SourceID,
+		DestinationID:    clientEvents[0].Destination.ID,
+		TransformationID: transformationID,
 	}
 
 	var trackWg sync.WaitGroup
@@ -113,11 +126,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 	trackWg.Add(1)
 	go func() {
-		var loggerCtx []interface{}
-		for k, v := range sTags {
-			loggerCtx = append(loggerCtx, k, v)
-		}
-		transformer_utils.TrackLongRunningTransformation(ctx, "user_transformer", u.config.timeoutDuration, u.log.With(loggerCtx...))
+		l := u.log.Withn(labels.ToLoggerFields()...)
+		transformerutils.TrackLongRunningTransformation(ctx, "user_transformer", u.config.timeoutDuration, l)
 		trackWg.Done()
 	}()
 
@@ -126,7 +136,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	u.stat.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
-		sTags,
+		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
@@ -139,7 +149,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		func(batch []types.TransformerEvent, i int) {
 			u.guardConcurrency <- struct{}{}
 			go func() {
-				transformResponse[i] = u.sendBatch(ctx, u.userTransformURL(), "user_transformer", batch)
+				transformResponse[i] = u.sendBatch(ctx, u.userTransformURL(), labels, batch)
 				<-u.guardConcurrency
 				wg.Done()
 			}()
@@ -175,7 +185,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 }
 
-func (u *Client) sendBatch(ctx context.Context, url, stage string, data []types.TransformerEvent) []types.TransformerResponse {
+func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
+	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -204,22 +215,11 @@ func (u *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
-			transformationID := ""
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-			}
-
-			respData, statusCode, err = u.doPost(ctx, rawJSON, url, stats.Tags{
-				"destinationType":  data[0].Destination.DestinationDefinition.Name,
-				"destinationId":    data[0].Destination.ID,
-				"sourceId":         data[0].Metadata.SourceID,
-				"transformationId": transformationID,
-				"stage":            stage,
-			})
+			respData, statusCode, err = u.doPost(ctx, rawJSON, url, labels)
 			if err != nil {
 				panic(err)
 			}
-			if statusCode == transformer_utils.StatusCPDown {
+			if statusCode == transformerutils.StatusCPDown {
 				u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
 				return fmt.Errorf("control plane not reachable")
 			}
@@ -233,9 +233,14 @@ func (u *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 				transformationID = data[0].Destination.Transformations[0].ID
 				transformationVersionID = data[0].Destination.Transformations[0].VersionID
 			}
-			u.log.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s, transformationID: %s, transformationVersionID: %s",
-				url, err, data[0].Metadata.WorkspaceID, data[0].Metadata.SourceID, data[0].Metadata.DestinationID,
-				transformationID, transformationVersionID,
+			u.log.Errorn("JS HTTP connection error",
+				obskit.Error(err),
+				obskit.SourceID(data[0].Metadata.SourceID),
+				obskit.WorkspaceID(data[0].Metadata.WorkspaceID),
+				obskit.DestinationID(data[0].Metadata.DestinationID),
+				logger.NewStringField("url", url),
+				logger.NewStringField("transformationID", transformationID),
+				logger.NewStringField("transformationVersionID", transformationVersionID),
 			)
 		},
 	)
@@ -247,7 +252,7 @@ func (u *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
 	default:
-		u.log.Errorf("Transformer returned status code: %v", statusCode)
+		u.log.Errorn("Transformer returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 	}
 
 	var transformerResponses []types.TransformerResponse
@@ -258,21 +263,24 @@ func (u *Client) sendBatch(ctx context.Context, url, stage string, data []types.
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {
-			u.log.Errorf("Data sent to transformer : %v", string(rawJSON))
-			u.log.Errorf("Transformer returned : %v", string(respData))
+			u.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
+			u.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
 		}
+		// Count successful response events
+		u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
+		u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
 	return transformerResponses
 }
 
-func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags stats.Tags) ([]byte, int, error) {
+func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -300,8 +308,14 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 
 			resp, reqErr = u.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
+			// Record metrics with labels
+			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
-			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(requestStartTime))
+			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+
+			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
+			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+
 			if reqErr != nil {
 				return reqErr
 			}
@@ -319,11 +333,15 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 				}
 			}
 
-			if !transformer_utils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformer_utils.StatusCPDown {
+			if !transformerutils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformerutils.StatusCPDown {
 				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
 			}
 
 			respData, reqErr = io.ReadAll(resp.Body)
+			if reqErr == nil {
+				u.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
+				// We'll count response events after unmarshaling in the request method
+			}
 			return reqErr
 		},
 		backoff.WithMaxRetries(retryStrategy, uint64(u.config.maxRetry.Load())),
@@ -338,9 +356,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 	)
 	if err != nil {
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
-			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformer_utils.TransformerRequestTimeout, nil
+			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformer_utils.TransformerRequestFailure, nil
+			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
 		} else {
 			return nil, 0, err
 		}
@@ -351,7 +369,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, tags st
 		transformerAPIVersion, _ := strconv.Atoi(resp.Header.Get("apiVersion"))
 		if reportingtypes.SupportedTransformerApiVersion != transformerAPIVersion {
 			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %s, URL: %v", reportingtypes.SupportedTransformerApiVersion, resp.Header.Get("apiVersion"), url)
-			u.log.Error(unexpectedVersionError)
+			u.log.Errorn("Unexpected version", obskit.Error(unexpectedVersionError))
 			return nil, 0, unexpectedVersionError
 		}
 	}

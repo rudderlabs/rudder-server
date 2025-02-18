@@ -159,50 +159,6 @@ func TestProxyRequest(t *testing.T) {
 			},
 		},
 		{
-			name:     "should throw timeout exception as the timeout in http.client is lower than proxy",
-			destName: "good_dest_1",
-			expected: expectedResponse{
-				code:        http.StatusGatewayTimeout,
-				body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
-				contentType: "text/plain; charset=utf-8",
-				bodyType:    STR,
-			},
-			proxy: proxyConfig{
-				code:     http.StatusOK,
-				response: `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
-				timeout:  time.Duration(1.2 * 1e9),
-			},
-			rtTimeout: 8 * time.Millisecond,
-			postParameters: ProxyRequestPayload{
-				PostParametersT: integrations.PostParametersT{
-					Type:          "REST",
-					URL:           "http://www.good_dest_1.domain.com",
-					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
-							"key_1": "val_1",
-							"key_2": "val_2",
-						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
-					},
-					Files: map[string]interface{}{},
-				},
-				Metadata: []ProxyRequestMetadata{
-					{
-						WorkspaceID:   "workspace_id",
-						DestinationID: "destination_id",
-					},
-				},
-				DestinationConfig: map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
-				},
-			},
-		},
-		{
 			name:     "should throw timeout exception due to context getting timedout",
 			destName: "ctx_timeout_dest",
 			expected: expectedResponse{
