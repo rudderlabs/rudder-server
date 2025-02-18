@@ -1793,7 +1793,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
@@ -1923,7 +1923,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
@@ -2047,7 +2047,7 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
+			var transformerEvents []types.TransformerEvent
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 

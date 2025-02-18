@@ -2,7 +2,6 @@ package trackingplan_validation_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -39,7 +40,7 @@ type fakeTransformer struct {
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqBody []types.TransformerEvent
-	require.NoError(t.t, json.NewDecoder(r.Body).Decode(&reqBody))
+	require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	t.requests = append(t.requests, reqBody)
 
@@ -62,7 +63,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
-	require.NoError(t.t, json.NewEncoder(w).Encode(responses))
+	require.NoError(t.t, jsonrs.NewEncoder(w).Encode(responses))
 }
 
 type endlessLoopTransformer struct {
@@ -82,7 +83,7 @@ func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	elt.retryCount++
 
 	var reqBody []types.TransformerEvent
-	require.NoError(elt.t, json.NewDecoder(r.Body).Decode(&reqBody))
+	require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 
@@ -104,7 +105,7 @@ func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		w.Header().Set("apiVersion", strconv.Itoa(elt.apiVersion))
 	}
 
-	require.NoError(elt.t, json.NewEncoder(w).Encode(responses))
+	require.NoError(elt.t, jsonrs.NewEncoder(w).Encode(responses))
 }
 
 type endpointTransformer struct {
@@ -121,7 +122,7 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 
 	var reqBody []types.TransformerEvent
-	require.NoError(et.t, json.NewDecoder(r.Body).Decode(&reqBody))
+	require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 
@@ -136,7 +137,7 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("apiVersion", strconv.Itoa(reportingtypes.SupportedTransformerApiVersion))
 
-	require.NoError(et.t, json.NewEncoder(w).Encode(responses))
+	require.NoError(et.t, jsonrs.NewEncoder(w).Encode(responses))
 }
 
 func TestTrackingPlanValidator(t *testing.T) {

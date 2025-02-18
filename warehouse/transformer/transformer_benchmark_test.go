@@ -10,9 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 /*

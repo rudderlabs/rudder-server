@@ -12,10 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/cenkalti/backoff/v4"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -29,8 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Opt func(*Client)
 
@@ -193,7 +192,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		err     error
 	)
 
-	rawJSON, err = json.Marshal(data)
+	rawJSON, err = jsonrs.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -259,7 +258,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	switch statusCode {
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
-		err = json.Unmarshal(respData, &transformerResponses)
+		err = jsonrs.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {

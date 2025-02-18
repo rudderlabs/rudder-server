@@ -3,7 +3,6 @@ package destination_transformer
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -174,7 +175,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		err     error
 	)
 
-	rawJSON, err = json.Marshal(data)
+	rawJSON, err = jsonrs.Marshal(data)
 	if err != nil {
 		panic(err)
 	}
@@ -207,7 +208,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
 
-		err = json.Unmarshal(respData, &transformerResponses)
+		err = jsonrs.Unmarshal(respData, &transformerResponses)
 		// This is returned by our JS engine so should  be parsable
 		// Panic the processor to avoid replays
 		if err != nil {

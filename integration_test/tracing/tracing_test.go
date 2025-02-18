@@ -35,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"

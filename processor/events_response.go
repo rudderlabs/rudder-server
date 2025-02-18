@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

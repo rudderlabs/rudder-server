@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

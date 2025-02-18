@@ -26,8 +26,8 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -39,7 +39,7 @@ type fakeTransformer struct {
 }
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	t.requests = append(t.requests, reqBody)
@@ -81,7 +81,7 @@ type endlessLoopTransformer struct {
 
 func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	elt.retryCount++
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
@@ -120,7 +120,7 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var reqBody []TransformerEvent
+	var reqBody []types.TransformerEvent
 	require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
