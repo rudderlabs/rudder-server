@@ -7,20 +7,20 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
-	processorTypes "github.com/rudderlabs/rudder-server/processor/types"
+	proctypes "github.com/rudderlabs/rudder-server/processor/types"
 )
 
 // TransformerHandler is a function that takes a transformer request and returns a response
-type TransformerHandler func(request []processorTypes.TransformerEvent) []processorTypes.TransformerResponse
+type TransformerHandler func(request []proctypes.TransformerEvent) []proctypes.TransformerResponse
 
 // RouterTransformerHandler is a function that takes a router transformer request and returns a response
 type RouterTransformerHandler func(request types.TransformMessageT) types.DestinationJobs
 
 // MirroringTransformerHandler mirrors the request payload in the response
-var MirroringTransformerHandler TransformerHandler = func(request []processorTypes.TransformerEvent) (response []processorTypes.TransformerResponse) {
+var MirroringTransformerHandler TransformerHandler = func(request []proctypes.TransformerEvent) (response []proctypes.TransformerResponse) {
 	for i := range request {
 		req := request[i]
-		response = append(response, processorTypes.TransformerResponse{
+		response = append(response, proctypes.TransformerResponse{
 			Metadata:   req.Metadata,
 			Output:     req.Message,
 			StatusCode: http.StatusOK,
@@ -46,10 +46,10 @@ var MirroringRouterTransformerHandler RouterTransformerHandler = func(request ty
 
 // ErrorTransformerHandler mirrors the request payload in the response but uses an error status code
 func ErrorTransformerHandler(code int, err string) TransformerHandler {
-	return func(request []processorTypes.TransformerEvent) (response []processorTypes.TransformerResponse) {
+	return func(request []proctypes.TransformerEvent) (response []proctypes.TransformerResponse) {
 		for i := range request {
 			req := request[i]
-			response = append(response, processorTypes.TransformerResponse{
+			response = append(response, proctypes.TransformerResponse{
 				Metadata:   req.Metadata,
 				Output:     req.Message,
 				StatusCode: code,
@@ -61,11 +61,11 @@ func ErrorTransformerHandler(code int, err string) TransformerHandler {
 }
 
 // ViolationErrorTransformerHandler mirrors the request payload in the response but uses an error status code along with the provided validation errors
-func ViolationErrorTransformerHandler(code int, err string, validationErrors []processorTypes.ValidationError) TransformerHandler {
-	return func(request []processorTypes.TransformerEvent) (response []processorTypes.TransformerResponse) {
+func ViolationErrorTransformerHandler(code int, err string, validationErrors []proctypes.ValidationError) TransformerHandler {
+	return func(request []proctypes.TransformerEvent) (response []proctypes.TransformerResponse) {
 		for i := range request {
 			req := request[i]
-			response = append(response, processorTypes.TransformerResponse{
+			response = append(response, proctypes.TransformerResponse{
 				Metadata:         req.Metadata,
 				Output:           req.Message,
 				StatusCode:       code,
@@ -78,19 +78,19 @@ func ViolationErrorTransformerHandler(code int, err string, validationErrors []p
 }
 
 // EmptyTransformerHandler returns an empty response
-var EmptyTransformerHandler TransformerHandler = func(request []processorTypes.TransformerEvent) []processorTypes.TransformerResponse {
-	return []processorTypes.TransformerResponse{}
+var EmptyTransformerHandler TransformerHandler = func(request []proctypes.TransformerEvent) []proctypes.TransformerResponse {
+	return []proctypes.TransformerResponse{}
 }
 
 // DestTransformerHandler returns an empty response
-func DestTransformerHandler(f func(event processorTypes.TransformerEvent) integrations.PostParametersT) func(request []processorTypes.TransformerEvent) []processorTypes.TransformerResponse {
-	return func(request []processorTypes.TransformerEvent) (res []processorTypes.TransformerResponse) {
+func DestTransformerHandler(f func(event proctypes.TransformerEvent) integrations.PostParametersT) func(request []proctypes.TransformerEvent) []proctypes.TransformerResponse {
+	return func(request []proctypes.TransformerEvent) (res []proctypes.TransformerResponse) {
 		for _, req := range request {
 			postParameters := f(req)
 			jsonString, _ := jsonrs.Marshal(postParameters)
 			var output map[string]interface{}
 			_ = jsonrs.Unmarshal(jsonString, &output)
-			res = append(res, processorTypes.TransformerResponse{
+			res = append(res, proctypes.TransformerResponse{
 				Metadata:   req.Metadata,
 				Output:     output,
 				StatusCode: http.StatusOK,
@@ -101,8 +101,8 @@ func DestTransformerHandler(f func(event processorTypes.TransformerEvent) integr
 }
 
 // RESTJSONDestTransformerHandler transforms the request payload into a REST JSON destination request using the original message as the payload
-func RESTJSONDestTransformerHandler(method, url string) func(request []processorTypes.TransformerEvent) []processorTypes.TransformerResponse {
-	return DestTransformerHandler(func(event processorTypes.TransformerEvent) integrations.PostParametersT {
+func RESTJSONDestTransformerHandler(method, url string) func(request []proctypes.TransformerEvent) []proctypes.TransformerResponse {
+	return DestTransformerHandler(func(event proctypes.TransformerEvent) integrations.PostParametersT {
 		return integrations.PostParametersT{
 			Type:          "REST",
 			URL:           url,
@@ -116,10 +116,10 @@ func RESTJSONDestTransformerHandler(method, url string) func(request []processor
 
 // WarehouseTransformerHandler mirrors the request payload in the response but uses an error, status code along with warehouse compatible output
 func WarehouseTransformerHandler(tableName string, code int, err string) TransformerHandler {
-	return func(request []processorTypes.TransformerEvent) (response []processorTypes.TransformerResponse) {
+	return func(request []proctypes.TransformerEvent) (response []proctypes.TransformerResponse) {
 		for i := range request {
 			req := request[i]
-			response = append(response, processorTypes.TransformerResponse{
+			response = append(response, proctypes.TransformerResponse{
 				Metadata: req.Metadata,
 				Output: map[string]interface{}{
 					"table": tableName,

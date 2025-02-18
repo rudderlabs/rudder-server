@@ -94,7 +94,7 @@ type Handle struct {
 	backendConfig        backendconfig.BackendConfig
 	transformer          transformer.Transformer
 	warehouseTransformer warehouseTransformer
-	transformerManager   *transformer.Clients
+	transformerClients   *transformer.Clients
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -415,7 +415,7 @@ func (proc *Handle) Setup(
 	proc.readErrorDB = readErrorDB
 	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
-	proc.transformerManager = transformer.NewClients(proc.conf, proc.logger, proc.statsFactory)
+	proc.transformerClients = transformer.NewClients(proc.conf, proc.logger, proc.statsFactory)
 	proc.archivalDB = archivalDB
 
 	proc.transientSources = transientSources
@@ -2800,7 +2800,7 @@ func (proc *Handle) transformSrcDest(
 			if !proc.config.enableTransformationV2 {
 				response = proc.transformer.UserTransform(ctx, eventList, proc.config.userTransformBatchSize.Load())
 			} else {
-				response = proc.transformerManager.User().Transform(ctx, eventList)
+				response = proc.transformerClients.User().Transform(ctx, eventList)
 			}
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
@@ -2967,7 +2967,7 @@ func (proc *Handle) transformSrcDest(
 			if !proc.config.enableTransformationV2 {
 				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 			} else {
-				response = proc.transformerManager.Destination().Transform(ctx, eventsToTransform)
+				response = proc.transformerClients.Destination().Transform(ctx, eventsToTransform)
 			}
 			proc.handleWarehouseTransformations(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
