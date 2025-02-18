@@ -19,20 +19,27 @@ const (
 
 var Default = New(config.Default)
 
-// JSON is the interface that wraps the basic JSON operations.
-type JSON interface {
+type Marshaller interface {
 	// Marshal returns the JSON encoding of v.
 	Marshal(v any) ([]byte, error)
 	// MarshalToString returns the JSON encoding of v as a string.
 	MarshalToString(v any) (string, error)
 	// MarshalIndent returns the JSON encoding of v with indentation.
 	MarshalIndent(v any, prefix, indent string) ([]byte, error)
+	// NewEncoder returns a new json encoder that writes to w.
+	NewEncoder(w io.Writer) Encoder
+}
+type Unmarshaller interface {
 	// Unmarshal parses the JSON-encoded data and stores the result in the value pointed to by v.
 	Unmarshal(data []byte, v any) error
 	// NewDecoder returns a new json decoder that reads from r.
 	NewDecoder(r io.Reader) Decoder
-	// NewEncoder returns a new json encoder that writes to w.
-	NewEncoder(w io.Writer) Encoder
+}
+
+// JSON is the interface that wraps the basic JSON operations.
+type JSON interface {
+	Marshaller
+	Unmarshaller
 }
 
 // Decoder is the interface that wraps the basic JSON decoder operations.
@@ -61,8 +68,8 @@ func New(conf *config.Config) JSON {
 			SonnetLib:   &sonnetJSON{},
 			JsoniterLib: &jsoniterJSON{},
 		},
-		marshaller:   marshaller,
-		unmarshaller: unmarshaller,
+		marshallerFn:   marshaller,
+		unmarshallerFn: unmarshaller,
 	}
 }
 
