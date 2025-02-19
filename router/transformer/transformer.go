@@ -569,17 +569,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: trans.transformTimeout,
-		ClientTTL:     config.GetDuration("Transformer.Client.ttl", 10, time.Second),
-		ClientType:    config.GetString("Transformer.Client.type", "stdlib"),
-		PickerType:    config.GetString("Transformer.Client.httplb.pickerType", "power_of_two"),
-	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBool("Transformer.Client.disableKeepAlives", true)
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetInt("Transformer.Client.maxHTTPConnections", 100)
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10)
-	transformerClientConfig.TransportConfig.IdleConnTimeout = 30 * time.Second
-	trans.client = transformerclient.NewClient(transformerClientConfig)
+	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
@@ -595,12 +585,25 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Logger:             logger.NewLogger().Child("TransformerProxyHttpClient"),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	transformerClientConfig.ClientTimeout = trans.destinationTimeout + trans.transformTimeout
-	trans.proxyClient = transformerclient.NewClient(transformerClientConfig)
+	trans.proxyClient = transformerclient.NewClient(trans.transformerClientConfig())
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
+}
+
+func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: config.GetDurationVar(600, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout"),
+		ClientTTL:     config.GetDurationVar(10, time.Second, "Transformer.Client.ttl"),
+		ClientType:    config.GetStringVar("stdlib", "Transformer.Client.type"),
+		PickerType:    config.GetStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	return transformerClientConfig
 }
 
 type httpProxyResponse struct {

@@ -9,11 +9,12 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
@@ -45,7 +46,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	return t
 }
 
-func (t *Transformer) Transform(_ context.Context, clientEvents []ptrans.TransformerEvent, _ int) (res ptrans.Response) {
+func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
 	if len(clientEvents) == 0 {
 		return
 	}
@@ -77,9 +78,9 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []ptrans.Transfo
 			continue
 		}
 
-		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) ptrans.TransformerResponse {
+		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
 			clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
-			return ptrans.TransformerResponse{
+			return types.TransformerResponse{
 				Output:     item,
 				Metadata:   clientEvent.Metadata,
 				StatusCode: http.StatusOK,
@@ -89,14 +90,14 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []ptrans.Transfo
 	return
 }
 
-func (t *Transformer) processWarehouseMessage(cache *cache, event *ptrans.TransformerEvent) ([]map[string]any, error) {
+func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {
 	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
 		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
 	}
 	return t.handleEvent(event, cache)
 }
 
-func (t *Transformer) enhanceContextWithSourceDestInfo(event *ptrans.TransformerEvent) error {
+func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
 		return nil
 	}
@@ -118,7 +119,7 @@ func (t *Transformer) enhanceContextWithSourceDestInfo(event *ptrans.Transformer
 	return nil
 }
 
-func (t *Transformer) handleEvent(event *ptrans.TransformerEvent, cache *cache) ([]map[string]any, error) {
+func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
 	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
 	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Destination.Config)
 	jsonPathsInfo := extractJSONPathInfo(append(intrOpts.jsonPaths, destOpts.jsonPaths...))
@@ -155,17 +156,17 @@ func (t *Transformer) handleEvent(event *ptrans.TransformerEvent, cache *cache) 
 	}
 }
 
-func transformerResponseFromErr(event *ptrans.TransformerEvent, err error) ptrans.TransformerResponse {
+func transformerResponseFromErr(event *types.TransformerEvent, err error) types.TransformerResponse {
 	var te *response.TransformerError
 	if ok := errors.As(err, &te); ok {
-		return ptrans.TransformerResponse{
+		return types.TransformerResponse{
 			Output:     nil,
 			Metadata:   event.Metadata,
 			Error:      te.Error(),
 			StatusCode: te.StatusCode(),
 		}
 	}
-	return ptrans.TransformerResponse{
+	return types.TransformerResponse{
 		Output:     nil,
 		Metadata:   event.Metadata,
 		Error:      response.ErrInternalServer.Error(),

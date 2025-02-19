@@ -10,8 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var postParametersTFields []string
@@ -91,7 +91,7 @@ func ValidatePostInfo(transformRawParams PostParametersT) error {
 // FilterClientIntegrations parses the destination names from the
 // input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
+	clientIntgs, ok := types.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
 		clientIntgs = make(map[string]interface{})
 	}

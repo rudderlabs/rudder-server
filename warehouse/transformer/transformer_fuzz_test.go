@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/araddon/dateparse"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -22,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -576,7 +577,7 @@ func FuzzTransformer(f *testing.F) {
 		eventContexts := []testhelper.EventContext{
 			{
 				Payload: []byte(sanitizedPayload),
-				Metadata: ptrans.Metadata{
+				Metadata: types.Metadata{
 					EventType:       eventType,
 					EventName:       eventName,
 					DestinationType: destType,
@@ -603,13 +604,13 @@ func FuzzTransformer(f *testing.F) {
 func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer, dTransformer ptrans.DestinationTransformer) {
 	t.Helper()
 
-	events := make([]ptrans.TransformerEvent, 0, len(eventContexts))
+	events := make([]types.TransformerEvent, 0, len(eventContexts))
 	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
 		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
 		require.NoError(t, err)
 
-		events = append(events, ptrans.TransformerEvent{
+		events = append(events, types.TransformerEvent{
 			Message:     singularEvent,
 			Metadata:    eventContext.Metadata,
 			Destination: eventContext.Destination,

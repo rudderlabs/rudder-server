@@ -12,6 +12,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -128,14 +130,14 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 	})
 	require.NoError(t, err)
 
-	var transformerEvents []transformer.TransformerEvent
+	var transformerEvents []types.TransformerEvent
 	err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 	require.NoError(t, err)
 
 	tr := transformer.NewTransformer(c, logger.NOP, stats.Default)
 	response := tr.Transform(context.Background(), transformerEvents, 100)
 	require.Zero(t, len(response.FailedEvents))
-	responseOutputs := lo.Map(response.Events, func(r transformer.TransformerResponse, index int) map[string]interface{} {
+	responseOutputs := lo.Map(response.Events, func(r types.TransformerResponse, index int) map[string]interface{} {
 		return r.Output
 	})
 
