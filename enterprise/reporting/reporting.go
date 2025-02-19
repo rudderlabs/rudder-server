@@ -1,14 +1,10 @@
 package reporting
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,7 +14,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -29,7 +24,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -42,23 +36,25 @@ const (
 	StatReportingGetReportsCount           = "reporting_client_get_reports_count"
 	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
 	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
-	StatReportingHttpReqLatency            = "reporting_client_http_request_latency"
-	StatReportingHttpReq                   = "reporting_client_http_request"
 	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
 	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
 	StatReportingVacuumDuration            = "reporting_vacuum_duration"
 )
 
+type reportingClient interface {
+	SendMetric(ctx context.Context, metric *types.Metric) error
+}
+
 type DefaultReporter struct {
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	g                   *errgroup.Group
-	configSubscriber    *configSubscriber
-	syncersMu           sync.RWMutex
-	syncers             map[string]*types.SyncSource
-	log                 logger.Logger
-	reportingServiceURL string
-	namespace           string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	g                *errgroup.Group
+	configSubscriber *configSubscriber
+	syncersMu        sync.RWMutex
+	syncers          map[string]*types.SyncSource
+	log              logger.Logger
+	reportingClient  reportingClient
+	namespace        string
 
 	instanceID                           string
 	whActionsOnly                        bool
@@ -73,7 +69,6 @@ type DefaultReporter struct {
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
-	requestLatency            stats.Measurement
 	stats                     stats.Stats
 	maxReportsCountInARequest config.ValueLoader[int]
 
@@ -89,6 +84,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
+
+	reportingClient := NewClient(reportingServiceURL, conf, log, stats)
 
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
@@ -116,13 +113,14 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 	return &DefaultReporter{
-		ctx:                                  ctx,
-		cancel:                               cancel,
-		g:                                    g,
-		log:                                  log,
-		configSubscriber:                     configSubscriber,
-		syncers:                              make(map[string]*types.SyncSource),
-		reportingServiceURL:                  reportingServiceURL,
+		ctx:              ctx,
+		cancel:           cancel,
+		g:                g,
+		log:              log,
+		configSubscriber: configSubscriber,
+		syncers:          make(map[string]*types.SyncSource),
+
+		reportingClient:                      reportingClient,
 		namespace:                            config.GetKubeNamespace(),
 		instanceID:                           config.GetString("INSTANCE_ID", "1"),
 		whActionsOnly:                        whActionsOnly,
@@ -412,8 +410,6 @@ func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfi
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.configSubscriber.Wait()
 
-	tr := &http.Transport{}
-	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(c.Label)
 	mainLoopTimer := r.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := r.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
@@ -423,7 +419,6 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
-	r.requestLatency = r.stats.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
@@ -499,7 +494,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					break
 				}
 				errGroup.Go(func() error {
-					err := r.sendMetric(errCtx, netClient, c.Label, metricToSend)
+					err := r.reportingClient.SendMetric(errCtx, metricToSend)
 					<-requestChan
 					return err
 				})
@@ -584,58 +579,6 @@ func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tag
 		)
 	}
 	return nil
-}
-
-func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
-	payload, err := json.Marshal(metric)
-	if err != nil {
-		panic(err)
-	}
-	operation := func() error {
-		uri := fmt.Sprintf("%s/metrics?version=v1", r.reportingServiceURL)
-		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
-		if err != nil {
-			return err
-		}
-		if r.region != "" {
-			q := req.URL.Query()
-			q.Add("region", r.region)
-			req.URL.RawQuery = q.Encode()
-		}
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		httpRequestStart := time.Now()
-		resp, err := netClient.Do(req)
-		if err != nil {
-			r.log.Error(err.Error())
-			return err
-		}
-
-		r.requestLatency.Since(httpRequestStart)
-		httpStatTags := r.getTags(label)
-		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		r.stats.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
-
-		defer func() { httputil.CloseResponse(resp) }()
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			r.log.Error(err.Error())
-			return err
-		}
-
-		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
-		}
-		return err
-	}
-
-	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
-	})
-	if err != nil {
-		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
-	}
-	return err
 }
 
 func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {

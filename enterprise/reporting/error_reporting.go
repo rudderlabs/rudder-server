@@ -1,21 +1,16 @@
 package reporting
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"go.uber.org/atomic"
@@ -30,7 +25,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -61,16 +55,20 @@ var ErrorDetailReportsColumns = []string{
 	"event_name",
 }
 
+type edReportingClient interface {
+	SendErrorMetric(ctx context.Context, metric *types.EDMetric) error
+}
+
 type ErrorDetailReporter struct {
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	g                   *errgroup.Group
-	configSubscriber    *configSubscriber
-	reportingServiceURL string
-	syncersMu           sync.RWMutex
-	syncers             map[string]*types.SyncSource
-	log                 logger.Logger
-	namespace           string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	g                *errgroup.Group
+	configSubscriber *configSubscriber
+	reportingClient  edReportingClient
+	syncersMu        sync.RWMutex
+	syncers          map[string]*types.SyncSource
+	log              logger.Logger
+	namespace        string
 
 	instanceID            string
 	region                string
@@ -80,13 +78,10 @@ type ErrorDetailReporter struct {
 	maxOpenConnections    int
 	vacuumFull            config.ValueLoader[bool]
 
-	httpClient *http.Client
-
 	errorDetailExtractor *ExtractorHandle
 
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
-	edReportingRequestLatency   stats.Measurement
 	eventSamplingEnabled        config.ValueLoader[bool]
 	eventSamplingDuration       config.ValueLoader[time.Duration]
 	eventSampler                event_sampler.EventSampler
@@ -101,11 +96,12 @@ func NewErrorDetailReporter(
 	stats stats.Stats,
 	conf *config.Config,
 ) *ErrorDetailReporter {
-	tr := &http.Transport{}
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
+	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 
-	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	reportingClient := NewClient(reportingServiceURL, conf, log, stats)
+
 	mainLoopSleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := conf.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := conf.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
@@ -115,7 +111,6 @@ func NewErrorDetailReporter(
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 
-	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -134,13 +129,12 @@ func NewErrorDetailReporter(
 		ctx:                   ctx,
 		cancel:                cancel,
 		g:                     g,
-		reportingServiceURL:   reportingServiceURL,
+		reportingClient:       reportingClient,
 		log:                   log,
 		sleepInterval:         sleepInterval,
 		mainLoopSleepInterval: mainLoopSleepInterval,
 		maxConcurrentRequests: maxConcurrentRequests,
 		vacuumFull:            conf.GetReloadableBoolVar(true, "Reporting.errorReporting.vacuumFull", "Reporting.vacuumFull"),
-		httpClient:            netClient,
 
 		eventSamplingEnabled:  eventSamplingEnabled,
 		eventSamplingDuration: eventSamplingDuration,
@@ -376,7 +370,6 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 	edr.minReportedAtQueryTime = edr.stats.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
 	edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
-	edr.edReportingRequestLatency = edr.stats.NewTaggedStat("error_detail_reporting_request_latency", stats.TimerType, tags)
 
 	var lastReportedAtTime atomic.Time
 	lastReportedAtTime.Store(time.Now())
@@ -463,7 +456,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 					break
 				}
 				errGroup.Go(func() error {
-					err := edr.sendMetric(errCtx, c.Label, metricToSend)
+					err := edr.reportingClient.SendErrorMetric(errCtx, metricToSend)
 					if err != nil {
 						edr.log.Error("Error while sending to Reporting service:", err)
 					}
@@ -739,60 +732,6 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		edrortingMetrics = append(edrortingMetrics, &edrSchema)
 	}
 	return edrortingMetrics
-}
-
-func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
-	payload, err := json.Marshal(metric)
-	if err != nil {
-		return fmt.Errorf("marshal failure: %w", err)
-	}
-	operation := func() error {
-		uri := fmt.Sprintf("%s/recordErrors", edr.reportingServiceURL)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBuffer(payload))
-		if err != nil {
-			return err
-		}
-		if edr.region != "" {
-			q := req.URL.Query()
-			q.Add("region", edr.region)
-			req.URL.RawQuery = q.Encode()
-		}
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		httpRequestStart := time.Now()
-		resp, err := edr.httpClient.Do(req)
-		if err != nil {
-			edr.log.Errorf("Sending request failed: %v", err)
-			return err
-		}
-
-		edr.edReportingRequestLatency.Since(httpRequestStart)
-		httpStatTags := edr.getTags(label)
-		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		edr.stats.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
-
-		defer func() { httputil.CloseResponse(resp) }()
-		respBody, err := io.ReadAll(resp.Body)
-		edr.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
-		if err != nil {
-			edr.log.Errorf("Reading response failed: %w", err)
-			return err
-		}
-
-		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
-			edr.log.Error(err.Error())
-		}
-		return err
-	}
-
-	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error reporting to service: %v`, err)
-	})
-	if err != nil {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error making request to reporting service: %v`, err)
-	}
-	return err
 }
 
 func (edr *ErrorDetailReporter) Stop() {
