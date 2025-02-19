@@ -43,14 +43,17 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/compress"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
+	"github.com/rudderlabs/rudder-server/gzip"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/lz4"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -318,6 +321,11 @@ type JobsDB interface {
 	IsMasterBackupEnabled() bool
 }
 
+type compressor interface {
+	Compress([]byte) ([]byte, error)
+	Decompress([]byte) ([]byte, error)
+}
+
 /*
 assertInterface contains public assert methods
 */
@@ -333,6 +341,9 @@ Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
 func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+	if jd.ownerType == Write {
+		return errors.New("Write owner type not allowed to update job statuses")
+	}
 	updateCmd := func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
 		if len(statusList) == 0 {
 			return nil
@@ -451,6 +462,7 @@ Handle is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
+	compressor           compressor
 	dbHandle             *sql.DB
 	sharedConnectionPool bool
 	ownerType            OwnerType
@@ -513,6 +525,8 @@ type Handle struct {
 		enableReaderQueue              bool
 		clearAll                       bool
 		skipMaintenanceError           bool
+		enableToastOptimizations       config.ValueLoader[bool]
+		enableCompression              bool
 		dsLimit                        config.ValueLoader[int]
 		maxReaders                     int
 		maxWriters                     int
@@ -758,6 +772,7 @@ func (jd *Handle) Setup(
 }
 
 func (jd *Handle) init() {
+
 	jd.dsListLock = lock.NewLocker()
 	jd.dsMigrationLock = lock.NewLocker()
 	if jd.logger == nil {
@@ -919,6 +934,44 @@ func (jd *Handle) loadConfig() {
 	maxDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxDSRetention", "JobsDB." + "maxDSRetention"}
 	jd.conf.maxDSRetentionPeriod = jd.config.GetReloadableDurationVar(90, time.Minute, maxDSRetentionPeriodKeys...)
 	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, "JobsDB.refreshDS.timeout")
+	jd.conf.enableToastOptimizations = jd.config.GetReloadableBoolVar(false, "JobsDB.enableToastOptimizations")
+
+	jd.conf.enableCompression = jd.config.GetBoolVar(false, "JobsDB.Compression.enabled")
+	if jd.conf.enableCompression {
+		algorithm := jd.config.GetStringVar("lz4", "JobsDB.Compression.algorithm")
+		switch algorithm {
+		case "lz4":
+			c, err := lz4.NewCompressor(jd.config.GetIntVar(1, 1, "JobsDB.Compression.concurrency"), jd.config.GetStringVar("fast", "JobsDB.Compression.level"))
+			if err != nil {
+				panic(err)
+			}
+			jd.compressor = c
+		case "gzip":
+			jd.compressor = gzip.NewCompressor()
+		case "zstd":
+			algo, level, err := compress.NewSettings(compress.CompressionAlgoZstd.String(), jd.config.GetStringVar("fast", "JobsDB.Compression.level"))
+			if err != nil {
+				panic(err)
+			}
+			c, err := compress.New(algo, level)
+			if err != nil {
+				panic(err)
+			}
+			jd.compressor = c
+		case "zstd-cgo":
+			algo, level, err := compress.NewSettings(compress.CompressionAlgoZstdCgo.String(), jd.config.GetStringVar("fast", "JobsDB.Compression.level"))
+			if err != nil {
+				panic(err)
+			}
+			c, err := compress.New(algo, level)
+			if err != nil {
+				panic(err)
+			}
+			jd.compressor = c
+		default:
+			panic(fmt.Errorf("invalid compressor %s", algorithm))
+		}
+	}
 
 	// migrationConfig
 
@@ -964,7 +1017,7 @@ func (jd *Handle) loadConfig() {
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
-	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, "JobsDB.maxDSSize")
+	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(400000, 1, "JobsDB.maxDSSizee")
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1444,30 +1497,50 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 	default:
 		columnType = JSONB
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
-		job_id BIGSERIAL PRIMARY KEY,
-		workspace_id TEXT NOT NULL DEFAULT '',
-		uuid UUID NOT NULL,
-		user_id TEXT NOT NULL,
-		parameters JSONB NOT NULL,
-		custom_val VARCHAR(64) NOT NULL,
-		event_payload `+string(columnType)+` NOT NULL,
-		event_count INTEGER NOT NULL DEFAULT 1,
-		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
+
+	var (
+		StorageExternal string = "STORAGE EXTERNAL"
+		StoragePlain    string = "STORAGE PLAIN"
+		TableOptions    string = "WITH (toast_tuple_target = 128)"
+	)
+	if !jd.conf.enableToastOptimizations.Load() {
+		StoragePlain, TableOptions = "", ""
+		StorageExternal = "COMPRESSION " + config.GetStringVar("lz4", "JobsDB.payloadCompression")
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %[1]q (
+		job_id BIGSERIAL %[2]s PRIMARY KEY,
+		workspace_id TEXT %[2]s NOT NULL DEFAULT '',
+		uuid UUID %[2]s NOT NULL,
+		user_id TEXT %[2]s NOT NULL,
+		parameters JSONB %[2]s NOT NULL,
+		custom_val VARCHAR(64) %[2]s NOT NULL,
+		event_payload `+string(columnType)+` %[3]s NOT NULL,
+		event_count INTEGER %[2]s NOT NULL DEFAULT 1,
+		created_at TIMESTAMP WITH TIME ZONE %[2]s NOT NULL DEFAULT NOW(),
+		expire_at TIMESTAMP WITH TIME ZONE %[2]s NOT NULL DEFAULT NOW()) %[4]s;`,
+		newDS.JobTable,
+		StoragePlain,
+		StorageExternal,
+		TableOptions,
+	)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
-		id BIGSERIAL,
-		job_id BIGINT,
-		job_state VARCHAR(64),
-		attempt SMALLINT,
-		exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-		error_code VARCHAR(32),
-		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB,
-		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %[1]q (
+		id BIGSERIAL %[2]s,
+		job_id BIGINT %[2]s,
+		job_state VARCHAR(64) %[2]s,
+		attempt SMALLINT %[2]s,
+		exec_time TIMESTAMP WITH TIME ZONE %[2]s NOT NULL DEFAULT NOW(),
+		retry_time TIMESTAMP WITH TIME ZONE %[2]s NOT NULL DEFAULT NOW(),
+		error_code VARCHAR(32) %[2]s,
+		error_response JSONB %[3]s DEFAULT '{}'::JSONB,
+		parameters JSONB %[2]s DEFAULT '{}'::JSONB,
+		PRIMARY KEY (job_id, job_state, id)) %[4]s;`,
+		newDS.JobStatusTable,
+		StoragePlain,
+		StorageExternal,
+		TableOptions,
+	)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 	return nil
@@ -1497,9 +1570,21 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 		)); err != nil {
 		return fmt.Errorf("adding foreign key constraint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+	includeJobState := "INCLUDE (job_state)"
+	indexOptimizations := config.GetBoolVar(false, "JobsDB.indexOptimizations")
+	if !indexOptimizations {
+		includeJobState = ""
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc) %[2]s`, newDS.JobStatusTable, includeJobState)); err != nil {
 		return fmt.Errorf("adding job_id_id index: %w", err)
 	}
+	if indexOptimizations {
+		// index used for maxDSRetention
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_js index: %w", err)
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("create view: %w", err)
 	}
@@ -1642,9 +1727,9 @@ func (jd *Handle) postDropDs(ds dataSetT) {
 
 func (jd *Handle) dropAllDS(l lock.LockToken) error {
 	var err error
-	dList, err := jd.doRefreshDSList(l)
+	dList, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 	if err != nil {
-		return fmt.Errorf("refreshDSList: %w", err)
+		return fmt.Errorf("getDSList: %w", err)
 	}
 	for _, ds := range dList {
 		if err = jd.dropDS(ds); err != nil {
@@ -1660,13 +1745,19 @@ func (jd *Handle) dropAllDS(l lock.LockToken) error {
 }
 
 func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
+	tags := &statTags{CustomValFilters: []string{jd.tablePrefix}}
 	defer jd.getTimerStat(
 		"store_jobs",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+		tags,
 	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
+	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		jd.stats.NewTaggedStat("jobsdb_stored_jobs", stats.CountType, statTags).Count(len(jobList))
+		jd.stats.NewTaggedStat("jobsdb_stored_bytes", stats.CountType, statTags).Count(lo.SumBy(jobList, func(j *JobT) int { return len(j.EventPayload) }))
 	})
 
 	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
@@ -2029,8 +2120,18 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if job.EventCount > 1 {
 				eventCount = job.EventCount
 			}
+			payload := job.EventPayload
+			if jd.conf.payloadColumnType == BYTEA && jd.conf.enableCompression {
+				if payload, err = jd.compressor.Compress(payload); err != nil {
+					return fmt.Errorf("compressing payload: %w", err)
+				}
+			}
+			var eventPayload any = payload
+			if jd.conf.payloadColumnType != BYTEA {
+				eventPayload = string(payload)
+			}
 
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), eventPayload, eventCount, job.WorkspaceId); err != nil {
 				return err
 			}
 		}
@@ -2245,6 +2346,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
 		if err != nil {
 			return JobsResult{}, false, err
+		}
+		if jd.conf.payloadColumnType == BYTEA && jd.conf.enableCompression {
+			if payload, err = jd.compressor.Decompress(payload); err != nil {
+				return JobsResult{}, false, fmt.Errorf("decompressing payload: %w", err)
+			}
 		}
 		job.EventPayload = payload
 		if jsState.Valid {
@@ -2814,6 +2920,11 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 			}
 		}
 	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(len(statusList))
+		jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(lo.SumBy(statusList, func(j *JobStatusT) int { return len(j.ErrorResponse) }))
+	})
 
 	return nil
 }
@@ -2911,6 +3022,9 @@ func (jd *Handle) Store(ctx context.Context, jobList []*JobT) error {
 // StoreInTx stores new jobs to the jobsdb.
 // If enableWriterQueue is true, this goes through writer worker pool.
 func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error {
+	if jd.ownerType == Read {
+		return errors.New("Read owner type not allowed to write jobs")
+	}
 	storeCmd := func() error {
 		command := func() error {
 			dsList := jd.getDSList()
@@ -3203,6 +3317,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		mtoken.afterJobID = &retryAfterJobID
 	}
 
+	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))
+	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) }))
 	return res, nil
 }
 
@@ -3213,6 +3329,9 @@ can return the same set of events. It is the responsibility of the caller to cal
 one thread, update the state (to "waiting") in the same thread and pass on the processors
 */
 func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryParams) (JobsResult, error) { // skipcq: CRT-P0003
+	if jd.ownerType == Write {
+		return JobsResult{}, errors.New("Write owner type not allowed to read jobs")
+	}
 	if params.JobsLimit == 0 {
 		return JobsResult{}, nil
 	}

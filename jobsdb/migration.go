@@ -81,6 +81,10 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	var lockChan chan<- lock.LockToken
 
 	lockStart := time.Now()
+	fmt.Println("************* Running migration for ", jd.tablePrefix)
+	defer func() {
+		fmt.Println("************* Done running migration for "+jd.tablePrefix+" in ", time.Since(lockStart))
+	}()
 	err = jd.WithTx(func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
@@ -523,7 +527,6 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	if err != nil {
 		return 0, err
 	}
-
 	compactDSQuery := fmt.Sprintf(
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
