@@ -28,15 +28,15 @@ func IsJobTerminated(status int) bool {
 
 func TransformerClientConfig(conf *config.Config, configPrefix string) *transformerclient.ClientConfig {
 	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: conf.GetReloadableDurationVar(600, time.Second, fmt.Sprintf("HttpClient.procTransformer.%s.timeout", configPrefix), "HttpClient.procTransformer.timeout"),
-		ClientTTL:     conf.GetReloadableDurationVar(10, time.Second, fmt.Sprintf("Transformer.Client.%s.ttl", configPrefix), "Transformer.Client.ttl"),
-		ClientType:    conf.GetReloadableStringVar("stdlib", fmt.Sprintf("Transformer.Client.%s.type", configPrefix), "Transformer.Client.type"),
-		PickerType:    conf.GetReloadableStringVar("power_of_two", fmt.Sprintf("Transformer.Client.%s.httplb.pickerType", configPrefix), "Transformer.Client.httplb.pickerType"),
+		ClientTimeout: conf.GetDurationVar(600, time.Second, fmt.Sprintf("HttpClient.procTransformer.%s.timeout", configPrefix), "HttpClient.procTransformer.timeout"),
+		ClientTTL:     conf.GetDurationVar(10, time.Second, fmt.Sprintf("Transformer.Client.%s.ttl", configPrefix), "Transformer.Client.ttl"),
+		ClientType:    conf.GetStringVar("stdlib", fmt.Sprintf("Transformer.Client.%s.type", configPrefix), "Transformer.Client.type"),
+		PickerType:    conf.GetStringVar("power_of_two", fmt.Sprintf("Transformer.Client.%s.httplb.pickerType", configPrefix), "Transformer.Client.httplb.pickerType"),
 	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetReloadableBoolVar(true, fmt.Sprintf("Transformer.Client.%s.disableKeepAlives", configPrefix), "Transformer.Client.disableKeepAlives")
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetReloadableIntVar(100, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPConnections", configPrefix), "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetReloadableIntVar(10, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPIdleConnections", configPrefix), "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetReloadableDurationVar(30, time.Second, fmt.Sprintf("Transformer.Client.%s.maxIdleConnDuration", configPrefix), "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, fmt.Sprintf("Transformer.Client.%s.disableKeepAlives", configPrefix), "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPConnections", configPrefix), "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(10, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPIdleConnections", configPrefix), "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(30, time.Second, fmt.Sprintf("Transformer.Client.%s.maxIdleConnDuration", configPrefix), "Transformer.Client.maxIdleConnDuration")
 	return transformerClientConfig
 }
 

@@ -145,15 +145,15 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 
 	trans.guardConcurrency = make(chan struct{}, trans.config.maxConcurrency)
 	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: conf.GetReloadableDurationVar(600, time.Second, "HttpClient.procTransformer.timeout"),
-		ClientTTL:     conf.GetReloadableDurationVar(10, time.Second, "Transformer.Client.ttl"),
-		ClientType:    conf.GetReloadableStringVar("stdlib", "Transformer.Client.type"),
-		PickerType:    conf.GetReloadableStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
+		ClientTimeout: conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout"),
+		ClientTTL:     conf.GetDurationVar(10, time.Second, "Transformer.Client.ttl"),
+		ClientType:    conf.GetStringVar("stdlib", "Transformer.Client.type"),
+		PickerType:    conf.GetStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
 	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetReloadableBoolVar(true, "Transformer.Client.disableKeepAlives")
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetReloadableIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetReloadableIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetReloadableDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
 
 	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
 

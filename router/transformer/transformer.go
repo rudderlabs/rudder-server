@@ -594,15 +594,15 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 
 func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
 	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: config.GetReloadableDurationVar(600, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout"),
-		ClientTTL:     config.GetReloadableDurationVar(10, time.Second, "Transformer.Client.ttl"),
-		ClientType:    config.GetReloadableStringVar("stdlib", "Transformer.Client.type"),
-		PickerType:    config.GetReloadableStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
+		ClientTimeout: config.GetDurationVar(600, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout"),
+		ClientTTL:     config.GetDurationVar(10, time.Second, "Transformer.Client.ttl"),
+		ClientType:    config.GetStringVar("stdlib", "Transformer.Client.type"),
+		PickerType:    config.GetStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
 	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetReloadableBoolVar(true, "Transformer.Client.disableKeepAlives")
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetReloadableIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetReloadableIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetReloadableDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
 	return transformerClientConfig
 }
 
