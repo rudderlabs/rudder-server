@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -79,7 +80,7 @@ func (sh *schemaV2) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 }
 
 func (sh *schemaV2) UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
-	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
+	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}

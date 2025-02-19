@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -920,7 +921,7 @@ func TestGRPC(t *testing.T) {
 					require.Empty(t, res)
 				})
 				t.Run("success", func(t *testing.T) {
-					destConfig, err := json.Marshal(map[string]interface{}{
+					destConfig, err := jsonrs.Marshal(map[string]interface{}{
 						"destination": map[string]interface{}{
 							"DestinationDefinition": map[string]interface{}{
 								"Name": whutils.POSTGRES,
@@ -1276,7 +1277,7 @@ func TestGRPC(t *testing.T) {
 				require.NoError(t, err)
 
 				if len(error) > 0 {
-					errorJson, err := json.Marshal(error)
+					errorJson, err := jsonrs.Marshal(error)
 					require.NoError(t, err)
 
 					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
@@ -1287,7 +1288,7 @@ func TestGRPC(t *testing.T) {
 					require.NoError(t, err)
 				}
 				if len(timings) > 0 {
-					timingsJson, err := json.Marshal(timings)
+					timingsJson, err := jsonrs.Marshal(timings)
 					require.NoError(t, err)
 
 					_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET timings = $1 WHERE id = $2`,

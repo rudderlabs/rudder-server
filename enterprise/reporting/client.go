@@ -3,7 +3,6 @@ package reporting
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
@@ -70,7 +71,7 @@ func NewClient(reportingServiceURL string, conf *config.Config, log logger.Logge
 
 // SendMetric sends a regular metric to the reporting service
 func (c *Client) SendMetric(ctx context.Context, metric *types.Metric) error {
-	payload, err := json.Marshal(metric)
+	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}
@@ -136,7 +137,7 @@ func (c *Client) SendMetric(ctx context.Context, metric *types.Metric) error {
 
 // SendErrorMetric sends an error detail metric to the reporting service
 func (c *Client) SendErrorMetric(ctx context.Context, metric *types.EDMetric) error {
-	payload, err := json.Marshal(metric)
+	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}

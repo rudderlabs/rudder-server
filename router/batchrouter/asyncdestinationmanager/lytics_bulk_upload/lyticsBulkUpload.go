@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -73,7 +73,7 @@ func (u *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath strin
 func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
-	destConfig, err := jsoniter.Marshal(destination.Config)
+	destConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		eventsAbortedStat := u.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 			"module":   "batch_router",

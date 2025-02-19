@@ -10,10 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
@@ -32,8 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type uploadProcessingResult struct {
 	result uploadResult
@@ -161,7 +158,7 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 		err     error
 	)
 
-	if err = json.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
+	if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
@@ -175,7 +172,7 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 		return
 	}
 
-	if jobJSON, err = json.Marshal(job); err != nil {
+	if jobJSON, err = jsonrs.Marshal(job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
@@ -266,7 +263,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 			writer           encoding.LoadFileWriter
 		)
 
-		if err := json.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
+		if err := jsonrs.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
 			jr.logger.Warnn("Failed to unmarshal line from staging file to BatchRouterEvent",
 				logger.NewIntField("stagingFileID", job.StagingFileID),
 				obskit.Error(err),
@@ -392,7 +389,7 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 			// Special handling for JSON arrays
 			// TODO: Will this work for both BQ and RS?
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-				marshalledVal, err := json.Marshal(columnVal)
+				marshalledVal, err := jsonrs.Marshal(columnVal)
 				if err != nil {
 					eventLoader.AddEmptyColumn(columnName)
 					continue
@@ -444,7 +441,7 @@ func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifi
 		err error
 	)
 
-	if err := json.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
+	if err := jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
@@ -455,7 +452,7 @@ func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifi
 		return
 	}
 
-	jobResultJSON, err := json.Marshal(source.NotifierResponse{
+	jobResultJSON, err := jsonrs.Marshal(source.NotifierResponse{
 		ID: job.ID,
 	})
 	if err != nil {
@@ -491,7 +488,7 @@ func (w *worker) runSourceJob(ctx context.Context, sourceJob source.NotifierRequ
 	defer integrationsManager.Cleanup(ctx)
 
 	var metadata warehouseutils.DeleteByMetaData
-	if err = json.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
+	if err = jsonrs.Unmarshal(sourceJob.MetaData, &metadata); err != nil {
 		return fmt.Errorf("unmarshalling metadata: %w", err)
 	}
 

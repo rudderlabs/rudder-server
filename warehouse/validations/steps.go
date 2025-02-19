@@ -7,13 +7,14 @@ import (
 	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func validateStepFunc(_ context.Context, destination *backendconfig.DestinationT, _ string) (json.RawMessage, error) {
-	return json.Marshal(StepsToValidate(destination))
+	return jsonrs.Marshal(StepsToValidate(destination))
 }
 
 func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {

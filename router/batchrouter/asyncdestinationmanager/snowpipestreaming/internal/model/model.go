@@ -3,8 +3,7 @@ package model
 import (
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
-
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -76,8 +75,6 @@ type (
 	}
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
-
 func (c *ChannelResponse) UnmarshalJSON(data []byte) error {
 	type Alias ChannelResponse // Prevent recursion
 	temp := &struct {
@@ -86,7 +83,7 @@ func (c *ChannelResponse) UnmarshalJSON(data []byte) error {
 	}{
 		Alias: (*Alias)(c),
 	}
-	if err := json.Unmarshal(data, &temp); err != nil {
+	if err := jsonrs.Unmarshal(data, &temp); err != nil {
 		return err
 	}
 	c.SnowpipeSchema = generateSnowpipeSchema(temp.TableSchema)

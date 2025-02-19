@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/stringlikeobject"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
@@ -102,7 +103,7 @@ func handleValidJSONPath(
 	data map[string]any, metadata map[string]string,
 	pi *prefixInfo,
 ) error {
-	valJSON, err := json.Marshal(val)
+	valJSON, err := jsonrs.Marshal(val)
 	if err != nil {
 		return fmt.Errorf("marshalling value: %w", err)
 	}
@@ -136,7 +137,7 @@ func processNonNestedObject(
 ) error {
 	finalValue := val
 	if tec.event.Metadata.SourceCategory == "cloud" && pi.level >= 3 && utils.IsObject(val) {
-		jsonData, err := json.Marshal(val)
+		jsonData, err := jsonrs.Marshal(val)
 		if err != nil {
 			return fmt.Errorf("marshalling value: %w", err)
 		}
@@ -188,7 +189,7 @@ func storeRudderEvent(
 		return fmt.Errorf("safe column name: %w", err)
 	}
 
-	eventJSON, err := json.Marshal(tec.event.Message)
+	eventJSON, err := jsonrs.Marshal(tec.event.Message)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
 	}

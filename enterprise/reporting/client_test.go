@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -122,9 +123,9 @@ func TestClientSendMetric(t *testing.T) {
 
 	// Compare JSON payloads
 	var expectedJSON, actualJSON interface{}
-	err = json.Unmarshal(expected, &expectedJSON)
+	err = jsonrs.Unmarshal(expected, &expectedJSON)
 	require.NoError(t, err, "failed to unmarshal expected JSON")
-	err = json.Unmarshal(receivedPayload, &actualJSON)
+	err = jsonrs.Unmarshal(receivedPayload, &actualJSON)
 	require.NoError(t, err, "failed to unmarshal actual JSON")
 
 	require.Equal(t, expectedJSON, actualJSON, "payload does not match golden file")
@@ -247,9 +248,9 @@ func TestClientSendErrorMetric(t *testing.T) {
 
 	// Compare JSON payloads
 	var expectedJSON, actualJSON interface{}
-	err = json.Unmarshal(expected, &expectedJSON)
+	err = jsonrs.Unmarshal(expected, &expectedJSON)
 	require.NoError(t, err, "failed to unmarshal expected JSON")
-	err = json.Unmarshal(receivedPayload, &actualJSON)
+	err = jsonrs.Unmarshal(receivedPayload, &actualJSON)
 	require.NoError(t, err, "failed to unmarshal actual JSON")
 
 	require.Equal(t, expectedJSON, actualJSON, "payload does not match golden file")

@@ -1,8 +1,6 @@
 package offline_conversions
 
 import (
-	"encoding/json"
-	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -51,11 +50,11 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	payload := string(job.EventPayload)
 	var event Record
 	var fields map[string]interface{}
-	err := json.Unmarshal(job.EventPayload, &event)
+	err := jsonrs.Unmarshal(job.EventPayload, &event)
 	if err != nil {
 		return payload, fmt.Errorf("unmarshalling event %w:", err)
 	}
-	err = json.Unmarshal(event.Fields, &fields)
+	err = jsonrs.Unmarshal(event.Fields, &fields)
 	if err != nil {
 		return payload, fmt.Errorf("unmarshalling event.fields: %w", err)
 	}
@@ -115,7 +114,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 			JobID: job.JobID,
 		},
 	}
-	jsonData, err := json.Marshal(data)
+	jsonData, err := jsonrs.Marshal(data)
 	if err != nil {
 		return payload, err
 	}
@@ -189,14 +188,14 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 	var parameters common.ImportParameters
 	parameters.ImportId = strings.Join(importIds, commaSeparator)
-	importParameters, err := stdjson.Marshal(parameters)
+	importParameters, err := jsonrs.Marshal(parameters)
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}
 	errorMap := map[string]string{
 		"error": strings.Join(errors, commaSeparator),
 	}
-	allErrors, err := json.Marshal(errorMap)
+	allErrors, err := jsonrs.Marshal(errorMap)
 	if err != nil {
 		b.logger.Error("Error while marshalling error")
 	}

@@ -29,14 +29,13 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -112,15 +111,6 @@ func GetHash(s string) int {
 func GetMD5Hash(input string) string {
 	hash := md5.Sum([]byte(input)) // skipcq: GO-S1023
 	return hex.EncodeToString(hash[:])
-}
-
-// GetRudderEventVal returns the value corresponding to the key in the message structure
-func GetRudderEventVal(key string, rudderEvent types.SingularEventT) (interface{}, bool) {
-	rudderVal, ok := rudderEvent[key]
-	if !ok {
-		return nil, false
-	}
-	return rudderVal, true
 }
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
@@ -968,7 +958,8 @@ func GetInstanceID() string {
 	return ""
 }
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+// explicitly using json-iter due to its unique behaviour with respect to handling invalid characters
+var jsonfast jsonrs.JSON = jsonrs.NewWithLibrary(jsonrs.JsoniterLib)
 
 // SanitizeJSON makes a json payload safe for writing into postgres.
 // 1. Removes any \u0000 string from the payload

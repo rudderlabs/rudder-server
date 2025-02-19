@@ -27,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
@@ -297,7 +298,7 @@ func (brt *Handle) crashRecover() {
 		entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 		for _, entry := range entries {
 			var object ObjectStorageDefinition
-			if err := json.Unmarshal(entry.OpPayload, &object); err != nil {
+			if err := jsonrs.Unmarshal(entry.OpPayload, &object); err != nil {
 				panic(err)
 			}
 			if len(object.Config) == 0 {

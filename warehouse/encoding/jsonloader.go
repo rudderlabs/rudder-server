@@ -1,9 +1,9 @@
 package encoding
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -55,9 +55,9 @@ func (loader *jsonLoader) AddEmptyColumn(columnName string) {
 }
 
 func (loader *jsonLoader) WriteToString() (string, error) {
-	jsonData, err := json.Marshal(loader.columnData)
+	jsonData, err := jsonrs.Marshal(loader.columnData)
 	if err != nil {
-		return "", fmt.Errorf("json.Marshal: %w", err)
+		return "", fmt.Errorf("jsonrs.Marshal: %w", err)
 	}
 	return string(jsonData) + "\n", nil
 }

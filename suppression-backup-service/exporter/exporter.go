@@ -3,7 +3,6 @@ package exporter
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -186,7 +186,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 }
 
 func latestToken() (string, error) {
-	marshalledToken, err := json.Marshal(Token{SyncStartTime: time.Now().Add(-config.GetDuration("SuppressionExporter.latestExportDuration", 30*24, time.Hour)), SyncSeqId: -1})
+	marshalledToken, err := jsonrs.Marshal(Token{SyncStartTime: time.Now().Add(-config.GetDuration("SuppressionExporter.latestExportDuration", 30*24, time.Hour)), SyncSeqId: -1})
 	if err != nil {
 		return "", fmt.Errorf("latestToken: %w", err)
 	}

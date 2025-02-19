@@ -1,13 +1,13 @@
 package common
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"golang.org/x/oauth2"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -60,7 +60,7 @@ func (ts *TokenSource) GenerateToken() (*SecretStruct, error) {
 	*/
 
 	secret := SecretStruct{}
-	err := json.Unmarshal(authResponse.Account.Secret, &secret)
+	err := jsonrs.Unmarshal(authResponse.Account.Secret, &secret)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
@@ -75,7 +75,7 @@ func (ts *TokenSource) GenerateToken() (*SecretStruct, error) {
 		if statusCode != 200 {
 			return nil, fmt.Errorf("error in refreshing access token")
 		}
-		err = json.Unmarshal(authResponse.Account.Secret, &secret)
+		err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret)
 		if err != nil {
 			return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 		}
@@ -122,7 +122,7 @@ func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
 	*/
 
 	var secret SecretStruct
-	if err = json.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
+	if err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	currentTime := time.Now()
@@ -139,7 +139,7 @@ func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
 	}
-	if err = json.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
+	if err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	return &secret, nil

@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -190,7 +191,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Empty(t, s.localSchema)
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 			}
-			marshalledSchema, err := json.Marshal(tc.mockSchema.Schema)
+			marshalledSchema, err := jsonrs.Marshal(tc.mockSchema.Schema)
 			require.NoError(t, err)
 			require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 
@@ -205,7 +206,7 @@ func TestSchema_UpdateLocalSchema(t *testing.T) {
 				require.Empty(t, mockRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 				require.EqualValues(t, float64(241), statsStore.Get("warehouse_schema_size", tags).LastValue())
 			}
-			marshalledSchema, err = json.Marshal(schemaInWarehouse)
+			marshalledSchema, err = jsonrs.Marshal(schemaInWarehouse)
 			require.NoError(t, err)
 			require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 		})
@@ -1812,7 +1813,7 @@ func TestSchema_SyncRemoteSchema(t *testing.T) {
 		require.Equal(t, schemaInWarehouse, mockSchemaRepo.schemaMap[schemaKey(sourceID, destinationID, namespace)].Schema)
 		require.Equal(t, schemaInWarehouse, s.schemaInWarehouse)
 
-		marshalledSchema, err := json.Marshal(s.localSchema)
+		marshalledSchema, err := jsonrs.Marshal(s.localSchema)
 		require.NoError(t, err)
 		require.EqualValues(t, float64(len(marshalledSchema)), statsStore.Get("warehouse_schema_size", tags).LastValue())
 	})

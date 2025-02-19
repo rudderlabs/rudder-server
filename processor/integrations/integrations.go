@@ -5,19 +5,16 @@ import (
 	"fmt"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var (
-	json                  = jsoniter.ConfigCompatibleWithStandardLibrary
-	postParametersTFields []string
-)
+var postParametersTFields []string
 
 func init() {
 	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
@@ -48,7 +45,7 @@ type TransStatsT struct {
 
 func CollectDestErrorStats(input []byte) {
 	var integrationStat TransStatsT
-	err := json.Unmarshal(input, &integrationStat)
+	err := jsonrs.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
 			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
@@ -58,7 +55,7 @@ func CollectDestErrorStats(input []byte) {
 
 func CollectIntgTransformErrorStats(input []byte) {
 	var integrationStats []TransStatsT
-	err := json.Unmarshal(input, &integrationStats)
+	err := jsonrs.Unmarshal(input, &integrationStats)
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
@@ -70,7 +67,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 
 // GetPostInfo parses the transformer response
 func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := json.Marshal(transformRawParams)
+	transformRaw, err := jsonrs.Marshal(transformRawParams)
 	if err != nil {
 		return err
 	}
@@ -94,7 +91,7 @@ func ValidatePostInfo(transformRawParams PostParametersT) error {
 // FilterClientIntegrations parses the destination names from the
 // input JSON, matches them with enabled destinations from controle plane and returns the IDSs
 func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
-	clientIntgs, ok := misc.GetRudderEventVal("integrations", clientEvent)
+	clientIntgs, ok := types.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
 		clientIntgs = make(map[string]interface{})
 	}

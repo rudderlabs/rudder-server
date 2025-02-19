@@ -1,7 +1,6 @@
 package v2
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/controlplane"
@@ -295,7 +295,7 @@ func (h *OAuthHandler) AuthStatusToggle(params *AuthStatusToggleParams) (statusC
 		logger.NewStringField("Response", respBody))
 
 	var authStatusToggleRes *authStatusToggleResponse
-	unmarshalErr := json.Unmarshal([]byte(respBody), &authStatusToggleRes)
+	unmarshalErr := jsonrs.Unmarshal([]byte(respBody), &authStatusToggleRes)
 	if routerutils.IsNotEmptyString(respBody) && (unmarshalErr != nil || !routerutils.IsNotEmptyString(authStatusToggleRes.Message) || statusCode != http.StatusOK) {
 		var msg string
 		if unmarshalErr != nil {
@@ -325,7 +325,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		// Network error
 		errorType = gjson.Get(response, common.ErrorType).String()
 		message = gjson.Get(response, "message").String()
-	} else if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
+	} else if err := jsonrs.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
 		h.Logger.Debugn("Failed with error response", logger.NewErrorField(err))
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
@@ -363,7 +363,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 ) (int, *AuthResponse, error) {
 	actionType := strings.Join(strings.Fields(strings.ToLower(logTypeName)), "_")
 	refreshUrl := fmt.Sprintf("%s/destination/workspaces/%s/accounts/%s/token", h.ConfigBEURL, refTokenParams.WorkspaceID, refTokenParams.AccountID)
-	res, err := json.Marshal(refTokenBody)
+	res, err := jsonrs.Marshal(refTokenBody)
 	if err != nil {
 		statsHandler.Increment("request", stats.Tags{
 			"errorMessage": "error in marshalling refresh token body",
