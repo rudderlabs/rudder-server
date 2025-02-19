@@ -21,6 +21,7 @@ func (h *workerHandleAdapter) config() workerHandleConfig {
 		pipelineBufferedItems: h.Handle.config.pipelineBufferedItems,
 		maxEventsToProcess:    h.Handle.config.maxEventsToProcess,
 		subJobSize:            h.Handle.config.subJobSize,
+		numPartitions:         h.Handle.config.numPartitions,
 		readLoopSleep:         h.Handle.config.readLoopSleep,
 		maxLoopSleep:          h.Handle.config.maxLoopSleep,
 	}
