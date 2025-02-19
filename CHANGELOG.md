@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.43.0](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.43.0) (2025-02-18)
+
+
+### Features
+
+* add a new implementation of schema with ttl ([#5462](https://github.com/rudderlabs/rudder-server/issues/5462)) ([c708863](https://github.com/rudderlabs/rudder-server/commit/c70886361e373225e7800520a2edacdf57956459))
+* implement snowpipe destination config validation ([#5472](https://github.com/rudderlabs/rudder-server/issues/5472)) ([a3810fc](https://github.com/rudderlabs/rudder-server/commit/a3810fcfab00a29df3e8ef9c71e7640c84ee9bce))
+* introduce router transformer metrics for cost attribution ([#5511](https://github.com/rudderlabs/rudder-server/issues/5511)) ([a8b3a00](https://github.com/rudderlabs/rudder-server/commit/a8b3a007c1241883c932a70c1046b035512f1e6b))
+* introduce transformer metrics for cost attribution ([#5505](https://github.com/rudderlabs/rudder-server/issues/5505)) ([90d1f24](https://github.com/rudderlabs/rudder-server/commit/90d1f2423b3c07cbc009af1ca784c8355bb8e683))
+* sync latency metrics api ([#5500](https://github.com/rudderlabs/rudder-server/issues/5500)) ([b35a657](https://github.com/rudderlabs/rudder-server/commit/b35a65754d89f3723f53f6cbc628b459e3d7552f))
+* updated validation check for microsoftClickId in bingads_offline_conversions async destination ([#5514](https://github.com/rudderlabs/rudder-server/issues/5514)) ([6468c42](https://github.com/rudderlabs/rudder-server/commit/6468c42dd3a511d451304b48f32408c40480d546))
+
+
+### Bug Fixes
+
+* async framework destination live events ([#5480](https://github.com/rudderlabs/rudder-server/issues/5480)) ([4938a25](https://github.com/rudderlabs/rudder-server/commit/4938a255c2f021ee447b67b01c6d4146067d3b06))
+* databricks columns to add becomes empty after filtering ([#5494](https://github.com/rudderlabs/rudder-server/issues/5494)) ([4854220](https://github.com/rudderlabs/rudder-server/commit/4854220d69f1627cf90cceb84809647b512c3ad4))
+* deltalake syncs failing for columns with unhandled data type ([#5467](https://github.com/rudderlabs/rudder-server/issues/5467)) ([28d6072](https://github.com/rudderlabs/rudder-server/commit/28d60720e510dc0f1602dc8bfddec988c2a2664b))
+* security vulnerabilities ([#5481](https://github.com/rudderlabs/rudder-server/issues/5481)) ([d89b8cc](https://github.com/rudderlabs/rudder-server/commit/d89b8cc1c398f1ca59f8c1b6931fa76ac1e0e098))
+* snowpipe streaming error enrichment for failed events ([#5479](https://github.com/rudderlabs/rudder-server/issues/5479)) ([737a42a](https://github.com/rudderlabs/rudder-server/commit/737a42abcf56f79c40dc0e1be9989b6f9789939a))
+* warehouse transformations SourceDefinitionType as empty ([#5510](https://github.com/rudderlabs/rudder-server/issues/5510)) ([15faf6b](https://github.com/rudderlabs/rudder-server/commit/15faf6be61d014ea5c2629d2855d84ad8ac18b16))
+
+
+### Miscellaneous
+
+* **deps:** bump google.golang.org/protobuf from 1.36.4 to 1.36.5 in the go-deps group ([#5489](https://github.com/rudderlabs/rudder-server/issues/5489)) ([e0b64f8](https://github.com/rudderlabs/rudder-server/commit/e0b64f815557061fa009d4badee6cde70b18494c))
+* **deps:** bump the go-deps group across 1 directory with 14 updates ([#5478](https://github.com/rudderlabs/rudder-server/issues/5478)) ([1ab22b0](https://github.com/rudderlabs/rudder-server/commit/1ab22b000f41a22dc6073f6423dc7d43a1812461))
+* fix gateway metrics ([#5483](https://github.com/rudderlabs/rudder-server/issues/5483)) ([4938a25](https://github.com/rudderlabs/rudder-server/commit/4938a255c2f021ee447b67b01c6d4146067d3b06))
+* generateTransformationMessage is its own concurrent step ([#5449](https://github.com/rudderlabs/rudder-server/issues/5449)) ([734e759](https://github.com/rudderlabs/rudder-server/commit/734e7594c19498a1bc498bb52f4394ef985edf0f))
+* integrate build-scan-push-action to scan docker images ([#5464](https://github.com/rudderlabs/rudder-server/issues/5464)) ([e9579b8](https://github.com/rudderlabs/rudder-server/commit/e9579b8987bcb2d7e40d8fc7c4cff27f6fc22750))
+* make cslb configurable ([#5451](https://github.com/rudderlabs/rudder-server/issues/5451)) ([4938a25](https://github.com/rudderlabs/rudder-server/commit/4938a255c2f021ee447b67b01c6d4146067d3b06))
+* migration to drop unused wh_schema_versions table ([#5469](https://github.com/rudderlabs/rudder-server/issues/5469)) ([28d6072](https://github.com/rudderlabs/rudder-server/commit/28d60720e510dc0f1602dc8bfddec988c2a2664b))
+* sanitise sample event payload and sample response before inserting in reports table ([#5493](https://github.com/rudderlabs/rudder-server/issues/5493)) ([9ec7552](https://github.com/rudderlabs/rudder-server/commit/9ec75528114a846e8402861b7fb521b613eb7ff2))
+* sync release v1.42.1 to main branch ([#5477](https://github.com/rudderlabs/rudder-server/issues/5477)) ([ad74333](https://github.com/rudderlabs/rudder-server/commit/ad74333f77d7d430a6e2180292219fcb5bd7bcba))
+* track event name post user transformation for reporting ([#5501](https://github.com/rudderlabs/rudder-server/issues/5501)) ([7fcdc47](https://github.com/rudderlabs/rudder-server/commit/7fcdc47ef4902cc0d95b21e1e1a1340adbe83158))
+
 ## [1.42.5](https://github.com/rudderlabs/rudder-server/compare/v1.42.4...v1.42.5) (2025-02-13)
 
 
