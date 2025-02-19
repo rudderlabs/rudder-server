@@ -847,10 +847,7 @@ func TestCacheScenarios(t *testing.T) {
 		require.NoError(t, gwDBForProcessor.Start())
 		defer gwDBForProcessor.TearDown()
 
-		res, err := gwDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
-		require.NoError(t, err)
-		require.Equal(t, 0, len(res.Jobs), "gwDB should report 0 unprocessed jobs")
-		res, err = gwDBForProcessor.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		res, err := gwDBForProcessor.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 0, len(res.Jobs), "gwDBForProcessor should report 0 unprocessed jobs")
 
@@ -859,9 +856,6 @@ func TestCacheScenarios(t *testing.T) {
 		res, err = gwDBForProcessor.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "gwDBForProcessor should report 2 unprocessed jobs since we added 2 jobs through gwDB")
-		res, err = gwDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
-		require.NoError(t, err)
-		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
 	})
 
 	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
@@ -81,6 +82,10 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	var lockChan chan<- lock.LockToken
 
 	lockStart := time.Now()
+	fmt.Println("************* Running migration for ", jd.tablePrefix)
+	defer func() {
+		fmt.Println("************* Done running migration for "+jd.tablePrefix+" in ", time.Since(lockStart))
+	}()
 	err = jd.WithTx(func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
@@ -90,12 +95,14 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			defer jd.dsMigrationLock.Unlock()
 			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
 			// the pending jobs count cannot change after the dsMigrationLock is acquired
-			migrateFrom, pendingJobsCount, insertBeforeDS, err = jd.getMigrationList(dsList)
-			if err != nil {
-				return fmt.Errorf("could not get migration list: %w", err)
-			}
-			if len(migrateFrom) == 0 {
-				return nil
+			if config.GetBool("JobsDB.doubleCheckMigrations", true) {
+				migrateFrom, pendingJobsCount, insertBeforeDS, err = jd.getMigrationList(dsList)
+				if err != nil {
+					return fmt.Errorf("could not get migration list: %w", err)
+				}
+				if len(migrateFrom) == 0 {
+					return nil
+				}
 			}
 
 			migrateFromDatasets := lo.Map(migrateFrom, func(ds dsWithPendingJobCount, _ int) dataSetT { return ds.ds })
@@ -523,7 +530,6 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 	if err != nil {
 		return 0, err
 	}
-
 	compactDSQuery := fmt.Sprintf(
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
@@ -535,7 +541,7 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		insertedStatuses as
 		(
 			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
-			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_state = ANY('{%[5]s}'))
+			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_id in (select job_id from inserted_jobs))
 		)
 		select count(*) from inserted_jobs;`,
 		srcDS.JobStatusTable,
