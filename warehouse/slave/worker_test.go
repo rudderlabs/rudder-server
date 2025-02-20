@@ -808,7 +808,7 @@ func TestHandleSchemaChange(t *testing.T) {
 			expectedColumnVal: `"string value"`,
 		},
 		{
-			name:              "should send json string values if existing datatype is json, new datatype is string",
+			name:              "should send json string values if existing datatype is json, new datatype is string with json value",
 			existingDatatype:  "json",
 			currentDataType:   "string",
 			value:             `{"json":"value"}`,
