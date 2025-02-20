@@ -3,10 +3,9 @@ package aggregator
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 )
 
 type Aggregator interface {
-	Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, err error)
+	Aggregate(ctx context.Context, start, end time.Time) (aggregates []Aggregate, err error)
 }

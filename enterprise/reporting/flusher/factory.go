@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"path"
 	"slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -14,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -44,16 +43,13 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 			return &NOPCronRunner{}, nil
 		}
 
-		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
-		parsedURL, err := url.Parse(reportingBaseURL)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing reporting url %w", err)
-		}
-		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
-		reportingURL := parsedURL.String()
+		reportingURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 
 		a := aggregator.NewTrackedUsersInAppAggregator(db, stats, conf, module)
-		f, err := NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
+
+		cl := client.NewClient(reportingURL, "trackedUser", conf, log, stats)
+
+		f, err := NewFlusher(db, log, stats, conf, table, cl, a, module)
 		if err != nil {
 			return nil, fmt.Errorf("error creating flusher %w", err)
 		}

@@ -1,4 +1,4 @@
-package reporting
+package client
 
 import (
 	"bytes"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"github.com/cenkalti/backoff/v4"
@@ -39,6 +41,9 @@ const (
 	// Legacy metrics:
 	StatErrorDetailReportingHttpReqLatency = "error_detail_reporting_http_request_latency"
 	StatErrorDetailReportingHttpReq        = "error_detail_reporting_http_request"
+	LegacyStatFlusherHTTPRequestDuration   = "reporting_flusher_http_request_duration_seconds"
+	LegacyStatFlusherHTTPRequestTotal      = "reporting_flusher_http_requests_total"
+	LegacyStatFlusherSentBytes             = "reporting_flusher_sent_bytes"
 )
 
 // Client handles sending metrics to the reporting service
@@ -50,10 +55,11 @@ type Client struct {
 	stats               stats.Stats
 	log                 logger.Logger
 	instanceID          string
+	path                string
 }
 
 // NewClient creates a new reporting client
-func NewClient(reportingServiceURL string, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func NewClient(reportingServiceURL, path string, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
@@ -61,6 +67,7 @@ func NewClient(reportingServiceURL string, conf *config.Config, log logger.Logge
 	return &Client{
 		httpClient:          netClient,
 		reportingServiceURL: reportingServiceURL,
+		path:                path,
 		region:              conf.GetString("region", ""),
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		label:               conf.GetString("clientName", ""),
@@ -75,7 +82,7 @@ func (c *Client) SendMetric(ctx context.Context, metric *types.Metric) error {
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}
-	tags := c.getTags(metric.WorkspaceID)
+	tags := c.getTags(metric.WorkspaceID, "metrics")
 
 	operation := func() error {
 		uri := fmt.Sprintf("%s/metrics?version=v1", c.reportingServiceURL)
@@ -142,7 +149,7 @@ func (c *Client) SendErrorMetric(ctx context.Context, metric *types.EDMetric) er
 		return fmt.Errorf("marshal failure: %w", err)
 	}
 
-	tags := c.getTags(metric.WorkspaceID)
+	tags := c.getTags(metric.WorkspaceID, "recordErrors")
 
 	operation := func() error {
 		uri := fmt.Sprintf("%s/recordErrors", c.reportingServiceURL)
@@ -205,13 +212,78 @@ func (c *Client) SendErrorMetric(ctx context.Context, metric *types.EDMetric) er
 	return err
 }
 
+func (c *Client) SendAggregates(ctx context.Context, agg []aggregator.Aggregate) error {
+	payloadBytes, err := jsonrs.Marshal(agg)
+	if err != nil {
+		return err
+	}
+
+	u := c.reportingServiceURL + url.PathEscape(c.path)
+
+	o := func() error {
+		req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		start := time.Now()
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		// TODO: get workspaceID from the aggregate
+		tags := c.getTags("")
+
+		c.stats.NewTaggedStat(LegacyStatFlusherHTTPRequestDuration, stats.TimerType, tags).Since(start)
+		c.stats.NewTaggedStat(LegacyStatFlusherHTTPRequestTotal, stats.CountType, tags).Count(1)
+		c.stats.NewTaggedStat(LegacyStatFlusherSentBytes, stats.HistogramType, tags).Observe(float64(len(payloadBytes)))
+
+		defer func() { httputil.CloseResponse(resp) }()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error response body from reporting %w", err)
+		}
+
+		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
+			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+		}
+		return err
+	}
+
+	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
+		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
+	})
+	if err != nil {
+		c.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
+	}
+	return err
+}
+
 // getTags returns the common tags for reporting metrics
 func (c *Client) getTags(workspaceID string) stats.Tags {
 	serverURL, _ := url.Parse(c.reportingServiceURL)
 	return stats.Tags{
 		"workspaceId": workspaceID,
-		"clientName":  c.label,
+		"module":      c.label,
 		"instanceId":  c.instanceID,
 		"endpoint":    serverURL.Host,
+		"path":        c.path,
+
+		//legacy tags
+		"clientName": c.label,
 	}
+}
+
+func (f *Client) isHTTPRequestSuccessful(status int) bool {
+	if status == 429 {
+		return false
+	}
+
+	return status >= 200 && status < 500
+}
+
+func isMetricPosted(status int) bool {
+	return status >= 200 && status < 300
 }

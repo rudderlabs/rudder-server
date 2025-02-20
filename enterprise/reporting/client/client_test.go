@@ -1,4 +1,4 @@
-package reporting
+package client_test
 
 import (
 	"bytes"
@@ -19,6 +19,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -50,9 +52,9 @@ func TestClientSendMetric(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	client := NewClient(server.URL, conf, logger.NOP, statsStore)
+	client := client.NewClient(server.URL, "", conf, logger.NOP, statsStore)
 
-	bucket, _ := getAggregationBucketMinute(28017690, 10)
+	bucket, _ := reporting.GetAggregationBucketMinute(28017690, 10)
 
 	workspaceID := "test-workspace"
 	instanceID := "test-instance"
@@ -149,22 +151,22 @@ func TestClientSendMetric(t *testing.T) {
 		}
 
 		// Verify total bytes metric
-		metrics := statsStore.GetByName(StatRequestTotalBytes)
+		metrics := statsStore.GetByName(client.StatRequestTotalBytes)
 		require.Len(t, metrics, 1, "should have exactly one total bytes metric")
 		require.Equal(t, expectedTags, metrics[0].Tags, "total bytes metric should have correct tags")
 
 		// Verify total metrics count
-		metrics = statsStore.GetByName(StatRequestMetricsTotal)
+		metrics = statsStore.GetByName(client.StatRequestMetricsTotal)
 		require.Len(t, metrics, 1, "should have exactly one total metrics count")
 		require.Equal(t, expectedTags, metrics[0].Tags, "total metrics count should have correct tags")
 
 		// Verify duration metric
-		metrics = statsStore.GetByName(StatTotalDurationsSeconds)
+		metrics = statsStore.GetByName(client.StatTotalDurationsSeconds)
 		require.Len(t, metrics, 1, "should have exactly one duration metric")
 		require.Equal(t, expectedTags, metrics[0].Tags, "duration metric should have correct tags")
 
 		// Verify HTTP request metric
-		metrics = statsStore.GetByName(StatHttpRequest)
+		metrics = statsStore.GetByName(client.StatHttpRequest)
 		require.Len(t, metrics, 1, "should have exactly one http request metric")
 		require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
 	})
@@ -195,7 +197,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	client := NewClient(server.URL, conf, logger.NOP, statsStore)
+	client := client.NewClient(server.URL, conf, logger.NOP, statsStore)
 
 	// Create sample event as json.RawMessage
 	sampleEvent := json.RawMessage(`{"event": "test_event", "properties": {"test": "value"}}`)
@@ -273,27 +275,27 @@ func TestClientSendErrorMetric(t *testing.T) {
 	}
 
 	// Verify total bytes metric
-	metrics := statsStore.GetByName(StatRequestTotalBytes)
+	metrics := statsStore.GetByName(client.StatRequestTotalBytes)
 	require.Len(t, metrics, 1, "should have exactly one total bytes metric")
 	require.Equal(t, expectedTags, metrics[0].Tags, "total bytes metric should have correct tags")
 
 	// Verify total metrics count
-	metrics = statsStore.GetByName(StatRequestMetricsTotal)
+	metrics = statsStore.GetByName(client.StatRequestMetricsTotal)
 	require.Len(t, metrics, 1, "should have exactly one total metrics count")
 	require.Equal(t, expectedTags, metrics[0].Tags, "total metrics count should have correct tags")
 
 	// Verify duration metric
-	metrics = statsStore.GetByName(StatTotalDurationsSeconds)
+	metrics = statsStore.GetByName(client.StatTotalDurationsSeconds)
 	require.Len(t, metrics, 1, "should have exactly one duration metric")
 	require.Equal(t, expectedTags, metrics[0].Tags, "duration metric should have correct tags")
 
 	// Verify HTTP request metric
-	metrics = statsStore.GetByName(StatHttpRequest)
+	metrics = statsStore.GetByName(client.StatHttpRequest)
 	require.Len(t, metrics, 1, "should have exactly one http request metric")
 	require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
 
 	// Verify legacy HTTP request metric
-	metrics = statsStore.GetByName(StatErrorDetailReportingHttpReq)
+	metrics = statsStore.GetByName(client.StatErrorDetailReportingHttpReq)
 	require.Len(t, metrics, 1, "should have exactly one legacy http request metric")
 	require.Equal(t, expectedHttpTags, metrics[0].Tags, "legacy http request metric should have correct tags")
 }
@@ -316,7 +318,7 @@ func TestClient5xx(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	client := NewClient(server.URL, conf, logger.NOP, statsStore)
+	client := client.NewClient(server.URL, conf, logger.NOP, statsStore)
 
 	// Create a test metric
 	metric := &types.Metric{
@@ -351,7 +353,7 @@ func TestClient5xx(t *testing.T) {
 	}
 
 	// Verify HTTP request metric
-	metrics := statsStore.GetByName(StatHttpRequest)
+	metrics := statsStore.GetByName(client.StatHttpRequest)
 	require.Len(t, metrics, 1, "should have exactly one http request metric")
 	require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
 }

@@ -237,7 +237,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	bucketStart, bucketEnd := GetAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
@@ -316,7 +316,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
-	sampleEventBucket, _ := getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
+	sampleEventBucket, _ := GetAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -509,7 +509,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					return err
 				}
 				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
-				bucketStart, bucketEnd := getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				bucketStart, bucketEnd := GetAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
