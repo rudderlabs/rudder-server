@@ -21,6 +21,7 @@ import (
 	"github.com/xitongsys/parquet-go/reader"
 	"github.com/xitongsys/parquet-go/types"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
 	"google.golang.org/api/option"
@@ -83,15 +84,15 @@ func TestIntegration(t *testing.T) {
 		jobsDB := whth.JobsDB(t, jobsDBPort)
 
 		testCases := []struct {
-			name           string
-			tables         []string
-			destType       string
-			conf           map[string]interface{}
-			schemaTTL      int
-			prerequisite   func(t testing.TB, ctx context.Context)
-			configOverride map[string]any
-			verifySchema   func(*testing.T, filemanager.FileManager, string)
-			verifyRecords  func(*testing.T, filemanager.FileManager, string, string, string)
+			name               string
+			tables             []string
+			destType           string
+			conf               map[string]interface{}
+			schemaTTLInMinutes int
+			prerequisite       func(t testing.TB, ctx context.Context)
+			configOverride     map[string]any
+			verifySchema       func(*testing.T, filemanager.FileManager, string)
+			verifyRecords      func(*testing.T, filemanager.FileManager, string, string, string)
 		}{
 			{
 				name:     "S3Datalake",
@@ -109,7 +110,7 @@ func TestIntegration(t *testing.T) {
 					"prefix":           "some-prefix",
 					"syncFrequency":    "30",
 				},
-				schemaTTL: 0,
+				schemaTTLInMinutes: 0,
 				prerequisite: func(t testing.TB, ctx context.Context) {
 					t.Helper()
 					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
@@ -176,10 +177,10 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name:      "GCSDatalake",
-				tables:    []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases"},
-				destType:  whutils.GCSDatalake,
-				schemaTTL: 100,
+				name:               "GCSDatalake",
+				tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases"},
+				destType:           whutils.GCSDatalake,
+				schemaTTLInMinutes: 100,
 				conf: map[string]interface{}{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
@@ -250,10 +251,10 @@ func TestIntegration(t *testing.T) {
 				},
 			},
 			{
-				name:      "AzureDatalake",
-				tables:    []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				destType:  whutils.AzureDatalake,
-				schemaTTL: 100,
+				name:               "AzureDatalake",
+				tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				destType:           whutils.AzureDatalake,
+				schemaTTLInMinutes: 100,
 				conf: map[string]interface{}{
 					"containerName":  azContainerName,
 					"prefix":         "",
@@ -360,7 +361,7 @@ func TestIntegration(t *testing.T) {
 
 				t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", c.Port("gcs", 4443)))
 				t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
-				t.Setenv("RSERVER_WAREHOUSE_SCHEMA_TTL_IN_MINUTES", strconv.Itoa(tc.schemaTTL))
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.schemaTTLInMinutes"), strconv.Itoa(tc.schemaTTLInMinutes))
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 

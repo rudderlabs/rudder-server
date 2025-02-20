@@ -99,7 +99,7 @@ func New(
 		"destinationId": warehouse.Destination.ID,
 	})
 	if conf.GetBoolVar(true, "Warehouse.enableSchemaTTL") {
-		ttlInMinutes := conf.GetDurationVar(720, time.Minute, "Warehouse.schemaTtlInMinutes")
+		ttlInMinutes := conf.GetDurationVar(720, time.Minute, "Warehouse.schemaTTLInMinutes")
 		return newSchemaV2(s, warehouse, logger.Child("schema_v2"), ttlInMinutes, fetchSchemaRepo)
 	}
 	return s
