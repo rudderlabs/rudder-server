@@ -75,10 +75,6 @@ func (sh *schemaV2) GetTableSchemaInWarehouse(ctx context.Context, tableName str
 	return schema[tableName]
 }
 
-func (sh *schemaV2) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return sh.getSchema(ctx)
-}
-
 func (sh *schemaV2) UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
 	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {

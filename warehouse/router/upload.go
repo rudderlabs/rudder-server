@@ -942,7 +942,20 @@ func (job *UploadJob) DTO() *model.UploadJob {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema(ctx)
+	schemaRepo := repo.NewWHSchemas(job.db)
+	whSchema, err := schemaRepo.GetForNamespace(
+		ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		job.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
