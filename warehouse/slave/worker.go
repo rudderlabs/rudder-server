@@ -559,7 +559,7 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
 			newColumnVal = value
 		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, value)
+			newColumnVal = strconv.Quote(fmt.Sprintf("%v", value))
 		}
 	} else {
 		err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
