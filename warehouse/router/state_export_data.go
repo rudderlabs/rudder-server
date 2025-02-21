@@ -157,7 +157,9 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 	)
 
 	for _, pendingTableUpload := range job.pendingTableUploads {
-		if pendingTableUpload.UploadID < job.upload.ID && pendingTableUpload.Status == model.TableUploadExportingFailed {
+		if !job.config.skipPreviouslyFailedTables &&
+			pendingTableUpload.UploadID < job.upload.ID &&
+			pendingTableUpload.Status == model.TableUploadExportingFailed {
 			previouslyFailedTableMap[pendingTableUpload.TableName] = pendingTableUpload
 		}
 		if pendingTableUpload.UploadID == job.upload.ID && pendingTableUpload.Status == model.TableUploadExported { // Current upload and table upload succeeded
