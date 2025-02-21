@@ -197,7 +197,16 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.NoError(t, err)
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithTag("17-alpine"))
+		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions(
+			"max_connections=200",
+			"shared_buffers=820MB",
+			"effective_cache_size=3GB",
+			"work_mem=192MB",
+			"wal_buffers=26MB",
+			"effective_io_concurrency=10",
+			"random_page_cost=1",
+			"max_wal_size=30GB",
+		), postgres.WithTag("17-alpine"))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -231,6 +240,10 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 
 	config.Set("Warehouse.mode", "off")
+	config.Set("Processor.maxLoopProcessEvents", 10000)
+	config.Set("Processor.subJobSize", 2000)
+	config.Set("Processor.readLoopSleep", "100ms")
+	config.Set("Processor.maxLoopSleep", "2s")
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
@@ -449,11 +462,13 @@ func BenchmarkProcessorJSONLibraries(b *testing.B) {
 		spec.batchSize = batchSize
 		spec.marshallerLib = marshaller
 		spec.unmarshallerLib = unmarshaller
-		f, err := os.Create(fmt.Sprintf("cpu_profile_%s_%s.prof", marshaller, unmarshaller))
-		require.NoError(b, err)
-		err = pprof.StartCPUProfile(f)
-		require.NoError(b, err)
-		defer pprof.StopCPUProfile()
+		if false {
+			f, err := os.Create(fmt.Sprintf("cpu_profile_%s_%s.prof", marshaller, unmarshaller))
+			require.NoError(b, err)
+			err = pprof.StartCPUProfile(f)
+			require.NoError(b, err)
+			defer pprof.StopCPUProfile()
+		}
 		b.Run(fmt.Sprintf("%s_%s", marshaller, unmarshaller), func(b *testing.B) {
 			start := time.Now()
 			ProcIsolationScenario(b, spec)
