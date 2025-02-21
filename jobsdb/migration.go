@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -120,7 +120,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 					logger.NewStringField("insert before", insertBeforeDS.Index),
 				)
 
-				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
+				opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets, To: destination})
 				if err != nil {
 					return fmt.Errorf("marshal journal payload: %w", err)
 				}
@@ -173,7 +173,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
 
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
+			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
 			if err != nil {
 				return fmt.Errorf("marshal journal payload: %w", err)
 			}

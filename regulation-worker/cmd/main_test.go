@@ -3,7 +3,6 @@ package main_test
 import (
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
@@ -226,7 +226,7 @@ func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(chi.URLParam(r, "job_id"))
 	var status statusJobSchema
-	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
 	}
 
@@ -238,7 +238,7 @@ func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	testDataMu.Unlock()
 	w.WriteHeader(updateJobRespCode)
 
-	body, err := json.Marshal(struct{}{})
+	body, err := jsonrs.Marshal(struct{}{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -251,7 +251,7 @@ func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(chi.URLParam(r, "job_id"))
 	var status statusJobSchema
-	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&status); err != nil {
 		return
 	}
 
@@ -263,7 +263,7 @@ func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	testDataMu.Unlock()
 	w.WriteHeader(updateJobRespCode)
 
-	body, err := json.Marshal(struct{}{})
+	body, err := jsonrs.Marshal(struct{}{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -302,7 +302,7 @@ func getSingleTenantWorkspaceConfig(minioConfig map[string]interface{}, redisAdd
 				},
 			},
 		}
-		body, err := json.Marshal(config)
+		body, err := jsonrs.Marshal(config)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -343,7 +343,7 @@ func getMultiTenantNamespaceConfig(minioConfig map[string]interface{}, redisAddr
 			},
 		}}
 
-		body, err := json.Marshal(config)
+		body, err := jsonrs.Marshal(config)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

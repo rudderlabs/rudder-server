@@ -2,7 +2,6 @@ package stash
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +21,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -209,7 +209,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		writerMap[workspaceID] = path
 		newline := []byte("\n")
 		lo.ForEach(jobsForWorkspace, func(job *jobsdb.JobT, _ int) {
-			rawJob, err := json.Marshal(job)
+			rawJob, err := jsonrs.Marshal(job)
 			if err != nil {
 				panic(err)
 			}
@@ -283,7 +283,7 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		errorResp := []byte(`{"success":"OK"}`)
 		if output.Error != nil {
 			var err error
-			errorResp, err = json.Marshal(struct{ Error string }{output.Error.Error()})
+			errorResp, err = jsonrs.Marshal(struct{ Error string }{output.Error.Error()})
 			if err != nil {
 				panic(err)
 			}

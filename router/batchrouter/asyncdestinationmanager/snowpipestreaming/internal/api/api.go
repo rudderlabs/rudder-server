@@ -9,11 +9,10 @@ import (
 	"net/http"
 	"strconv"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -34,8 +33,6 @@ type (
 		Do(*http.Request) (*http.Response, error)
 	}
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
 	a := &API{
@@ -60,7 +57,7 @@ func mustRead(r io.Reader) []byte {
 
 // CreateChannel creates a new channel with the given request.
 func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error) {
-	reqJSON, err := json.Marshal(channelReq)
+	reqJSON, err := jsonrs.Marshal(channelReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling create channel request: %w", err)
 	}
@@ -83,7 +80,7 @@ func (a *API) CreateChannel(ctx context.Context, channelReq *model.CreateChannel
 	}
 
 	var res model.ChannelResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decoding create channel response: %w", err)
 	}
 	return &res, nil
@@ -138,7 +135,7 @@ func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelR
 	}
 
 	var res model.ChannelResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decoding get channel response: %w", err)
 	}
 	return &res, nil
@@ -146,7 +143,7 @@ func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelR
 
 // Insert inserts the given rows into the channel with the given ID.
 func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error) {
-	reqJSON, err := json.Marshal(insertRequest)
+	reqJSON, err := jsonrs.Marshal(insertRequest)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling insert request: %w", err)
 	}
@@ -191,7 +188,7 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 	}
 
 	var res model.InsertResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decoding insert response: %w", err)
 	}
 	return &res, nil
@@ -217,7 +214,7 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 	}
 
 	var res model.StatusResponse
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, fmt.Errorf("decoding status response: %w", err)
 	}
 	return &res, nil

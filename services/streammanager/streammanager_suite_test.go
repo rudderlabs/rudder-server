@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"sync"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -225,7 +225,7 @@ func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 	key, err := rsa.GenerateKey(reader, bitSize)
 	assert.Nil(t, err)
 
-	encoded, err := json.Marshal(string(pem.EncodeToMemory(&pem.Block{
+	encoded, err := jsonrs.Marshal(string(pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	})))

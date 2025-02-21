@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
 )
 
@@ -1507,7 +1508,7 @@ var _ = Describe("Using sources handler", func() {
 })
 
 func mustMarshal[T any](v T) []byte {
-	b, _ := json.Marshal(v)
+	b, _ := jsonrs.Marshal(v)
 	return b
 }
 

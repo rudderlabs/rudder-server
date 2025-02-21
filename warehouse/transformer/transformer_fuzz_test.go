@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/araddon/dateparse"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -19,9 +21,9 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -535,7 +537,7 @@ func FuzzTransformer(f *testing.F) {
 		}
 
 		var destConfig map[string]any
-		err = json.Unmarshal([]byte(destConfigJSON), &destConfig)
+		err = jsonrs.Unmarshal([]byte(destConfigJSON), &destConfig)
 		if err != nil {
 			return
 		}
@@ -575,7 +577,7 @@ func FuzzTransformer(f *testing.F) {
 		eventContexts := []testhelper.EventContext{
 			{
 				Payload: []byte(sanitizedPayload),
-				Metadata: ptrans.Metadata{
+				Metadata: types.Metadata{
 					EventType:       eventType,
 					EventName:       eventName,
 					DestinationType: destType,
@@ -602,13 +604,13 @@ func FuzzTransformer(f *testing.F) {
 func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer, dTransformer ptrans.DestinationTransformer) {
 	t.Helper()
 
-	events := make([]ptrans.TransformerEvent, 0, len(eventContexts))
+	events := make([]types.TransformerEvent, 0, len(eventContexts))
 	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
-		err := json.Unmarshal(eventContext.Payload, &singularEvent)
+		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
 		require.NoError(t, err)
 
-		events = append(events, ptrans.TransformerEvent{
+		events = append(events, types.TransformerEvent{
 			Message:     singularEvent,
 			Metadata:    eventContext.Metadata,
 			Destination: eventContext.Destination,
@@ -657,10 +659,10 @@ func sanitizePayload(input string) (string, error) {
 	}
 
 	var result types.SingularEventT
-	if err := json.Unmarshal([]byte(sanitized), &result); err != nil {
+	if err := jsonrs.Unmarshal([]byte(sanitized), &result); err != nil {
 		return "", errors.New("invalid JSON format")
 	}
-	output, err := json.Marshal(result)
+	output, err := jsonrs.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("marshalling error: %w", err)
 	}

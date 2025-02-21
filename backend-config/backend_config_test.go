@@ -6,7 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -497,9 +497,9 @@ func TestCache(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
-		sampleBackendConfigBytes, _ := json.Marshal(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig})
+		sampleBackendConfigBytes, _ := jsonrs.Marshal(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig})
 		unmarshalledConfig := make(map[string]ConfigT)
-		err = json.Unmarshal(sampleBackendConfigBytes, &unmarshalledConfig)
+		err = jsonrs.Unmarshal(sampleBackendConfigBytes, &unmarshalledConfig)
 		require.NoError(t, err)
 		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return(sampleBackendConfigBytes, nil).Times(1)
 		var pubSub pubsub.PublishSubscriber
@@ -594,7 +594,7 @@ func TestCache(t *testing.T) {
 		nonce, ciphertext := configBytes[:nonceSize], configBytes[nonceSize:]
 		out, err := gcm.Open(nil, nonce, ciphertext, nil)
 		require.NoError(t, err)
-		err = json.Unmarshal(out, &config)
+		err = jsonrs.Unmarshal(out, &config)
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, config)
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -84,7 +85,7 @@ func (js *JobStatus) FixCorruptedStats(log logger.Logger) {
 		}
 	}
 	if isCorrupted() {
-		corruptedJson, _ := json.Marshal(js)
+		corruptedJson, _ := jsonrs.Marshal(js)
 		log.Warnw("Corrupted job status stats detected, fixing", "job_status", string(corruptedJson))
 		fixCorrupted()
 	}
@@ -136,7 +137,7 @@ func NextPageTokenFromString(v string) (NextPageToken, error) {
 	if err != nil {
 		return npt, err
 	}
-	err = json.Unmarshal(s, &npt)
+	err = jsonrs.Unmarshal(s, &npt)
 	return npt, err
 }
 
@@ -146,7 +147,7 @@ type NextPageToken struct {
 }
 
 func (npt *NextPageToken) String() string {
-	s, _ := json.Marshal(npt)
+	s, _ := jsonrs.Marshal(npt)
 	return base64.URLEncoding.EncodeToString(s)
 }
 

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +30,7 @@ import (
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -290,7 +290,7 @@ func configBackendServer(
 	t testing.TB,
 	configMap map[string]backendconfig.ConfigT,
 ) *httptest.Server {
-	data, err := json.Marshal(configMap)
+	data, err := jsonrs.Marshal(configMap)
 	require.NoError(t, err, "failed to marshal config map")
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "features") {
@@ -338,12 +338,12 @@ func insertJobs(
 				"source_id":  sourceID,
 				"receivedAt": receivedAt,
 			}
-			parameters, err := json.Marshal(params)
+			parameters, err := jsonrs.Marshal(params)
 			require.NoError(t, err, "should be able to marshal the params")
 			jobs[sourceID] = []*jobsdb.JobT{}
 			for j := 0; j < numJobsPerSource; j++ {
 				payload["messageId"] = trand.String(10)
-				eventPayload, err := json.Marshal(payload)
+				eventPayload, err := jsonrs.Marshal(payload)
 				require.NoError(t, err, "should be able to marshal the event payload")
 				job := &jobsdb.JobT{
 					UUID:         uuid.New(),

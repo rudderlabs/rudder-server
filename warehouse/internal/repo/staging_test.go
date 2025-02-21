@@ -253,7 +253,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			r := repo.NewStagingFiles(db)
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
-			require.EqualError(t, err, "cannot get schemas by ids: unmarshal staging schema: ReadMapCB: expect { or n, but found 1, error found in #1 byte of ...|1|..., bigger context ...|1|...")
+			require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
 			require.Nil(t, expectedSchemas)
 		})
 	})
