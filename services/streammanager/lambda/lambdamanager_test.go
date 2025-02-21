@@ -1,7 +1,6 @@
 package lambda
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -77,7 +77,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling jsonData")
 
 	// Empty payload
-	sampleEventJson, _ = json.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
 		"payload": "",
 	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
@@ -93,7 +93,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"payload": sampleMessage,
 	})
 

@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/testdata"
@@ -114,7 +114,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		for i := 0; i < schemaTransformer.keysLimit; i++ {
 			payload[fmt.Sprintf("key-%d", i)] = "value"
 		}
-		event2.EventPayload, err = json.Marshal(payload)
+		event2.EventPayload, err = jsonrs.Marshal(payload)
 		require.NoError(t, err)
 
 		e, err = schemaTransformer.Transform(event2)
@@ -167,7 +167,7 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 }
 
 func generateTestJob(t *testing.T, time time.Time) *jobsdb.JobT {
-	eventPayload, err := json.Marshal(testdata.TrackEvent)
+	eventPayload, err := jsonrs.Marshal(testdata.TrackEvent)
 	require.Nil(t, err)
 	jobUUID, err := uuid.NewUUID()
 	require.Nil(t, err)

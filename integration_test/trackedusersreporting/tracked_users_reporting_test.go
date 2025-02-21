@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
 
 	"github.com/segmentio/go-hll"
@@ -100,7 +100,7 @@ func newMockReportingServer() *mockReportingServer {
 			IdentifiedAnonymousIDHLLHex string    `json:"identifiedAnonymousIdHLL"`
 		}
 		unmarshalledReq := make([]*trackedUsersEntry, 0)
-		err = json.NewDecoder(r.Body).Decode(&unmarshalledReq)
+		err = jsonrs.NewDecoder(r.Body).Decode(&unmarshalledReq)
 		if err != nil {
 			return
 		}

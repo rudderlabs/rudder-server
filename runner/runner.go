@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alert"
@@ -321,13 +321,13 @@ func (r *Runner) versionInfo() map[string]interface{} {
 
 func (r *Runner) versionHandler(w http.ResponseWriter, _ *http.Request) {
 	version := r.versionInfo()
-	versionFormatted, _ := json.Marshal(&version)
+	versionFormatted, _ := jsonrs.Marshal(&version)
 	_, _ = w.Write(versionFormatted)
 }
 
 func (r *Runner) printVersion() {
 	version := r.versionInfo()
-	versionFormatted, _ := json.MarshalIndent(&version, "", " ")
+	versionFormatted, _ := jsonrs.MarshalIndent(&version, "", " ")
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 

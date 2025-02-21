@@ -3,7 +3,6 @@ package sourcedebugger
 //go:generate mockgen -destination=./mocks/mock.go -package=mocks github.com/rudderlabs/rudder-server/services/debugger/source SourceDebugger
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
@@ -185,7 +185,7 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 	res["version"] = "v2"
 	for _, event := range eventBuffer {
 		var batchedEvent EventUploadBatchT
-		err := json.Unmarshal(event.EventBatch, &batchedEvent)
+		err := jsonrs.Unmarshal(event.EventBatch, &batchedEvent)
 		if err != nil {
 			e.log.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
 			continue
@@ -218,7 +218,7 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 		res[batchedEvent.WriteKey] = arr
 	}
 
-	rawJSON, err := json.Marshal(res)
+	rawJSON, err := jsonrs.Marshal(res)
 	if err != nil {
 		e.log.Errorf("[Source live events] Failed to marshal payload. Err: %v", err)
 		return nil, err

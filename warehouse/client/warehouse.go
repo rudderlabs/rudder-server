@@ -8,14 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const defaultTimeout = 10 * time.Second
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // StagingFile contains the require metadata to process a staging file.
 type StagingFile struct {
@@ -111,7 +108,7 @@ func (warehouse *Warehouse) Process(ctx context.Context, stagingFile StagingFile
 		TimeWindow:            stagingFile.TimeWindow,
 	}
 
-	jsonPayload, err := json.Marshal(legacy)
+	jsonPayload, err := jsonrs.Marshal(legacy)
 	if err != nil {
 		return fmt.Errorf("marshaling staging file: %w", err)
 	}

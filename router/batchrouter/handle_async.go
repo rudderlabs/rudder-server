@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -200,7 +201,7 @@ func (brt *Handle) updatePollStatusToDB(
 				}
 				if slices.Contains(successfulJobIDs, jobID) {
 					warningRespString := uploadStatsResp.Metadata.WarningReasons[jobID]
-					warningResp, _ := json.Marshal(WarningResponse{Remarks: warningRespString})
+					warningResp, _ := jsonrs.Marshal(WarningResponse{Remarks: warningRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, warningResp)
 					status := &jobsdb.JobStatusT{
 						JobID:         jobID,
@@ -218,7 +219,7 @@ func (brt *Handle) updatePollStatusToDB(
 					statusList = append(statusList, status)
 				} else if slices.Contains(uploadStatsResp.Metadata.FailedKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.FailedReasons[jobID]
-					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
+					errorResp, _ := jsonrs.Marshal(ErrorResponse{Error: errorRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
 					status := &jobsdb.JobStatusT{
 						JobID:         jobID,
@@ -238,7 +239,7 @@ func (brt *Handle) updatePollStatusToDB(
 					statusList = append(statusList, status)
 				} else if slices.Contains(uploadStatsResp.Metadata.AbortedKeys, jobID) {
 					errorRespString := uploadStatsResp.Metadata.AbortedReasons[jobID]
-					errorResp, _ := json.Marshal(ErrorResponse{Error: errorRespString})
+					errorResp, _ := jsonrs.Marshal(ErrorResponse{Error: errorRespString})
 					resp := enhanceResponseWithFirstAttemptedAt(job.LastJobStatus.ErrorResponse, errorResp)
 					status := &jobsdb.JobStatusT{
 						JobID:         jobID,
@@ -602,7 +603,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 	})
 	for _, status := range params.StatusList {
 		var parameters routerutils.JobParameters
-		err := json.Unmarshal(params.ParametersMap[status.JobID], &parameters)
+		err := jsonrs.Unmarshal(params.ParametersMap[status.JobID], &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(params.ParametersMap[status.JobID]))
 		}

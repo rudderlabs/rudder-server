@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../../mocks/services/debugger/destination/eventDeliveryStatusUploader.go -package mock_destinationdebugger github.com/rudderlabs/rudder-server/services/debugger/destination/ DestinationDebugger
+
 package destinationdebugger
 
 import (
@@ -10,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
@@ -149,7 +152,7 @@ func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delive
 		res[job.DestinationID] = arr
 	}
 
-	rawJSON, err := json.Marshal(res)
+	rawJSON, err := jsonrs.Marshal(res)
 	if err != nil {
 		e.log.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err

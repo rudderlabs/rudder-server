@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -133,7 +134,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line s
 		actionFile.EventCount += 1
 		jobId := data.Metadata.JobID
 		var fields RecordFields
-		unmarshallingErr := json.Unmarshal(data.Message.Fields, &fields)
+		unmarshallingErr := jsonrs.Unmarshal(data.Message.Fields, &fields)
 		if unmarshallingErr != nil {
 			return fmt.Errorf("unmarshalling event %w:", unmarshallingErr)
 		}
@@ -185,7 +186,7 @@ func (b *BingAdsBulkUploader) createZipFile(filePath string) ([]*ActionFileInfo,
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
+		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
 			return nil, err
 		}
 		actionFile := actionFiles[data.Message.Action]
@@ -501,7 +502,7 @@ func hashFields(input map[string]interface{}) (stdjson.RawMessage, error) {
 	}
 
 	// Convert the resulting map to JSON RawMessage
-	result, err := json.Marshal(hashedMap)
+	result, err := jsonrs.Marshal(hashedMap)
 	if err != nil {
 		return nil, err
 	}

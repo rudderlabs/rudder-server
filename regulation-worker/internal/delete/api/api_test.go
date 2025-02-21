@@ -3,7 +3,6 @@ package api_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
@@ -246,7 +246,7 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 		resp.AuthErrorCategory = d.authErrCategory
 	}
 
-	body, err := json.Marshal([]api.JobRespSchema{resp})
+	body, err := jsonrs.Marshal([]api.JobRespSchema{resp})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

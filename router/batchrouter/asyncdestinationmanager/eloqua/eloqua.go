@@ -1,13 +1,14 @@
 package eloqua
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type EloquaServiceImpl struct {
@@ -50,7 +51,7 @@ func (e *EloquaServiceImpl) GetBaseEndpoint(data *HttpRequestData) (string, erro
 		return "", err
 	}
 	loginDetailsResponse := LoginDetailsResponse{}
-	err = json.Unmarshal(body, &loginDetailsResponse)
+	err = jsonrs.Unmarshal(body, &loginDetailsResponse)
 	if err != nil {
 		return "", err
 	}
@@ -74,7 +75,7 @@ func (e *EloquaServiceImpl) FetchFields(data *HttpRequestData) (*Fields, error) 
 		return nil, fmt.Errorf("either authorization is wrong or the object is not found")
 	}
 	unmarshalledBody := Fields{}
-	err = json.Unmarshal(body, &unmarshalledBody)
+	err = jsonrs.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (e *EloquaServiceImpl) CreateImportDefinition(data *HttpRequestData, eventT
 		return nil, err
 	}
 	unmarshalledBody := ImportDefinition{}
-	err = json.Unmarshal(body, &unmarshalledBody)
+	err = jsonrs.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (e *EloquaServiceImpl) UploadDataWithoutCSV(data *HttpRequestData, uploadDa
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/data"
 	data.Method = http.MethodPost
 	data.ContentType = "application/json"
-	marshalledData, _ := json.Marshal(uploadData)
+	marshalledData, _ := jsonrs.Marshal(uploadData)
 	data.Body = strings.NewReader(string(marshalledData))
 	_, statusCode, err := e.MakeHTTPRequest(data)
 	if err != nil {
@@ -151,7 +152,7 @@ func (e *EloquaServiceImpl) RunSync(data *HttpRequestData) (string, error) {
 		return "", err
 	}
 	unmarshalledBody := SyncResponse{}
-	err = json.Unmarshal(body, &unmarshalledBody)
+	err = jsonrs.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +172,7 @@ func (e *EloquaServiceImpl) CheckSyncStatus(data *HttpRequestData) (string, erro
 		return "", err
 	}
 	unmarshalledBody := SyncStatusResponse{}
-	err = json.Unmarshal(body, &unmarshalledBody)
+	err = jsonrs.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return "", err
 	}
@@ -190,7 +191,7 @@ func (e *EloquaServiceImpl) CheckRejectedData(data *HttpRequestData) (*RejectRes
 		return nil, err
 	}
 	unmarshalledBody := RejectResponse{}
-	err = json.Unmarshal(body, &unmarshalledBody)
+	err = jsonrs.Unmarshal(body, &unmarshalledBody)
 	if err != nil {
 		return nil, err
 	}

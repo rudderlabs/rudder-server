@@ -3,7 +3,6 @@ package testhelper
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const (
@@ -38,7 +38,7 @@ func GetSnowpipeTestCredentials(key string) (*TestCredentials, error) {
 	}
 
 	var credentials TestCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
+	err := jsonrs.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshall %s to snowpipe test credentials: %w", key, err)
 	}

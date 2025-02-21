@@ -4,11 +4,12 @@ import (
 	"slices"
 	"strings"
 
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -84,7 +85,7 @@ func GetSupportedMessageEvents(destination *backendconfig.DestinationT) ([]strin
 }
 
 type AllowTransformerEventParams struct {
-	TransformerEvent      *transformer.TransformerEvent
+	TransformerEvent      *types.TransformerEvent
 	SupportedMessageTypes []string
 }
 
@@ -122,12 +123,12 @@ Currently this method supports below validations(executed in the same order):
 
 2. Validate if the event is sendable to destination based on connectionMode, sourceType & messageType
 */
-func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEvent, supportedMsgTypes []string) (bool, *transformer.TransformerResponse) {
+func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, supportedMsgTypes []string) (bool, *types.TransformerResponse) {
 	// MessageType filtering -- STARTS
 	messageType := strings.TrimSpace(strings.ToLower(getMessageType(&transformerEvent.Message)))
 	if messageType == "" {
 		// We will abort the event
-		return false, &transformer.TransformerResponse{
+		return false, &types.TransformerResponse{
 			Output: transformerEvent.Message, StatusCode: 400,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Invalid message type. Type assertion failed",
@@ -140,8 +141,8 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 			"supportedMsgTypes", supportedMsgTypes, "messageType", messageType,
 		)
 		// We will not allow the event
-		return false, &transformer.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: types.FilterEventCode,
+		return false, &types.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Message type not supported",
 		}
@@ -164,8 +165,8 @@ func AllowEventToDestTransformation(transformerEvent *transformer.TransformerEve
 	})
 
 	if !allow {
-		return allow, &transformer.TransformerResponse{
-			Output: transformerEvent.Message, StatusCode: types.FilterEventCode,
+		return allow, &types.TransformerResponse{
+			Output: transformerEvent.Message, StatusCode: reportingtypes.FilterEventCode,
 			Metadata: transformerEvent.Metadata,
 			Error:    "Filtering event based on hybridModeFilter",
 		}

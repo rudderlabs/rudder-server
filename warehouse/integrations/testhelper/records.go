@@ -1,8 +1,31 @@
 package testhelper
 
 import (
+	"fmt"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
+
+// SampleTestRecordsTemplate returns a set of records for testing default loading scenarios.
+// It uses testdata/load.template as the source of data.
+func SampleTestRecordsTemplate(recordSetIndex int) [][]string {
+	return [][]string{
+		{fmt.Sprint(100*recordSetIndex + 1), "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", "hello-world"},
+		{fmt.Sprint(100*recordSetIndex + 2), "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", "hello-world"},
+		{fmt.Sprint(100*recordSetIndex + 3), "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 4), "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 5), "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 6), "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 7), "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 8), "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 9), "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+		{fmt.Sprint(100*recordSetIndex + 10), "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+		{fmt.Sprint(100*recordSetIndex + 11), "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+		{fmt.Sprint(100*recordSetIndex + 12), "2022-12-15T06:53:49Z", "", "", "", "", "hello-world"},
+		{fmt.Sprint(100*recordSetIndex + 13), "2022-12-15T06:53:49Z", "", "", "", "", ""},
+		{fmt.Sprint(100*recordSetIndex + 14), "2022-12-15T06:53:49Z", "", "", "", "", ""},
+	}
+}
 
 // SampleTestRecords returns a set of records for testing default loading scenarios.
 // It uses testdata/load.* as the source of data.

@@ -3,7 +3,6 @@ package suppression
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
@@ -77,7 +77,7 @@ func generateTests(getRepo func() Repository) {
 				prevRespBody = serverResponse.respBody
 				count++
 			} else { // otherwise send an response containing no items
-				respBody, _ = json.Marshal(suppressionsResponse{
+				respBody, _ = jsonrs.Marshal(suppressionsResponse{
 					Token: "tempToken123",
 				})
 			}
@@ -119,7 +119,7 @@ func generateTests(getRepo func() Repository) {
 				respBody:   []byte(""),
 			}
 			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
-			Expect(err.Error()).To(Equal("unexpected end of JSON input"))
+			Expect(err.Error()).To(Not(BeEmpty()))
 		})
 
 		It("returns an error when server responds with invalid (corrupted json) data in the response body", func() {
@@ -128,13 +128,13 @@ func generateTests(getRepo func() Repository) {
 				respBody:   []byte("{w"),
 			}
 			_, _, err := MustNewSyncer(server.URL, identifier, h.r).sync(nil)
-			Expect(err.Error()).To(Equal("invalid character 'w' looking for beginning of object key string"))
+			Expect(err.Error()).To(Not(BeEmpty()))
 		})
 
 		It("returns an error when server responds with no token in the response body", func() {
 			resp := defaultResponse
 			resp.Token = ""
-			respBody, _ := json.Marshal(resp)
+			respBody, _ := jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -147,7 +147,7 @@ func generateTests(getRepo func() Repository) {
 
 	Context("handler, repository, syncer integration", func() {
 		It("exact user suppression match", func() {
-			respBody, _ := json.Marshal(defaultResponse)
+			respBody, _ := jsonrs.Marshal(defaultResponse)
 			serverResponse = syncResponse{
 				expectedUrl: fmt.Sprintf("/dataplane/workspaces/%s/regulations/suppressions", identifier.WorkspaceID),
 				statusCode:  200,
@@ -173,7 +173,7 @@ func generateTests(getRepo func() Repository) {
 					SourceIDs:   []string{"src-1", "src-2"},
 				},
 			}
-			respBody, _ := json.Marshal(resp)
+			respBody, _ := jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -188,7 +188,7 @@ func generateTests(getRepo func() Repository) {
 			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-1", "src-1") != nil }).Should(BeTrue())
 
 			resp.Items[0].Canceled = true
-			respBody, _ = json.Marshal(resp)
+			respBody, _ = jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -212,7 +212,7 @@ func generateTests(getRepo func() Repository) {
 					SourceIDs:   []string{"src-2"},
 				},
 			}
-			respBody, _ := json.Marshal(resp)
+			respBody, _ := jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -244,7 +244,7 @@ func generateTests(getRepo func() Repository) {
 					SourceIDs:   []string{"src-2"},
 				},
 			}
-			respBody, _ := json.Marshal(resp)
+			respBody, _ := jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -261,7 +261,7 @@ func generateTests(getRepo func() Repository) {
 			Eventually(func() bool { return h.GetSuppressedUser("workspace-1", "user-2", "src-1") != nil }).Should(BeFalse())
 
 			resp.Items[0].Canceled = true
-			respBody, _ = json.Marshal(resp)
+			respBody, _ = jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -270,7 +270,7 @@ func generateTests(getRepo func() Repository) {
 		})
 
 		It("try to sync while restoring", func() {
-			respBody, _ := json.Marshal(defaultResponse)
+			respBody, _ := jsonrs.Marshal(defaultResponse)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -299,7 +299,7 @@ func generateTests(getRepo func() Repository) {
 			resp := defaultResponse
 			sup := &resp.Items[0]
 			sup.WorkspaceID = "workspace-1"
-			respBody, _ := json.Marshal(resp)
+			respBody, _ := jsonrs.Marshal(resp)
 			serverResponse = syncResponse{
 				statusCode: 200,
 				respBody:   respBody,
@@ -329,7 +329,7 @@ func generateTests(getRepo func() Repository) {
 				SourceIDs:   []string{"src-1", "src-2"},
 			},
 		}
-		respBody, _ := json.Marshal(resp)
+		respBody, _ := jsonrs.Marshal(resp)
 		serverResponse = syncResponse{
 			expectedUrl: fmt.Sprintf("/dataplane/namespaces/%s/regulations/suppressions", namespaceIdentifier.Namespace),
 			statusCode:  200,

@@ -3,7 +3,6 @@ package retltest
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -177,7 +177,7 @@ func (s *SUT) Start(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tmpFile.Close() }()
 
-	require.NoError(t, json.NewEncoder(tmpFile).Encode(s.generateConfig()))
+	require.NoError(t, jsonrs.NewEncoder(tmpFile).Encode(s.generateConfig()))
 	require.NoError(t, tmpFile.Close())
 
 	workspaceConfigPath := tmpFile.Name()
@@ -296,7 +296,7 @@ func (s *SUT) SendRETL(t *testing.T, sourceID, destinationID string, payload bat
 		retlURL    = fmt.Sprintf("%s/internal/v1/retl", s.URL)
 	)
 
-	b, err := json.MarshalIndent(payload, "", "  ")
+	b, err := jsonrs.MarshalIndent(payload, "", "  ")
 	require.NoError(t, err)
 
 	t.Logf("sending records: %s", b)
@@ -361,7 +361,7 @@ func (s *SUT) JobStatus(t *testing.T, sourceID, jobRunID, jobTaskID string) (rso
 
 	switch res.StatusCode {
 	case http.StatusOK:
-		err = json.Unmarshal(body, &status)
+		err = jsonrs.Unmarshal(body, &status)
 		if err != nil {
 			t.Logf("job-status error: %v", err)
 			t.Fail()

@@ -1,7 +1,6 @@
 package audience
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -105,7 +105,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 	var parameters common.ImportParameters
 	parameters.ImportId = strings.Join(importIds, commaSeparator)
-	importParameters, err := stdjson.Marshal(parameters)
+	importParameters, err := jsonrs.Marshal(parameters)
 	if err != nil {
 		b.logger.Error("Errored in Marshalling parameters" + err.Error())
 	}

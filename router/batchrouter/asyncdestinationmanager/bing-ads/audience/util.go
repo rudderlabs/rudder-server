@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -158,7 +158,7 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
+		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
 			return nil, err
 		}
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -25,6 +24,7 @@ import (
 
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -1078,7 +1078,7 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		LoginTimeout:         timeout,
 	}
 
-	credentialsJSON, err := json.Marshal(data)
+	credentialsJSON, err := jsonrs.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}

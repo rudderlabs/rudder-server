@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/samber/lo"
+	"github.com/samber/lo/mutable"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -179,8 +179,8 @@ func (r *Router) scheduledTimes(syncFrequency, syncStartAt string) []int {
 		prependTimes = append(prependTimes, mins)
 		counter++
 	}
-
-	times = append(lo.Reverse(prependTimes), times...)
+	mutable.Reverse(prependTimes)
+	times = append(prependTimes, times...)
 
 	r.scheduledTimesCacheLock.Lock()
 	r.scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)] = times

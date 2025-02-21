@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -24,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/webhook"
 )
@@ -202,7 +202,7 @@ func TestTrackedUsersFlush(t *testing.T) {
 		var items []map[string]interface{}
 
 		body, _ := io.ReadAll(req.Body)
-		err := json.Unmarshal(body, &items)
+		err := jsonrs.Unmarshal(body, &items)
 		if err != nil {
 			log.Fatalf("Error parsing body: %v", err)
 		}

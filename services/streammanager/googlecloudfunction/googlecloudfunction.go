@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -94,11 +95,11 @@ func getFunctionConfig(fnConfig Config) *Config {
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*GoogleCloudFunctionProducer, error) {
 	var fnConfig Config
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleCloudFunction] Error while marshalling destination config: %w", err)
 	}
-	err = json.Unmarshal(jsonConfig, &fnConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &fnConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleCloudFunction] Error in GoogleCloudFunction while unmarshalling destination config: %w", err)
 	}

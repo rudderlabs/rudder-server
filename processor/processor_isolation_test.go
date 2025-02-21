@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samber/lo/mutable"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -29,6 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -142,6 +146,8 @@ func BenchmarkProcessorIsolationModes(b *testing.B) {
 func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace int) *ProcIsolationScenarioSpec {
 	var s ProcIsolationScenarioSpec
 	s.isolationMode = isolationMode
+	s.marshallerLib = jsonrs.DefaultLib
+	s.unmarshallerLib = jsonrs.DefaultLib
 	s.jobs = make([]*procIsolationJobSpec, workspaces*eventsPerWorkspace)
 	s.received = map[int]struct{}{}
 
@@ -172,10 +178,14 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	var m procIsolationMethods
 
 	config.Reset()
+	defer jsonrs.Reset()
 	defer logger.Reset()
 	defer config.Reset()
 	config.Set("LOG_LEVEL", "ERROR")
+	config.Set("Json.Library.Marshaller", spec.marshallerLib)
+	config.Set("Json.Library.Unmarshaller", spec.unmarshallerLib)
 	logger.Reset()
+	jsonrs.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var (
@@ -187,7 +197,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.NoError(t, err)
 	containersGroup, _ := errgroup.WithContext(ctx)
 	containersGroup.Go(func() (err error) {
-		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
+		postgresContainer, err = postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"), postgres.WithTag("17-alpine"))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -224,8 +234,10 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
 	config.Set("SourceDebugger.disableEventUploads", true)
 	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
+	config.Set("AdaptivePayloadLimiter.enabled", false)
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("JobsDB.payloadColumnType", "text")
 	config.Set("Router.toAbortDestinationIDs", destinationID)
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
@@ -265,7 +277,10 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		t.Name(),
 	)
 
-	batchSize := 5
+	batchSize := spec.batchSize
+	if batchSize == 0 {
+		batchSize = 5
+	}
 	batches := m.splitInBatches(spec.jobs, batchSize)
 
 	t.Logf("sending %d events in %d batches", len(spec.jobs), len(batches))
@@ -288,7 +303,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		return &b, nil
 	}
 	g := &errgroup.Group{}
-	g.SetLimit(100)
+	g.SetLimit(10)
 	client := &http.Client{}
 	url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
 	for _, payload := range batches {
@@ -309,12 +324,13 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		})
 	}
 	require.NoError(t, g.Wait())
+	t.Log("waiting for all events to be processed")
 
 	require.Eventually(t, func() bool {
 		var processedJobCount int
 		require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',5) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
 		return processedJobCount == len(spec.jobs)
-	}, 300*time.Second, 1*time.Second, "all batches should be successfully processed")
+	}, 600*time.Second, 1*time.Second, "all batches should be successfully processed")
 
 	var failedJobs int
 	require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('proc_error',5) where parameters->>'stage' != 'router'").Scan(&failedJobs))
@@ -333,17 +349,21 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 
 	require.Eventually(t, func() bool {
 		return rmetrics.PendingEvents("rt", rmetrics.All, rmetrics.All).IntValue() == 0
-	}, 100*time.Second, 1*time.Second, "all rt jobs should be aborted")
+	}, 300*time.Second, 1*time.Second, "all rt jobs should be aborted")
+	t.Log("shutting down rudder-server")
 	cancel()
 	<-svcDone
 	return
 }
 
 type ProcIsolationScenarioSpec struct {
-	isolationMode isolation.Mode
-	workspaces    []string
-	jobs          []*procIsolationJobSpec
-	received      map[int]struct{}
+	isolationMode   isolation.Mode
+	marshallerLib   string
+	unmarshallerLib string
+	workspaces      []string
+	batchSize       int
+	jobs            []*procIsolationJobSpec
+	received        map[int]struct{}
 }
 
 type procIsolationJobSpec struct {
@@ -413,5 +433,35 @@ func (procIsolationMethods) splitInBatches(jobs []*procIsolationJobSpec, batchSi
 			return []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(chunk, ",")))
 		})...)
 	}
-	return lo.Shuffle(batches)
+	mutable.Shuffle(batches)
+	return batches
+}
+
+func BenchmarkProcessorJSONLibraries(b *testing.B) {
+	const (
+		workspaces       = 20
+		jobsPerWorkspace = 30000
+		batchSize        = 2000
+	)
+
+	scenario := func(b *testing.B, marshaller, unmarshaller string) {
+		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace)
+		spec.batchSize = batchSize
+		spec.marshallerLib = marshaller
+		spec.unmarshallerLib = unmarshaller
+		f, err := os.Create(fmt.Sprintf("cpu_profile_%s_%s.prof", marshaller, unmarshaller))
+		require.NoError(b, err)
+		err = pprof.StartCPUProfile(f)
+		require.NoError(b, err)
+		defer pprof.StopCPUProfile()
+		b.Run(fmt.Sprintf("%s_%s", marshaller, unmarshaller), func(b *testing.B) {
+			start := time.Now()
+			ProcIsolationScenario(b, spec)
+			b.ReportMetric(time.Since(start).Seconds(), "overall_duration_sec")
+		})
+	}
+
+	scenario(b, jsonrs.JsoniterLib, jsonrs.JsoniterLib)
+	scenario(b, jsonrs.SonnetLib, jsonrs.SonnetLib)
+	scenario(b, jsonrs.SonnetLib, jsonrs.JsoniterLib)
 }

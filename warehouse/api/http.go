@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
@@ -245,7 +245,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload pendingEventsRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for pending events", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
@@ -342,7 +342,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resBody, err := json.Marshal(pendingEventsResponse{
+	resBody, err := jsonrs.Marshal(pendingEventsResponse{
 		PendingEvents:            pendingEventsAvailable,
 		PendingStagingFilesCount: pendingStagingFileCount,
 		PendingUploadCount:       pendingUploadCount,
@@ -361,7 +361,7 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload triggerUploadRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for triggering upload", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
@@ -407,7 +407,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload fetchTablesRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
 		a.logger.Warnw("invalid JSON in request body for fetching tables", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
@@ -424,7 +424,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resBody, err := json.Marshal(fetchTablesResponse{
+	resBody, err := jsonrs.Marshal(fetchTablesResponse{
 		ConnectionsTables: tables,
 	})
 	if err != nil {

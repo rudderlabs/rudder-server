@@ -6,15 +6,12 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type AsyncUploadAndTransformManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
@@ -147,13 +144,13 @@ type GetUploadStatsResponse struct {
 
 func GetMarshalledData(payload string, jobID int64) (string, error) {
 	var asyncJob AsyncJob
-	err := json.Unmarshal([]byte(payload), &asyncJob.Message)
+	err := jsonrs.Unmarshal([]byte(payload), &asyncJob.Message)
 	if err != nil {
 		return "", err
 	}
 	asyncJob.Metadata = make(map[string]interface{})
 	asyncJob.Metadata["job_id"] = jobID
-	responsePayload, err := json.Marshal(asyncJob)
+	responsePayload, err := jsonrs.Marshal(asyncJob)
 	if err != nil {
 		return "", err
 	}

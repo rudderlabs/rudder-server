@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +28,7 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -266,11 +266,9 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"destinationId": metric.ConnectionDetails.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
 
-		if edr.eventSamplingEnabled.Load() {
-			metric, err = transformMetricWithEventSampling(metric, reportedAt, edr.eventSampler, int64(edr.eventSamplingDuration.Load().Minutes()))
-			if err != nil {
-				return err
-			}
+		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+		if err != nil {
+			return err
 		}
 
 		_, err = stmt.Exec(
@@ -289,8 +287,8 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorDetails.Code,
 			metric.StatusDetail.ErrorDetails.Message,
-			metric.StatusDetail.SampleResponse,
-			string(metric.StatusDetail.SampleEvent),
+			sampleResponse,
+			string(sampleEvent),
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
@@ -744,7 +742,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 }
 
 func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
-	payload, err := json.Marshal(metric)
+	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}

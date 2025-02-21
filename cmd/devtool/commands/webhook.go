@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 func init() {
@@ -73,7 +74,7 @@ type payload struct {
 
 func (*webhook) computeTime(b []byte) {
 	p := payload{}
-	err := json.Unmarshal(b, &p)
+	err := jsonrs.Unmarshal(b, &p)
 	if err != nil {
 		return
 	}

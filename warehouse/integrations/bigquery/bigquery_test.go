@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/api/iterator"
@@ -1095,6 +1098,90 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.SampleTestRecords())
 		})
+		t.Run("multiple files", func(t *testing.T) {
+			testCases := []struct {
+				name             string
+				loadByFolderPath bool
+			}{
+				{name: "loadByFolderPath = false", loadByFolderPath: false},
+				{name: "loadByFolderPath = true", loadByFolderPath: true},
+			}
+			for i, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					tableName := "multiple_files_test_table" + strconv.Itoa(i)
+					repeat := 10
+					loadObjectFolder := "rudder-warehouse-load-objects"
+					sourceID := "test_source_id"
+
+					prefixes := []string{loadObjectFolder, tableName, sourceID, uuid.New().String() + "-" + tableName}
+
+					loadFiles := lo.RepeatBy(repeat, func(int) whutils.LoadFile {
+						sourceFile, err := os.Open("../testdata/load.json.gz")
+						require.NoError(t, err)
+						defer func() { _ = sourceFile.Close() }()
+
+						tempFile, err := os.CreateTemp("", "clone_*.json.gz")
+						require.NoError(t, err)
+						defer func() { _ = tempFile.Close() }()
+
+						_, err = io.Copy(tempFile, sourceFile)
+						require.NoError(t, err)
+
+						f, err := os.Open(tempFile.Name())
+						require.NoError(t, err)
+						defer func() { _ = f.Close() }()
+
+						uploadOutput, err := fm.Upload(context.Background(), f, prefixes...)
+						require.NoError(t, err)
+						return whutils.LoadFile{Location: uploadOutput.Location}
+					})
+					mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+					if tc.loadByFolderPath {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Return(loadFiles[0].Location, nil).Times(1)
+					} else {
+						mockUploader.EXPECT().GetSampleLoadFileLocation(gomock.Any(), tableName).Times(0)
+					}
+
+					c := config.New()
+					c.Set("Warehouse.bigquery.loadByFolderPath", tc.loadByFolderPath)
+
+					bq := whbigquery.New(c, logger.NOP)
+					require.NoError(t, bq.Setup(ctx, warehouse, mockUploader))
+					require.NoError(t, bq.CreateSchema(ctx))
+					require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse))
+
+					loadTableStat, err := bq.LoadTable(ctx, tableName)
+					require.NoError(t, err)
+					require.Equal(t, loadTableStat.RowsInserted, int64(repeat*14))
+					require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+					records := bqhelper.RetrieveRecordsFromWarehouse(t, db,
+						fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  test_float,
+					  test_int,
+					  test_string
+					FROM %s.%s
+					WHERE _PARTITIONTIME BETWEEN TIMESTAMP('%s') AND TIMESTAMP('%s')
+					ORDER BY id;`,
+							namespace,
+							tableName,
+							time.Now().Add(-24*time.Hour).Format("2006-01-02"),
+							time.Now().Add(+24*time.Hour).Format("2006-01-02"),
+						),
+					)
+					expectedRecords := make([][]string, 0, repeat)
+					for i := 0; i < repeat; i++ {
+						expectedRecords = append(expectedRecords, whth.SampleTestRecords()...)
+					}
+					require.ElementsMatch(t, expectedRecords, records)
+				})
+			}
+		})
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
@@ -1457,7 +1544,7 @@ func newMockUploader(
 	tableName string,
 	schemaInUpload model.TableSchema,
 	schemaInWarehouse model.TableSchema,
-) whutils.Uploader {
+) *mockuploader.MockUploader {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 

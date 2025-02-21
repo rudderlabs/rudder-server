@@ -37,12 +37,12 @@ type WebHookI interface {
 	Register(name string)
 }
 
-func newWebhookStats() *webhookStatsT {
+func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	wStats := webhookStatsT{}
-	wStats.sentStat = stats.Default.NewStat("webhook.transformer_sent", stats.CountType)
-	wStats.receivedStat = stats.Default.NewStat("webhook.transformer_received", stats.CountType)
-	wStats.failedStat = stats.Default.NewStat("webhook.transformer_failed", stats.CountType)
-	wStats.transformTimerStat = stats.Default.NewStat("webhook.transformation_time", stats.TimerType)
+	wStats.sentStat = stat.NewStat("webhook.transformer_sent", stats.CountType)
+	wStats.receivedStat = stat.NewStat("webhook.transformer_received", stats.CountType)
+	wStats.failedStat = stat.NewStat("webhook.transformer_failed", stats.CountType)
+	wStats.transformTimerStat = stat.NewStat("webhook.transformation_time", stats.TimerType)
 	wStats.sourceStats = make(map[string]*webhookSourceStatT)
 	return &wStats
 }
@@ -89,7 +89,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 		g.Go(crash.Wrapper(func() error {
 			bt := batchWebhookTransformerT{
 				webhook: webhook,
-				stats:   newWebhookStats(),
+				stats:   newWebhookStats(stat),
 				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
 					select {
 					case <-ctx.Done():

@@ -6,7 +6,6 @@ package backendconfig
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -21,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -192,7 +192,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 			pkgLogger.Warnf("Error fetching config from cache: %v", cacheErr)
 			return
 		}
-		err = json.Unmarshal(sourceJSONBytes, &sourceJSON)
+		err = jsonrs.Unmarshal(sourceJSONBytes, &sourceJSON)
 		if err != nil {
 			pkgLogger.Warnf("Error unmarshalling cached config: %v", cacheErr)
 			return

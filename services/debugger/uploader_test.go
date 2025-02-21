@@ -2,7 +2,6 @@ package debugger
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksDebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
@@ -88,7 +88,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				}).AnyTimes()
@@ -117,7 +117,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				}).AnyTimes()
@@ -147,7 +147,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, errors.New("transform error")
 				}).AnyTimes()
@@ -163,7 +163,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				}).AnyTimes()
@@ -180,7 +180,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				})
@@ -221,7 +221,7 @@ var _ = Describe("Uploader", func() {
 						Expect(e).To(Equal(recordingEvent))
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				})
@@ -267,7 +267,7 @@ var _ = Describe("Uploader", func() {
 						i++
 					}
 
-					rawJSON, err := json.Marshal(data)
+					rawJSON, err := jsonrs.Marshal(data)
 					Expect(err).To(BeNil())
 					return rawJSON, nil
 				}).Times(2)

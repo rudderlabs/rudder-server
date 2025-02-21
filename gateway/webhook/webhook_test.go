@@ -3,7 +3,6 @@ package webhook
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -193,7 +193,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
-			_ = json.Unmarshal(body, &requests)
+			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			// return payload of length = len(requests) + 1
 			for i := 0; i < len(requests)+1; i++ {
@@ -202,7 +202,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 					StatusCode: http.StatusBadRequest,
 				})
 			}
-			respBody, _ := json.Marshal(responses)
+			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
@@ -237,7 +237,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
-			_ = json.Unmarshal(body, &requests)
+			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
@@ -245,7 +245,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 					StatusCode: http.StatusBadRequest,
 				})
 			}
-			respBody, _ := json.Marshal(responses)
+			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
@@ -280,7 +280,7 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
-			_ = json.Unmarshal(body, &requests)
+			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
@@ -288,7 +288,7 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 					StatusCode:     http.StatusOK,
 				})
 			}
-			respBody, _ := json.Marshal(responses)
+			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
@@ -322,7 +322,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
-			_ = json.Unmarshal(body, &requests)
+			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
@@ -330,7 +330,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 					StatusCode: http.StatusOK,
 				})
 			}
-			respBody, _ := json.Marshal(responses)
+			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
@@ -339,7 +339,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
-	gwPayload, _ := json.Marshal(outputToGateway)
+	gwPayload, _ := jsonrs.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,
@@ -368,7 +368,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
-			_ = json.Unmarshal(body, &requests)
+			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
@@ -377,7 +377,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 					StatusCode:     http.StatusOK,
 				})
 			}
-			respBody, _ := json.Marshal(responses)
+			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
@@ -386,7 +386,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
-	gwPayload, _ := json.Marshal(outputToGateway)
+	gwPayload, _ := jsonrs.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,

@@ -1,7 +1,6 @@
 package klaviyobulkupload_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -18,6 +17,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mockAPIService "github.com/rudderlabs/rudder-server/mocks/router/klaviyobulkupload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	klaviyobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
@@ -170,13 +170,13 @@ func TestExtractProfileValidInput(t *testing.T) {
 		"type": "profile-bulk-import-job"
 	}`
 	var data klaviyobulkupload.Data
-	err := json.Unmarshal([]byte(dataPayloadJSON), &data)
+	err := jsonrs.Unmarshal([]byte(dataPayloadJSON), &data)
 	if err != nil {
-		t.Errorf("json.Unmarshal failed: %v", err)
+		t.Errorf("jsonrs.Unmarshal failed: %v", err)
 	}
 	expectedProfile := `{"attributes":{"email":"qwe122@mail.com","phone_number":"+919912000123","first_name":"Testqwe0122","last_name":"user0122","location":{"city":"delhi","country":"India","ip":"213.5.6.41"}},"id":"111222334","type":"profile"}`
 	result := kbu.ExtractProfile(data)
-	profileJson, _ := json.Marshal(result)
+	profileJson, _ := jsonrs.Marshal(result)
 	assert.JSONEq(t, expectedProfile, string(profileJson))
 }
 

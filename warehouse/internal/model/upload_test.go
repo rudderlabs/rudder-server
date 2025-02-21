@@ -1,11 +1,11 @@
 package model_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
@@ -29,7 +29,7 @@ func TestGetLastFailedStatus(t *testing.T) {
 	}
 	for _, input := range inputs {
 		var timing model.Timings
-		require.NoError(t, json.Unmarshal([]byte(input.timingsRaw), &timing))
+		require.NoError(t, jsonrs.Unmarshal([]byte(input.timingsRaw), &timing))
 
 		status := model.GetLastFailedStatus(timing)
 		require.Equal(t, status, input.status)

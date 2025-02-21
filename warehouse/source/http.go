@@ -2,12 +2,12 @@ package source
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
@@ -22,7 +22,7 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	var payload insertJobRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
 		m.logger.Warnw("invalid JSON in request body for inserting source jobs", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
@@ -45,7 +45,7 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resBody, err := json.Marshal(insertJobResponse{
+	resBody, err := jsonrs.Marshal(insertJobResponse{
 		JobIds: jobIds,
 		Err:    nil,
 	})
@@ -104,7 +104,7 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 		statusResponse.Status = sourceJob.Status.String()
 	}
 
-	resBody, err := json.Marshal(statusResponse)
+	resBody, err := jsonrs.Marshal(statusResponse)
 	if err != nil {
 		m.logger.Errorw("marshalling response for source job status", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)

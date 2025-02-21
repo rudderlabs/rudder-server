@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,14 +34,15 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/processor/transformer"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
-	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
@@ -51,20 +54,19 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type mockObserver struct {
 	calls []struct {
 		source *backendconfig.SourceT
-		events []transformer.TransformerEvent
+		events []types.TransformerEvent
 	}
 }
 
-func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+func (m *mockObserver) ObserveSourceEvents(source *backendconfig.SourceT, events []types.TransformerEvent) {
 	m.calls = append(m.calls, struct {
 		source *backendconfig.SourceT
-		events []transformer.TransformerEvent
+		events []types.TransformerEvent
 	}{source: source, events: events})
 }
 
@@ -106,7 +108,7 @@ type testContext struct {
 	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
 	mockArchivalDB           *mocksJobsDB.MockJobsDB
-	MockReportingI           *mockReportingTypes.MockReporting
+	MockReportingI           *mockreportingtypes.MockReporting
 	MockDedup                *mockDedup.MockDedup
 	MockObserver             *mockObserver
 	MockRsourcesService      *rsources.MockJobService
@@ -137,7 +139,7 @@ func (c *testContext) Setup() {
 			close(ch)
 			return ch
 		})
-	c.MockReportingI = mockReportingTypes.NewMockReporting(c.mockCtrl)
+	c.MockReportingI = mockreportingtypes.NewMockReporting(c.mockCtrl)
 	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
 	c.mockTrackedUsersReporter = &mockTrackedUsersReporter{}
@@ -207,13 +209,6 @@ var (
 func setDisableDedupFeature(proc *Handle, b bool) bool {
 	prev := proc.config.enableDedup
 	proc.config.enableDedup = b
-	return prev
-}
-
-// SetEnableParallelScan overrides SetEnableParallelScan configuration and returns previous value
-func setEnableParallelScan(proc *Handle, b bool) bool {
-	prev := proc.config.enableParallelScan
-	proc.config.enableParallelScan = b
 	return prev
 }
 
@@ -955,7 +950,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 	Context("RudderTyper", func() {
 		It("Tracking plan id and version from DgSourceTrackingPlanConfig", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
+			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(types.Response{})
 
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			Expect(err).To(BeNil())
@@ -963,7 +958,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformer)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -971,7 +966,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1019,6 +1014,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 					},
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
@@ -1030,7 +1027,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 		})
 		It("Tracking plan version override from context.ruddertyper", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(transformer.Response{})
+			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(types.Response{})
 
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			Expect(err).To(BeNil())
@@ -1038,7 +1035,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformer)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1046,7 +1043,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1100,6 +1097,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 					},
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
@@ -1294,17 +1293,19 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1465,17 +1466,19 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1650,17 +1653,19 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1807,17 +1812,19 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1958,17 +1965,19 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			_, _ = processor.processJobsForDest(
+			preTransMessage, err := processor.processJobsForDest(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
+			Expect(err).To(BeNil())
+			_, _ = processor.generateTransformationMessage(preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -2272,7 +2281,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -2556,7 +2565,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					SourceID: SourceIDEnabledNoUT,
 				},
 			}
-			Setup(processor, c, false, true, false)
+			Setup(processor, c, false, false)
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -2958,7 +2967,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation", func() {
@@ -3104,19 +3113,19 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// We expect one call to user transform for destination B
 			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
+				DoAndReturn(func(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 					defer GinkgoRecover()
 
-					outputEvents := make([]transformer.TransformerResponse, 0)
+					outputEvents := make([]types.TransformerResponse, 0)
 
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
-						outputEvents = append(outputEvents, transformer.TransformerResponse{
+						outputEvents = append(outputEvents, types.TransformerResponse{
 							Output: event.Message,
 						})
 					}
 
-					return transformer.Response{
+					return types.Response{
 						Events: outputEvents,
 					}
 				})
@@ -3183,121 +3192,10 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
-			messages := map[string]mockEventData{
-				// this message should be delivered only to destination A
-				"message-some-id-1": {
-					id:                        "some-id",
-					jobid:                     2010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-				// this message should not be delivered to destination A
-				"message-some-id-2": {
-					id:                        "some-id",
-					jobid:                     1010,
-					originalTimestamp:         "2000-02-02T01:23:45",
-					expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
-					expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-				"message-some-id-3": {
-					id:                        "some-id",
-					jobid:                     3010,
-					originalTimestamp:         "2000-01-02T01:23:45",
-					expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
-					sentAt:                    "2000-01-02 01:23",
-					expectedSentAt:            "2000-03-02T01:23:15.000Z",
-					expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
-					integrations:              map[string]bool{"All": false, "enabled-destination-c-definition-display-name": true},
-				},
-			}
-
-			unprocessedJobsList := []*jobsdb.JobT{
-				{
-					UUID:      uuid.New(),
-					JobID:     1010,
-					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabled,
-						"2001-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-some-id-2"],
-							messages["message-some-id-1"],
-						},
-						createMessagePayloadWithSameMessageId,
-					),
-					EventCount:    2,
-					LastJobStatus: jobsdb.JobStatusT{},
-					Parameters:    createBatchParameters(SourceIDEnabled),
-				},
-				{
-					UUID:      uuid.New(),
-					JobID:     2010,
-					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
-					CustomVal: gatewayCustomVal[0],
-					EventPayload: createBatchPayload(
-						WriteKeyEnabled,
-						"2002-01-02T02:23:45.000Z",
-						[]mockEventData{
-							messages["message-some-id-3"],
-						},
-						createMessagePayloadWithSameMessageId,
-					),
-					EventCount: 1,
-					Parameters: createBatchParameters(SourceIDEnabled),
-				},
-			}
-
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().Get(gomock.Any()).Return(true, nil).After(callUnprocessed).AnyTimes()
-			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
-
-			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
-			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
-			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
-
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-				_ = f(jobsdb.EmptyStoreSafeTx())
-			}).Return(nil)
-
-			c.mockArchivalDB.EXPECT().
-				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-				AnyTimes()
-
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-				_ = f(jobsdb.EmptyUpdateSafeTx())
-			}).Return(nil).Times(1)
-			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
-
-			Setup(processor, c, true, false, false)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-
-			processor.dedup = c.MockDedup
-			handlePendingGatewayJobs(processor)
-		})
-
-		It("should process unprocessed jobs to destination without user transformation with enabled Dedup and parallelScan", func() {
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-some-id-1": {
@@ -3401,7 +3299,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, true, true, false)
+			Setup(processor, c, true, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -3663,7 +3561,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, true, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation and parallelScan", func() {
@@ -3809,19 +3707,19 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// We expect one call to user transform for destination B
 			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
-				DoAndReturn(func(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
+				DoAndReturn(func(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 					defer GinkgoRecover()
 
-					outputEvents := make([]transformer.TransformerResponse, 0)
+					outputEvents := make([]types.TransformerResponse, 0)
 
 					for _, event := range clientEvents {
 						event.Message["user-transform"] = "value"
-						outputEvents = append(outputEvents, transformer.TransformerResponse{
+						outputEvents = append(outputEvents, types.TransformerResponse{
 							Output: event.Message,
 						})
 					}
 
-					return transformer.Response{
+					return types.Response{
 						Events: outputEvents,
 					}
 				})
@@ -3888,7 +3786,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, true, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -3937,16 +3835,16 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			transformerResponses := []transformer.TransformerResponse{
+			transformerResponses := []types.TransformerResponse{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					StatusCode: 400,
 					Error:      "error-1",
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					StatusCode: 400,
@@ -3963,17 +3861,17 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				err := json.Unmarshal(job.Parameters, &paramsMap)
+				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
 				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null}`, SourceIDEnabled, i+1))
-				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err = json.Unmarshal(job.EventPayload, &payload)
+				err = jsonrs.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(1))
 				message := messages[fmt.Sprintf(`message-%v`, i+1)]
@@ -3996,8 +3894,8 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Return(transformer.Response{
-					Events:       []transformer.TransformerResponse{},
+				Return(types.Response{
+					Events:       []types.TransformerResponse{},
 					FailedEvents: transformerResponses,
 				})
 
@@ -4027,7 +3925,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -4075,9 +3973,9 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			transformerResponses := []transformer.TransformerResponse{
+			transformerResponses := []types.TransformerResponse{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageIDs: []string{"message-1", "message-2"},
 					},
 					StatusCode: 400,
@@ -4094,17 +3992,17 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
 
 				var paramsMap, expectedParamsMap map[string]interface{}
-				err := json.Unmarshal(job.Parameters, &paramsMap)
+				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
 				Expect(err).To(BeNil())
 				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null}`, SourceIDEnabled))
-				err = json.Unmarshal(expectedStr, &expectedParamsMap)
+				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 				Expect(equals).To(Equal(true))
 
 				// compare payloads
 				var payload []map[string]interface{}
-				err = json.Unmarshal(job.EventPayload, &payload)
+				err = jsonrs.Unmarshal(job.EventPayload, &payload)
 				Expect(err).To(BeNil())
 				Expect(len(payload)).To(Equal(2))
 				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
@@ -4134,8 +4032,8 @@ var _ = Describe("Processor", Ordered, func() {
 
 			// Test transformer failure
 			mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Return(transformer.Response{
-					Events:       []transformer.TransformerResponse{},
+				Return(types.Response{
+					Events:       []types.TransformerResponse{},
 					FailedEvents: transformerResponses,
 				})
 
@@ -4165,7 +4063,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages that the destination doesn't support", func() {
@@ -4247,7 +4145,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
 
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages where jobRunID is cancelled", func() {
@@ -4354,7 +4252,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()
-			processorSetupAndAssertJobHandling(processor, false, c)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -4490,7 +4388,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err1 := json.Marshal(eventWithDeniedConsents)
+			_, err1 := jsonrs.Marshal(eventWithDeniedConsents)
 			Expect(err1).To(BeNil())
 
 			eventWithoutDeniedConsents := types.SingularEventT{
@@ -4517,7 +4415,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err2 := json.Marshal(eventWithoutDeniedConsents)
+			_, err2 := jsonrs.Marshal(eventWithoutDeniedConsents)
 			Expect(err2).To(BeNil())
 
 			eventWithoutConsentManagementData := types.SingularEventT{
@@ -4540,7 +4438,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4549,7 +4447,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -4624,14 +4522,14 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err := json.Marshal(event)
+			_, err := jsonrs.Marshal(event)
 			Expect(err).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -4670,7 +4568,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err3 := json.Marshal(eventWithoutConsentManagementData)
+			_, err3 := jsonrs.Marshal(eventWithoutConsentManagementData)
 			Expect(err3).To(BeNil())
 
 			eventWithDeniedConsentsGCM := types.SingularEventT{
@@ -4700,7 +4598,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err4 := json.Marshal(eventWithDeniedConsentsGCM)
+			_, err4 := jsonrs.Marshal(eventWithDeniedConsentsGCM)
 			Expect(err4).To(BeNil())
 
 			eventWithoutDeniedConsentsGCM := types.SingularEventT{
@@ -4730,7 +4628,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err5 := json.Marshal(eventWithoutDeniedConsentsGCM)
+			_, err5 := jsonrs.Marshal(eventWithoutDeniedConsentsGCM)
 			Expect(err5).To(BeNil())
 
 			eventWithCustomConsentsGCM := types.SingularEventT{
@@ -4759,7 +4657,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err6 := json.Marshal(eventWithCustomConsentsGCM)
+			_, err6 := jsonrs.Marshal(eventWithCustomConsentsGCM)
 			Expect(err6).To(BeNil())
 
 			eventWithDeniedConsentsGCMKetch := types.SingularEventT{
@@ -4789,7 +4687,7 @@ var _ = Describe("Processor", Ordered, func() {
 					"All": true,
 				},
 			}
-			_, err7 := json.Marshal(eventWithDeniedConsentsGCMKetch)
+			_, err7 := jsonrs.Marshal(eventWithDeniedConsentsGCMKetch)
 			Expect(err7).To(BeNil())
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4798,7 +4696,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, false)
+			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -4890,12 +4788,12 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
 
-			Setup(processor, c, false, false, true)
+			Setup(processor, c, false, true)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
-			commonMetadata := transformer.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
+			commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
 			singularEventWithReceivedAt1 := types.SingularEventWithReceivedAt{
 				SingularEvent: event1,
 				ReceivedAt:    time.Now(),
@@ -4920,22 +4818,22 @@ var _ = Describe("Processor", Ordered, func() {
 			metadata3 := commonMetadata
 			metadata3.MessageID = "msg3"
 
-			FailedEvents := []transformer.TransformerResponse{
+			FailedEvents := []types.TransformerResponse{
 				{StatusCode: 400, Metadata: metadata1, Output: event1},
 				{StatusCode: 298, Metadata: metadata2, Output: event2},
 				{StatusCode: 299, Metadata: metadata3, Output: event2},
 			}
 
-			transformerResponse := transformer.Response{
-				Events:       []transformer.TransformerResponse{},
+			transformerResponse := types.Response{
+				Events:       []types.TransformerResponse{},
 				FailedEvents: FailedEvents,
 			}
 
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
 				&commonMetadata,
 				eventsByMessageID,
-				types.EVENT_FILTER,
-				types.DEST_TRANSFORMER,
+				reportingtypes.EVENT_FILTER,
+				reportingtypes.DEST_TRANSFORMER,
 			)
 
 			key := strings.Join([]string{
@@ -4948,7 +4846,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			Expect(len(m.failedJobs)).To(Equal(2))
 			Expect(len(m.failedMetrics)).To(Equal(2))
-			slices.SortFunc(m.failedMetrics, func(a, b *types.PUReportedMetric) int {
+			slices.SortFunc(m.failedMetrics, func(a, b *reportingtypes.PUReportedMetric) int {
 				return a.StatusDetail.StatusCode - b.StatusDetail.StatusCode
 			})
 			Expect(m.failedMetrics[0].StatusDetail.StatusCode).To(Equal(299))
@@ -4967,9 +4865,9 @@ var _ = Describe("Static Function Tests", func() {
 
 	Context("TransformerFormatResponse Tests", func() {
 		It("Should match ConvertToTransformerResponse without filtering", func() {
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -4977,7 +4875,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -4985,14 +4883,14 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			expectedResponses := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponses := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output: map[string]interface{}{
 							"some-key-1": "some-value-1",
 						},
 						StatusCode: 200,
-						Metadata: transformer.Metadata{
+						Metadata: types.Metadata{
 							MessageID: "message-1",
 						},
 					},
@@ -5001,13 +4899,13 @@ var _ = Describe("Static Function Tests", func() {
 							"some-key-2": "some-value-2",
 						},
 						StatusCode: 200,
-						Metadata: transformer.Metadata{
+						Metadata: types.Metadata{
 							MessageID: "message-2",
 						},
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, false, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, false, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response.Events[0].StatusCode).To(Equal(expectedResponses.Events[0].StatusCode))
 			Expect(response.Events[0].Metadata.MessageID).To(Equal(expectedResponses.Events[0].Metadata.MessageID))
 			Expect(response.Events[0].Output["some-key-1"]).To(Equal(expectedResponses.Events[0].Output["some-key-1"]))
@@ -5023,11 +4921,13 @@ var _ = Describe("Static Function Tests", func() {
 				"some-string-1",
 				"some-string-2",
 				map[string]MetricMetadata{},
+				map[string]MetricMetadata{},
 				map[string]int64{},
 				map[string]int64{},
 				map[string]int64{},
 				map[string]int64{},
 				stats.NOP,
+				false,
 			)
 			Expect(len(response)).To(Equal(0))
 		})
@@ -5067,22 +4967,22 @@ var _ = Describe("Static Function Tests", func() {
 				"some-key-2": 3,
 			}
 
-			expectedResponse := []*types.PUReportedMetric{
+			expectedResponse := []*reportingtypes.PUReportedMetric{
 				{
-					ConnectionDetails: types.ConnectionDetails{
+					ConnectionDetails: reportingtypes.ConnectionDetails{
 						SourceID:        "some-source-id-1",
 						DestinationID:   "some-destination-id-1",
 						SourceTaskRunID: "some-source-task-run-id-1",
 						SourceJobID:     "some-source-job-id-1",
 						SourceJobRunID:  "some-source-job-run-id-1",
 					},
-					PUDetails: types.PUDetails{
+					PUDetails: reportingtypes.PUDetails{
 						InPU:       "some-string-1",
 						PU:         "some-string-2",
 						TerminalPU: false,
 						InitialPU:  false,
 					},
-					StatusDetail: &types.StatusDetail{
+					StatusDetail: &reportingtypes.StatusDetail{
 						Status:         "diff",
 						Count:          5,
 						StatusCode:     0,
@@ -5091,20 +4991,20 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 				{
-					ConnectionDetails: types.ConnectionDetails{
+					ConnectionDetails: reportingtypes.ConnectionDetails{
 						SourceID:        "some-source-id-2",
 						DestinationID:   "some-destination-id-2",
 						SourceTaskRunID: "some-source-task-run-id-2",
 						SourceJobID:     "some-source-job-id-2",
 						SourceJobRunID:  "some-source-job-run-id-2",
 					},
-					PUDetails: types.PUDetails{
+					PUDetails: reportingtypes.PUDetails{
 						InPU:       "some-string-1",
 						PU:         "some-string-2",
 						TerminalPU: false,
 						InitialPU:  false,
 					},
-					StatusDetail: &types.StatusDetail{
+					StatusDetail: &reportingtypes.StatusDetail{
 						Status:         "diff",
 						Count:          7,
 						StatusCode:     0,
@@ -5120,23 +5020,163 @@ var _ = Describe("Static Function Tests", func() {
 				"some-string-1",
 				"some-string-2",
 				inCountMetadataMap,
+				map[string]MetricMetadata{},
 				inCountMap,
 				successCountMap,
 				failedCountMap,
 				filteredCountMap,
 				statsStore,
+				false,
 			)
 			Expect(statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "some-string-2",
 				"sourceId":      "some-source-id-1",
 				"destinationId": "some-destination-id-1",
-			}).LastValue()).To(Equal(float64(-5)))
+			}).LastValue()).To(Equal(float64(5)))
 			Expect(statsStore.Get("processor_diff_count", stats.Tags{
 				"stage":         "some-string-2",
 				"sourceId":      "some-source-id-2",
 				"destinationId": "some-destination-id-2",
-			}).LastValue()).To(Equal(float64(-7)))
+			}).LastValue()).To(Equal(float64(7)))
 			assertReportMetric(expectedResponse, response)
+		})
+
+		It("Should match diffMetrics response for Valid Inputs with useOutputMetricsInDiffState enabled", func() {
+			// Case 1: Event name transformation (10 in -> 10 transformed)
+			key1Input := strings.Join([]string{
+				"source1", "dest1", "", "event1", "track",
+			}, "!<<#>>!")
+			key1Output := strings.Join([]string{
+				"source1", "dest1", "", "updated_event1", "track",
+			}, "!<<#>>!")
+
+			// Case 2: Event splitting (10 in -> 10 original + 10 new)
+			key2Input := strings.Join([]string{
+				"source2", "dest2", "", "event2", "track",
+			}, "!<<#>>!")
+			key2NewEvent := strings.Join([]string{
+				"source2", "dest2", "", "new_event2", "track",
+			}, "!<<#>>!")
+
+			// Case 3: Event with losses (10 in -> 7 success, 2 filtered, 1 dropped)
+			key3 := strings.Join([]string{
+				"source3", "dest3", "", "event3", "track",
+			}, "!<<#>>!")
+
+			inCountMetadataMap := map[string]MetricMetadata{
+				key1Input: {
+					sourceID:      "source1",
+					destinationID: "dest1",
+				},
+				key2Input: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key3: {
+					sourceID:      "source3",
+					destinationID: "dest3",
+				},
+			}
+
+			successCountMetadataMap := map[string]MetricMetadata{
+				key1Output: {
+					sourceID:      "source1",
+					destinationID: "dest1",
+				},
+				key2Input: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key2NewEvent: {
+					sourceID:      "source2",
+					destinationID: "dest2",
+				},
+				key3: {
+					sourceID:      "source3",
+					destinationID: "dest3",
+				},
+			}
+
+			inCountMap := map[string]int64{
+				key1Input: 10, // Case 1: 10 input events
+				key2Input: 10, // Case 2: 10 input events
+				key3:      10, // Case 3: 10 input events
+			}
+
+			successCountMap := map[string]int64{
+				key1Output:   10, // Case 1: 10 transformed events
+				key2Input:    10, // Case 2: 10 original events
+				key2NewEvent: 10, // Case 2: 10 new events
+				key3:         7,  // Case 3: 7 successful events
+			}
+
+			failedCountMap := map[string]int64{
+				key1Input: 0,
+				key2Input: 0,
+				key3:      1, // Case 3: 1 dropped event
+			}
+
+			filteredCountMap := map[string]int64{
+				key1Input: 0,
+				key2Input: 0,
+				key3:      2, // Case 3: 2 filtered events
+			}
+
+			statsStore, err := memstats.New()
+			Expect(err).To(BeNil())
+			response := getDiffMetrics(
+				"inPU",
+				"outPU",
+				inCountMetadataMap,
+				successCountMetadataMap,
+				inCountMap,
+				successCountMap,
+				failedCountMap,
+				filteredCountMap,
+				statsStore,
+				true,
+			)
+
+			// Sort the response for consistent testing
+			sort.Slice(response, func(i, j int) bool {
+				if response[i].ConnectionDetails.SourceID == response[j].ConnectionDetails.SourceID {
+					return response[i].StatusDetail.EventName < response[j].StatusDetail.EventName
+				}
+				return response[i].ConnectionDetails.SourceID < response[j].ConnectionDetails.SourceID
+			})
+
+			// Should include metrics for all cases
+			Expect(len(response)).To(Equal(3))
+
+			// Case 1: Event name transformation
+			diffMetric1Input := response[0]
+			Expect(diffMetric1Input.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Input.StatusDetail.EventName).To(Equal("event1"))
+			Expect(diffMetric1Input.StatusDetail.Count).To(Equal(int64(-10))) // All input events transformed
+
+			diffMetric1Output := response[1]
+			Expect(diffMetric1Output.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Output.StatusDetail.EventName).To(Equal("updated_event1"))
+			Expect(diffMetric1Output.StatusDetail.Count).To(Equal(int64(10))) // All events transformed to new name
+
+			// Case 2: Event splitting
+			diffMetric2New := response[2]
+			Expect(diffMetric2New.ConnectionDetails.SourceID).To(Equal("source2"))
+			Expect(diffMetric2New.StatusDetail.EventName).To(Equal("new_event2"))
+			Expect(diffMetric2New.StatusDetail.Count).To(Equal(int64(10))) // 10 new events added
+
+			// Verify stats were recorded
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "outPU",
+				"sourceId":      "source1",
+				"destinationId": "dest1",
+			}).LastValue()).To(Equal(float64(0))) // Net change is 0 for transformation
+
+			Expect(statsStore.Get("processor_diff_count", stats.Tags{
+				"stage":         "outPU",
+				"sourceId":      "source2",
+				"destinationId": "dest2",
+			}).LastValue()).To(Equal(float64(10))) // Net addition of 10 new events
 		})
 	})
 
@@ -5144,10 +5184,10 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should update metric maps", func() {
 			proc := NewHandle(config.Default, nil)
 			proc.reportingEnabled = true
-			proc.reporting = &mockReportingTypes.MockReporting{}
+			proc.reporting = &mockreportingtypes.MockReporting{}
 
-			inputEvent := &transformer.TransformerResponse{
-				Metadata: transformer.Metadata{
+			inputEvent := &types.TransformerResponse{
+				Metadata: types.Metadata{
 					SourceID:         "source-id-1",
 					DestinationID:    "destination-id-1",
 					TransformationID: "transformation-id-1",
@@ -5157,7 +5197,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				StatusCode: 200,
 				Error:      "",
-				ValidationErrors: []transformer.ValidationError{
+				ValidationErrors: []types.ValidationError{
 					{
 						Type:    "type-1",
 						Message: "message-1",
@@ -5186,7 +5226,7 @@ var _ = Describe("Static Function Tests", func() {
 				trackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				trackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
-			expectedConnectionDetails := &types.ConnectionDetails{
+			expectedConnectionDetails := &reportingtypes.ConnectionDetails{
 				SourceID:                inputEvent.Metadata.SourceID,
 				DestinationID:           inputEvent.Metadata.DestinationID,
 				SourceJobRunID:          inputEvent.Metadata.SourceJobRunID,
@@ -5200,12 +5240,12 @@ var _ = Describe("Static Function Tests", func() {
 				TrackingPlanID:          inputEvent.Metadata.TrackingPlanID,
 				TrackingPlanVersion:     inputEvent.Metadata.TrackingPlanVersion,
 			}
-			connectionDetailsMap := make(map[string]*types.ConnectionDetails)
-			statusDetailsMap := make(map[string]map[string]*types.StatusDetail)
+			connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+			statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, types.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingtypes.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return []byte(`{}`) }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))
@@ -5234,9 +5274,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5246,7 +5286,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5256,7 +5296,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5266,15 +5306,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
 						Metadata:   events[0].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 298,
@@ -5289,7 +5329,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(_ transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(_ types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5307,9 +5347,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5319,7 +5359,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5329,7 +5369,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5339,15 +5379,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 298,
@@ -5362,7 +5402,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5373,9 +5413,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5385,7 +5425,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5395,7 +5435,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5405,8 +5445,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -5425,7 +5465,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 		It("Should allow all events when supportedMessageTypes is not an array", func() {
@@ -5437,9 +5477,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5449,7 +5489,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5459,7 +5499,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5469,8 +5509,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -5489,7 +5529,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5505,9 +5545,9 @@ var _ = Describe("Static Function Tests", func() {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5517,7 +5557,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5527,7 +5567,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5537,15 +5577,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 200,
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 298,
@@ -5560,7 +5600,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5578,9 +5618,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
 					Message: map[string]interface{}{
@@ -5590,7 +5630,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5600,7 +5640,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
 					Message: map[string]interface{}{
@@ -5610,8 +5650,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -5630,7 +5670,7 @@ var _ = Describe("Static Function Tests", func() {
 				},
 				FailedEvents: nil,
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5668,9 +5708,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -5681,7 +5721,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5692,7 +5732,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5703,15 +5743,15 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
 						Metadata:   events[0].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[1].Message,
 						StatusCode: 298,
@@ -5726,7 +5766,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5764,9 +5804,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -5777,7 +5817,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5788,7 +5828,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5799,9 +5839,9 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
+			expectedResponse := types.Response{
 				Events: nil,
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 298,
@@ -5822,7 +5862,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5860,9 +5900,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -5873,7 +5913,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5884,7 +5924,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5895,8 +5935,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -5908,7 +5948,7 @@ var _ = Describe("Static Function Tests", func() {
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 298,
@@ -5917,7 +5957,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -5950,9 +5990,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -5963,7 +6003,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5974,7 +6014,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -5985,8 +6025,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -5998,7 +6038,7 @@ var _ = Describe("Static Function Tests", func() {
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 298,
@@ -6007,7 +6047,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -6043,9 +6083,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
@@ -6056,7 +6096,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -6067,7 +6107,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
@@ -6078,8 +6118,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -6091,7 +6131,7 @@ var _ = Describe("Static Function Tests", func() {
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 298,
@@ -6100,7 +6140,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 
@@ -6139,9 +6179,9 @@ var _ = Describe("Static Function Tests", func() {
 				},
 			}
 
-			events := []transformer.TransformerEvent{
+			events := []types.TransformerEvent{
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-1",
 						SourceDefinitionType: "",
 					},
@@ -6152,7 +6192,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
@@ -6163,7 +6203,7 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 				{
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
@@ -6174,8 +6214,8 @@ var _ = Describe("Static Function Tests", func() {
 					Destination: destinationConfig,
 				},
 			}
-			expectedResponse := transformer.Response{
-				Events: []transformer.TransformerResponse{
+			expectedResponse := types.Response{
+				Events: []types.TransformerResponse{
 					{
 						Output:     events[0].Message,
 						StatusCode: 200,
@@ -6187,7 +6227,7 @@ var _ = Describe("Static Function Tests", func() {
 						Metadata:   events[1].Metadata,
 					},
 				},
-				FailedEvents: []transformer.TransformerResponse{
+				FailedEvents: []types.TransformerResponse{
 					{
 						Output:     events[2].Message,
 						StatusCode: 298,
@@ -6196,7 +6236,7 @@ var _ = Describe("Static Function Tests", func() {
 					},
 				},
 			}
-			response := ConvertToFilteredTransformerResponse(events, true, func(event transformer.TransformerEvent) (bool, string) { return false, "" })
+			response := ConvertToFilteredTransformerResponse(events, true, func(event types.TransformerEvent) (bool, string) { return false, "" })
 			Expect(response).To(Equal(expectedResponse))
 		})
 	})
@@ -6222,7 +6262,7 @@ type transformExpectation struct {
 }
 
 func createMessagePayload(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q,"recordId":{"id":"record_id_1"},"context":{"sources":`+
@@ -6233,7 +6273,7 @@ func createMessagePayload(e mockEventData) string {
 }
 
 func createMessagePayloadWithoutSources(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q,"context":{}}`,
@@ -6242,7 +6282,7 @@ func createMessagePayloadWithoutSources(e mockEventData) string {
 }
 
 func createMessagePayloadWithSameMessageId(e mockEventData) string {
-	integrationsBytes, _ := json.Marshal(e.integrations)
+	integrationsBytes, _ := jsonrs.Marshal(e.integrations)
 	return fmt.Sprintf(
 		`{"rudderId":"some-rudder-id","messageId":"message-%s","integrations":%s,"some-property":"property-%s",`+
 			`"originalTimestamp":%q,"sentAt":%q}`, "some-id", integrationsBytes, e.id, e.originalTimestamp, e.sentAt,
@@ -6275,7 +6315,7 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 }
 
-func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) {
+func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReportedMetric) {
 	sort.Slice(expectedMetric, func(i, j int) bool {
 		return expectedMetric[i].ConnectionDetails.SourceID < expectedMetric[j].ConnectionDetails.SourceID
 	})
@@ -6308,14 +6348,14 @@ func assertDestinationTransform(
 	expectations transformExpectation,
 ) func(
 	ctx context.Context,
-	clientEvents []transformer.TransformerEvent,
+	clientEvents []types.TransformerEvent,
 	batchSize int,
-) transformer.Response {
+) types.Response {
 	return func(
 		ctx context.Context,
-		clientEvents []transformer.TransformerEvent,
+		clientEvents []types.TransformerEvent,
 		batchSize int,
-	) transformer.Response {
+	) types.Response {
 		defer GinkgoRecover()
 
 		Expect(clientEvents).To(HaveLen(expectations.events))
@@ -6339,7 +6379,7 @@ func assertDestinationTransform(
 				Expect(event.Metadata.MessageID).To(Equal(messageID))
 				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
 				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
-				rawEvent, err := json.Marshal(event)
+				rawEvent, err := jsonrs.Marshal(event)
 				Expect(err).ToNot(HaveOccurred())
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
 				if recordID == nil {
@@ -6395,14 +6435,14 @@ func assertDestinationTransform(
 
 		Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
 
-		return transformer.Response{
-			Events: []transformer.TransformerResponse{
+		return types.Response{
+			Events: []types.TransformerResponse{
 				{
 					Output: map[string]interface{}{
 						"int-value":    0,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						SourceID:      "source-from-transformer", // transformer should replay source id
 						SourceName:    "source-from-transformer-name",
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
@@ -6413,7 +6453,7 @@ func assertDestinationTransform(
 						"int-value":    1,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
-					Metadata: transformer.Metadata{
+					Metadata: types.Metadata{
 						SourceID:      "source-from-transformer", // transformer should replay source id
 						SourceName:    "source-from-transformer-name",
 						DestinationID: "destination-from-transformer", // transformer should replay destination id
@@ -6424,8 +6464,8 @@ func assertDestinationTransform(
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *Handle, enableParallelScan bool, c *testContext) {
-	Setup(processor, c, false, enableParallelScan, false)
+func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
+	Setup(processor, c, false, false)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
@@ -6433,9 +6473,8 @@ func processorSetupAndAssertJobHandling(processor *Handle, enableParallelScan bo
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *Handle, c *testContext, enableDedup, enableParallelScan, enableReporting bool) {
+func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
 	setDisableDedupFeature(processor, enableDedup)
-	setEnableParallelScan(processor, enableParallelScan)
 	err := processor.Setup(
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,
@@ -6617,7 +6656,7 @@ var _ = Describe("TestConfigFilter", func() {
 				Enabled:            true,
 				IsProcessorEnabled: true,
 			}
-			expectedEvent := transformer.TransformerEvent{
+			expectedEvent := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6636,7 +6675,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEvent{
+			event := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6665,10 +6704,10 @@ var _ = Describe("TestConfigFilter", func() {
 					"configFilters": ["long_config1", "long_config2"]
 				}
 			}`
-			Expect(json.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
-			Expect(json.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
+			Expect(jsonrs.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
+			Expect(jsonrs.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
 			intgConfig.DestinationDefinition = destDef
-			expectedEvent := transformer.TransformerEvent{
+			expectedEvent := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6687,7 +6726,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEvent{
+			event := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6714,7 +6753,7 @@ var _ = Describe("TestConfigFilter", func() {
 				Enabled:            true,
 				IsProcessorEnabled: true,
 			}
-			expectedEvent := transformer.TransformerEvent{
+			expectedEvent := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6735,7 +6774,7 @@ var _ = Describe("TestConfigFilter", func() {
 					IsProcessorEnabled: true,
 				},
 			}
-			event := transformer.TransformerEvent{
+			event := types.TransformerEvent{
 				Message: types.SingularEventT{
 					"MessageID": "messageId-1",
 				},
@@ -6749,12 +6788,12 @@ var _ = Describe("TestConfigFilter", func() {
 
 func Test_GetTimestampFromEvent(t *testing.T) {
 	input := []struct {
-		event             transformer.TransformerEvent
+		event             types.TransformerEvent
 		timestamp         time.Time
 		expectedTimeStamp time.Time
 	}{
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{
 					"timestamp": "2021-06-09T09:00:00.000Z",
 				},
@@ -6763,7 +6802,7 @@ func Test_GetTimestampFromEvent(t *testing.T) {
 			expectedTimeStamp: time.Date(2021, 6, 9, 9, 0, 0, 0, time.UTC),
 		},
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{},
 			},
 			timestamp:         time.Now(),
@@ -6781,7 +6820,7 @@ func Test_GetTimestampFromEvent(t *testing.T) {
 
 func Test_EnhanceWithTimeFields(t *testing.T) {
 	input := []struct {
-		event                     transformer.TransformerEvent
+		event                     types.TransformerEvent
 		singularEvent             types.SingularEventT
 		recievedAt                time.Time
 		expectedSentAt            string
@@ -6789,7 +6828,7 @@ func Test_EnhanceWithTimeFields(t *testing.T) {
 		expectedOriginalTimestamp string
 	}{
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{
 					"timestamp": "2021-06-09T09:00:00.000Z",
 				},
@@ -6804,7 +6843,7 @@ func Test_EnhanceWithTimeFields(t *testing.T) {
 			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
 		},
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{
 					"timestamp": "2021-06-09T09:00:00.000Z",
 				},
@@ -6816,7 +6855,7 @@ func Test_EnhanceWithTimeFields(t *testing.T) {
 			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
 		},
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{},
 			},
 			singularEvent:             types.SingularEventT{},
@@ -6826,7 +6865,7 @@ func Test_EnhanceWithTimeFields(t *testing.T) {
 			expectedOriginalTimestamp: "2021-06-09T09:00:00.000Z",
 		},
 		{
-			event: transformer.TransformerEvent{
+			event: types.TransformerEvent{
 				Message: types.SingularEventT{},
 			},
 			singularEvent: types.SingularEventT{
@@ -6860,7 +6899,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:       []*jobsdb.JobT{{JobID: 1}},
 		routerDestIDs:       []string{"1"},
-		reportMetrics:       []*types.PUReportedMetric{{}},
+		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
 		dedupKeys:           map[string]struct{}{"1": {}},
 		totalEvents:         1,
@@ -6876,7 +6915,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:       []*jobsdb.JobT{{JobID: 2}},
 		routerDestIDs:       []string{"2"},
-		reportMetrics:       []*types.PUReportedMetric{{}},
+		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
 		dedupKeys:           map[string]struct{}{"2": {}},
 		totalEvents:         1,
@@ -6894,7 +6933,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		[]*jobsdb.JobT{{JobID: 3}},
 		[]string{"3"},
-		[]*types.PUReportedMetric{{}},
+		[]*reportingtypes.PUReportedMetric{{}},
 		map[dupStatKey]int{{sourceID: "1"}: 3},
 		map[string]struct{}{"3": {}},
 		1,
@@ -6958,7 +6997,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		},
 		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
 		routerDestIDs:  []string{"1", "2", "3"},
-		reportMetrics:  []*types.PUReportedMetric{{}, {}, {}},
+		reportMetrics:  []*reportingtypes.PUReportedMetric{{}, {}, {}},
 		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},
 		dedupKeys:      map[string]struct{}{"1": {}, "2": {}, "3": {}},
 		totalEvents:    3,

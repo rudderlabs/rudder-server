@@ -1,13 +1,13 @@
 package router_test
 
 import (
-	"encoding/json"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router"
 )
 
@@ -32,7 +32,7 @@ var _ = Describe("DestinationReponseHandler", func() {
 			"retryable": [{ "success": false, "errors.0.code": 403 },{ "success": false, "errors.0.code": 411 }]
   			}
 		}`
-		if err := json.Unmarshal([]byte(config), &rules); err != nil {
+		if err := jsonrs.Unmarshal([]byte(config), &rules); err != nil {
 			fmt.Println(err)
 		}
 		jsonHandler = router.NewResponseHandler(logger.NOP, rules)
@@ -81,7 +81,7 @@ var _ = Describe("DestinationReponseHandler", func() {
 			"retryable": [{ "success": false, "errors.0.code": 403 },{ "success": false, "errors.0.code": 411 }]
   			}
 			}`
-			if err := json.Unmarshal([]byte(config), &rules); err != nil {
+			if err := jsonrs.Unmarshal([]byte(config), &rules); err != nil {
 				fmt.Println(err)
 			}
 			jsonHandler = router.NewResponseHandler(logger.NOP, rules)
@@ -94,7 +94,7 @@ var _ = Describe("DestinationReponseHandler", func() {
 			config := `{
   			"responseType": "JSON"
 			}`
-			if err := json.Unmarshal([]byte(config), &rules1); err != nil {
+			if err := jsonrs.Unmarshal([]byte(config), &rules1); err != nil {
 				fmt.Println(err)
 			}
 			jsonHandler = router.NewResponseHandler(logger.NOP, rules1)

@@ -138,6 +138,8 @@ func (m *Manager) createChannel(
 		}
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
+	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
+		return nil, fmt.Errorf("%w, %w", errAuthz, err)
 	default:
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
@@ -232,7 +234,7 @@ func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string
 
 func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) (manager.Manager, error) {
 	if m.isInBackoff() {
-		return nil, fmt.Errorf("skipping snowflake manager creation due to backoff: %w", errBackoff)
+		return nil, fmt.Errorf("skipping snowflake manager creation due to backoff with error %s: %w", m.backoff.error, errBackoff)
 	}
 	modelWarehouse := whutils.ModelWarehouse{
 		WorkspaceID: m.destination.WorkspaceID,

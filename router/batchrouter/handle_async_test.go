@@ -21,6 +21,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	mockdestinationdebugger "github.com/rudderlabs/rudder-server/mocks/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -52,7 +53,6 @@ func (m mockAsyncDestinationManager) GetUploadStats(common.GetUploadStatsInput) 
 func defaultHandle(destType string) *Handle {
 	batchRouter := &Handle{}
 	batchRouter.destType = destType
-	batchRouter.debugger = destinationdebugger.NewNoOpService()
 	batchRouter.destinationsMap = make(map[string]*routerutils.DestinationWithSources)
 	batchRouter.uploadIntervalMap = make(map[string]time.Duration)
 	batchRouter.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
@@ -105,98 +105,181 @@ func TestAsyncDestinationManager(t *testing.T) {
 	}
 
 	t.Run("Upload", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		t.Run("All Status", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
 
-		mockCtrl := gomock.NewController(t)
-		mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockCtrl := gomock.NewController(t)
+			mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
-		batchRouter := defaultHandle(destType)
-		batchRouter.jobsDB = mockBatchRouterJobsDB
+			batchRouter := defaultHandle(destType)
+			batchRouter.jobsDB = mockBatchRouterJobsDB
+			batchRouter.debugger = mockDestinationDebugger
 
-		mockBatchRouterJobsDB.EXPECT().GetImporting(
-			gomock.Any(),
-			gomock.Any(),
-		).DoAndReturn(
-			func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-				return jobsdb.JobsResult{}, nil
-			},
-		).AnyTimes()
-		mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
-			gomock.Any(), gomock.Any(), gomock.Any(), []string{destType}, gomock.Any(),
-		).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-			require.Len(t, statuses, 4)
+			mockBatchRouterJobsDB.EXPECT().GetImporting(
+				gomock.Any(),
+				gomock.Any(),
+			).DoAndReturn(
+				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+					return jobsdb.JobsResult{}, nil
+				},
+			).AnyTimes()
+			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
+				gomock.Any(), gomock.Any(), gomock.Any(), []string{destType}, gomock.Any(),
+			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+				require.Len(t, statuses, 4)
 
-			require.Equal(t, int64(1), statuses[0].JobID)
-			require.Equal(t, jobsdb.Importing.State, statuses[0].JobState)
-			require.Equal(t, "200", statuses[0].ErrorCode)
-			require.Empty(t, gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
-			require.JSONEq(t, `{"importID": "importID"}`, string(statuses[0].Parameters))
-			require.Nil(t, statuses[0].JobParameters)
+				require.Equal(t, int64(1), statuses[0].JobID)
+				require.Equal(t, jobsdb.Importing.State, statuses[0].JobState)
+				require.Equal(t, "200", statuses[0].ErrorCode)
+				require.Empty(t, gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
+				require.JSONEq(t, `{"importID": "importID"}`, string(statuses[0].Parameters))
+				require.Nil(t, statuses[0].JobParameters)
 
-			require.Equal(t, int64(2), statuses[1].JobID)
-			require.Equal(t, jobsdb.Succeeded.State, statuses[1].JobState)
-			require.Equal(t, "200", statuses[1].ErrorCode)
-			require.Empty(t, gjson.GetBytes(statuses[1].ErrorResponse, "error").String())
-			require.JSONEq(t, `{}`, string(statuses[1].Parameters))
-			require.Nil(t, statuses[1].JobParameters)
+				require.Equal(t, int64(2), statuses[1].JobID)
+				require.Equal(t, jobsdb.Succeeded.State, statuses[1].JobState)
+				require.Equal(t, "200", statuses[1].ErrorCode)
+				require.Empty(t, gjson.GetBytes(statuses[1].ErrorResponse, "error").String())
+				require.JSONEq(t, `{}`, string(statuses[1].Parameters))
+				require.Nil(t, statuses[1].JobParameters)
 
-			require.Equal(t, int64(3), statuses[2].JobID)
-			require.Equal(t, jobsdb.Failed.State, statuses[2].JobState)
-			require.Equal(t, "500", statuses[2].ErrorCode)
-			require.Equal(t, "mocked failed reason", gjson.GetBytes(statuses[2].ErrorResponse, "error").String())
-			require.JSONEq(t, `{}`, string(statuses[2].Parameters))
-			require.Nil(t, statuses[2].JobParameters)
+				require.Equal(t, int64(3), statuses[2].JobID)
+				require.Equal(t, jobsdb.Failed.State, statuses[2].JobState)
+				require.Equal(t, "500", statuses[2].ErrorCode)
+				require.Equal(t, "mocked failed reason", gjson.GetBytes(statuses[2].ErrorResponse, "error").String())
+				require.JSONEq(t, `{}`, string(statuses[2].Parameters))
+				require.Nil(t, statuses[2].JobParameters)
 
-			require.Equal(t, int64(4), statuses[3].JobID)
-			require.Equal(t, jobsdb.Aborted.State, statuses[3].JobState)
-			require.Equal(t, "400", statuses[3].ErrorCode)
-			require.Equal(t, "mocked abort reason", gjson.GetBytes(statuses[3].ErrorResponse, "error").String())
-			require.JSONEq(t, `{}`, string(statuses[3].Parameters))
-			require.Nil(t, statuses[3].JobParameters)
+				require.Equal(t, int64(4), statuses[3].JobID)
+				require.Equal(t, jobsdb.Aborted.State, statuses[3].JobState)
+				require.Equal(t, "400", statuses[3].ErrorCode)
+				require.Equal(t, "mocked abort reason", gjson.GetBytes(statuses[3].ErrorResponse, "error").String())
+				require.JSONEq(t, `{}`, string(statuses[3].Parameters))
+				require.Nil(t, statuses[3].JobParameters)
 
-			cancel()
-		}).Return(nil)
-		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-			_ = f(jobsdb.EmptyUpdateSafeTx())
-		}).Return(nil)
+				cancel()
+			}).Return(nil)
+			mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil)
+			mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(1).Do(func(destinationID string, deliveryStatus *destinationdebugger.DeliveryStatusT) {
+				require.Equal(t, "3 events", deliveryStatus.EventName)
+				require.Empty(t, deliveryStatus.EventType)
+				require.JSONEq(t, `{"success":"1 events","failed":"2 events"}`, string(deliveryStatus.Payload))
+				require.Equal(t, 1, deliveryStatus.AttemptNum)
+				require.Equal(t, jobsdb.Failed.State, deliveryStatus.JobState)
+				require.Equal(t, "500", deliveryStatus.ErrorCode)
+				require.NotEmpty(t, deliveryStatus.ErrorResponse)
+			}).Return(true)
 
-		for _, source := range sources {
-			for _, destination := range source.Destinations {
-				batchRouter.destinationsMap[destination.ID] = &routerutils.DestinationWithSources{
-					Destination: destination,
-					Sources:     []backendconfig.SourceT{source},
-				}
+			for _, source := range sources {
+				for _, destination := range source.Destinations {
+					batchRouter.destinationsMap[destination.ID] = &routerutils.DestinationWithSources{
+						Destination: destination,
+						Sources:     []backendconfig.SourceT{source},
+					}
 
-				batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-				batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
-				batchRouter.asyncDestinationStruct[destination.ID].Exists = true
-				batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
-				batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
-					uploadOutput: common.AsyncUploadOutput{
-						ImportingJobIDs:     []int64{1},
-						ImportingParameters: []byte(`{"importID": "importID"}`),
-						SucceededJobIDs:     []int64{2},
-						SuccessResponse:     "mocked success response",
-						FailedJobIDs:        []int64{3},
-						FailedReason:        "mocked failed reason",
-						AbortJobIDs:         []int64{4},
-						AbortReason:         "mocked abort reason",
-						ImportingCount:      1,
-						FailedCount:         1,
-						AbortCount:          1,
-						DestinationID:       destination.ID,
-					},
+					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+					batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
+					batchRouter.asyncDestinationStruct[destination.ID].Exists = true
+					batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
+					batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
+						uploadOutput: common.AsyncUploadOutput{
+							ImportingJobIDs:     []int64{1},
+							ImportingParameters: []byte(`{"importID": "importID"}`),
+							SucceededJobIDs:     []int64{2},
+							SuccessResponse:     "mocked success response",
+							FailedJobIDs:        []int64{3},
+							FailedReason:        "mocked failed reason",
+							AbortJobIDs:         []int64{4},
+							AbortReason:         "mocked abort reason",
+							ImportingCount:      1,
+							FailedCount:         1,
+							AbortCount:          1,
+							DestinationID:       destination.ID,
+						},
+					}
 				}
 			}
-		}
 
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			batchRouter.asyncUploadWorker(ctx)
-		}()
-		<-done
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				batchRouter.asyncUploadWorker(ctx)
+			}()
+			<-done
+		})
+		t.Run("Importing Status", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			mockCtrl := gomock.NewController(t)
+			mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
+
+			batchRouter := defaultHandle(destType)
+			batchRouter.jobsDB = mockBatchRouterJobsDB
+			batchRouter.debugger = mockDestinationDebugger
+
+			mockBatchRouterJobsDB.EXPECT().GetImporting(
+				gomock.Any(),
+				gomock.Any(),
+			).DoAndReturn(
+				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+					return jobsdb.JobsResult{}, nil
+				},
+			).AnyTimes()
+			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
+				gomock.Any(), gomock.Any(), gomock.Any(), []string{destType}, gomock.Any(),
+			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+				require.Len(t, statuses, 4)
+
+				for i := 0; i < 4; i++ {
+					require.Equal(t, int64(i+1), statuses[i].JobID)
+					require.Equal(t, jobsdb.Importing.State, statuses[i].JobState)
+					require.Equal(t, "200", statuses[i].ErrorCode)
+					require.Empty(t, gjson.GetBytes(statuses[i].ErrorResponse, "error").String())
+					require.JSONEq(t, `{"importID": "importID"}`, string(statuses[i].Parameters))
+					require.Nil(t, statuses[i].JobParameters)
+				}
+
+				cancel()
+			}).Return(nil)
+			mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+				_ = f(jobsdb.EmptyUpdateSafeTx())
+			}).Return(nil)
+			mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(0)
+
+			for _, source := range sources {
+				for _, destination := range source.Destinations {
+					batchRouter.destinationsMap[destination.ID] = &routerutils.DestinationWithSources{
+						Destination: destination,
+						Sources:     []backendconfig.SourceT{source},
+					}
+
+					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
+					batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
+					batchRouter.asyncDestinationStruct[destination.ID].Exists = true
+					batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
+					batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
+						uploadOutput: common.AsyncUploadOutput{
+							ImportingJobIDs:     []int64{1, 2, 3, 4},
+							ImportingParameters: []byte(`{"importID": "importID"}`),
+							ImportingCount:      4,
+							DestinationID:       destination.ID,
+						},
+					}
+				}
+			}
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				batchRouter.asyncUploadWorker(ctx)
+			}()
+			<-done
+		})
 	})
 	t.Run("Poll (StatusCode=StatusBadRequest)", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)
@@ -204,9 +287,11 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 		mockCtrl := gomock.NewController(t)
 		mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+		mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
 		batchRouter := defaultHandle(destType)
 		batchRouter.jobsDB = mockBatchRouterJobsDB
+		batchRouter.debugger = mockDestinationDebugger
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -252,6 +337,15 @@ func TestAsyncDestinationManager(t *testing.T) {
 		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 			_ = f(jobsdb.EmptyUpdateSafeTx())
 		}).Return(nil)
+		mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(1).Do(func(destinationID string, deliveryStatus *destinationdebugger.DeliveryStatusT) {
+			require.Equal(t, "1 events", deliveryStatus.EventName)
+			require.Empty(t, deliveryStatus.EventType)
+			require.JSONEq(t, `{"success":"0 events","failed":"1 events"}`, string(deliveryStatus.Payload))
+			require.Equal(t, 1, deliveryStatus.AttemptNum)
+			require.Equal(t, jobsdb.Failed.State, deliveryStatus.JobState)
+			require.Equal(t, "500", deliveryStatus.ErrorCode)
+			require.NotEmpty(t, deliveryStatus.ErrorResponse)
+		}).Return(true)
 
 		for _, source := range sources {
 			for _, destination := range source.Destinations {
@@ -288,9 +382,11 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 			mockCtrl := gomock.NewController(t)
 			mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
 			batchRouter := defaultHandle(destType)
 			batchRouter.jobsDB = mockBatchRouterJobsDB
+			batchRouter.debugger = mockDestinationDebugger
 
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
@@ -336,6 +432,15 @@ func TestAsyncDestinationManager(t *testing.T) {
 			mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
+			mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(1).Do(func(destinationID string, deliveryStatus *destinationdebugger.DeliveryStatusT) {
+				require.Equal(t, "1 events", deliveryStatus.EventName)
+				require.Empty(t, deliveryStatus.EventType)
+				require.JSONEq(t, `{"success":"1 events","failed":"0 events"}`, string(deliveryStatus.Payload))
+				require.Equal(t, 1, deliveryStatus.AttemptNum)
+				require.Equal(t, jobsdb.Succeeded.State, deliveryStatus.JobState)
+				require.Equal(t, "200", deliveryStatus.ErrorCode)
+				require.JSONEq(t, `{"success":"OK"}`, string(deliveryStatus.ErrorResponse))
+			}).Return(true)
 
 			for _, source := range sources {
 				for _, destination := range source.Destinations {
@@ -375,6 +480,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			mockCtrl := gomock.NewController(t)
 			mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
 			batchRouter := defaultHandle(destType)
 			batchRouter.now = func() time.Time {
@@ -382,6 +488,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			}
 			batchRouter.jobsDB = mockBatchRouterJobsDB
 			batchRouter.errorDB = mockErrJobsDB
+			batchRouter.debugger = mockDestinationDebugger
 
 			mockErrJobsDB.EXPECT().Store(
 				gomock.Any(), gomock.Any(),
@@ -462,6 +569,15 @@ func TestAsyncDestinationManager(t *testing.T) {
 			mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
+			mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(1).Do(func(destinationID string, deliveryStatus *destinationdebugger.DeliveryStatusT) {
+				require.Equal(t, "4 events", deliveryStatus.EventName)
+				require.Empty(t, deliveryStatus.EventType)
+				require.JSONEq(t, `{"success":"2 events","failed":"2 events"}`, string(deliveryStatus.Payload))
+				require.Equal(t, 1, deliveryStatus.AttemptNum)
+				require.Equal(t, jobsdb.Failed.State, deliveryStatus.JobState)
+				require.Equal(t, "500", deliveryStatus.ErrorCode)
+				require.NotEmpty(t, deliveryStatus.ErrorResponse)
+			}).Return(true)
 
 			for _, source := range sources {
 				for _, destination := range source.Destinations {
@@ -521,12 +637,14 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 		mockCtrl := gomock.NewController(t)
 		mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+		mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
 		batchRouter := defaultHandle(destType)
 		batchRouter.now = func() time.Time {
 			return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		}
 		batchRouter.jobsDB = mockBatchRouterJobsDB
+		batchRouter.debugger = mockDestinationDebugger
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -572,6 +690,15 @@ func TestAsyncDestinationManager(t *testing.T) {
 		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 			_ = f(jobsdb.EmptyUpdateSafeTx())
 		}).Return(nil)
+		mockDestinationDebugger.EXPECT().RecordEventDeliveryStatus(gomock.Any(), gomock.Any()).Times(1).Do(func(destinationID string, deliveryStatus *destinationdebugger.DeliveryStatusT) {
+			require.Equal(t, "1 events", deliveryStatus.EventName)
+			require.Empty(t, deliveryStatus.EventType)
+			require.JSONEq(t, `{"success":"0 events","failed":"1 events"}`, string(deliveryStatus.Payload))
+			require.Equal(t, 1, deliveryStatus.AttemptNum)
+			require.Equal(t, jobsdb.Failed.State, deliveryStatus.JobState)
+			require.Equal(t, "500", deliveryStatus.ErrorCode)
+			require.NotEmpty(t, deliveryStatus.ErrorResponse)
+		}).Return(true)
 
 		for _, source := range sources {
 			for _, destination := range source.Destinations {

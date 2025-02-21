@@ -2,7 +2,6 @@ package suppression
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -207,7 +207,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		return []model.Suppression{}, nil, errors.New("nil response body")
 	}
 	var respJSON suppressionsResponse
-	err = json.Unmarshal(respBody, &respJSON)
+	err = jsonrs.Unmarshal(respBody, &respJSON)
 	if err != nil {
 		s.log.Error("Error while parsing response: ", err, resp.StatusCode)
 		return []model.Suppression{}, nil, err

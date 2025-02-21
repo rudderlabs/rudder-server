@@ -2,19 +2,18 @@ package rsources
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 
 	"go.uber.org/mock/gomock"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 var _ = Describe("Using StatsCollector", Serial, func() {
@@ -144,14 +143,14 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						// empty string
 						params1 := params
 						params1.RecordID = ""
-						p, err := json.Marshal(params1)
+						p, err := jsonrs.Marshal(params1)
 						Expect(err).To(BeNil())
 						job.Parameters = p
 					} else if i >= len(jobs)/2 {
 						// nil value
 						params1 := params
 						params1.RecordID = nil
-						p, err := json.Marshal(params1)
+						p, err := jsonrs.Marshal(params1)
 						Expect(err).To(BeNil())
 						job.Parameters = p
 					} else {
@@ -162,7 +161,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 							SourceID:      params.SourceID,
 							DestinationID: params.DestinationID,
 						}
-						p, err := json.Marshal(params1)
+						p, err := jsonrs.Marshal(params1)
 						Expect(err).To(BeNil())
 						job.Parameters = p
 					}
@@ -469,7 +468,7 @@ func generateJobs(num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P00
 }
 
 func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
-	p, err := json.Marshal(params)
+	p, err := jsonrs.Marshal(params)
 	Expect(err).To(BeNil())
 	return &jobsdb.JobT{
 		JobID:      id,
@@ -546,10 +545,10 @@ func BenchmarkParamsParsing(b *testing.B) {
 		}
 	})
 
-	b.Run("parse params using jsoniter.Unmarshall", func(b *testing.B) {
+	b.Run("parse params using jsonrs.Unmarshall", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			var p JobTargetKey
-			err := jsoniter.Unmarshal(jsonStr, &p)
+			err := jsonrs.Unmarshal(jsonStr, &p)
 			if err != nil {
 				b.Fatal(err)
 			}

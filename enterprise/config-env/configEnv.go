@@ -1,7 +1,6 @@
 package configenv
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type HandleT struct {
@@ -28,7 +28,7 @@ func loadConfig() {
 func (h *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
 	configMap := make(map[string]interface{}, 0)
 
-	err := json.Unmarshal(workspaceConfig, &configMap)
+	err := jsonrs.Unmarshal(workspaceConfig, &configMap)
 	if err != nil {
 		h.Log.Error("[ConfigEnv] Error while parsing request", err, string(workspaceConfig))
 		return workspaceConfig

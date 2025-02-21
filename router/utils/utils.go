@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -141,7 +141,7 @@ func (d *drainer) Drain(
 ) (bool, string) {
 	createdAt := job.CreatedAt
 	var jobParams JobParameters
-	_ = json.Unmarshal(job.Parameters, &jobParams)
+	_ = jsonrs.Unmarshal(job.Parameters, &jobParams)
 	destID := jobParams.DestinationID
 	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
 		return true, DrainReasonJobExpired

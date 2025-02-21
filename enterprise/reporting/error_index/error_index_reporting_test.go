@@ -2,7 +2,6 @@ package error_index
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -252,7 +252,7 @@ func TestErrorIndexReporter(t *testing.T) {
 				require.Equal(t, len(tc.expectedPayload), len(jr.Jobs))
 				for i, job := range jr.Jobs {
 					var eventPayload payload
-					err := json.Unmarshal(job.EventPayload, &eventPayload)
+					err := jsonrs.Unmarshal(job.EventPayload, &eventPayload)
 					require.NoError(t, err)
 
 					require.Equal(t, eventPayload.MessageID, tc.expectedPayload[i].MessageID)
@@ -267,7 +267,7 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, eventPayload.ReceivedAt, tc.expectedPayload[i].ReceivedAt)
 
 					var params map[string]interface{}
-					err = json.Unmarshal(job.Parameters, &params)
+					err = jsonrs.Unmarshal(job.Parameters, &params)
 					require.NoError(t, err)
 
 					require.Equal(t, params["source_id"], sourceID)

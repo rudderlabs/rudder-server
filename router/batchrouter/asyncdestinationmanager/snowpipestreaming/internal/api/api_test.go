@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -64,7 +64,7 @@ func TestAPI(t *testing.T) {
 			require.Equal(t, http.MethodPost, r.Method)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-			ccrJSON, err := json.Marshal(ccr)
+			ccrJSON, err := jsonrs.Marshal(ccr)
 			require.NoError(t, err)
 
 			body, err := io.ReadAll(r.Body)
@@ -86,7 +86,7 @@ func TestAPI(t *testing.T) {
 			require.Equal(t, http.MethodPost, r.Method)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-			ccrJSON, err := json.Marshal(ccr)
+			ccrJSON, err := jsonrs.Marshal(ccr)
 			require.NoError(t, err)
 
 			body, err := io.ReadAll(r.Body)
@@ -289,7 +289,7 @@ func TestAPI(t *testing.T) {
 			require.Equal(t, http.MethodPost, r.Method)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-			irJSON, err := json.Marshal(ir)
+			irJSON, err := jsonrs.Marshal(ir)
 			require.NoError(t, err)
 
 			gz, err := gzip.NewReader(r.Body)

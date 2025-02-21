@@ -7,7 +7,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -52,7 +52,7 @@ type oauthDetail struct {
 
 func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
 	var jobResp []JobRespSchema
-	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
+	if err := jsonrs.Unmarshal(bodyBytes, &jobResp); err != nil {
 		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(bodyBytes))
 		return "", fmt.Errorf("failed to parse authErrorCategory from response: %s", string(bodyBytes))
 	}
@@ -85,7 +85,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	bodySchema := mapJobToPayload(job, strings.ToLower(destination.Name), destination.Config)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
 
-	reqBody, err := json.Marshal(bodySchema)
+	reqBody, err := jsonrs.Marshal(bodySchema)
 	if err != nil {
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
@@ -156,7 +156,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		var transportResponse oauthv2.TransportResponse
 		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 		// It's acceptable if the structure of bodyBytes doesn't match the oauthv2.TransportResponse struct.
-		err = json.Unmarshal(bodyBytes, &transportResponse)
+		err = jsonrs.Unmarshal(bodyBytes, &transportResponse)
 		if err == nil && transportResponse.OriginalResponse != "" {
 			// most probably it was thrown before postRoundTrip through interceptor itself
 			respBodyBytes = []byte(transportResponse.OriginalResponse) // setting original response
@@ -228,7 +228,7 @@ func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
 }
 
 func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
-	payload, marshalErr := json.Marshal(secretToken.Account)
+	payload, marshalErr := jsonrs.Marshal(secretToken.Account)
 	if marshalErr != nil {
 		marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
 		pkgLogger.Errorf(marshalFailErr)
@@ -313,7 +313,7 @@ type PostResponseParams struct {
 
 func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
 	var jobResp []JobRespSchema
-	if err := json.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
+	if err := jsonrs.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
 		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(params.responseBodyBytes))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: %s", string(params.responseBodyBytes))}
 	}

@@ -1,7 +1,7 @@
 package eloqua_test
 
 import (
-	stdjson "encoding/json"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +21,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mockeloquaservice "github.com/rudderlabs/rudder-server/mocks/router/eloqua"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/eloqua"
@@ -295,7 +296,7 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
 			var parameters common.ImportParameters
 			parameters.ImportId = "/syncs/384:/contacts/imports/384"
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
 				return
@@ -304,7 +305,7 @@ var _ = Describe("Eloqua test", func() {
 				FailedReason:        "failed as the fileSizeLimit has over",
 				ImportingJobIDs:     []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022},
 				FailedJobIDs:        []int64{1023},
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 				ImportingCount:      9,
 				FailedCount:         1,
 			}

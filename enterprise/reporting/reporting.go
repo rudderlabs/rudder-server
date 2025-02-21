@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +27,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -587,7 +587,7 @@ func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tag
 }
 
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
-	payload, err := json.Marshal(metric)
+	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		panic(err)
 	}
@@ -685,11 +685,9 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		if r.eventSamplingEnabled.Load() {
-			metric, err = transformMetricWithEventSampling(metric, reportedAt, r.eventSampler, int64(r.eventSamplingDuration.Load().Minutes()))
-			if err != nil {
-				return err
-			}
+		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()))
+		if err != nil {
+			return err
 		}
 
 		runeEventName := []rune(metric.StatusDetail.EventName)
@@ -717,7 +715,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
 			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
 			metric.StatusDetail.StatusCode,
-			metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent),
+			sampleResponse, string(sampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorType,
 		)

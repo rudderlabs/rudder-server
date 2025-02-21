@@ -3,7 +3,6 @@ package error_index
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -20,6 +19,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
@@ -135,7 +135,7 @@ func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PURe
 			payload.SetReceivedAt(failedMessage.ReceivedAt)
 			payload.SetFailedAt(failedAt)
 
-			payloadJSON, err := json.Marshal(payload)
+			payloadJSON, err := jsonrs.Marshal(payload)
 			if err != nil {
 				return fmt.Errorf("unable to marshal payload: %v", err)
 			}
@@ -147,7 +147,7 @@ func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PURe
 				WorkspaceID: workspaceID,
 				SourceID:    metric.SourceID,
 			}
-			paramsJSON, err := json.Marshal(params)
+			paramsJSON, err := jsonrs.Marshal(params)
 			if err != nil {
 				return fmt.Errorf("unable to marshal params: %v", err)
 			}

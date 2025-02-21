@@ -1,7 +1,6 @@
 package audience
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -19,11 +19,11 @@ import (
 
 func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
-	jsonConfig, err := stdjson.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("error in marshalling destination config: %v", err)
 	}
-	err = stdjson.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}

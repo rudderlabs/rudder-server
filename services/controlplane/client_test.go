@@ -2,7 +2,6 @@ package controlplane_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
@@ -205,7 +205,7 @@ func TestDestinationHistory(t *testing.T) {
 
 			wantDestination: backendconfig.DestinationT{},
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH",
-			wantErr:         fmt.Errorf("unmarshal response body: invalid character '<' looking for beginning of value"),
+			wantErr:         fmt.Errorf("unmarshal response body: "),
 		},
 	}
 
@@ -240,7 +240,7 @@ func TestDestinationHistory(t *testing.T) {
 
 			destination, err := c.DestinationHistory(context.Background(), tc.revisionID)
 			if tc.wantErr != nil {
-				require.EqualError(t, err, tc.wantErr.Error())
+				require.ErrorContains(t, err, tc.wantErr.Error())
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tc.wantDestination, destination)
@@ -382,7 +382,7 @@ func TestGetDestinationSSHKeyPair(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		require.NoError(t, json.NewEncoder(w).Encode(controlplane.SSHKeyPair{
+		require.NoError(t, jsonrs.NewEncoder(w).Encode(controlplane.SSHKeyPair{
 			PrivateKey: "test-private-key",
 			PublicKey:  "test-public-key",
 		}))

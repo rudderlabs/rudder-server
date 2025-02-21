@@ -1,7 +1,6 @@
 package reporting
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const (
@@ -102,7 +102,7 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 	}
 
 	var jsonMap map[string]interface{}
-	er := json.Unmarshal([]byte(sampleResponse), &jsonMap)
+	er := jsonrs.Unmarshal([]byte(sampleResponse), &jsonMap)
 	if er != nil {
 		ext.log.Debugn("sampleResponse is not a unmarshallable into interface{}", logger.NewStringField("sampleResponse", sampleResponse))
 		return sampleResponse
@@ -153,7 +153,7 @@ func handleError(valueStr string) string {
 func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 	if IsJSON(valueStr) {
 		var unmarshalledJSON interface{}
-		if err := json.Unmarshal([]byte(valueStr), &unmarshalledJSON); err != nil {
+		if err := jsonrs.Unmarshal([]byte(valueStr), &unmarshalledJSON); err != nil {
 			return valueStr
 		}
 		result := getErrorMessageFromResponse(unmarshalledJSON, ext.ErrorMessageKeys)

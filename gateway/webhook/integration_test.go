@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
@@ -273,7 +274,7 @@ func TestIntegrationWebhook(t *testing.T) {
 				var batch struct {
 					Batch []json.RawMessage `json:"batch"`
 				}
-				err := json.Unmarshal(r.Jobs[i].EventPayload, &batch)
+				err := jsonrs.Unmarshal(r.Jobs[i].EventPayload, &batch)
 				require.NoError(t, err)
 				assert.Len(t, batch.Batch, 1)
 
@@ -326,7 +327,7 @@ func TestIntegrationWebhook(t *testing.T) {
 				var errPayload []byte
 				// expected error payload stored in errDB is dependant on the webhook transformation version
 				if webhookVersion == "v1" {
-					errPayload, err = json.Marshal(struct {
+					errPayload, err = jsonrs.Marshal(struct {
 						Event  json.RawMessage       `json:"event"`
 						Source backendconfig.SourceT `json:"source"`
 					}{
@@ -346,9 +347,9 @@ func TestIntegrationWebhook(t *testing.T) {
 					req.Header.Set("User-Agent", "Go-http-client/1.1")
 
 					requestPayload, err = requesttojson.RequestToJSON(req, "{}")
-					requestPayloadBytes, err = json.Marshal(requestPayload)
+					requestPayloadBytes, err = jsonrs.Marshal(requestPayload)
 
-					errPayload, err = json.Marshal(struct {
+					errPayload, err = jsonrs.Marshal(struct {
 						Request json.RawMessage       `json:"request"`
 						Source  backendconfig.SourceT `json:"source"`
 					}{

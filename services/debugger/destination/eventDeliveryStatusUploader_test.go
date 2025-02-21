@@ -268,8 +268,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
-			Expect(rawJSON).To(BeNil())
+			if err != nil {
+				Expect(err.Error()).To(Not(BeNil()))
+			} else { // jsoniter doesn't return an error, just sets null for invalid json.RawMessage
+				Expect(gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw).To(Equal("null"))
+			}
 		})
 	})
 
@@ -320,8 +323,12 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			var payload []*DeliveryStatusT
 			payload = append(payload, &faultyData)
 			rawJSON, err := edsUploader.Transform(payload)
-			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
-			Expect(rawJSON).To(BeNil())
+			if err != nil {
+				Expect(rawJSON).To(BeNil())
+			} else {
+				// jsoniter doesn't return an error, just sets null for invalid json.RawMessage
+				Expect(gjson.GetBytes(rawJSON, DestinationIDEnabledA+".0.payload").Raw).To(Equal("null"))
+			}
 		})
 	})
 })

@@ -1,7 +1,6 @@
 package warehouseutils
 
 import (
-	"bytes"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -95,7 +95,6 @@ const (
 const (
 	WAREHOUSE             = "warehouse"
 	RudderMissingDatatype = "warehouse_rudder_missing_datatype"
-	MissingDatatype       = "<missing_datatype>"
 )
 
 const (
@@ -290,8 +289,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
 		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
-		lastPos := strings.LastIndex(blobLocation, "/")
-		folder = blobLocation[:lastPos]
+		folder = GetLocationFolder(blobLocation)
 	}
 	return
 }
@@ -317,18 +315,6 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
-}
-
-func SanitizeJSON(input json.RawMessage) json.RawMessage {
-	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
-	if len(v) == 0 {
-		v = []byte(`{}`)
-	}
-	return v
-}
-
-func SanitizeString(input string) string {
-	return strings.ReplaceAll(input, "\u0000", "")
 }
 
 // GetObjectName extracts object/key objectName from different buckets locations
@@ -389,8 +375,7 @@ func GetS3Location(location string) (s3Location, region string) {
 // https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
 func GetS3LocationFolder(location string) string {
 	s3Location, _ := GetS3Location(location)
-	lastPos := strings.LastIndex(s3Location, "/")
-	return s3Location[:lastPos]
+	return GetLocationFolder(s3Location)
 }
 
 type GCSLocationOptions struct {
@@ -413,9 +398,7 @@ func GetGCSLocation(location string, options GCSLocationOptions) string {
 // GetGCSLocationFolder returns the folder path for a gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
 func GetGCSLocationFolder(location string, options GCSLocationOptions) string {
-	s3Location := GetGCSLocation(location, options)
-	lastPos := strings.LastIndex(s3Location, "/")
-	return s3Location[:lastPos]
+	return GetLocationFolder(GetGCSLocation(location, options))
 }
 
 func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocations []string) {
@@ -423,6 +406,10 @@ func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocat
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
 	return
+}
+
+func GetLocationFolder(location string) string {
+	return location[:strings.LastIndex(location, "/")]
 }
 
 // GetAzureBlobLocation parses path-style location http url to return in azure:// format
@@ -435,9 +422,7 @@ func GetAzureBlobLocation(location string) string {
 // GetAzureBlobLocationFolder returns the folder path for an azure storage object
 // https://myproject.blob.core.windows.net/test-bucket/myfolder/test-object.csv  --> azure://myproject.blob.core.windows.net/myfolder
 func GetAzureBlobLocationFolder(location string) string {
-	s3Location := GetAzureBlobLocation(location)
-	lastPos := strings.LastIndex(s3Location, "/")
-	return s3Location[:lastPos]
+	return GetLocationFolder(GetAzureBlobLocation(location))
 }
 
 func GetS3Locations(loadFiles []LoadFile) []LoadFile {
@@ -449,7 +434,7 @@ func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 
 func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
 	schema := make(model.Schema)
-	err := json.Unmarshal(rawMsg, &schema)
+	err := jsonrs.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}
@@ -817,16 +802,6 @@ func GetLoadFileFormat(loadFileType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []string) {
-	if (start == time.Time{} || end == time.Time{}) {
-		return
-	}
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-		dateRange = append(dateRange, d.Format(dateFormat))
-	}
-	return
 }
 
 func StagingTablePrefix(provider string) string {

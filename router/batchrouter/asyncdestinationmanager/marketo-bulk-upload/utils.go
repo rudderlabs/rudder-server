@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -298,7 +299,7 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	for scanner.Scan() {
 		var tempJob common.AsyncJob
 		jobBytes := scanner.Bytes()
-		err := jsonfast.Unmarshal(jobBytes, &tempJob)
+		err := jsonrs.Unmarshal(jobBytes, &tempJob)
 		if err != nil {
 			return nil, fmt.Errorf("BRT: Error in Unmarshalling Job: %v", err)
 		}

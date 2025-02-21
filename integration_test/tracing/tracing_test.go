@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
 
 	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
@@ -33,7 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -359,15 +360,15 @@ func TestTracing(t *testing.T) {
 		defer bcServer.Close()
 
 		trServer := transformertest.NewBuilder().
-			WithUserTransformHandler(func(request []transformer.TransformerEvent) (response []transformer.TransformerResponse) {
+			WithUserTransformHandler(func(request []types.TransformerEvent) (response []types.TransformerResponse) {
 				for i := range request {
 					req := request[i]
-					response = append(response, transformer.TransformerResponse{
+					response = append(response, types.TransformerResponse{
 						Metadata:   req.Metadata,
 						Output:     req.Message,
 						StatusCode: http.StatusOK,
 					})
-					response = append(response, transformer.TransformerResponse{
+					response = append(response, types.TransformerResponse{
 						Metadata:   req.Metadata,
 						Output:     req.Message,
 						StatusCode: http.StatusOK,
@@ -672,7 +673,7 @@ func getZipkinTraces(t *testing.T, zipkinTracesURL string) [][]tracemodel.Zipkin
 	spansBody := assert.RequireEventuallyStatusCode(t, http.StatusOK, getTracesReq)
 
 	var zipkinTraces [][]tracemodel.ZipkinTrace
-	require.NoError(t, json.Unmarshal([]byte(spansBody), &zipkinTraces))
+	require.NoError(t, jsonrs.Unmarshal([]byte(spansBody), &zipkinTraces))
 
 	for _, zipkinTrace := range zipkinTraces {
 		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {

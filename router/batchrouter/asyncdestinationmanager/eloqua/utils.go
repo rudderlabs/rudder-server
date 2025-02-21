@@ -3,7 +3,6 @@ package eloqua
 import (
 	"bufio"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -27,7 +27,7 @@ func getEventDetails(file *os.File) (*EventDetails, error) {
 	if scanner.Scan() {
 		line := scanner.Text()
 		var data TransformedData
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
+		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
 			return &eventDetails, fmt.Errorf("error in unmarshalling data, %v", err)
 		}
 		if data.Message.Type == "track" && data.Message.CustomObjectId != "" {
@@ -88,7 +88,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	for scanner.Scan() {
 		line = scanner.Text()
 		var data TransformedData
-		if err := json.Unmarshal([]byte(line), &data); err != nil {
+		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
 			return "", 0, err
 		}
 		var values []string

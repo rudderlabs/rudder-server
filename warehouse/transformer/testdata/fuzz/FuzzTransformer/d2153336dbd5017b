@@ -1,0 +1,4 @@
+go test fuzz v1
+string("RS")
+string("{}")
+string("{\"type\":\"A&000\",\"messageId\":\"0\",\"s0\x9da\":\"\",\"receivedAt\":\"2021-09-01T00:00:00Z\"}")

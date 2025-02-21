@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -53,7 +54,7 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 	}
 	// create eventbridge event
 	putRequestEntry := eventbridge.PutEventsRequestEntry{}
-	err := json.Unmarshal(jsonData, &putRequestEntry)
+	err := jsonrs.Unmarshal(jsonData, &putRequestEntry)
 	if err != nil {
 		return 400, "[EventBridge] Failed to create eventbridge event", err.Error()
 	}

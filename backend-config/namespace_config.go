@@ -10,19 +10,18 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
-	jsonfast                   = jsoniter.ConfigCompatibleWithStandardLibrary
 	updatedAfterTimeFormat     = "2006-01-02T15:04:05.000Z"
 	ErrIncrementalUpdateFailed = errors.New("incremental update failed")
 )
@@ -147,7 +146,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	}
 
 	var requestData map[string]*ConfigT
-	err = jsonfast.Unmarshal(respBody, &requestData)
+	err = jsonrs.Unmarshal(respBody, &requestData)
 	if err != nil {
 		nc.logger.Errorn("Error while parsing request", obskit.Error(err))
 		return configOnError, err

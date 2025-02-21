@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sftp/mock_sftp"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -165,7 +166,7 @@ func TestSFTP(t *testing.T) {
 			sampleData := map[string]interface{}{
 				"source_job_run_id": "someJobRunId_1",
 			}
-			rawMessage, _ := json.Marshal(sampleData)
+			rawMessage, _ := jsonrs.Marshal(sampleData)
 			payload[id] = rawMessage
 
 			id = int64(1016)

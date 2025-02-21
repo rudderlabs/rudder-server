@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -79,18 +81,22 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 	)
 
 	for _, status := range statusList {
-		if status.JobState == jobsdb.Succeeded.State {
+		switch status.JobState {
+		case jobsdb.Succeeded.State:
 			successCount++
-		} else {
+		case jobsdb.Failed.State, jobsdb.Aborted.State:
 			failureCount++
 			failedReason = string(status.ErrorResponse)
 		}
+	}
+	if failureCount == 0 && successCount == 0 {
+		return
 	}
 
 	if failureCount > 0 {
 		jobState = jobsdb.Failed.State
 		errorCode = "500"
-		errorResp, _ = json.Marshal(ErrorResponse{Error: "failed to deliver events. " + failedReason})
+		errorResp, _ = jsonrs.Marshal(ErrorResponse{Error: "failed to deliver events. " + failedReason})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		errorCode = "200"
@@ -136,7 +142,7 @@ func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output Uplo
 		if isWarehouse {
 			jobState = router.GeneratingStagingFileFailedState
 		}
-		errorResp, _ = json.Marshal(ErrorResponse{Error: err.Error()})
+		errorResp, _ = jsonrs.Marshal(ErrorResponse{Error: err.Error()})
 	} else {
 		jobState = jobsdb.Succeeded.State
 		errorCode = "200"

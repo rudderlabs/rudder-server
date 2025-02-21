@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/go-chi/chi/v5"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -21,8 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type stagingFilesRepo interface {
 	Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error)
@@ -79,7 +77,7 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 	}
 
 	var schema []byte
-	schema, err := json.Marshal(payload.Schema)
+	schema, err := jsonrs.Marshal(payload.Schema)
 	if err != nil {
 		return model.StagingFileWithSchema{}, fmt.Errorf("invalid field: schema: %w", err)
 	}
@@ -116,7 +114,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	defer func() { _ = r.Body.Close() }()
 
 	var payload stagingFileSchema
-	err := json.NewDecoder(r.Body).Decode(&payload)
+	err := jsonrs.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
 		api.Logger.Warnw("invalid JSON in request body for processing staging file", lf.Error, err.Error())
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)

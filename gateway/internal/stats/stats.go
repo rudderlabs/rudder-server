@@ -77,6 +77,19 @@ func (ss *SourceStat) RequestEventsFailed(num int, reason string) {
 	ss.reason = reason
 }
 
+// EventsSuccess increments the events total & succeeded counters by num
+func (ss *SourceStat) EventsSuccess(num int) {
+	ss.events.succeeded += num
+	ss.events.total += num
+}
+
+// EventsFailed increments the events total & failed counters by num
+func (ss *SourceStat) EventsFailed(num int, reason string) {
+	ss.events.failed += num
+	ss.events.total += num
+	ss.reason = reason
+}
+
 func (ss *SourceStat) RequestEventsBot(num int) {
 	ss.events.bot += num
 }
@@ -97,11 +110,13 @@ func (ss *SourceStat) Report(s stats.Stats) {
 	if ss.reason != "" {
 		failedTags["reason"] = ss.reason
 	}
-	s.NewTaggedStat("gateway.write_key_requests", stats.CountType, tags).Count(ss.requests.total)
-	s.NewTaggedStat("gateway.write_key_successful_requests", stats.CountType, tags).Count(ss.requests.succeeded)
-	s.NewTaggedStat("gateway.write_key_failed_requests", stats.CountType, failedTags).Count(ss.requests.failed)
-	s.NewTaggedStat("gateway.write_key_dropped_requests", stats.CountType, tags).Count(ss.requests.dropped)
-	s.NewTaggedStat("gateway.write_key_suppressed_requests", stats.CountType, tags).Count(ss.requests.suppressed)
+	if ss.requests.total > 0 {
+		s.NewTaggedStat("gateway.write_key_requests", stats.CountType, tags).Count(ss.requests.total)
+		s.NewTaggedStat("gateway.write_key_successful_requests", stats.CountType, tags).Count(ss.requests.succeeded)
+		s.NewTaggedStat("gateway.write_key_failed_requests", stats.CountType, failedTags).Count(ss.requests.failed)
+		s.NewTaggedStat("gateway.write_key_dropped_requests", stats.CountType, tags).Count(ss.requests.dropped)
+		s.NewTaggedStat("gateway.write_key_suppressed_requests", stats.CountType, tags).Count(ss.requests.suppressed)
+	}
 	if ss.events.total > 0 {
 		s.NewTaggedStat("gateway.write_key_events", stats.CountType, tags).Count(ss.events.total)
 		s.NewTaggedStat("gateway.write_key_successful_events", stats.CountType, tags).Count(ss.events.succeeded)

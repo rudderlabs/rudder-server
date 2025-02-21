@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -74,7 +75,7 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 	}
 
 	for _, job := range testData {
-		jobBytes, _ := json.Marshal(job)
+		jobBytes, _ := jsonrs.Marshal(job)
 		if _, err := tempFile.Write(jobBytes); err != nil {
 			t.Fatal(err)
 		}
@@ -257,7 +258,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 
 	// Write test data to temp file
 	for _, job := range testData {
-		jobBytes, _ := json.Marshal(job)
+		jobBytes, _ := jsonrs.Marshal(job)
 		if _, err := tempFile.Write(jobBytes); err != nil {
 			t.Fatal(err)
 		}

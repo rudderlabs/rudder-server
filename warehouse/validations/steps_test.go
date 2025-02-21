@@ -83,6 +83,20 @@ func TestValidationSteps(t *testing.T) {
 				model.VerifyingLoadTable,
 			},
 		},
+		{
+			name: "Snowpipe",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.SnowpipeStreaming,
+				},
+			},
+			steps: []string{
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+			},
+		},
 	}
 
 	for _, tc := range testCases {

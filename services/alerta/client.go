@@ -3,7 +3,6 @@ package alerta
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
 	"github.com/cenkalti/backoff"
@@ -232,7 +232,7 @@ func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertO
 		Text:        opts.Text,
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshalling alerta: %w", err)
 	}

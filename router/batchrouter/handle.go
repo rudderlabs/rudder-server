@@ -31,6 +31,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -445,7 +446,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		opPayload stdjson.RawMessage
 	)
 	if !isWarehouse {
-		opPayload, _ = json.Marshal(&ObjectStorageDefinition{
+		opPayload, _ = jsonrs.Marshal(&ObjectStorageDefinition{
 			Config:          batchJobs.Connection.Destination.Config,
 			Key:             strings.Join(append(keyPrefixes, fileName), "/"),
 			Provider:        provider,
@@ -496,7 +497,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	schemaMap := make(map[string]map[string]interface{})
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
-		err := json.Unmarshal(job.EventPayload, &payload)
+		err := jsonrs.Unmarshal(job.EventPayload, &payload)
 		if err != nil {
 			panic(err)
 		}
@@ -520,7 +521,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		}
 	}
 	var sampleParameters routerutils.JobParameters
-	err = json.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
+	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
@@ -584,7 +585,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			} else {
 				batchJobState = jobsdb.Failed.State
 			}
-			errorResp, _ = json.Marshal(ErrorResponse{Error: errOccurred.Error()})
+			errorResp, _ = jsonrs.Marshal(ErrorResponse{Error: errOccurred.Error()})
 			batchReqMetric.batchRequestFailed = 1
 			// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		}
@@ -628,7 +629,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		}
 
 		var parameters routerutils.JobParameters
-		err = json.Unmarshal(job.Parameters, &parameters)
+		err = jsonrs.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
@@ -25,6 +24,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
@@ -669,7 +669,7 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
 					job := jobList[0]
 					var parameters map[string]interface{}
-					err := json.Unmarshal(job.Parameters, &parameters)
+					err := jsonrs.Unmarshal(job.Parameters, &parameters)
 					if err != nil {
 						panic(err)
 					}
@@ -753,7 +753,7 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
 					job := jobList[0]
 					var parameters map[string]interface{}
-					err := json.Unmarshal(job.Parameters, &parameters)
+					err := jsonrs.Unmarshal(job.Parameters, &parameters)
 					if err != nil {
 						panic(err)
 					}
@@ -831,7 +831,7 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
 					job := jobList[0]
 					var parameters map[string]interface{}
-					err := json.Unmarshal(job.Parameters, &parameters)
+					err := jsonrs.Unmarshal(job.Parameters, &parameters)
 					if err != nil {
 						panic(err)
 					}
@@ -916,7 +916,7 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
 					job := jobList[0]
 					var parameters map[string]interface{}
-					err := json.Unmarshal(job.Parameters, &parameters)
+					err := jsonrs.Unmarshal(job.Parameters, &parameters)
 					if err != nil {
 						panic(err)
 					}
@@ -1024,7 +1024,7 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
 					job := jobList[0]
 					var parameters map[string]interface{}
-					err := json.Unmarshal(job.Parameters, &parameters)
+					err := jsonrs.Unmarshal(job.Parameters, &parameters)
 					if err != nil {
 						panic(err)
 					}
@@ -2371,22 +2371,6 @@ func Benchmark_SJSON_SET(b *testing.B) {
 				stringValue = ""
 			}
 		}
-	}
-}
-
-func Benchmark_JSON_MARSHAL(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		val, _ := json.Marshal(collectMetricsErrorMap)
-		_ = string(val)
-	}
-}
-
-func Benchmark_FASTJSON_MARSHAL(b *testing.B) {
-	jsonfast := jsoniter.ConfigCompatibleWithStandardLibrary
-
-	for i := 0; i < b.N; i++ {
-		val, _ := jsonfast.Marshal(collectMetricsErrorMap)
-		_ = string(val)
 	}
 }
 

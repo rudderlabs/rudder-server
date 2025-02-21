@@ -1,7 +1,6 @@
 package transformer
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
@@ -75,7 +75,7 @@ func TestV0Adapter(t *testing.T) {
 			DestinationResponse: `{}`,
 			AuthErrorCategory:   "oauth123",
 		}
-		r, err := json.Marshal(resp)
+		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
 		response, err := v0Adapter.getResponse(r, 200, metadata)
@@ -207,7 +207,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 			AuthErrorCategory: "oauth123",
 		}
-		r, err := json.Marshal(resp)
+		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
 		response, err := v1Adapter.getResponse(r, 200, metadata)
@@ -269,7 +269,7 @@ func TestV1Adapter(t *testing.T) {
 			},
 			AuthErrorCategory: "oauth123",
 		}
-		r, err := json.Marshal(resp)
+		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
 		mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any()).Times(1)

@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
@@ -62,7 +63,7 @@ func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawM
 	actSecret := v2.AccountSecret{
 		Secret: secret,
 	}
-	secretJson, err := json.Marshal(actSecret)
+	secretJson, err := jsonrs.Marshal(actSecret)
 	if err != nil {
 		return fmt.Errorf("marshalling secret: %w", err)
 	}

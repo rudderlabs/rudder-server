@@ -2,7 +2,6 @@ package archive_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -24,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -280,6 +280,6 @@ func jsonTestData(t require.TestingT, file string, value any) {
 
 	defer func() { _ = f.Close() }()
 
-	err = json.NewDecoder(f).Decode(value)
+	err = jsonrs.NewDecoder(f).Decode(value)
 	require.NoError(t, err)
 }

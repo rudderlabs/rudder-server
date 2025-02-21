@@ -7,12 +7,12 @@ import (
 	"net/http"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -23,8 +23,6 @@ const (
 	WunderkindExternalId = "WUNDERKIND_EXTERNAL_ID"
 	WunderkindLambda     = "WUNDERKIND_LAMBDA"
 )
-
-var jsonFast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type inputData struct {
 	Payload string `json:"payload"`
@@ -67,7 +65,7 @@ func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
 func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := p.client
 	var input inputData
-	err := jsonFast.Unmarshal(jsonData, &input)
+	err := jsonrs.Unmarshal(jsonData, &input)
 	if err != nil {
 		returnMessage := "[Wunderkind] error while unmarshalling jsonData :: " + err.Error()
 		return http.StatusBadRequest, "Failure", returnMessage

@@ -6,10 +6,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/rudderlabs/rudder-server/utils/types"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func Benchmark_makeCommonMetadataFromSingularEvent(b *testing.B) {

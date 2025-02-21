@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	b64 "encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
@@ -218,7 +218,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 				"SELECT event_payload FROM gw_jobs_1 WHERE workspace_id = $1", workspaceID,
 			).Scan(&eventPayload) == nil
 		}, time.Minute, 50*time.Millisecond)
-		require.NoError(t, json.Unmarshal([]byte(eventPayload), &message))
+		require.NoError(t, jsonrs.Unmarshal([]byte(eventPayload), &message))
 
 		var userId string
 		err = postgresContainer.DB.QueryRowContext(ctx,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const tableName = `tracked_users_reports`
@@ -110,7 +111,7 @@ func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error
 func marshalReports(aggReportsMap map[string]*TrackedUsersReport) ([]json.RawMessage, error) {
 	jsonReports := make([]json.RawMessage, 0, len(aggReportsMap))
 	for _, v := range aggReportsMap {
-		data, err := json.Marshal(v)
+		data, err := jsonrs.Marshal(v)
 		if err != nil {
 			return nil, err
 		}

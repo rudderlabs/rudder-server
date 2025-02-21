@@ -3,16 +3,17 @@ package lyticsBulkUpload
 import (
 	"bufio"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -30,7 +31,7 @@ func (u *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamT
 
 		// Unmarshal Properties into a map of json.RawMessage
 		var fields map[string]interface{}
-		if err := jsoniter.Unmarshal(data.Message.Properties, &fields); err != nil {
+		if err := jsonrs.Unmarshal(data.Message.Properties, &fields); err != nil {
 			return err
 		}
 
@@ -42,10 +43,10 @@ func (u *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamT
 			if value, exists := fields[mapping.RudderProperty]; exists {
 				// Convert the json.RawMessage value to a string
 				switch v := value.(type) {
-				case jsoniter.RawMessage:
+				case json.RawMessage:
 					// Convert the json.RawMessage value to a string
 					var valueStr string
-					if err := jsoniter.Unmarshal(v, &valueStr); err == nil {
+					if err := jsonrs.Unmarshal(v, &valueStr); err == nil {
 						csvRow[i] = valueStr
 					} else {
 						csvRow[i] = string(v)
@@ -53,7 +54,7 @@ func (u *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamT
 				case []byte:
 					// Handle if the value is directly a []byte
 					var valueStr string
-					if err := jsoniter.Unmarshal(v, &valueStr); err == nil {
+					if err := jsonrs.Unmarshal(v, &valueStr); err == nil {
 						csvRow[i] = valueStr
 					} else {
 						csvRow[i] = string(v)
@@ -150,7 +151,7 @@ func (u *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraits
 	for scanner.Scan() {
 		line := scanner.Text()
 		var data Data
-		if err := jsoniter.Unmarshal([]byte(line), &data); err != nil {
+		if err := jsonrs.Unmarshal([]byte(line), &data); err != nil {
 			// Collect the failed job ID
 			actionFile.FailedJobIDs = append(actionFile.FailedJobIDs, data.Metadata.JobID)
 			continue

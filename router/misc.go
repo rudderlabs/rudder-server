@@ -1,7 +1,6 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/isolation"
@@ -38,14 +38,14 @@ func getIterableStruct(payload []byte, transformAt string) ([]integrations.PostP
 	var response integrations.PostParametersT
 	responseArray := make([]integrations.PostParametersT, 0)
 	if transformAt == "router" {
-		err = json.Unmarshal(payload, &response)
+		err = jsonrs.Unmarshal(payload, &response)
 		if err != nil {
-			err = json.Unmarshal(payload, &responseArray)
+			err = jsonrs.Unmarshal(payload, &responseArray)
 		} else {
 			responseArray = append(responseArray, response)
 		}
 	} else {
-		err = json.Unmarshal(payload, &response)
+		err = jsonrs.Unmarshal(payload, &response)
 		if err == nil {
 			responseArray = append(responseArray, response)
 		}

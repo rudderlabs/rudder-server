@@ -12,6 +12,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -297,7 +298,7 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 	}
 	if options.Error != nil {
 		setQuery.WriteString(fmt.Sprintf(`error = $%d,`, len(queryArgs)+1))
-		sanitizedError := warehouseutils.SanitizeString(*options.Error)
+		sanitizedError := misc.SanitizeString(*options.Error)
 		queryArgs = append(queryArgs, sanitizedError)
 	}
 	if options.LastExecTime != nil {

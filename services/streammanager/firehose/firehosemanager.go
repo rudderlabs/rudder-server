@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -55,7 +56,7 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 	if data == nil {
 		return 400, "Failure", "[FireHose] error :: message from payload not found"
 	}
-	value, err := json.Marshal(data)
+	value, err := jsonrs.Marshal(data)
 	if err != nil {
 		pkgLogger.Errorf("[FireHose] error  :: %v", err)
 		return 400, "Failure", "[FireHose] error  :: " + err.Error()

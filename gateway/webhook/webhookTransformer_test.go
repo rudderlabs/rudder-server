@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
@@ -48,9 +48,9 @@ func TestV1Adapter(t *testing.T) {
 			EventRequest: testBody,
 			Source:       backendconfig.SourceT{ID: mockSrc.ID},
 		}
-		expectedBody, err := json.Marshal(v1TransformerEvent)
+		expectedBody, err := jsonrs.Marshal(v1TransformerEvent)
 		require.Nil(t, err)
-		require.Equal(t, expectedBody, retBody)
+		require.JSONEq(t, string(expectedBody), string(retBody))
 	})
 }
 
@@ -89,8 +89,8 @@ func TestV2Adapter(t *testing.T) {
 			EventRequest: testBody,
 			Source:       backendconfig.SourceT{ID: mockSrc.ID},
 		}
-		expectedBody, err := json.Marshal(v2TransformerEvent)
+		expectedBody, err := jsonrs.Marshal(v2TransformerEvent)
 		require.Nil(t, err)
-		require.Equal(t, expectedBody, retBody)
+		require.JSONEq(t, string(expectedBody), string(retBody))
 	})
 }

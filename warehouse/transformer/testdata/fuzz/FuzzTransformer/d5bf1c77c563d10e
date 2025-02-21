@@ -1,0 +1,4 @@
+go test fuzz v1
+string("RS")
+string("{}")
+string("{\"type\":\"identifY\",\"messageId\":\"0\",\"userId\":\"2000-01+01\",\"receivedAt\":\"2021-09-01T00:00:00Z\"}")

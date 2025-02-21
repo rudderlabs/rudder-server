@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -115,7 +116,7 @@ func getDiscardedRecordsFromEvent(
 			}
 		}
 		if reflect.TypeOf(event.Message.Data[columnName]) == sliceType {
-			marshalledVal, err := json.Marshal(event.Message.Data[columnName])
+			marshalledVal, err := jsonrs.Marshal(event.Message.Data[columnName])
 			if err != nil {
 				// Discard value if marshalling fails
 				event.Message.Data[columnName] = nil

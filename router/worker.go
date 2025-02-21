@@ -20,6 +20,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -89,7 +90,7 @@ func (w *worker) workLoop() {
 			userID := job.UserID
 
 			var parameters routerutils.JobParameters
-			if err := json.Unmarshal(job.Parameters, &parameters); err != nil {
+			if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
 				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
 			}
 			abortReason := message.drainReason

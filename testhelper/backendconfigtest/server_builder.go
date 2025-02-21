@@ -1,7 +1,6 @@
 package backendconfigtest
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 // NewBuilder returns a new ServerBuilder
@@ -49,12 +49,12 @@ func (b *ServerBuilder) Build() *httptest.Server {
 	mux := http.NewServeMux()
 	if b.namespace != "" {
 		mux.HandleFunc(fmt.Sprintf("/data-plane/v1/namespaces/%s/config", b.namespace), func(w http.ResponseWriter, r *http.Request) {
-			response, _ := json.Marshal(b.configs)
+			response, _ := jsonrs.Marshal(b.configs)
 			_, _ = w.Write(response)
 		})
 	} else {
 		mux.HandleFunc("/workspaceConfig", func(w http.ResponseWriter, r *http.Request) {
-			response, _ := json.Marshal(lo.Values(b.configs)[0])
+			response, _ := jsonrs.Marshal(lo.Values(b.configs)[0])
 			_, _ = w.Write(response)
 		})
 	}

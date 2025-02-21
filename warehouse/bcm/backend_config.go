@@ -2,13 +2,13 @@ package bcm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -333,11 +333,11 @@ func (bcm *BackendConfigManager) attachSSHTunnellingInfo(
 }
 
 func deepCopy(src, dest interface{}) error {
-	buf, err := json.Marshal(src)
+	buf, err := jsonrs.Marshal(src)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(buf, dest)
+	return jsonrs.Unmarshal(buf, dest)
 }
 
 func (bcm *BackendConfigManager) persistSSLFileErrorStat(

@@ -3,7 +3,6 @@ package snowflake_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +30,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -73,7 +73,7 @@ func getSnowflakeTestCredentials(key string) (*testCredentials, error) {
 	}
 
 	var credentials testCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
+	err := jsonrs.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshall %s to snowflake test credentials: %v", key, err)
 	}
@@ -518,7 +518,7 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
+				credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
 					Account:              tc.cred.Account,
 					User:                 tc.cred.User,
 					Role:                 tc.cred.Role,
@@ -619,7 +619,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("Validation", func(t *testing.T) {
 		namespace := whth.RandSchema(destType)
 
-		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
+		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,
@@ -675,7 +675,7 @@ func TestIntegration(t *testing.T) {
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
 
-		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
+		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,
@@ -1156,7 +1156,7 @@ func TestIntegration(t *testing.T) {
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
 
-		credentialsJSON, err := json.Marshal(sqlconnectconfig.Snowflake{
+		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
 			Account:   credentials.Account,
 			User:      credentials.User,
 			Role:      credentials.Role,

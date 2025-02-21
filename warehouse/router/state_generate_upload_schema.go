@@ -1,9 +1,9 @@
 package router
 
 import (
-	"encoding/json"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
@@ -13,7 +13,7 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	marshalledSchema, err := json.Marshal(uploadSchema)
+	marshalledSchema, err := jsonrs.Marshal(uploadSchema)
 	if err != nil {
 		return fmt.Errorf("marshal upload schema: %w", err)
 	}

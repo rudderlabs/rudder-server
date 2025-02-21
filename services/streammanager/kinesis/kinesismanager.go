@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -59,12 +60,12 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 
 	config := Config{}
 
-	jsonConfig, err := json.Marshal(destConfig)
+	jsonConfig, err := jsonrs.Marshal(destConfig)
 	if err != nil {
 		outErr := fmt.Errorf("[KinesisManager] Error while Marshalling destination config %+v Error: %w", destConfig, err)
 		return 400, outErr.Error(), outErr.Error()
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		outErr := fmt.Errorf("[KinesisManager] Error while Unmarshalling destination config: %w", err)
 		return 400, outErr.Error(), outErr.Error()
@@ -76,7 +77,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	if data == nil {
 		return 400, "InvalidPayload", "Empty Payload"
 	}
-	value, err := json.Marshal(data)
+	value, err := jsonrs.Marshal(data)
 	if err != nil {
 		return 400, err.Error(), err.Error()
 	}

@@ -2,7 +2,6 @@ package marketobulkupload
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type MarketoAPIServiceInterface interface {
@@ -65,7 +65,7 @@ func (m *MarketoAPIService) attemptImport(uploadURL, csvFilePath, deduplicationF
 	}
 
 	var marketoResponse MarketoResponse
-	err = json.Unmarshal(responseBody, &marketoResponse)
+	err = jsonrs.Unmarshal(responseBody, &marketoResponse)
 	if err != nil {
 		return "", &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing response body"}
 	}
@@ -149,7 +149,7 @@ func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse,
 
 	var marketoResponse MarketoResponse
 
-	err = json.Unmarshal(body, &marketoResponse)
+	err = jsonrs.Unmarshal(body, &marketoResponse)
 	if err != nil {
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing response body"}
 	}
@@ -193,7 +193,7 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 
 	if !m.checkForCSVLikeResponse(resp) {
 		var marketoResponse MarketoResponse
-		err = json.Unmarshal(body, &marketoResponse)
+		err = jsonrs.Unmarshal(body, &marketoResponse)
 		if err != nil {
 			return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing response body"}
 		}

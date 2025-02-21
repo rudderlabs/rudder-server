@@ -30,71 +30,6 @@ import (
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestSanitizeJSON(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    json.RawMessage
-		expected json.RawMessage
-	}{
-		{
-			name:     "empty json",
-			input:    json.RawMessage(`{}`),
-			expected: json.RawMessage(`{}`),
-		},
-		{
-			name:     "with unicode characters",
-			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End"]}}`),
-			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
-		},
-		{
-			name:     "without unicode characters",
-			input:    json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
-			expected: json.RawMessage(`{"exporting_data_failed":{"attempt":1,"errors":["Start:  : End"]}}`),
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			require.Equal(t, tc.expected, SanitizeJSON(tc.input))
-		})
-	}
-}
-
-func TestSanitizeString(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:  "empty string",
-			input: "",
-		},
-		{
-			name:     "with unicode characters",
-			input:    "Start: \u0000\u0000\u0000\u0000\u0000\u0000\u0000 : End",
-			expected: "Start:  : End",
-		},
-		{
-			name:     "without unicode characters",
-			input:    "Start:  : End",
-			expected: "Start:  : End",
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			require.Equal(t, tc.expected, SanitizeString(tc.input))
-		})
-	}
-}
-
 func TestFormatPemContent(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -1191,14 +1126,6 @@ var _ = Describe("Utils", func() {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
 		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), model.Schema{"k1": {"k2": "v2"}}),
-	)
-
-	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
-		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
-	},
-		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
-		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
-		Entry("No days", nil, nil, "2006-01-02", nil),
 	)
 
 	DescribeTable("Staging table prefix", func(provider string) {

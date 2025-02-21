@@ -14,28 +14,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/sftp"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
-	re   = regexp.MustCompile(`{([^}]+)}`)
-)
+var re = regexp.MustCompile(`{([^}]+)}`)
 
 // createSSHConfig creates SSH configuration based on destination
 func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
-	destinationConfigJson, err := json.Marshal(destination.Config)
+	destinationConfigJson, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling destination config: %w", err)
 	}
 	var config destConfig
-	if err := json.Unmarshal(destinationConfigJson, &config); err != nil {
+	if err := jsonrs.Unmarshal(destinationConfigJson, &config); err != nil {
 		return nil, fmt.Errorf("unmarshalling destination config: %w", err)
 	}
 
@@ -82,7 +79,7 @@ func parseRecords(filePath string) ([]record, error) {
 	defer file.Close()
 
 	var records []record
-	decoder := json.NewDecoder(file)
+	decoder := jsonrs.NewDecoder(file)
 	for decoder.More() {
 		var record record
 		if err := decoder.Decode(&record); err != nil {
@@ -128,7 +125,7 @@ func generateJSONFile(filePath string) (string, error) {
 	defer tempFile.Close()
 
 	// Write JSON data to the temporary file
-	encoder := json.NewEncoder(tempFile)
+	encoder := jsonrs.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
 	err = encoder.Encode(records)
 	if err != nil {

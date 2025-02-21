@@ -9,6 +9,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -184,7 +185,7 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 	}
 
 	var metadata metadataSchema
-	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+	if err := jsonrs.Unmarshal(metadataRaw, &metadata); err != nil {
 		return fmt.Errorf(`un-marshalling load file metadata: %w`, err)
 	}
 

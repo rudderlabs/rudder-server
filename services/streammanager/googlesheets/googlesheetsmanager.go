@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -64,11 +65,11 @@ type GoogleSheetsProducer struct {
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] Error while marshalling destination config :: %w", err)
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshalling destination config:: %w", err)
 	}
@@ -292,7 +293,7 @@ func handleServiceError(err error) (statusCode int, responseMessage string) {
 func clientOptions(config *Config) ([]option.ClientOption, error) {
 	var credentials Credentials
 	if config.Credentials != "" {
-		err := json.Unmarshal([]byte(config.Credentials), &credentials)
+		err := jsonrs.Unmarshal([]byte(config.Credentials), &credentials)
 		if err != nil {
 			return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshalling credentials json:: %w", err)
 		}

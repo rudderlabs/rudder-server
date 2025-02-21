@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -69,7 +70,7 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 		rt.telemetry.failureMetricLock.Lock()
 		for key, value := range rt.telemetry.failuresMetric {
 			var err error
-			stringValueBytes, err := jsonfast.Marshal(value)
+			stringValueBytes, err := jsonrs.Marshal(value)
 			if err != nil {
 				stringValueBytes = []byte{}
 			}

@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -35,10 +35,7 @@ type LambdaClient interface {
 	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
-var (
-	pkgLogger logger.Logger
-	jsonfast  = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
@@ -65,7 +62,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	}
 
 	var input inputData
-	err := jsonfast.Unmarshal(jsonData, &input)
+	err := jsonrs.Unmarshal(jsonData, &input)
 	if err != nil {
 		returnMessage := "[Lambda] error while unmarshalling jsonData :: " + err.Error()
 		return 400, "Failure", returnMessage

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	suppressModel "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -149,13 +149,13 @@ func getSuppressions(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if pt == tokenKey {
 		w.WriteHeader(http.StatusOK)
-		body, err = json.Marshal(suppressionsResponse{Token: tokenKey})
+		body, err = jsonrs.Marshal(suppressionsResponse{Token: tokenKey})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
-		body, err = json.Marshal(respStruct)
+		body, err = jsonrs.Marshal(respStruct)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -174,7 +174,7 @@ func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
 	}
-	body, err := json.Marshal(config)
+	body, err := jsonrs.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -187,7 +187,7 @@ func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := map[string]backendconfig.ConfigT{namespaceID: {
 		WorkspaceID: "reg-test-workspaceId",
 	}}
-	body, err := json.Marshal(config)
+	body, err := jsonrs.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

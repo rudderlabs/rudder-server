@@ -2,11 +2,12 @@ package encoding
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cast"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type jsonReader struct {
@@ -25,7 +26,7 @@ func (js *jsonReader) Read(columnNames []string) ([]string, error) {
 	lineBytes := js.scanner.Bytes()
 	jsonData := make(map[string]interface{})
 
-	err := json.Unmarshal(lineBytes, &jsonData)
+	err := jsonrs.Unmarshal(lineBytes, &jsonData)
 	if err != nil {
 		return []string{}, fmt.Errorf("json unmarshal: %w", err)
 	}

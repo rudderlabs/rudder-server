@@ -2,10 +2,10 @@ package loadfiles_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/stretchr/testify/require"
@@ -24,7 +24,7 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifier.PublishReque
 	var responses notifier.PublishResponse
 	for _, p := range payload.Payloads {
 		var req loadfiles.WorkerJobRequest
-		err := json.Unmarshal(p, &req)
+		err := jsonrs.Unmarshal(p, &req)
 		require.NoError(n.t, err)
 
 		var loadFileUploads []loadfiles.LoadFileUpload
@@ -47,7 +47,7 @@ func (n *mockNotifier) Publish(_ context.Context, payload *notifier.PublishReque
 			StagingFileID: req.StagingFileID,
 			Output:        loadFileUploads,
 		}
-		out, err := json.Marshal(jobResponse)
+		out, err := jsonrs.Marshal(jobResponse)
 
 		errString := ""
 		if err != nil {

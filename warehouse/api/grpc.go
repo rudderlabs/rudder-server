@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
 	"github.com/samber/lo"
@@ -50,15 +53,17 @@ import (
 )
 
 const (
-	triggeredSuccessfully   = "Triggered successfully"
-	noPendingEvents         = "No pending events to sync for this destination"
-	downloadFileNamePattern = "downloadfile.*.tmp"
-	noSuchSync              = "No such sync exist"
+	triggeredSuccessfully         = "Triggered successfully"
+	noPendingEvents               = "No pending events to sync for this destination"
+	downloadFileNamePattern       = "downloadfile.*.tmp"
+	noSuchSync                    = "No such sync exist"
+	syncFrequencyThresholdMinutes = 30
 )
 
 type GRPC struct {
 	proto.UnimplementedWarehouseServer
 
+	conf               *config.Config
 	logger             logger.Logger
 	isMultiWorkspace   bool
 	cpClient           cpclient.InternalControlPlane
@@ -67,9 +72,11 @@ type GRPC struct {
 	bcManager          *bcm.BackendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
+	schemaRepo         *repo.WHSchema
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
+	now                func() time.Time
 
 	config struct {
 		region         string
@@ -80,7 +87,9 @@ type GRPC struct {
 			userName string
 			password string
 		}
-		enableTunnelling bool
+		enableTunnelling              bool
+		defaultLatencyAggregationType model.LatencyAggregationType
+		maxLatencyQueryLookbackDays   int
 	}
 }
 
@@ -94,14 +103,17 @@ func NewGRPCServer(
 	triggerStore *sync.Map,
 ) (*GRPC, error) {
 	g := &GRPC{
+		conf:               conf,
 		logger:             logger.Child("grpc"),
 		tenantManager:      tenantManager,
 		bcManager:          bcManager,
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db),
+		schemaRepo:         repo.NewWHSchemas(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
+		now:                timeutil.Now,
 	}
 
 	g.config.region = conf.GetString("region", "")
@@ -111,6 +123,7 @@ func NewGRPCServer(
 	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
 	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
 	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
+	g.config.maxLatencyQueryLookbackDays = conf.GetInt("Warehouse.grpc.maxLatencyQueryLookbackDays", 90)
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
 		g.config.controlPlane.url,
@@ -123,6 +136,11 @@ func NewGRPCServer(
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return nil, fmt.Errorf("connection token: %w", err)
+	}
+
+	g.config.defaultLatencyAggregationType, err = model.GetLatencyAggregationType(conf.GetString("Warehouse.grpc.defaultLatencyAggregationType", "p90"))
+	if err != nil {
+		return nil, fmt.Errorf("default latency aggregation type: %w", err)
 	}
 
 	labels := map[string]string{}
@@ -598,7 +616,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 		}
 	)
 
-	err = json.Unmarshal(json.RawMessage(req.Body), &reqModel)
+	err = jsonrs.Unmarshal(json.RawMessage(req.Body), &reqModel)
 	if err != nil {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body")
@@ -676,14 +694,14 @@ func (err invalidDestinationCredErr) Error() string {
 func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
 
-	byt, err := json.Marshal(request)
+	byt, err := jsonrs.Marshal(request)
 	if err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with error: \n%s", err.Error())
 	}
 
 	var validateRequest validateObjectStorageRequest
-	if err := json.Unmarshal(byt, &validateRequest); err != nil {
+	if err := jsonrs.Unmarshal(byt, &validateRequest); err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with error: \n%s", err)
 	}
@@ -973,6 +991,24 @@ func (g *GRPC) RetryFailedBatches(
 	return resp, nil
 }
 
+func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*emptypb.Empty, error) {
+	log := g.logger.With(
+		lf.DestinationID, req.GetDestinationId(),
+	)
+	log.Infow("Syncing warehouse schema")
+	if req.DestinationId == "" {
+		return &emptypb.Empty{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
+	}
+	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, g.now())
+	if err != nil {
+		log.Errorw("unable to set expiry for destination", obskit.Error(err))
+		return &emptypb.Empty{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		start := time.Now()
@@ -1031,4 +1067,110 @@ func (g *GRPC) GetFirstAbortedUploadInContinuousAbortsByDestination(
 	})
 
 	return &proto.FirstAbortedUploadInContinuousAbortsByDestinationResponse{Uploads: uploads}, nil
+}
+
+// GetSyncLatency returns the sync latency for the given workspace, destination, start time and aggregation minutes
+// If sourceID is provided, it will return the sync latency for the given sourceID
+// If sourceID is not provided, it will return the sync latency for all sources of the given destination
+func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyRequest) (*proto.SyncLatencyResponse, error) {
+	log := g.logger.Withn(
+		obskit.WorkspaceID(request.WorkspaceId),
+		obskit.SourceID(request.SourceId),
+		obskit.DestinationID(request.DestinationId),
+		logger.NewStringField("startTime", request.GetStartTime()),
+		logger.NewStringField("aggregationMinutes", request.GetAggregationMinutes()),
+	)
+	log.Infon("Getting sync latency")
+
+	if request.GetWorkspaceId() == "" || request.GetDestinationId() == "" {
+		return &proto.SyncLatencyResponse{},
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "workspaceID and destinationID cannot be empty")
+	}
+	if request.GetStartTime() == "" {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time cannot be empty")
+	}
+	if request.GetAggregationMinutes() == "" {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "aggregation minutes cannot be empty")
+	}
+
+	startTime, err := time.Parse(time.RFC3339, request.GetStartTime())
+	if err != nil {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time %s should be in correct %s format", request.GetStartTime(), time.RFC3339)
+	}
+	minStartTime := g.now().AddDate(0, -g.config.maxLatencyQueryLookbackDays, 0)
+	if startTime.Before(minStartTime) {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "start time cannot be older than %d days", g.config.maxLatencyQueryLookbackDays)
+	}
+
+	aggregationMinutes, err := strconv.Atoi(request.GetAggregationMinutes())
+	if err != nil {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "aggregation minutes %s should be an integer", request.GetAggregationMinutes())
+	}
+
+	srcMap, _ := g.bcManager.ConnectionSourcesMap(request.GetDestinationId())
+	if len(request.GetSourceId()) > 0 {
+		if _, ok := srcMap[request.GetSourceId()]; !ok {
+			return &proto.SyncLatencyResponse{},
+				status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
+		}
+	}
+
+	aggregationType, err := g.getLatencyAggregationType(srcMap, request.GetSourceId())
+	if err != nil {
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to get latency aggregation type: %s", err)
+	}
+
+	syncLatencies, err := g.uploadRepo.GetSyncLatencies(ctx, model.SyncLatencyRequest{
+		WorkspaceID:        request.GetWorkspaceId(),
+		SourceID:           request.GetSourceId(),
+		DestinationID:      request.GetDestinationId(),
+		StartTime:          startTime,
+		AggregationMinutes: int64(aggregationMinutes),
+		AggregationType:    aggregationType,
+	})
+	if err != nil {
+		log.Warnw("unable to get sync latencies", lf.Error, err.Error())
+		return &proto.SyncLatencyResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get sync latencies: %v", err)
+	}
+
+	resp := &proto.SyncLatencyResponse{
+		TimeSeriesDataPoints: lo.Map(syncLatencies, func(item model.LatencyTimeSeriesDataPoint, index int) *proto.LatencyTimeSeriesDataPoint {
+			return &proto.LatencyTimeSeriesDataPoint{
+				TimestampMillis: wrapperspb.Double(item.TimestampMillis),
+				LatencySeconds:  wrapperspb.Double(item.LatencySeconds),
+			}
+		}),
+	}
+	return resp, nil
+}
+
+func (g *GRPC) getLatencyAggregationType(
+	srcMap map[string]model.Warehouse, sourceID string,
+) (model.LatencyAggregationType, error) {
+	var minSyncFrequency int64 = math.MaxInt64
+	for _, src := range srcMap {
+		if len(sourceID) > 0 && src.Source.ID != sourceID {
+			continue
+		}
+
+		freqInMin, err := strconv.ParseInt(src.GetStringDestinationConfig(g.conf, model.SyncFrequencySetting), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("unable to parse sync frequency: %v", err)
+		}
+
+		minSyncFrequency = min(minSyncFrequency, freqInMin)
+	}
+
+	aggregationType := model.MaxLatency
+	if minSyncFrequency < syncFrequencyThresholdMinutes {
+		aggregationType = g.config.defaultLatencyAggregationType
+	}
+	return aggregationType, nil
 }

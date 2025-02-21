@@ -3,7 +3,6 @@ package http_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 )
@@ -96,7 +96,7 @@ func getFailedRecords(
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	var failedRecords rsources.JobFailedRecordsV2
-	require.NoError(t, json.Unmarshal(body, &failedRecords))
+	require.NoError(t, jsonrs.Unmarshal(body, &failedRecords))
 	return &failedRecords
 }
 
@@ -201,7 +201,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			var jobStatus rsources.JobStatus
-			err = json.Unmarshal(body, &jobStatus)
+			err = jsonrs.Unmarshal(body, &jobStatus)
 			require.NoError(t, err)
 			require.Len(t, jobStatus.TasksStatus, 1)
 			require.Len(t, jobStatus.TasksStatus[0].SourcesStatus, 1)
@@ -251,7 +251,7 @@ func TestDeleteEndpoints(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			var jobStatus rsources.JobStatus
-			err = json.Unmarshal(body, &jobStatus)
+			err = jsonrs.Unmarshal(body, &jobStatus)
 			require.NoError(t, err)
 			require.Len(t, jobStatus.TasksStatus, 1)
 			require.Len(t, jobStatus.TasksStatus[0].SourcesStatus, 1)

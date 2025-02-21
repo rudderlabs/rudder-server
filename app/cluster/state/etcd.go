@@ -10,16 +10,13 @@ import (
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	keepaliveTime    time.Duration
@@ -131,7 +128,7 @@ func (manager *ETCDManager) Ping() error {
 
 func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 	var req modeRequestValue
-	err := json.Unmarshal(raw, &req)
+	err := jsonrs.Unmarshal(raw, &req)
 	if err != nil {
 		return servermode.ChangeEventError(fmt.Errorf("unmarshal mode request: %w", err))
 	}
@@ -147,7 +144,7 @@ func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 			ctx, cancel := context.WithTimeout(ctx, manager.ackTimeout)
 			defer cancel()
 
-			ackValue, err := json.MarshalToString(modeAckValue{
+			ackValue, err := jsonrs.MarshalToString(modeAckValue{
 				Status: mode,
 			})
 			if err != nil {

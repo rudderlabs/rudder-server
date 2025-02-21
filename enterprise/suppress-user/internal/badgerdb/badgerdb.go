@@ -1,7 +1,6 @@
 package badgerdb
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -185,7 +185,7 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 				metadata := model.Metadata{
 					CreatedAt: suppression.CreatedAt,
 				}
-				value, err = json.Marshal(metadata)
+				value, err = jsonrs.Marshal(metadata)
 				if err != nil {
 					return fmt.Errorf("could not marshal suppression metadata: %w", err)
 				}
@@ -356,7 +356,7 @@ func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {
 	if len(itemValue) == 0 { // backwards compatibility
 		return &metadata, nil
 	}
-	err = json.Unmarshal(itemValue, &metadata)
+	err = jsonrs.Unmarshal(itemValue, &metadata)
 	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal metadata: %w", err)
 	}

@@ -2,12 +2,12 @@ package controlplane
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -73,7 +73,7 @@ func (api *internalClient) GetSSHKeys(ctx context.Context, id string) (*PublicPr
 		return nil, fmt.Errorf("invalid status code: %d", resp.StatusCode)
 	}
 
-	decoder := json.NewDecoder(resp.Body)
+	decoder := jsonrs.NewDecoder(resp.Body)
 
 	var keypair PublicPrivateKeyPair
 	if err := decoder.Decode(&keypair); err != nil {
@@ -109,7 +109,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 		return nil, fmt.Errorf("invalid status code: %d", resp.StatusCode)
 	}
 
-	decoder := json.NewDecoder(resp.Body)
+	decoder := jsonrs.NewDecoder(resp.Body)
 
 	var keypair PublicPrivateKeyPair
 	if err := decoder.Decode(&keypair); err != nil {

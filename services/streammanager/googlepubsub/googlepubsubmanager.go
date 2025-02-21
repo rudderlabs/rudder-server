@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -50,11 +51,11 @@ type GooglePubSubProducer struct {
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GooglePubSubProducer, error) {
 	var config Config
 	ctx := context.Background()
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GooglePubSub] Error while marshalling destination config :: %w", err)
 	}
-	err = json.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &config)
 	if err != nil {
 		return nil, fmt.Errorf("[GooglePubSub] error  :: error in GooglePubSub while unmarshelling destination config:: %w", err)
 	}
@@ -108,7 +109,7 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 		responseMessage = "[GooglePubSub] error :: message from payload not found"
 		return 400, respStatus, responseMessage
 	}
-	value, err := json.Marshal(data)
+	value, err := jsonrs.Marshal(data)
 	if err != nil {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error  :: " + err.Error()

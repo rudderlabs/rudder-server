@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
 
@@ -69,7 +70,7 @@ func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, err
 		Metadata:          proxyReqParams.ResponseData.Metadata[0],
 		DestinationConfig: proxyReqParams.ResponseData.DestinationConfig,
 	}
-	return jsonfast.Marshal(proxyReqPayload)
+	return jsonrs.Marshal(proxyReqPayload)
 }
 
 func (v0 *v0Adapter) getProxyURL(destType string) (string, error) {
@@ -87,7 +88,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	transformerResponse := ProxyResponseV0{
 		Message: "[TransformerProxy]:: Default Message TransResponseT",
 	}
-	err := jsonfast.Unmarshal(respData, &transformerResponse)
+	err := jsonrs.Unmarshal(respData, &transformerResponse)
 	if err != nil {
 		return TransResponse{
 				routerJobResponseCodes:       routerJobResponseCodes,
@@ -113,7 +114,7 @@ func (v0 *v0Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 }
 
 func (v1 *v1Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
-	return jsonfast.Marshal(proxyReqParams.ResponseData)
+	return jsonrs.Marshal(proxyReqParams.ResponseData)
 }
 
 func (v1 *v1Adapter) getProxyURL(destType string) (string, error) {
@@ -131,7 +132,7 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	transformerResponse := ProxyResponseV1{
 		Message: "[TransformerProxy]:: Default Message TransResponseT",
 	}
-	err := jsonfast.Unmarshal(respData, &transformerResponse)
+	err := jsonrs.Unmarshal(respData, &transformerResponse)
 	if err != nil {
 		return TransResponse{
 				routerJobResponseCodes:       routerJobResponseCodes,

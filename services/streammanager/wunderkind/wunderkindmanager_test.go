@@ -1,7 +1,6 @@
 package wunderkind
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 )
 
@@ -66,7 +66,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	})
 
 	t.Run("Empty payload", func(t *testing.T) {
-		sampleEventJson, _ := json.Marshal(map[string]interface{}{
+		sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 			"payload": "",
 		})
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
@@ -88,7 +88,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &Producer{conf: conf, client: mockClient, logger: mockLogger}
 
-	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 		"payload": sampleMessage,
 	})
 
