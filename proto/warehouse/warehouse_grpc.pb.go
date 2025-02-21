@@ -34,6 +34,7 @@ const (
 	Warehouse_RetryFailedBatches_FullMethodName                                   = "/proto.Warehouse/RetryFailedBatches"
 	Warehouse_GetFirstAbortedUploadInContinuousAbortsByDestination_FullMethodName = "/proto.Warehouse/GetFirstAbortedUploadInContinuousAbortsByDestination"
 	Warehouse_GetSyncLatency_FullMethodName                                       = "/proto.Warehouse/GetSyncLatency"
+	Warehouse_SyncWHSchema_FullMethodName                                         = "/proto.Warehouse/SyncWHSchema"
 )
 
 // WarehouseClient is the client API for Warehouse service.
@@ -53,6 +54,7 @@ type WarehouseClient interface {
 	RetryFailedBatches(ctx context.Context, in *RetryFailedBatchesRequest, opts ...grpc.CallOption) (*RetryFailedBatchesResponse, error)
 	GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, in *FirstAbortedUploadInContinuousAbortsByDestinationRequest, opts ...grpc.CallOption) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
 	GetSyncLatency(ctx context.Context, in *SyncLatencyRequest, opts ...grpc.CallOption) (*SyncLatencyResponse, error)
+	SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type warehouseClient struct {
@@ -180,6 +182,15 @@ func (c *warehouseClient) GetSyncLatency(ctx context.Context, in *SyncLatencyReq
 	return out, nil
 }
 
+func (c *warehouseClient) SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Warehouse_SyncWHSchema_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WarehouseServer is the server API for Warehouse service.
 // All implementations must embed UnimplementedWarehouseServer
 // for forward compatibility
@@ -197,6 +208,7 @@ type WarehouseServer interface {
 	RetryFailedBatches(context.Context, *RetryFailedBatchesRequest) (*RetryFailedBatchesResponse, error)
 	GetFirstAbortedUploadInContinuousAbortsByDestination(context.Context, *FirstAbortedUploadInContinuousAbortsByDestinationRequest) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
 	GetSyncLatency(context.Context, *SyncLatencyRequest) (*SyncLatencyResponse, error)
+	SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -242,6 +254,9 @@ func (UnimplementedWarehouseServer) GetFirstAbortedUploadInContinuousAbortsByDes
 }
 func (UnimplementedWarehouseServer) GetSyncLatency(context.Context, *SyncLatencyRequest) (*SyncLatencyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSyncLatency not implemented")
+}
+func (UnimplementedWarehouseServer) SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SyncWHSchema not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -490,6 +505,24 @@ func _Warehouse_GetSyncLatency_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_SyncWHSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SyncWHSchemaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).SyncWHSchema(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Warehouse_SyncWHSchema_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).SyncWHSchema(ctx, req.(*SyncWHSchemaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -548,6 +581,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSyncLatency",
 			Handler:    _Warehouse_GetSyncLatency_Handler,
+		},
+		{
+			MethodName: "SyncWHSchema",
+			Handler:    _Warehouse_SyncWHSchema_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

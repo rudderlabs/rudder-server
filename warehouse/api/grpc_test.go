@@ -1913,6 +1913,13 @@ func TestGRPC(t *testing.T) {
 			})
 		})
 
+		t.Run("SyncWHSchema", func(t *testing.T) {
+			_, err := grpcClient.SyncWHSchema(ctx, &proto.SyncWHSchemaRequest{
+				DestinationId: destinationID,
+			})
+			require.NoError(t, err)
+		})
+
 		server.GracefulStop()
 
 		setupCh := make(chan struct{})

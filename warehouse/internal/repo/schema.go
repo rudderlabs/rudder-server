@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -252,4 +253,14 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 	}
 
 	return tables, nil
+}
+
+func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) error {
+	query := `
+		UPDATE ` + whSchemaTableName + `
+		SET expires_at = $1, updated_at = $2
+		WHERE destination_id = $3
+	`
+	_, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
+	return err
 }
