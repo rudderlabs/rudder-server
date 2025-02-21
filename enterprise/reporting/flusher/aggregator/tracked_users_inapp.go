@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const tableName = `tracked_users_reports`
@@ -37,7 +35,7 @@ func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Conf
 	return &t
 }
 
-func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (jsonReports []json.RawMessage, err error) {
+func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end time.Time) (reports []Aggregate, err error) {
 	query := `SELECT reported_at, workspace_id, source_id, instance_id, userid_hll, anonymousid_hll, identified_anonymousid_hll FROM ` + tableName + `  WHERE reported_at >= $1 AND reported_at < $2 ORDER BY reported_at`
 
 	rows, err := a.db.Query(query, start, end)
@@ -85,15 +83,15 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		return nil, fmt.Errorf("rows errors %w", err)
 	}
 
-	jsonReports, err = marshalReports(aggReportsMap)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling reports %w", err)
+	reports = make([]Aggregate, 0, len(aggReportsMap))
+	for _, v := range aggReportsMap {
+		reports = append(reports, v)
 	}
 
 	a.reportsCounter.Observe(float64(total))
-	a.aggReportsCounter.Observe(float64(len(jsonReports)))
+	a.aggReportsCounter.Observe(float64(len(reports)))
 
-	return jsonReports, nil
+	return reports, nil
 }
 
 func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error) {
@@ -106,16 +104,4 @@ func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error
 		return nil, err
 	}
 	return &hll, nil
-}
-
-func marshalReports(aggReportsMap map[string]*TrackedUsersReport) ([]json.RawMessage, error) {
-	jsonReports := make([]json.RawMessage, 0, len(aggReportsMap))
-	for _, v := range aggReportsMap {
-		data, err := jsonrs.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		jsonReports = append(jsonReports, data)
-	}
-	return jsonReports, nil
 }

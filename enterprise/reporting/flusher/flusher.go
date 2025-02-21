@@ -1,18 +1,13 @@
 package flusher
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/lib/pq"
 
-	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -21,9 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
-	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
+
+type sender interface {
+	SendAggregates(ctx context.Context, path string, agg []aggregator.Aggregate) error
+}
 
 type Flusher struct {
 	log logger.Logger
@@ -31,7 +28,7 @@ type Flusher struct {
 	db                 *sql.DB
 	maxOpenConnections int
 
-	client     *http.Client
+	client     sender
 	aggregator aggregator.Aggregator
 
 	instanceId string
@@ -71,7 +68,7 @@ type Flusher struct {
 	commonTags stats.Tags
 }
 
-func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
+func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, client sender, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -86,13 +83,9 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	vacuumInterval := conf.GetReloadableDurationVar(15, time.Minute, "Reporting.flusher.vacuumInterval", "Reporting.vacuumInterval")
 	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
 
-	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-
 	f := Flusher{
 		db:                         db,
 		log:                        log,
-		reportingURL:               reportingURL,
 		instanceId:                 conf.GetString("INSTANCE_ID", "1"),
 		sleepInterval:              sleepInterval,
 		flushWindow:                flushWindow,
@@ -216,7 +209,8 @@ func (f *Flusher) Flush(ctx context.Context) error {
 
 	// 2. Aggregate reports. We have different aggregators for in-app and in-db aggregation
 	s = time.Now()
-	jsonReports, err := f.aggregate(ctx, start, end)
+
+	reports, err := f.aggregator.Aggregate(ctx, start, end)
 	if err != nil {
 		return err
 	}
@@ -224,7 +218,8 @@ func (f *Flusher) Flush(ctx context.Context) error {
 
 	// 3. Flush aggregated reports
 	s = time.Now()
-	err = f.send(ctx, jsonReports)
+
+	err = f.send(ctx, reports)
 	if err != nil {
 		return err
 	}
@@ -276,15 +271,6 @@ func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, en
 	return start, end, false, nil
 }
 
-func (f *Flusher) aggregate(ctx context.Context, start, end time.Time) ([]json.RawMessage, error) {
-	jsonReports, err := f.aggregator.Aggregate(ctx, start, end)
-	if err != nil {
-		return nil, err
-	}
-
-	return jsonReports, nil
-}
-
 func (f *Flusher) getConcurrency(ctx context.Context) int {
 	if f.ShouldFlushAggressively(ctx) {
 		return f.maxConcurrentRequests.Load()
@@ -292,7 +278,7 @@ func (f *Flusher) getConcurrency(ctx context.Context) int {
 	return f.minConcurrentRequests.Load()
 }
 
-func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error {
+func (f *Flusher) send(ctx context.Context, aggReports []aggregator.Aggregate) error {
 	batchSize := f.batchSizeToReporting.Load()
 	concurrency := f.getConcurrency(ctx)
 
@@ -308,7 +294,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.makePOSTRequest(ctx, f.reportingURL, batch); err != nil {
+			if err := f.client.SendAggregates(ctx, path, batch); err != nil {
 				return err
 			}
 			return nil
@@ -372,54 +358,4 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 	f.lastVacuum = time.Now()
 	f.deletedRows = 0
 	return nil
-}
-
-func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
-	payloadBytes, err := jsonrs.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	o := func() error {
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payloadBytes))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		start := time.Now()
-		resp, err := f.client.Do(req)
-		if err != nil {
-			return err
-		}
-		f.reqLatency.Since(start)
-		f.reqCount.Count(1)
-		f.sentBytes.Observe(float64(len(payloadBytes)))
-
-		defer func() { httputil.CloseResponse(resp) }()
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("error response body from reporting %w", err)
-		}
-
-		if !f.isHTTPRequestSuccessful(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
-		}
-		return err
-	}
-
-	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
-		f.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
-	})
-	if err != nil {
-		f.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
-	}
-	return err
-}
-
-func (f *Flusher) isHTTPRequestSuccessful(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
 }
