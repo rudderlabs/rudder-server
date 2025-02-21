@@ -72,6 +72,7 @@ type UploadJob struct {
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
+	whSchemaRepo         *repo.WHSchema
 	whManager            manager.Manager
 	schemaHandle         schema.Handler
 	conf                 *config.Config
@@ -165,6 +166,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -942,7 +944,19 @@ func (job *UploadJob) DTO() *model.UploadJob {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema(ctx)
+	whSchema, err := job.whSchemaRepo.GetForNamespace(
+		ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		job.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
