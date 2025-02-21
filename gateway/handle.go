@@ -1051,7 +1051,6 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 			gw.logger.Errorn(
 				"Store into gateway db failed with error",
 				obskit.Error(err),
-				logger.NewField("jobs", jobs),
 			)
 			return err
 		}
