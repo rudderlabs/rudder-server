@@ -1000,7 +1000,7 @@ func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest)
 		return &emptypb.Empty{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
 	}
-	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, timeutil.Now())
+	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, g.now())
 	if err != nil {
 		log.Errorw("unable to set expiry for destination", obskit.Error(err))
 		return &emptypb.Empty{},
