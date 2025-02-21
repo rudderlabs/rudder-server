@@ -19,7 +19,7 @@ var (
 	}
 	customBucketsWarehouse = map[string][]float64{
 		"event_delivery_time": {
-			300, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 5m, 30m, 1h, 1.5h, 3.5h, 6.5h, 12.5h, 24.5h
+			60, 300, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 1m, 5m, 30m, 1h, 1.5h, 3.5h, 6.5h, 12.5h, 24.5h
 		},
 		"warehouse_schema_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
