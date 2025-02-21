@@ -533,48 +533,43 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	})
 
 	t.Run("skip tables", func(t *testing.T) {
-		const (
-			namespace = "namespace"
-			destID    = "destID"
-		)
-
 		pendingTables := []model.PendingTableUpload{
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadUpdatingSchemaFailed,
 				TableName:     "previously_failed_table_2",
 				Error:         "",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "previously_succeeded_table_1",
 				Error:         "",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "current_succeeded_table_1",
 				Error:         "",
@@ -582,27 +577,20 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 		}
 
 		testCases := []struct {
-			name                              string
-			skipPreviouslyFailedTables        bool
-			expectedPreviouslyFailedTables    map[string]model.PendingTableUpload
-			expectedCurrentJobSucceededTables map[string]model.PendingTableUpload
+			name                           string
+			skipPreviouslyFailedTables     bool
+			expectedPreviouslyFailedTables map[string]model.PendingTableUpload
 		}{
 			{
 				name:                           "skip previously failed tables",
 				skipPreviouslyFailedTables:     true,
 				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{},
-				expectedCurrentJobSucceededTables: map[string]model.PendingTableUpload{
-					"current_succeeded_table_1": pendingTables[4],
-				},
 			},
 			{
 				name:                       "do not skip previously failed tables",
 				skipPreviouslyFailedTables: false,
 				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{
 					"previously_failed_table_1": pendingTables[0],
-				},
-				expectedCurrentJobSucceededTables: map[string]model.PendingTableUpload{
-					"current_succeeded_table_1": pendingTables[4],
 				},
 			},
 		}
@@ -621,8 +609,10 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 
 				previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
 				require.NoError(t, err)
-				require.Equal(t, previouslyFailedTables, tc.expectedPreviouslyFailedTables)
-				require.Equal(t, currentJobSucceededTables, tc.expectedCurrentJobSucceededTables)
+				require.Equal(t, tc.expectedPreviouslyFailedTables, previouslyFailedTables)
+				require.Equal(t, map[string]model.PendingTableUpload{
+					"current_succeeded_table_1": pendingTables[4],
+				}, currentJobSucceededTables)
 			})
 		}
 	})
