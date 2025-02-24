@@ -9,6 +9,7 @@ services:
       - POSTGRES_DB=jobsdb
     ports:
       - "6432:5432"
+    shm_size: 128mb
   backend:
     depends_on:
       - db
