@@ -1452,10 +1452,17 @@ func (proc *Handle) getTransformationMetrics(
 				return eventsByMessageID[msgID].SingularEvent
 			},
 		)
-		payload, err := jsonrs.Marshal(messages)
-		if err != nil {
-			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
-			continue
+
+		// Create EventPayload directly as a json.RawMessage
+		eventPayload := json.RawMessage(`[]`)
+		if len(messages) > 0 {
+			// Convert messages to a slice of maps
+			messageSlice := make([]map[string]interface{}, len(messages))
+			for j, msg := range messages {
+				messageSlice[j] = msg
+			}
+			// Create the raw message directly
+			eventPayload = json.RawMessage(fmt.Sprintf(`%v`, messageSlice))
 		}
 
 		for _, message := range messages {
@@ -1469,14 +1476,10 @@ func (proc *Handle) getTransformationMetrics(
 				pu,
 				func() json.RawMessage {
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
+						return json.RawMessage(`{}`)
 					}
-					sampleEvent, err := jsonrs.Marshal(message)
-					if err != nil {
-						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
-					}
-					return sampleEvent
+					// Convert message directly to json.RawMessage
+					return json.RawMessage(fmt.Sprintf(`%v`, message))
 				},
 				eventsByMessageID)
 		}
@@ -1487,29 +1490,60 @@ func (proc *Handle) getTransformationMetrics(
 		)
 
 		id := misc.FastUUID()
-		params := map[string]interface{}{
-			"source_id":          commonMetaData.SourceID,
-			"destination_id":     commonMetaData.DestinationID,
-			"source_job_run_id":  failedEvent.Metadata.SourceJobRunID,
-			"error":              failedEvent.Error,
-			"status_code":        failedEvent.StatusCode,
-			"stage":              pu,
-			"record_id":          failedEvent.Metadata.RecordID,
-			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
-		}
+
+		// Create parameters directly as a json.RawMessage
+		params := json.RawMessage(fmt.Sprintf(`{
+			"source_id": %q,
+			"destination_id": %q,
+			"source_job_run_id": %q,
+			"error": %q,
+			"status_code": %d,
+			"stage": %q,
+			"record_id": %q,
+			"source_task_run_id": %q
+		}`,
+			commonMetaData.SourceID,
+			commonMetaData.DestinationID,
+			failedEvent.Metadata.SourceJobRunID,
+			failedEvent.Error,
+			failedEvent.StatusCode,
+			pu,
+			failedEvent.Metadata.RecordID,
+			failedEvent.Metadata.SourceTaskRunID,
+		))
+
+		// If there are violation errors in the context, include them in params
 		if eventContext, castOk := failedEvent.Output["context"].(map[string]interface{}); castOk {
-			params["violationErrors"] = eventContext["violationErrors"]
-		}
-		marshalledParams, err := jsonrs.Marshal(params)
-		if err != nil {
-			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
-			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
+			if violationErrors, ok := eventContext["violationErrors"]; ok {
+				// Add violation errors directly to the json.RawMessage
+				params = json.RawMessage(fmt.Sprintf(`{
+					"source_id": %q,
+					"destination_id": %q,
+					"source_job_run_id": %q,
+					"error": %q,
+					"status_code": %d,
+					"stage": %q,
+					"record_id": %q,
+					"source_task_run_id": %q,
+					"violationErrors": %v
+				}`,
+					commonMetaData.SourceID,
+					commonMetaData.DestinationID,
+					failedEvent.Metadata.SourceJobRunID,
+					failedEvent.Error,
+					failedEvent.StatusCode,
+					pu,
+					failedEvent.Metadata.RecordID,
+					failedEvent.Metadata.SourceTaskRunID,
+					violationErrors,
+				))
+			}
 		}
 
 		newFailedJob := jobsdb.JobT{
 			UUID:         id,
-			EventPayload: payload,
-			Parameters:   marshalledParams,
+			EventPayload: eventPayload,
+			Parameters:   params,
 			CreatedAt:    time.Now(),
 			ExpireAt:     time.Now(),
 			CustomVal:    commonMetaData.DestinationType,
