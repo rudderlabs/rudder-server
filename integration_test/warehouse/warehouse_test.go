@@ -385,7 +385,7 @@ func TestUploads(t *testing.T) {
 
 		health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-		require.NoError(t, whclient.NewWarehouse(serverURL).Process(ctx, whclient.StagingFile{
+		require.NoError(t, whclient.NewWarehouse(serverURL, stats.NOP).Process(ctx, whclient.StagingFile{
 			WorkspaceID:           workspaceID,
 			SourceID:              sourceID,
 			DestinationID:         destinationID,
@@ -539,7 +539,7 @@ func TestUploads(t *testing.T) {
 
 		var (
 			db       = sqlmw.New(postgresResource.DB)
-			whClient = whclient.NewWarehouse(serverURL)
+			whClient = whclient.NewWarehouse(serverURL, stats.NOP)
 			events   = 100
 			jobs     = 1
 		)
@@ -2483,5 +2483,5 @@ func setupServer(
 	serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 	health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL)
+	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL, stats.NOP)
 }
