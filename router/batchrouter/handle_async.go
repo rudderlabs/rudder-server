@@ -524,6 +524,17 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			continue
 		}
 
+		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*asynccommon.InvalidManager); ok {
+			failedAsyncJobs := BatchedJobs{
+				Jobs:       []*jobsdb.JobT{job},
+				Connection: batchJobs.Connection,
+				TimeWindow: batchJobs.TimeWindow,
+				JobState:   jobsdb.Aborted.State,
+			}
+			brt.updateJobStatus(&failedAsyncJobs, false, invalidManager.Error, false)
+			continue
+		}
+
 		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
 		if err != nil {
 			failedAsyncJobs := BatchedJobs{
