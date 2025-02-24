@@ -743,31 +743,20 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Name: destType,
 				},
 			}
-			sources := []backendconfig.SourceT{
-				{
-					ID: "sourceID",
-					Destinations: []backendconfig.DestinationT{
-						destination,
-					},
+			source := backendconfig.SourceT{
+				ID: "sourceID",
+				Destinations: []backendconfig.DestinationT{
+					destination,
 				},
 			}
 
 			batchRouter := defaultHandle(destType)
+			batchRouter.initAsyncDestinationStruct(&destination)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB
 			batchRouter.errorDB = mockErrJobsDB
-			batchRouter.destinationsMap = make(map[string]*routerutils.DestinationWithSources)
-			for _, source := range sources {
-				for _, destination := range source.Destinations {
-					batchRouter.destinationsMap[destination.ID] = &routerutils.DestinationWithSources{
-						Destination: destination,
-						Sources:     []backendconfig.SourceT{source},
-					}
-				}
-			}
-
 			job := &jobsdb.JobT{
 				JobID:        1,
 				EventPayload: []byte(`{"key": "value"}`),
@@ -777,7 +766,6 @@ func TestAsyncDestinationManager(t *testing.T) {
 				EventPayload: job.EventPayload,
 				Parameters:   []byte(`{"stage":"batch_router","reason":"SOME_INVALID_DESTINATION_TYPE initialization failed with error: invalid destination type"}`),
 			}
-			batchRouter.initAsyncDestinationStruct(&destination)
 			mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 					_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -797,7 +785,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					job,
 				},
 				Connection: &Connection{
-					Source:      sources[0],
+					Source:      source,
 					Destination: destination,
 				},
 			})
