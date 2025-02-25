@@ -10,10 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 /*
@@ -37,8 +35,8 @@ func Benchmark_Transformer(b *testing.B) {
 		require.NoError(t, err)
 
 		batchSize := 1000
-		events := lo.Times(batchSize, func(index int) ptrans.TransformerEvent {
-			return ptrans.TransformerEvent{
+		events := lo.Times(batchSize, func(index int) types.TransformerEvent {
+			return types.TransformerEvent{
 				Message:     singularEvent,
 				Metadata:    metadata,
 				Destination: destination,

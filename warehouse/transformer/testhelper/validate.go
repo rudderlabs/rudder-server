@@ -9,16 +9,16 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 type EventContext struct {
 	Payload     []byte
-	Metadata    ptrans.Metadata
+	Metadata    types.Metadata
 	Destination backendconfig.DestinationT
 }
 
-func ValidateEvents(t *testing.T, eventContexts []EventContext, pTransformer, dTransformer ptrans.DestinationTransformer, expectedResponse ptrans.Response) {
+func ValidateEvents(t *testing.T, eventContexts []EventContext, pTransformer, dTransformer ptrans.DestinationTransformer, expectedResponse types.Response) {
 	t.Helper()
 
 	events := prepareEvents(t, eventContexts)
@@ -35,16 +35,16 @@ func ValidateEvents(t *testing.T, eventContexts []EventContext, pTransformer, dT
 	validateFailedEventEquality(t, pResponse, wResponse)
 }
 
-func prepareEvents(t *testing.T, eventContexts []EventContext) []ptrans.TransformerEvent {
+func prepareEvents(t *testing.T, eventContexts []EventContext) []types.TransformerEvent {
 	t.Helper()
 
-	events := make([]ptrans.TransformerEvent, 0, len(eventContexts))
+	events := make([]types.TransformerEvent, 0, len(eventContexts))
 	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
 		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
 		require.NoError(t, err)
 
-		events = append(events, ptrans.TransformerEvent{
+		events = append(events, types.TransformerEvent{
 			Message:     singularEvent,
 			Metadata:    eventContext.Metadata,
 			Destination: eventContext.Destination,
@@ -53,7 +53,7 @@ func prepareEvents(t *testing.T, eventContexts []EventContext) []ptrans.Transfor
 	return events
 }
 
-func validateResponseLengths(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
+func validateResponseLengths(t *testing.T, expectedResponse, pResponse, wResponse types.Response) {
 	t.Helper()
 
 	require.Equal(t, len(expectedResponse.Events), len(pResponse.Events))
@@ -62,7 +62,7 @@ func validateResponseLengths(t *testing.T, expectedResponse, pResponse, wRespons
 	require.Equal(t, len(expectedResponse.FailedEvents), len(wResponse.FailedEvents))
 }
 
-func validateRudderEventIfExists(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
+func validateRudderEventIfExists(t *testing.T, expectedResponse, pResponse, wResponse types.Response) {
 	t.Helper()
 
 	for i := range pResponse.Events {
@@ -96,7 +96,7 @@ func validateRudderEventIfExists(t *testing.T, expectedResponse, pResponse, wRes
 	}
 }
 
-func validateEventEquality(t *testing.T, expectedResponse, pResponse, wResponse ptrans.Response) {
+func validateEventEquality(t *testing.T, expectedResponse, pResponse, wResponse types.Response) {
 	t.Helper()
 
 	for i := range pResponse.Events {
@@ -105,7 +105,7 @@ func validateEventEquality(t *testing.T, expectedResponse, pResponse, wResponse 
 	}
 }
 
-func validateFailedEventEquality(t *testing.T, pResponse, wResponse ptrans.Response) {
+func validateFailedEventEquality(t *testing.T, pResponse, wResponse types.Response) {
 	t.Helper()
 
 	for i := range pResponse.FailedEvents {

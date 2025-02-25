@@ -21,6 +21,7 @@ service Warehouse {
   rpc RetryFailedBatches(RetryFailedBatchesRequest) returns (RetryFailedBatchesResponse);
   rpc GetFirstAbortedUploadInContinuousAbortsByDestination(FirstAbortedUploadInContinuousAbortsByDestinationRequest) returns (FirstAbortedUploadInContinuousAbortsByDestinationResponse);
   rpc GetSyncLatency(SyncLatencyRequest) returns (SyncLatencyResponse);
+  rpc SyncWHSchema(SyncWHSchemaRequest) returns (google.protobuf.Empty);
 }
 
 message Pagination {
@@ -161,6 +162,10 @@ message RetryFailedBatchesResponse{
 message FirstAbortedUploadInContinuousAbortsByDestinationRequest {
   string workspace_id = 1;
   string start = 2;
+}
+
+message SyncWHSchemaRequest{
+  string destination_id = 1;
 }
 
 message FirstAbortedUploadResponse {

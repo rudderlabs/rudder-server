@@ -6,12 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/router/types"
+	routerTypes "github.com/rudderlabs/rudder-server/router/types"
 
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 // NewBuilder returns a new test transformer Builder
@@ -151,7 +151,7 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var request []transformer.TransformerEvent
+		var request []types.TransformerEvent
 		if err := jsonrs.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -167,14 +167,14 @@ func routerTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var request types.TransformMessageT
+		var request routerTypes.TransformMessageT
 		if err := jsonrs.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		_ = jsonrs.NewEncoder(w).Encode(struct {
-			Output []types.DestinationJobT `json:"output"`
+			Output []routerTypes.DestinationJobT `json:"output"`
 		}{
 			Output: h(request),
 		})
@@ -188,7 +188,7 @@ func routerBatchTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var request types.TransformMessageT
+		var request routerTypes.TransformMessageT
 		if err := jsonrs.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return

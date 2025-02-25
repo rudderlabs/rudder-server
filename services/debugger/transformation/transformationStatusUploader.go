@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -13,21 +15,20 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type TransformationStatusT struct {
 	SourceID              string
 	DestID                string
 	Destination           *backendconfig.DestinationT
-	UserTransformedEvents []transformer.TransformerEvent
+	UserTransformedEvents []types.TransformerEvent
 	EventsByMessageID     map[string]types.SingularEventWithReceivedAt
-	FailedEvents          []transformer.TransformerResponse
+	FailedEvents          []types.TransformerResponse
 	UniqueMessageIds      map[string]struct{}
 }
 
@@ -231,13 +232,13 @@ func (ts *TransformationStatusT) Limit(
 		append(
 			lo.Map(
 				ts.UserTransformedEvents,
-				func(event transformer.TransformerEvent, _ int) string {
+				func(event types.TransformerEvent, _ int) string {
 					return event.Metadata.MessageID
 				},
 			),
 			lo.Map(
 				ts.FailedEvents,
-				func(event transformer.TransformerResponse, _ int) string {
+				func(event types.TransformerResponse, _ int) string {
 					return event.Metadata.MessageID
 				},
 			)...,
@@ -381,7 +382,7 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 				}
 				var isError bool
 				switch failedEvent.StatusCode {
-				case types.FilterEventCode:
+				case reportingtypes.FilterEventCode:
 					eventAfter.IsDropped = true
 					isError = false
 				default:

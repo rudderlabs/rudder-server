@@ -2,6 +2,7 @@ package event_sampler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -117,7 +118,7 @@ func (es *BadgerEventSampler) Get(key string) (bool, error) {
 		return nil
 	})
 
-	if err == badger.ErrKeyNotFound {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return false, nil
 	} else if err != nil {
 		return false, err

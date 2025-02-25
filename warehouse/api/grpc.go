@@ -72,6 +72,7 @@ type GRPC struct {
 	bcManager          *bcm.BackendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
+	schemaRepo         *repo.WHSchema
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
@@ -109,6 +110,7 @@ func NewGRPCServer(
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db),
+		schemaRepo:         repo.NewWHSchemas(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
@@ -987,6 +989,24 @@ func (g *GRPC) RetryFailedBatches(
 		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
+}
+
+func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*emptypb.Empty, error) {
+	log := g.logger.With(
+		lf.DestinationID, req.GetDestinationId(),
+	)
+	log.Infow("Syncing warehouse schema")
+	if req.DestinationId == "" {
+		return &emptypb.Empty{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
+	}
+	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, g.now())
+	if err != nil {
+		log.Errorw("unable to set expiry for destination", obskit.Error(err))
+		return &emptypb.Empty{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {

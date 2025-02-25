@@ -476,6 +476,16 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if ok {
+		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*asynccommon.InvalidManager); ok {
+			failedAsyncJobs := BatchedJobs{
+				Jobs:       batchJobs.Jobs,
+				Connection: batchJobs.Connection,
+				TimeWindow: batchJobs.TimeWindow,
+				JobState:   jobsdb.Aborted.State,
+			}
+			brt.updateJobStatus(&failedAsyncJobs, false, invalidManager.Error, false)
+			return
+		}
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 		defer brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 		if brt.asyncDestinationStruct[destinationID].CanUpload {

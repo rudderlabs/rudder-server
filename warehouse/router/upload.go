@@ -72,6 +72,7 @@ type UploadJob struct {
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
+	whSchemaRepo         *repo.WHSchema
 	whManager            manager.Manager
 	schemaHandle         schema.Handler
 	conf                 *config.Config
@@ -102,6 +103,7 @@ type UploadJob struct {
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
+		skipPreviouslyFailedTables          bool
 	}
 
 	errorHandler    ErrorHandler
@@ -165,6 +167,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -202,6 +205,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
+	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -942,7 +946,19 @@ func (job *UploadJob) DTO() *model.UploadJob {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema(ctx)
+	whSchema, err := job.whSchemaRepo.GetForNamespace(
+		ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		job.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {
