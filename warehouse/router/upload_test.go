@@ -498,11 +498,7 @@ func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int
 }
 
 func TestUploadJobT_TablesToSkip(t *testing.T) {
-	t.Parallel()
-
 	t.Run("repo error", func(t *testing.T) {
-		t.Parallel()
-
 		job := &UploadJob{
 			upload: model.Upload{
 				ID: 1,
@@ -520,8 +516,6 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	})
 
 	t.Run("should populate only once", func(t *testing.T) {
-		t.Parallel()
-
 		ptRepo := &mockPendingTablesRepo{}
 
 		job := &UploadJob{
@@ -539,74 +533,88 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	})
 
 	t.Run("skip tables", func(t *testing.T) {
-		t.Parallel()
-
-		const (
-			namespace = "namespace"
-			destID    = "destID"
-		)
-
 		pendingTables := []model.PendingTableUpload{
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadUpdatingSchemaFailed,
 				TableName:     "previously_failed_table_2",
 				Error:         "",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "previously_succeeded_table_1",
 				Error:         "",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "current_succeeded_table_1",
 				Error:         "",
 			},
 		}
 
-		job := &UploadJob{
-			upload: model.Upload{
-				ID: 5,
+		testCases := []struct {
+			name                           string
+			skipPreviouslyFailedTables     bool
+			expectedPreviouslyFailedTables map[string]model.PendingTableUpload
+		}{
+			{
+				name:                           "skip previously failed tables",
+				skipPreviouslyFailedTables:     true,
+				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{},
 			},
-			pendingTableUploadsRepo: &mockPendingTablesRepo{
-				pendingTables: pendingTables,
+			{
+				name:                       "do not skip previously failed tables",
+				skipPreviouslyFailedTables: false,
+				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{
+					"previously_failed_table_1": pendingTables[0],
+				},
 			},
-			ctx: context.Background(),
 		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				job := &UploadJob{
+					upload: model.Upload{
+						ID: 5,
+					},
+					pendingTableUploadsRepo: &mockPendingTablesRepo{
+						pendingTables: pendingTables,
+					},
+					ctx: context.Background(),
+				}
+				job.config.skipPreviouslyFailedTables = tc.skipPreviouslyFailedTables
 
-		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
-		require.NoError(t, err)
-		require.Equal(t, previouslyFailedTables, map[string]model.PendingTableUpload{
-			"previously_failed_table_1": pendingTables[0],
-		})
-		require.Equal(t, currentJobSucceededTables, map[string]model.PendingTableUpload{
-			"current_succeeded_table_1": pendingTables[4],
-		})
+				previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedPreviouslyFailedTables, previouslyFailedTables)
+				require.Equal(t, map[string]model.PendingTableUpload{
+					"current_succeeded_table_1": pendingTables[4],
+				}, currentJobSucceededTables)
+			})
+		}
 	})
 }
 
