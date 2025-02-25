@@ -272,7 +272,9 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &asynccommon.InvalidManager{}
+		manager = &asynccommon.InvalidManager{
+			Error: fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+		}
 	}
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
