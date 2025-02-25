@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -72,23 +71,16 @@ func (w *worker) Work() bool {
 		jobsByPartition[partition] = append(jobsByPartition[partition], job)
 	}
 
-	// For each partition, split into subjobs and send to workers
+	// For each partition, create a single subjob and send to workers
 	for partition, partitionJobs := range jobsByPartition {
-		// Split into subjobs
-		chunks := lo.Chunk(partitionJobs, w.handle.config().subJobSize)
-		subJobs := lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
-			return subJob{
-				subJobs:       subJobs,
-				hasMore:       index+1 < len(chunks),
-				rsourcesStats: rsourcesStats,
-			}
-		})
-
-		// Send subjobs to the worker for this partition
-		for _, subJob := range subJobs {
-			w.stats.statNumRequestsPartitioned(w.partition, partition).Count(len(subJob.subJobs))
-			w.workers[partition].channel.preprocess <- subJob
+		subJob := subJob{
+			subJobs:       partitionJobs,
+			hasMore:       false,
+			rsourcesStats: rsourcesStats,
 		}
+
+		w.stats.statNumRequestsPartitioned(w.partition, partition).Count(len(subJob.subJobs))
+		w.workers[partition].channel.preprocess <- subJob
 	}
 
 	if !jobs.LimitsReached {
