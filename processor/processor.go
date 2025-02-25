@@ -200,6 +200,7 @@ type processorStats struct {
 	destProcessing                func(partition string) stats.Measurement
 	pipeProcessing                func(partition string) stats.Measurement
 	statNumRequests               func(partition string) stats.Measurement
+	statNumRequestsPartitioned    func(partition string, partiton_index int) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
 	statDBReadRequests            func(partition string) stats.Measurement
 	statDBReadEvents              func(partition string) stats.Measurement
@@ -526,6 +527,14 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+
+	proc.stats.statNumRequestsPartitioned = func(partition string, partitionIndex int) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_requests_partitioned", stats.CountType, stats.Tags{
+			"partition":       partition,
+			"partition_index": strconv.Itoa(partitionIndex),
+		})
+	}
+
 	proc.stats.statNumEvents = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_events", stats.CountType, stats.Tags{
 			"partition": partition,

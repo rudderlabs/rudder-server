@@ -19,6 +19,7 @@ type worker struct {
 	partition string
 	workers   []*partitionWorker
 	logger    logger.Logger
+	stats     *processorStats
 	handle    workerHandle
 	g         *errgroup.Group
 }
@@ -27,11 +28,12 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 	w := &worker{
 		partition: partition,
 		logger:    h.logger().Child(partition),
+		stats:     h.stats(),
 		handle:    h,
 	}
 	w.g, _ = errgroup.WithContext(context.Background())
 	w.workers = make([]*partitionWorker, h.config().numPartitions)
-	for i := 0; i < h.config().numPartitions; i++ {
+	for i := range h.config().numPartitions {
 		worker := newWorker(partition, h)
 		w.workers[i] = worker
 	}
@@ -43,7 +45,7 @@ func (w *worker) Work() bool {
 	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
-
+	w.logger.Info("Number of partitions: ", w.handle.config().numPartitions)
 	jobs := w.handle.getJobs(w.partition)
 
 	start := time.Now()
@@ -84,6 +86,7 @@ func (w *worker) Work() bool {
 
 		// Send subjobs to the worker for this partition
 		for _, subJob := range subJobs {
+			w.stats.statNumRequestsPartitioned(w.partition, partition).Count(len(subJob.subJobs))
 			w.workers[partition].channel.preprocess <- subJob
 		}
 	}
@@ -116,6 +119,7 @@ func newWorker(partition string, h workerHandle) *partitionWorker {
 	w := &partitionWorker{
 		handle:    h,
 		logger:    h.logger().Child(partition),
+		stats:     h.stats(),
 		partition: partition,
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
@@ -136,6 +140,7 @@ type partitionWorker struct {
 	partition string
 	handle    workerHandle
 	logger    logger.Logger
+	stats     *processorStats
 
 	lifecycle struct { // worker lifecycle related fields
 		ctx    context.Context    // worker context
