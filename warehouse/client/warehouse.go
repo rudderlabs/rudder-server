@@ -93,22 +93,6 @@ func NewWarehouse(baseURL string, statsFactory stats.Stats, opts ...WarehouseOpt
 }
 
 func (w *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error {
-	var (
-		status     = "success"
-		statusCode = http.StatusOK
-	)
-
-	defer func() {
-		apiCallStat := w.statsFactory.NewTaggedStat("warehouse_process_api_status_count", stats.CountType, stats.Tags{
-			"sourceId":      stagingFile.SourceID,
-			"destinationID": stagingFile.DestinationID,
-			"workspaceId":   stagingFile.WorkspaceID,
-			"status":        status,
-			"statusCode":    strconv.Itoa(statusCode),
-		})
-		apiCallStat.Increment()
-	}()
-
 	legacy := legacyPayload{
 		WorkspaceID: stagingFile.WorkspaceID,
 		Schema:      stagingFile.Schema,
@@ -131,29 +115,41 @@ func (w *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error 
 
 	jsonPayload, err := jsonrs.Marshal(legacy)
 	if err != nil {
-		status, statusCode = "marshal_failure", 0
+		w.recordAPICallStats(stagingFile, "marshal_failure", 0)
 		return fmt.Errorf("marshaling staging file: %w", err)
 	}
 
 	uri := fmt.Sprintf(`%s/v1/process`, w.baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		status, statusCode = "request_creation_failure", 0
+		w.recordAPICallStats(stagingFile, "request_creation_failure", 0)
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		status, statusCode = "http_request_failure", 0
+		w.recordAPICallStats(stagingFile, "http_request_failure", 0)
 		return fmt.Errorf("http request to %q: %w", w.baseURL, err)
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode != http.StatusOK {
-		status, statusCode = "non_200_response", resp.StatusCode
+		w.recordAPICallStats(stagingFile, "non_200_response", resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected status code %q on %s: %v", resp.Status, w.baseURL, string(body))
 	}
+	w.recordAPICallStats(stagingFile, "success", http.StatusOK)
 	return nil
+}
+
+func (w *Warehouse) recordAPICallStats(stagingFile StagingFile, status string, statusCode int) {
+	apiCallStat := w.statsFactory.NewTaggedStat("warehouse_process_api_status_count", stats.CountType, stats.Tags{
+		"sourceId":      stagingFile.SourceID,
+		"destinationID": stagingFile.DestinationID,
+		"workspaceId":   stagingFile.WorkspaceID,
+		"status":        status,
+		"statusCode":    strconv.Itoa(statusCode),
+	})
+	apiCallStat.Increment()
 }
