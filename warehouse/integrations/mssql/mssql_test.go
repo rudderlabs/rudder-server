@@ -404,6 +404,14 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+			user, password, host, mssqlPort, database,
+		)
+		db, err := sql.Open("sqlserver", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
+
 		db := pingMSSQL(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
 			user, password, host, mssqlPort, database,
 		))
