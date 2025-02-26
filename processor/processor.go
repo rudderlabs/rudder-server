@@ -2708,10 +2708,10 @@ type transformSrcDestOutput struct {
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
 	partition string,
-	// main inputs
+// main inputs
 	srcAndDestKey string, eventList []types.TransformerEvent,
 
-	// helpers
+// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
@@ -2975,12 +2975,13 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			if !proc.config.enableTransformationV2 {
+			if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; ok && proc.config.enableWarehouseTransformations.Load() {
+				response = proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			} else if !proc.config.enableTransformationV2 {
 				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 			} else {
 				response = proc.transformerClients.Destination().Transform(ctx, eventsToTransform)
 			}
-			proc.handleWarehouseTransformations(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3139,27 +3140,6 @@ func (proc *Handle) transformSrcDest(
 		routerDestIDs:   routerDestIDs,
 		droppedJobs:     droppedJobs,
 	}
-}
-
-func (proc *Handle) handleWarehouseTransformations(
-	ctx context.Context,
-	eventsToTransform []types.TransformerEvent,
-	pResponse types.Response,
-	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-) {
-	if len(eventsToTransform) == 0 {
-		return
-	}
-	if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
-		return
-	}
-	if !proc.config.enableWarehouseTransformations.Load() {
-		return
-	}
-
-	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
-	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse, commonMetaData, eventsByMessageID)
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
