@@ -268,6 +268,7 @@ func (job *UploadJob) run() (err error) {
 		ch <- struct{}{}
 	}()
 
+	job.logger.Infon("Starting upload job")
 	_ = job.uploadsRepo.Update(
 		job.ctx,
 		job.upload.ID,
@@ -276,6 +277,7 @@ func (job *UploadJob) run() (err error) {
 			repo.UploadFieldInProgress(true),
 		},
 	)
+	job.logger.Infon("Upload job is in progress")
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -287,6 +289,8 @@ func (job *UploadJob) run() (err error) {
 	whManager.SetConnectionTimeout(whutils.GetConnectionTimeout(
 		job.warehouse.Type, job.warehouse.Destination.ID,
 	))
+
+	job.logger.Infon("Setting up warehouse manager")
 	err = whManager.Setup(job.ctx, job.warehouse, job)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
@@ -294,14 +298,13 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
+	job.logger.Infon("Syncing remote schema")
 	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
 	if err != nil {
 		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
-	if hasSchemaChanged {
-		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	}
+	job.logger.Infon("Synced remote schema", logger.NewStringField("hasSchemaChanged", fmt.Sprint(hasSchemaChanged)))
 
 	var (
 		newStatus       string
