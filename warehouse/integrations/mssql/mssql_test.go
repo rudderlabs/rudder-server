@@ -40,7 +40,6 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	t.Skip("skipping for 1.34.1 release")
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
@@ -405,6 +404,14 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+			user, password, host, mssqlPort, database,
+		)
+		db, err := sql.Open("sqlserver", dsn)
+		require.NoError(t, err)
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
+
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
 
@@ -469,7 +476,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := whth.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, db,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -511,7 +518,7 @@ func TestIntegration(t *testing.T) {
 				require.Equal(t, loadTableStat.RowsInserted, int64(0))
 				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
 
-				records := whth.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
+				records := whth.RetrieveRecordsFromWarehouse(t, db,
 					fmt.Sprintf(`
 						SELECT
 						  id,
@@ -600,7 +607,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(14))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 					SELECT
 					  id,
@@ -644,7 +651,7 @@ func TestIntegration(t *testing.T) {
 			require.Equal(t, loadTableStat.RowsInserted, int64(6))
 			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
 
-			records := whth.RetrieveRecordsFromWarehouse(t, ms.DB.DB,
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
 				fmt.Sprintf(`
 					SELECT
 					  column_name,
