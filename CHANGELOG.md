@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.1](https://github.com/rudderlabs/rudder-server/compare/v1.43.0...v1.43.1) (2025-02-26)
+
+
+### Miscellaneous
+
+* update event delivery time buckets ([#5548](https://github.com/rudderlabs/rudder-server/issues/5548)) ([2f801ce](https://github.com/rudderlabs/rudder-server/commit/2f801ce4230854a0862da91f32cd2b0f899b04ff))
+
 ## [1.43.0](https://github.com/rudderlabs/rudder-server/compare/v1.42.0...v1.43.0) (2025-02-18)
 
 
