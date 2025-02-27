@@ -34,3 +34,14 @@ func (t *TrackedUsersReport) MarshalJSON() ([]byte, error) {
 		Alias: (*Alias)(t),
 	})
 }
+
+func (t *TrackedUsersReport) ReportWorkspaceID() string {
+	return t.WorkspaceID
+}
+
+type Aggregate interface {
+	MarshalJSON() ([]byte, error)
+	ReportWorkspaceID() string
+}
+
+var _ Aggregate = &TrackedUsersReport{}

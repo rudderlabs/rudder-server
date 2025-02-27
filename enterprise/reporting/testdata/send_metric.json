@@ -1,0 +1,47 @@
+{
+  "workspaceId": "test-workspace",
+  "namespace": "",
+  "instanceId": "test-instance",
+  "sourceId": "some-source-id",
+  "destinationId": "some-destination-id",
+  "sourceTaskRunId": "",
+  "sourceJobId": "",
+  "sourceJobRunId": "",
+  "sourceDefinitionId": "",
+  "DestinationDefinitionId": "",
+  "sourceCategory": "",
+  "transformationId": "some-transformation-id",
+  "transformationVersionId": "",
+  "trackingPlanId": "some-tracking-plan-id",
+  "trackingPlanVersion": 0,
+  "inReportedBy": "some-in-pu",
+  "reportedBy": "some-pu",
+  "terminalState": false,
+  "initialState": false,
+  "reportedAt": 1681061400000,
+  "bucket": 1681061400000,
+  "reports": [
+    {
+      "state": "some-status",
+      "count": 3,
+      "statusCode": 200,
+      "sampleResponse": "",
+      "sampleEvent": {},
+      "eventName": "",
+      "eventType": "",
+      "errorType": "",
+      "violationCount": 5
+    },
+    {
+      "state": "some-status",
+      "count": 2,
+      "statusCode": 200,
+      "sampleResponse": "",
+      "sampleEvent": {},
+      "eventName": "",
+      "eventType": "",
+      "errorType": "some-error-type",
+      "violationCount": 10
+    }
+  ]
+}
