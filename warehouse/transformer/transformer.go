@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 
@@ -43,10 +44,11 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Warehouse.maxLoggedEvents")
+	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
 	return t
 }
 
-func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
+func (t *Transformer) Transform(ctx context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
 	if len(clientEvents) == 0 {
 		return
 	}
@@ -71,22 +73,33 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 		t.statsFactory.NewTaggedStat("warehouse_dest_transform_output_failed_events", stats.HistogramType, tags).Observe(float64(len(res.FailedEvents)))
 	}()
 
-	for _, clientEvent := range clientEvents {
-		r, err := t.processWarehouseMessage(c, &clientEvent)
-		if err != nil {
-			res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(&clientEvent, err))
-			continue
-		}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(t.config.concurrentTransformations.Load())
 
-		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
-			clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
-			return types.TransformerResponse{
-				Output:     item,
-				Metadata:   clientEvent.Metadata,
-				StatusCode: http.StatusOK,
+	for _, clientEvent := range clientEvents {
+		g.Go(func() error {
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
-		})...)
+
+			r, err := t.processWarehouseMessage(c, &clientEvent)
+			if err != nil {
+				res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(&clientEvent, err))
+				return nil
+			}
+
+			res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
+				clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+				return types.TransformerResponse{
+					Output:     item,
+					Metadata:   clientEvent.Metadata,
+					StatusCode: http.StatusOK,
+				}
+			})...)
+			return nil
+		})
 	}
+	_ = g.Wait()
 	return
 }
 
