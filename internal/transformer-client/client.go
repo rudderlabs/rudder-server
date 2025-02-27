@@ -4,6 +4,7 @@ package transformerclient
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
+	"golang.org/x/net/http2"
 
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -43,23 +45,29 @@ func NewClient(config *ClientConfig) Client {
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     30 * time.Second,
 	}
+	if config != nil {
+		transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
+		if config.TransportConfig.MaxConnsPerHost != 0 {
+			transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+		}
+		if config.TransportConfig.MaxIdleConnsPerHost != 0 {
+			transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+		}
+		if config.TransportConfig.IdleConnTimeout != 0 {
+			transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+		}
+		if config.ClientType == "http2" {
+			if err := http2.ConfigureTransport(transport); err != nil {
+				panic(fmt.Errorf("failed to configure http2 transport: %w", err))
+			}
+		}
+	}
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   600 * time.Second,
 	}
 	if config == nil {
 		return client
-	}
-
-	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
-	if config.TransportConfig.MaxConnsPerHost != 0 {
-		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
-	}
-	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
-		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
-	}
-	if config.TransportConfig.IdleConnTimeout != 0 {
-		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
 	}
 
 	if config.ClientTimeout != 0 {
@@ -72,7 +80,7 @@ func NewClient(config *ClientConfig) Client {
 	}
 
 	switch config.ClientType {
-	case "stdlib":
+	case "stdlib", "http2":
 		return client
 	case "recycled":
 		return sysUtils.NewRecycledHTTPClient(func() *http.Client {
