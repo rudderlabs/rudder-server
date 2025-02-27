@@ -3,7 +3,6 @@ package deltalake
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -11,10 +10,8 @@ import (
 	"strings"
 	"time"
 
+	dbsql "github.com/databricks/databricks-sql-go"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 
@@ -197,36 +194,28 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 		return nil, fmt.Errorf("port is not a number: %w", err)
 	}
 
-	data := sqlconnectconfig.Databricks{
-		Host:    host,
-		Port:    port,
-		Path:    path,
-		Token:   token,
-		Catalog: catalog,
-		Timeout: timeout,
-		SessionParams: map[string]string{
+	connector, err := dbsql.NewConnector(
+		dbsql.WithServerHostname(host),
+		dbsql.WithPort(port),
+		dbsql.WithHTTPPath(path),
+		dbsql.WithAccessToken(token),
+		dbsql.WithSessionParams(map[string]string{
 			"ansi_mode": "false",
-		},
-		RetryAttempts:    d.config.maxRetries,
-		MinRetryWaitTime: d.config.retryMinWait,
-		MaxRetryWaitTime: d.config.retryMaxWait,
-	}
-
-	credentialsJSON, err := json.Marshal(data)
+		}),
+		dbsql.WithUserAgentEntry("Rudderstack"),
+		dbsql.WithTimeout(timeout),
+		dbsql.WithInitialNamespace(catalog, ""),
+		dbsql.WithRetries(d.config.maxRetries, d.config.retryMinWait, d.config.retryMaxWait),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling credentials: %w", err)
-	}
-
-	sqlConnectDB, err := sqlconnect.NewDB("databricks", credentialsJSON)
-	if err != nil {
-		return nil, fmt.Errorf("creating sqlconnect db: %w", err)
+		return nil, fmt.Errorf("creating connector: %w", err)
 	}
 	if err = dbsqllog.SetLogLevel("disabled"); err != nil {
 		return nil, fmt.Errorf("setting log level: %w", err)
 	}
 
 	middleware := sqlmiddleware.New(
-		sqlConnectDB.SqlDB(),
+		sql.OpenDB(connector),
 		sqlmiddleware.WithStats(d.stats),
 		sqlmiddleware.WithLogger(d.logger),
 		sqlmiddleware.WithKeyAndValues(
