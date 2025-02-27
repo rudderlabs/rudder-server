@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -128,7 +129,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 		},
 	}
 
-	marshaledJSON, err := json.Marshal(metric)
+	marshaledJSON, err := jsonrs.Marshal(metric)
 	require.NoError(t, err)
 	require.JSONEq(t, expectedJSON, string(marshaledJSON))
 }

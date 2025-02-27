@@ -9,19 +9,15 @@ import (
 	"database/sql"
 	"fmt"
 
-	jsoniter "github.com/json-iterator/go"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
-var (
-	pkgLogger = logger.NewLogger().Child("backend-config-cache")
-	json      = jsoniter.ConfigCompatibleWithStandardLibrary
-)
+var pkgLogger = logger.NewLogger().Child("backend-config-cache")
 
 type Cache interface {
 	Get(ctx context.Context) ([]byte, error)
@@ -87,7 +83,7 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 
 // Encrypt and store the config to the database
 func (db *cacheStore) set(ctx context.Context, config interface{}) error {
-	configBytes, err := json.Marshal(config)
+	configBytes, err := jsonrs.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}

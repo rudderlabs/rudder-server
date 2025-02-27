@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -400,21 +400,21 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)
-		err := json.Unmarshal([]byte(data), &dataInt)
+		err := jsonrs.Unmarshal([]byte(data), &dataInt)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of int: %s", err.Error())
 		}
 		return dataInt
 	case "array(float)":
 		dataFloat := make([]float64, 0)
-		err := json.Unmarshal([]byte(data), &dataFloat)
+		err := jsonrs.Unmarshal([]byte(data), &dataFloat)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of float: %s", err.Error())
 		}
 		return dataFloat
 	case "array(string)":
 		dataInterface := make([]interface{}, 0)
-		err := json.Unmarshal([]byte(data), &dataInterface)
+		err := jsonrs.Unmarshal([]byte(data), &dataInterface)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of interface: %s", err.Error())
 		}
@@ -423,14 +423,14 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 			if _, ok := value.(string); ok {
 				dataString = append(dataString, value.(string))
 			} else {
-				bytes, _ := json.Marshal(value)
+				bytes, _ := jsonrs.Marshal(value)
 				dataString = append(dataString, string(bytes))
 			}
 		}
 		return dataString
 	case "array(datetime)":
 		dataTime := make([]time.Time, 0)
-		err := json.Unmarshal([]byte(data), &dataTime)
+		err := jsonrs.Unmarshal([]byte(data), &dataTime)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of date time: %s", err.Error())
 		}
@@ -442,14 +442,14 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 		// Since we are converting true/false to 1/0 in warehouse slave
 		// We need to unmarshal into []int32 first to load the data into the table
 		// If it is unsuccessful, we unmarshal for []bool
-		if err := json.Unmarshal([]byte(data), &dataInt); err == nil {
+		if err := jsonrs.Unmarshal([]byte(data), &dataInt); err == nil {
 			for _, value := range dataInt {
 				dataBool = append(dataBool, value != 0)
 			}
 			return dataBool
 		}
 
-		err := json.Unmarshal([]byte(data), &dataBool)
+		err := jsonrs.Unmarshal([]byte(data), &dataBool)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool

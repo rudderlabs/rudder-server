@@ -1,7 +1,6 @@
 package badger
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -15,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -78,7 +78,7 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
 	return e.db.Update(func(txn *badger.Txn) error {
-		data, err := json.Marshal(value)
+		data, err := jsonrs.Marshal(value)
 		if err != nil {
 			return err
 		}
@@ -101,7 +101,7 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 			}
 			var value E
 			if err := itr.Item().Value(func(val []byte) error {
-				return json.Unmarshal(val, &value)
+				return jsonrs.Unmarshal(val, &value)
 			}); err == nil { // ignore unmarshal errors (old version of the data)
 				values = append(values, value)
 			}

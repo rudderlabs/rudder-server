@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +28,7 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -742,7 +742,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 }
 
 func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
-	payload, err := json.Marshal(metric)
+	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
 	}

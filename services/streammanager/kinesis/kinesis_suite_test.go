@@ -1,7 +1,6 @@
 package kinesis
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis"
 
 	"github.com/stretchr/testify/assert"
@@ -91,7 +91,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "Empty Payload", respMsg)
 
 	// Incomplete Payload
-	sampleJsonPayload, _ = json.Marshal(map[string]string{
+	sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
 		"message": "{}",
 	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
@@ -109,11 +109,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	sampleData := "some data"
 	sampleUserId := "someUser"
-	sampleJsonPayload, _ := json.Marshal(map[string]string{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]string{
 		"message": sampleData,
 		"userId":  sampleUserId,
 	})
-	dataPayloadJson, _ := json.Marshal(sampleData)
+	dataPayloadJson, _ := jsonrs.Marshal(sampleData)
 	putRecordInput := kinesis.PutRecordInput{
 		Data:         dataPayloadJson,
 		StreamName:   &validDestinationConfigUseMessageID.Stream,

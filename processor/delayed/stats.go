@@ -4,10 +4,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -25,7 +26,7 @@ func NewEventStats(stats stats.Stats, config *config.Config) *eventStats {
 	}
 }
 
-func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events []transformer.TransformerEvent) {
+func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events []types.TransformerEvent) {
 	statusCount := map[string]map[string]int{
 		"missing_original_timestamp": {},
 		"missing_sent_at":            {},

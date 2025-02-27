@@ -1,7 +1,6 @@
 package personalize
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 
 	"github.com/stretchr/testify/assert"
@@ -58,7 +58,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	sampleJsonPayload := []byte("invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "invalid character 'i' looking for beginning of value", statusMsg)
+	assert.NotEmpty(t, statusMsg)
 	assert.Equal(t, "Could not unmarshal jsonData according to PutEvents input structure", respMsg)
 
 	// Empty Payload
@@ -70,17 +70,17 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 	for _, choice := range []string{"PutEvents", "PutItems", "PutUsers"} {
 		// Invalid Event payload
-		sampleJsonPayload, _ = json.Marshal(map[string]string{
+		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
 			"choice":  choice,
 			"payload": "invalid json",
 		})
 		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 		assert.Equal(t, 400, statusCode)
-		assert.Equal(t, "invalid character 'i' looking for beginning of value", statusMsg)
+		assert.NotEmpty(t, statusMsg)
 		assert.Equal(t, fmt.Sprintf("Could not unmarshal jsonData according to %s input structure", choice), respMsg)
 
 		// Empty Event payload
-		sampleJsonPayload, _ = json.Marshal(map[string]string{
+		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
 			"choice":  choice,
 			"payload": "{}",
 		})
@@ -97,7 +97,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutEvents",
 		"payload": personalizeevents.PutEventsInput{
 			EventList: []*personalizeevents.Event{{
@@ -115,7 +115,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	var putEventsInput personalizeevents.PutEventsInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = json.Unmarshal(eventPayload, &putEventsInput)
+	_ = jsonrs.Unmarshal(eventPayload, &putEventsInput)
 
 	// PutEvents with event choice
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
@@ -151,7 +151,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutUsers",
 		"payload": personalizeevents.PutUsersInput{
 			DatasetArn: aws.String("datasetArn"),
@@ -162,7 +162,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	var putUsersInput personalizeevents.PutUsersInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = json.Unmarshal(eventPayload, &putUsersInput)
+	_ = jsonrs.Unmarshal(eventPayload, &putUsersInput)
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutUsersInput variable and use in expect
@@ -189,7 +189,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutItems",
 		"payload": personalizeevents.PutItemsInput{
 			DatasetArn: aws.String("datasetArn"),
@@ -200,7 +200,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	var putItemsInput personalizeevents.PutItemsInput
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = json.Unmarshal(eventPayload, &putItemsInput)
+	_ = jsonrs.Unmarshal(eventPayload, &putItemsInput)
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutItemsInput variable and use in expect

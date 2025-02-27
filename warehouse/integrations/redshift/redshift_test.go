@@ -34,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -76,7 +77,7 @@ func getRedshiftTestCredentials(key string) (*testCredentials, error) {
 	}
 
 	var credentials testCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
+	err := jsonrs.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshall %s to redshift test credentials: %v", key, err)
 	}

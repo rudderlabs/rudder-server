@@ -3,7 +3,6 @@ package warehouse_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
 
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
@@ -44,6 +45,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -322,7 +324,7 @@ func TestUploads(t *testing.T) {
 				}()
 
 				require.Equal(t, http.MethodGet, r.Method)
-				body, err := json.Marshal(backendconfig.DestinationT{
+				body, err := jsonrs.Marshal(backendconfig.DestinationT{
 					ID:      destinationID,
 					Enabled: true,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -383,7 +385,7 @@ func TestUploads(t *testing.T) {
 
 		health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-		require.NoError(t, whclient.NewWarehouse(serverURL).Process(ctx, whclient.StagingFile{
+		require.NoError(t, whclient.NewWarehouse(serverURL, stats.NOP).Process(ctx, whclient.StagingFile{
 			WorkspaceID:           workspaceID,
 			SourceID:              sourceID,
 			DestinationID:         destinationID,
@@ -537,7 +539,7 @@ func TestUploads(t *testing.T) {
 
 		var (
 			db       = sqlmw.New(postgresResource.DB)
-			whClient = whclient.NewWarehouse(serverURL)
+			whClient = whclient.NewWarehouse(serverURL, stats.NOP)
 			events   = 100
 			jobs     = 1
 		)
@@ -1662,14 +1664,14 @@ func TestDestinationTransformation(t *testing.T) {
 		testcases := []struct {
 			name           string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name: "with allowUsersContextTraits=true",
 				configOverride: map[string]any{
 					"allowUsersContextTraits": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1698,7 +1700,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1725,7 +1727,7 @@ func TestDestinationTransformation(t *testing.T) {
 			{
 				name:           "without allowUsersContextTraits",
 				configOverride: map[string]any{},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1759,8 +1761,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -1792,8 +1793,8 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			var transformerEvents []types.TransformerEvent
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
@@ -1808,14 +1809,14 @@ func TestDestinationTransformation(t *testing.T) {
 		testcases := []struct {
 			name           string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name: "with underscoreDivideNumbers=true",
 				configOverride: map[string]any{
 					"underscoreDivideNumbers": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1840,7 +1841,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"underscoreDivideNumbers": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1863,7 +1864,7 @@ func TestDestinationTransformation(t *testing.T) {
 			{
 				name:           "without underscoreDivideNumbers",
 				configOverride: map[string]any{},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var trackOutput output
 					err := mapstructure.Decode(events[0].Output, &trackOutput)
 					require.NoError(t, err)
@@ -1893,8 +1894,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -1923,8 +1923,8 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			var transformerEvents []types.TransformerEvent
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
@@ -1940,7 +1940,7 @@ func TestDestinationTransformation(t *testing.T) {
 			name           string
 			destType       string
 			configOverride map[string]any
-			validateEvents func(t *testing.T, events []transformer.TransformerResponse)
+			validateEvents func(t *testing.T, events []types.TransformerResponse)
 		}{
 			{
 				name:     "for non-datalake destinations should be present",
@@ -1948,7 +1948,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": true,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -1978,7 +1978,7 @@ func TestDestinationTransformation(t *testing.T) {
 				configOverride: map[string]any{
 					"allowUsersContextTraits": false,
 				},
-				validateEvents: func(t *testing.T, events []transformer.TransformerResponse) {
+				validateEvents: func(t *testing.T, events []types.TransformerResponse) {
 					var identifyEvent output
 					err := mapstructure.Decode(events[0].Output, &identifyEvent)
 					require.NoError(t, err)
@@ -2012,8 +2012,7 @@ func TestDestinationTransformation(t *testing.T) {
 				destinationBuilder.WithConfigOption(k, v)
 			}
 			destination := destinationBuilder.Build()
-
-			destinationJSON, err := json.Marshal(destination)
+			destinationJSON, err := jsonrs.Marshal(destination)
 			require.NoError(t, err)
 
 			eventTemplate := `
@@ -2048,8 +2047,8 @@ func TestDestinationTransformation(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			var transformerEvents []transformer.TransformerEvent
-			err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+			var transformerEvents []types.TransformerEvent
+			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
 			tr := transformer.NewTransformer(conf, logger.NOP, stats.Default)
@@ -2484,5 +2483,5 @@ func setupServer(
 	serverURL := fmt.Sprintf("http://localhost:%d", webPort)
 	health.WaitUntilReady(ctx, t, serverURL+"/health", time.Second*30, 100*time.Millisecond, t.Name())
 
-	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL)
+	return sqlmw.New(pgResource.DB), minioResource, whclient.NewWarehouse(serverURL, stats.NOP)
 }

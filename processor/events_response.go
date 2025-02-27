@@ -6,24 +6,25 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (proc *Handle) getDroppedJobs(response transformer.Response, eventsToTransform []transformer.TransformerEvent) []*jobsdb.JobT {
+func (proc *Handle) getDroppedJobs(response types.Response, eventsToTransform []types.TransformerEvent) []*jobsdb.JobT {
 	// each messageID is one event when sending to the transformer
-	inputMessageIDs := lo.Map(eventsToTransform, func(e transformer.TransformerEvent, _ int) string {
+	inputMessageIDs := lo.Map(eventsToTransform, func(e types.TransformerEvent, _ int) string {
 		return e.Metadata.MessageID
 	})
 
 	// in transformer response, multiple messageIDs could be batched together
 	successFullMessageIDs := make([]string, 0)
-	lo.ForEach(response.Events, func(e transformer.TransformerResponse, _ int) {
+	lo.ForEach(response.Events, func(e types.TransformerResponse, _ int) {
 		successFullMessageIDs = append(successFullMessageIDs, e.Metadata.GetMessagesIDs()...)
 	})
 	// for failed as well
 	failedMessageIDs := make([]string, 0)
-	lo.ForEach(response.FailedEvents, func(e transformer.TransformerResponse, _ int) {
+	lo.ForEach(response.FailedEvents, func(e types.TransformerResponse, _ int) {
 		failedMessageIDs = append(failedMessageIDs, e.Metadata.GetMessagesIDs()...)
 	})
 	// the remainder of the messageIDs are those that are dropped
@@ -46,7 +47,7 @@ func (proc *Handle) getDroppedJobs(response transformer.Response, eventsToTransf
 				DestinationID:   e.Metadata.DestinationID,
 				RecordID:        e.Metadata.RecordID,
 			}
-			marshalledParams, err := jsonfast.Marshal(params)
+			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
 				proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
 				marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)

@@ -2,10 +2,11 @@ package aggregator
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"time"
 
 	"github.com/segmentio/go-hll"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type TrackedUsersReport struct {
@@ -27,7 +28,7 @@ func (t *TrackedUsersReport) MarshalJSON() ([]byte, error) {
 	t.IdentifiedAnonymousIDHLLHex = hex.EncodeToString(t.IdentifiedAnonymousIDHLL.ToBytes())
 
 	type Alias TrackedUsersReport
-	return json.Marshal(&struct {
+	return jsonrs.Marshal(&struct {
 		*Alias
 	}{
 		Alias: (*Alias)(t),

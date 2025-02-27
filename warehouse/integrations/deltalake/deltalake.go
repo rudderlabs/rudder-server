@@ -3,7 +3,6 @@ package deltalake
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -22,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -212,7 +212,7 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 		MaxRetryWaitTime: d.config.retryMaxWait,
 	}
 
-	credentialsJSON, err := json.Marshal(data)
+	credentialsJSON, err := jsonrs.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}

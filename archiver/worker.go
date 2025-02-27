@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -236,7 +237,7 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 	J.EventPayload = job.EventPayload
 	J.CreatedAt = job.CreatedAt
 	J.MessageID = gjson.GetBytes(job.EventPayload, "messageId").String()
-	return json.Marshal(J)
+	return jsonrs.Marshal(J)
 }
 
 func (w *worker) markStatus(
@@ -282,12 +283,12 @@ func errJSON(err error) []byte {
 	}{
 		Error: err.Error(),
 	}
-	b, _ := json.Marshal(m)
+	b, _ := jsonrs.Marshal(m)
 	return b
 }
 
 func locationJSON(location string) []byte {
 	m := map[string]string{"location": location}
-	b, _ := json.Marshal(m)
+	b, _ := jsonrs.Marshal(m)
 	return b
 }

@@ -2,6 +2,7 @@ package offline_conversions
 
 import (
 	"archive/zip"
+	"encoding/json"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksoauthservice "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -149,7 +151,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "unmarshalling parameters")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
@@ -157,7 +159,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				ImportingCount:      0,
 				FailedCount:         6,
 				AbortCount:          0,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			Expect(err).ShouldNot(HaveOccurred(), "creating temporary directory")
@@ -193,14 +195,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in getting bulk upload url: unable to get bulk upload url, check your credentials,insert:error in getting bulk upload url: unable to get bulk upload url, check your credentials,delete:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
 				FailedCount:         6,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
@@ -257,14 +259,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			expected := common.AsyncUploadOutput{
 				FailedJobIDs:        []int64{2, 4, 1, 3, 5, 6},
 				FailedReason:        "{\"error\":\"update:error in uploading the bulk file: Error in uploading bulk file,insert:error in uploading the bulk file: Error in uploading bulk file,delete:error in uploading the bulk file: Error in uploading bulk file\"}",
 				FailedCount:         6,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			received := bulkUploader.Upload(&asyncDestination)
 
@@ -537,6 +539,42 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			_, err := uploader.Transform(job)
 			expectedResult := fmt.Errorf(" adjustedConversionTime field not defined")
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> microsoftClickId is required(email and phone undefined) but not present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> microsoftClickId is required(email and phone empty) but not present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": \"5/22/2023 6:27:54 AM\", \"conversionValue\": \"100\", \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
+
+		It("Transform() Test -> successful even when microsoftClickId is missing as email/phone is present", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"5/22/2023 6:27:54 AM\",\n    \"conversionValue\": \"100\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\":\"+911234567890\"\n  }\n}"),
+			}
+			uploader := &BingAdsBulkUploader{
+				isHashRequired: true,
+			}
+			expectedResp := `{"message":{"fields":{"conversionCurrencyCode":"USD","conversionName":"Test-Integration","conversionTime":"5/22/2023 6:27:54 AM","conversionValue":"100","email":"28a4da98f8812110001ab8ffacde3b38b4725a9e3570c39299fbf2d12c5aa70e","phone":"8c229df83de8ab269e90918846e326c4008c86481393223d17a30ff5a407b08e"},"action":"insert"},"metadata":{"jobId":0}}`
+			// Execute
+			resp, err := uploader.Transform(job)
+			Expect(resp).To(Equal(expectedResp))
+			Expect(err).To(BeNil())
 		})
 	})
 })

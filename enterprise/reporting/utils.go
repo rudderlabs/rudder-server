@@ -45,11 +45,24 @@ func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	return bucketStart, bucketEnd
 }
 
+func sanitizeStringForReports(input string) string {
+	// Remove null characters
+	return strings.ReplaceAll(input, "\u0000", "")
+}
+
 func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
 	if !eventSamplingEnabled || eventSampler == nil {
+		// Sanitize both sample event and response before returning
+		if sampleEvent != nil {
+			sampleEvent, err = misc.SanitizeJSON(sampleEvent)
+			if err != nil {
+				return []byte(`{}`), "", err
+			}
+		}
+		sampleResponse = sanitizeStringForReports(sampleResponse)
 		return sampleEvent, sampleResponse, nil
 	}
 
@@ -70,6 +83,17 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 			sampleResponse = ""
 		} else {
 			err = eventSampler.Put(hash)
+			if err != nil {
+				return sampleEvent, sampleResponse, err
+			}
+			// Sanitize both sample event and response before returning
+			if sampleEvent != nil {
+				sampleEvent, err = misc.SanitizeJSON(sampleEvent)
+				if err != nil {
+					return []byte(`{}`), "", err
+				}
+			}
+			sampleResponse = sanitizeStringForReports(sampleResponse)
 		}
 	}
 

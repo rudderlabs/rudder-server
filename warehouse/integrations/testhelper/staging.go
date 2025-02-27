@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"testing"
 	"text/template"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
@@ -42,7 +44,7 @@ func createStagingFile(t testing.TB, testConfig *TestConfig) {
 	payload := prepareStagingPayload(t, testConfig, stagingFile, uploadOutput)
 
 	url := fmt.Sprintf("http://localhost:%d", testConfig.HTTPPort)
-	err := warehouseclient.NewWarehouse(url).Process(context.Background(), payload)
+	err := warehouseclient.NewWarehouse(url, stats.NOP).Process(context.Background(), payload)
 	require.NoError(t, err)
 }
 
@@ -113,7 +115,7 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 
 	b := new(strings.Builder)
 
-	destinationJSON, err := json.Marshal(testConfig.Destination)
+	destinationJSON, err := jsonrs.Marshal(testConfig.Destination)
 	require.NoError(t, err)
 
 	err = tpl.Execute(b, map[string]any{
@@ -128,20 +130,20 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 	})
 	require.NoError(t, err)
 
-	var transformerEvents []transformer.TransformerEvent
-	err = json.Unmarshal([]byte(b.String()), &transformerEvents)
+	var transformerEvents []types.TransformerEvent
+	err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 	require.NoError(t, err)
 
 	tr := transformer.NewTransformer(c, logger.NOP, stats.Default)
 	response := tr.Transform(context.Background(), transformerEvents, 100)
 	require.Zero(t, len(response.FailedEvents))
-	responseOutputs := lo.Map(response.Events, func(r transformer.TransformerResponse, index int) map[string]interface{} {
+	responseOutputs := lo.Map(response.Events, func(r types.TransformerResponse, index int) map[string]interface{} {
 		return r.Output
 	})
 
 	output := new(strings.Builder)
 	for _, responseOutput := range responseOutputs {
-		outputJSON, err := json.Marshal(responseOutput)
+		outputJSON, err := jsonrs.Marshal(responseOutput)
 		require.NoError(t, err)
 
 		_, err = output.WriteString(string(outputJSON) + "\n")
@@ -223,7 +225,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		lineBytes := scanner.Bytes()
 
 		var stagingEvent StagingEvent
-		err := json.Unmarshal(lineBytes, &stagingEvent)
+		err := jsonrs.Unmarshal(lineBytes, &stagingEvent)
 		require.NoError(t, err)
 
 		stagingEvents = append(stagingEvents, stagingEvent)

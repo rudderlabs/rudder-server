@@ -1,7 +1,6 @@
 package warehouseutils
 
 import (
-	"bytes"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -317,18 +317,6 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	return
 }
 
-func SanitizeJSON(input json.RawMessage) json.RawMessage {
-	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
-	if len(v) == 0 {
-		v = []byte(`{}`)
-	}
-	return v
-}
-
-func SanitizeString(input string) string {
-	return strings.ReplaceAll(input, "\u0000", "")
-}
-
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
 func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
@@ -446,7 +434,7 @@ func GetS3Locations(loadFiles []LoadFile) []LoadFile {
 
 func JSONSchemaToMap(rawMsg json.RawMessage) model.Schema {
 	schema := make(model.Schema)
-	err := json.Unmarshal(rawMsg, &schema)
+	err := jsonrs.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 // MarketoBulkUploaderOptions contains all dependencies needed for the uploader
@@ -20,11 +21,11 @@ type MarketoBulkUploaderOptions struct {
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (*MarketoBulkUploader, error) {
 	destConfig := MarketoConfig{}
-	jsonConfig, err := jsonfast.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("error in marshalling destination config: %v", err)
 	}
-	err = jsonfast.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error in unmarshalling destination config: %v", err)
 	}

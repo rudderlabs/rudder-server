@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -234,7 +235,7 @@ func (b *MarketoBulkUploader) GetUploadStats(input common.GetUploadStatsInput) c
 	var params struct {
 		ImportId string `json:"importId"`
 	}
-	err := jsonfast.Unmarshal(input.Parameters, &params)
+	err := jsonrs.Unmarshal(input.Parameters, &params)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,

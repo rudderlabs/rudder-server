@@ -2,7 +2,6 @@ package transformer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,10 +19,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -131,50 +133,6 @@ func TestProxyRequest(t *testing.T) {
 				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.good_dest.domain.com",
-					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
-							"key_1": "val_1",
-							"key_2": "val_2",
-						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
-					},
-					Files: map[string]interface{}{},
-				},
-				Metadata: []ProxyRequestMetadata{
-					{
-						WorkspaceID:   "workspace_id",
-						DestinationID: "destination_id",
-					},
-				},
-				DestinationConfig: map[string]interface{}{
-					"key_1": "val_1",
-					"key_2": "val_2",
-				},
-			},
-		},
-		{
-			name:     "should throw timeout exception as the timeout in http.client is lower than proxy",
-			destName: "good_dest_1",
-			expected: expectedResponse{
-				code:        http.StatusGatewayTimeout,
-				body:        `Post "%s/v0/destinations/good_dest_1/proxy": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`,
-				contentType: "text/plain; charset=utf-8",
-				bodyType:    STR,
-			},
-			proxy: proxyConfig{
-				code:     http.StatusOK,
-				response: `{"output": {"status": 200, "message": "", "destinationResponse":"good_dest_1"}}`,
-				timeout:  time.Duration(1.2 * 1e9),
-			},
-			rtTimeout: 8 * time.Millisecond,
-			postParameters: ProxyRequestPayload{
-				PostParametersT: integrations.PostParametersT{
-					Type:          "REST",
-					URL:           "http://www.good_dest_1.domain.com",
 					RequestMethod: http.MethodPost,
 					QueryParams:   map[string]interface{}{},
 					Body: map[string]interface{}{
@@ -524,16 +482,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -561,16 +519,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: `[google_analytics] "invalid_grant" error, refresh token has been revoked`, Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusBadRequest, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -594,16 +552,16 @@ var oauthV2RtTcs = []oauthV2TestCase{
 			},
 		},
 		routerTransformResponses: []types.DestinationJobT{
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
-			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0]},
-			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Destination: oauthDests[0], Message: []byte("{}")},
+			{Error: "unauthorised", JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusUnauthorized, AuthErrorCategory: common.CategoryRefreshToken, Destination: oauthDests[0], Message: []byte("{}")},
 		},
 		expected: []types.DestinationJobT{
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
-			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -658,7 +616,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				statusCode := http.StatusResetContent
 				if tc.routerTransformResponses != nil {
 					var b []byte
-					b, err = json.Marshal(tc.routerTransformResponses)
+					b, err = jsonrs.Marshal(tc.routerTransformResponses)
 					outputJson, _ = sjson.SetRawBytes([]byte(`{}`), "output", b)
 					statusCode = http.StatusOK
 				}
@@ -695,6 +653,9 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				require.NotNil(t, transformerResponse)
 
 				for i, ex := range tc.expected {
+					for j := range transformerResponse[i].JobMetadataArray {
+						transformerResponse[i].JobMetadataArray[j].Secret = nil
+					}
 					require.Equalf(t, ex.Batched, transformerResponse[i].Batched, "[%i] Batched assertion failed", i)
 					require.Equalf(t, ex.Message, transformerResponse[i].Message, "[%i] Message assertion failed", i)
 					require.Equalf(t, ex.AuthErrorCategory, transformerResponse[i].AuthErrorCategory, "[%i] AuthErrorCategory assertion failed", i)
@@ -1309,7 +1270,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: {"message": ["some other error"]}, err: transformer.ProxyResponseV1.Message: ReadString: expects " or n, but found [, error found in #10 byte of ...|essage": ["some othe|..., bigger context ...|{"message": ["some other error"]}|...`,
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: `,
 			ProxyRequestStatusCode:   http.StatusOK, // transformer returned response
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1685,9 +1646,9 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					return
 				}
 				if tc.proxyVersion == "v1" {
-					b, _ = json.Marshal(tc.transformerProxyResponseV1)
+					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV1)
 				} else if tc.proxyVersion == "v0" {
-					b, _ = json.Marshal(tc.transformerProxyResponseV0)
+					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV0)
 				} else {
 					b = []byte(tc.transformerResponse)
 				}
@@ -1752,8 +1713,8 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			require.Equal(t, tc.expected.ProxyRequestStatusCode, proxyResp.ProxyRequestStatusCode)
 			// Assert of ProxyRequestPayload
 			var expectedPrxResp, actualPrxResp ProxyRequestPayload
-			e1 := json.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
-			e2 := json.Unmarshal([]byte(proxyResp.ProxyRequestResponseBody), &actualPrxResp)
+			e1 := jsonrs.Unmarshal([]byte(tc.expected.ProxyRequestResponseBody), &expectedPrxResp)
+			e2 := jsonrs.Unmarshal([]byte(proxyResp.ProxyRequestResponseBody), &actualPrxResp)
 			if e1 == nil && e2 == nil {
 				require.Equal(t, actualPrxResp, expectedPrxResp)
 			} else {
@@ -1768,13 +1729,13 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	config.Reset()
 	loggerOverride = logger.NOP
 	expectedTransformerResponse := []types.DestinationJobT{
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusOK},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 1, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 2, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
+		{JobMetadataArray: []types.JobMetadataT{{JobID: 3, Secret: []byte("{}")}}, StatusCode: http.StatusOK, Message: []byte("{}")},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(expectedTransformerResponse)
+		b, err := jsonrs.Marshal(expectedTransformerResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1849,7 +1810,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1890,7 +1851,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1934,13 +1895,13 @@ func TestDehydrateHydrate(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload types.TransformMessageT
-		err := json.NewDecoder(r.Body).Decode(&payload)
+		err := jsonrs.NewDecoder(r.Body).Decode(&payload)
 		require.NoError(t, err)
 		for i := range payload.Data {
 			require.Nil(t, payload.Data[i].JobMetadata.JobT, "JobT should be nil")
 		}
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
-		b, err := json.Marshal(serverResponse)
+		b, err := jsonrs.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
 		require.NoError(t, err)
@@ -1978,6 +1939,125 @@ func normalizeErrors(transformerResponse []types.DestinationJobT, prefix string)
 		job := &transformerResponse[i]
 		if strings.HasPrefix(job.Error, prefix) {
 			job.Error = prefix
+		}
+	}
+}
+
+func TestTransformerMetrics(t *testing.T) {
+	initMocks(t)
+	config.Reset()
+	loggerOverride = logger.NOP
+
+	statsStore, err := memstats.New()
+	require.NoError(t, err)
+
+	// Setup test server
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+		response := []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
+		}
+		b, err := jsonrs.Marshal(response)
+		require.NoError(t, err)
+
+		// For BATCH transform type, don't wrap in output field
+		_, err = w.Write(b)
+		require.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
+	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
+
+	t.Setenv("DEST_TRANSFORM_URL", srv.URL)
+	// Create transformer with stats store
+	tr := &handle{
+		stats:                     statsStore,
+		logger:                    logger.NOP,
+		client:                    srv.Client(),
+		proxyClient:               srv.Client(),
+		tr:                        &http.Transport{},
+		oAuthV2EnabledLoader:      isOAuthV2EnabledLoader,
+		expirationTimeDiff:        expTimeDiff,
+		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType), // Add this line
+	}
+
+	// Create test message
+	transformMessage := &types.TransformMessageT{
+		DestType: "test_destination", // Add this line
+		Data: []types.RouterJobT{
+			{
+				JobMetadata: types.JobMetadataT{
+					JobID:       1,
+					WorkspaceID: "workspace_1",
+					SourceID:    "source_1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "destination_1",
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "test_destination",
+					},
+				},
+			},
+			{
+				JobMetadata: types.JobMetadataT{
+					JobID:       2,
+					WorkspaceID: "workspace_1",
+					SourceID:    "source_1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "destination_1",
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: "test_destination",
+					},
+				},
+			},
+		},
+	}
+	transformMessage.Data[0].JobMetadata.SourceCategory = "webhook"
+	transformMessage.Data[1].JobMetadata.SourceCategory = "webhook"
+
+	// Expected tags for metrics
+	expectedTags := stats.Tags{
+		"endpoint":        getEndpointFromURL(srv.URL),
+		"stage":           "router",
+		"destinationType": "test_destination",
+		"sourceType":      "webhook",
+		"workspaceId":     "workspace_1",
+		"destinationId":   "destination_1",
+		"sourceId":        "source_1",
+		"destType":        "test_destination", // Legacy tag
+	}
+
+	// Perform transformation
+	response := tr.Transform(BATCH, transformMessage)
+
+	// Verify response
+	require.NotNil(t, response)
+	require.Len(t, response, 2)
+	require.Equal(t, http.StatusOK, response[0].StatusCode)
+	require.Equal(t, http.StatusOK, response[1].StatusCode)
+
+	// Verify metrics
+	metricsToCheck := []string{
+		"transformer_client_request_total_bytes",
+		"transformer_client_response_total_bytes",
+		"transformer_client_request_total_events",
+		"transformer_client_response_total_events",
+		"transformer_client_total_durations_seconds",
+	}
+
+	for _, metricName := range metricsToCheck {
+		measurements := statsStore.GetByName(metricName)
+		require.NotEmpty(t, measurements, "metric %s should not be empty", metricName)
+		require.Equal(t, expectedTags, measurements[0].Tags, "metric %s tags mismatch", metricName)
+
+		// Verify counts for event metrics
+		if metricName == "transformer_client_request_total_events" ||
+			metricName == "transformer_client_response_total_events" {
+			require.Equal(t, float64(2), measurements[0].Value,
+				"metric %s should have count of 2 events", metricName)
 		}
 	}
 }

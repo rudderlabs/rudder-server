@@ -22,3 +22,4 @@ coverage.html
 build/wait-for-go/wait-for-go
 **/gomock_reflect_*/*
 ginkgo.report
+*.prof
