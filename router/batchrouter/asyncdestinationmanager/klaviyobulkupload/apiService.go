@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const (
@@ -54,7 +55,7 @@ func setRequestHeaders(req *http.Request, apiKey string) {
 }
 
 func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, error) {
-	payloadJSON, err := json.Marshal(profiles)
+	payloadJSON, err := jsonrs.Marshal(profiles)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 	var uploadResp UploadResp
 	uploadBodyBytes, _ := io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
-	uploadRespErr := json.Unmarshal(uploadBodyBytes, &uploadResp)
+	uploadRespErr := jsonrs.Unmarshal(uploadBodyBytes, &uploadResp)
 	if uploadRespErr != nil {
 		return nil, uploadRespErr
 	}
@@ -111,7 +112,7 @@ func (k *KlaviyoAPIServiceImpl) GetUploadStatus(importId string) (*PollResp, err
 	pollBodyBytes, _ = io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
 
-	pollRespErr := json.Unmarshal(pollBodyBytes, &pollresp)
+	pollRespErr := jsonrs.Unmarshal(pollBodyBytes, &pollresp)
 	if pollRespErr != nil {
 		return nil, pollRespErr
 	}
@@ -136,7 +137,7 @@ func (k *KlaviyoAPIServiceImpl) GetUploadErrors(importId string) (*UploadStatusR
 	var importErrorResp UploadStatusResp
 	importErrorBodyBytes, _ = io.ReadAll(resp.Body)
 	defer func() { _ = resp.Body.Close() }()
-	importErrorRespErr := json.Unmarshal(importErrorBodyBytes, &importErrorResp)
+	importErrorRespErr := jsonrs.Unmarshal(importErrorBodyBytes, &importErrorResp)
 	if importErrorRespErr != nil {
 		return nil, importErrorRespErr
 	}

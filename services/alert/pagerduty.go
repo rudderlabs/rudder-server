@@ -2,7 +2,6 @@ package alert
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net/http"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 var (
@@ -30,7 +30,7 @@ func (ops *PagerDuty) Alert(message string) {
 		"routing_key":  ops.routingKey,
 	}
 
-	eventJSON, _ := json.Marshal(event)
+	eventJSON, _ := jsonrs.Marshal(event)
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.pagerduty.timeout", 30, time.Second)}
 	resp, err := client.Post(pagerDutyEndPoint, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops

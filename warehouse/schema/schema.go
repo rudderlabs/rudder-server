@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -17,14 +16,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // deprecatedColumnsRegex
 // This regex is used to identify deprecated columns in the warehouse
@@ -50,7 +48,6 @@ type Handler interface {
 	SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error)
 	IsWarehouseSchemaEmpty(ctx context.Context) bool
 	GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema
-	GetLocalSchema(ctx context.Context) (model.Schema, error)
 	UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error
 	UpdateWarehouseTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error
 	GetColumnsCountInWarehouseSchema(ctx context.Context, tableName string) (int, error)
@@ -282,7 +279,7 @@ func (sh *schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
 func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
-	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
+	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
@@ -313,7 +310,7 @@ func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 4. Updates local schema with warehouse schema if it has changed
 // 5. Returns true if schema has changed
 func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
+	localSchema, err := sh.getLocalSchema(ctx)
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -341,7 +338,7 @@ func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 }
 
 // GetLocalSchema returns the local schema from wh_schemas table
-func (sh *schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
+func (sh *schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,

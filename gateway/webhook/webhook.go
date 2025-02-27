@@ -26,6 +26,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
@@ -163,7 +164,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if r.MultipartForm != nil {
-		jsonByte, err = json.Marshal(multipartForm)
+		jsonByte, err = jsonrs.Marshal(multipartForm)
 		if err != nil {
 			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
@@ -178,7 +179,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if len(postFrom) != 0 {
-		jsonByte, err = json.Marshal(postFrom)
+		jsonByte, err = jsonrs.Marshal(postFrom)
 		if err != nil {
 			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
@@ -401,7 +402,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			webRequest := webRequests[idx]
 			if resp.Err == "" && resp.Output != nil {
 				var errMessage, reason string
-				outputPayload, err := json.Marshal(resp.Output)
+				outputPayload, err := jsonrs.Marshal(resp.Output)
 				if err != nil {
 					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
 					reason = "marshal error"

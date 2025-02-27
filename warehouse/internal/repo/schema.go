@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -46,7 +48,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		now = sh.now()
 	)
 
-	schemaPayload, err := json.Marshal(whSchema.Schema)
+	schemaPayload, err := jsonrs.Marshal(whSchema.Schema)
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
@@ -147,7 +149,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 		}
 
 		var schemaPayload model.Schema
-		err = json.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
+		err = jsonrs.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal schemaPayload: %w", err)
 		}
@@ -251,4 +253,14 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 	}
 
 	return tables, nil
+}
+
+func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) error {
+	query := `
+		UPDATE ` + whSchemaTableName + `
+		SET expires_at = $1, updated_at = $2
+		WHERE destination_id = $3
+	`
+	_, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
+	return err
 }

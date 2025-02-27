@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -71,6 +72,7 @@ type UploadJob struct {
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
+	whSchemaRepo         *repo.WHSchema
 	whManager            manager.Manager
 	schemaHandle         schema.Handler
 	conf                 *config.Config
@@ -101,6 +103,7 @@ type UploadJob struct {
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
+		skipPreviouslyFailedTables          bool
 	}
 
 	errorHandler    ErrorHandler
@@ -164,6 +167,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -201,6 +205,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
+	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -498,7 +503,7 @@ func (job *UploadJob) getNewTimings(status string) ([]byte, model.Timings, error
 	}
 	timing := map[string]time.Time{status: job.now()}
 	timings = append(timings, timing)
-	marshalledTimings, err := json.Marshal(timings)
+	marshalledTimings, err := jsonrs.Marshal(timings)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -582,7 +587,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 // from a particular upload.
 func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
 	var uploadErrors map[string]map[string]interface{}
-	err := json.Unmarshal(message, &uploadErrors)
+	err := jsonrs.Unmarshal(message, &uploadErrors)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
 	}
@@ -669,12 +674,12 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	metadata := repo.ExtractUploadMetadata(job.upload)
 
 	metadata.NextRetryTime = job.now().Add(job.durationBeforeNextAttempt(upload.Attempts + 1))
-	metadataJSON, err := json.Marshal(metadata)
+	metadataJSON, err := jsonrs.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
 	}
 
-	serializedErr, _ := json.Marshal(&uploadErrors)
+	serializedErr, _ := jsonrs.Marshal(&uploadErrors)
 	serializedErr, _ = misc.SanitizeJSON(serializedErr)
 
 	txn, err := job.db.BeginTx(job.ctx, &sql.TxOptions{})
@@ -941,7 +946,19 @@ func (job *UploadJob) DTO() *model.UploadJob {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema(ctx)
+	whSchema, err := job.whSchemaRepo.GetForNamespace(
+		ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		job.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {

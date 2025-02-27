@@ -3,6 +3,7 @@ package transformer
 import (
 	"reflect"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -72,7 +73,7 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 	}
 	switch reflect.TypeOf(val).Kind() {
 	case reflect.Slice, reflect.Array:
-		if jsonVal, _ := json.Marshal(val); len(jsonVal) > redshiftStringLimit {
+		if jsonVal, _ := jsonrs.Marshal(val); len(jsonVal) > redshiftStringLimit {
 			return model.TextDataType
 		}
 		return model.StringDataType

@@ -5,8 +5,9 @@ import (
 	"log"
 	"strings"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 var (
@@ -17,8 +18,6 @@ var (
 	namespacesFile embed.FS
 
 	reservedTablesColumns, reservedNamespaces map[string]map[string]struct{}
-
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 
 func init() {
@@ -33,7 +32,7 @@ func load(file embed.FS, fileName string) map[string]map[string]struct{} {
 	}
 
 	var tempKeywords map[string][]string
-	if err := json.Unmarshal(data, &tempKeywords); err != nil {
+	if err := jsonrs.Unmarshal(data, &tempKeywords); err != nil {
 		log.Fatalf("failed to parse reserved keywords from %s: %v", fileName, err)
 	}
 

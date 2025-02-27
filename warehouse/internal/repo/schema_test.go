@@ -162,4 +162,20 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.Equal(t, latestNamespace, expectedTableNames[0].Namespace)
 		require.ElementsMatch(t, []string{"table_name_1", "table_name_2"}, expectedTableNames[0].Tables)
 	})
+
+	t.Run("SetExpiryForDestination", func(t *testing.T) {
+		err := r.SetExpiryForDestination(ctx, destinationID, now)
+		require.NoError(t, err)
+
+		_, err = r.Insert(ctx, &schema)
+		require.NoError(t, err)
+
+		expiryTime := now.Add(2 * time.Hour)
+		err = r.SetExpiryForDestination(ctx, destinationID, expiryTime)
+		require.NoError(t, err)
+
+		updatedSchema, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
+		require.NoError(t, err)
+		require.Equal(t, expiryTime, updatedSchema.ExpiresAt)
+	})
 }

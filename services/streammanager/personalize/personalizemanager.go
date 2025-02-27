@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
@@ -59,7 +60,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 	switch eventChoice {
 	case "PutEvents":
 		input := personalizeevents.PutEventsInput{}
-		err = json.Unmarshal(eventPayload, &input)
+		err = jsonrs.Unmarshal(eventPayload, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
@@ -70,7 +71,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 		response, err = client.PutEvents(&input)
 	case "PutUsers":
 		input := personalizeevents.PutUsersInput{}
-		err = json.Unmarshal(eventPayload, &input)
+		err = jsonrs.Unmarshal(eventPayload, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutUsers input structure"
 		}
@@ -80,7 +81,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 		response, err = client.PutUsers(&input)
 	case "PutItems":
 		input := personalizeevents.PutItemsInput{}
-		err = json.Unmarshal(eventPayload, &input)
+		err = jsonrs.Unmarshal(eventPayload, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutItems input structure"
 		}
@@ -90,7 +91,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 		response, err = client.PutItems(&input)
 	default:
 		input := personalizeevents.PutEventsInput{}
-		err = json.Unmarshal(jsonData, &input)
+		err = jsonrs.Unmarshal(jsonData, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}

@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	kvredis "github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
@@ -306,7 +307,7 @@ func TestRedisManagerForJSONStorage(t *testing.T) {
 			require.NoError(t, err)
 			// redisAddr, destroy := testutils.StartRedis(t, tc.redisImgRepo, tc.redisImgTag)
 			// defer destroy()
-			event, err := json.Marshal(tc.transformedResponse)
+			event, err := jsonrs.Marshal(tc.transformedResponse)
 			require.NoError(t, err)
 			config := map[string]interface{}{
 				"useJSONModule": true,
@@ -371,7 +372,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -400,7 +401,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -452,7 +453,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -506,7 +507,7 @@ func TestRedisMgrForMultipleJSONsSameKey(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -575,7 +576,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -607,7 +608,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -661,7 +662,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -716,7 +717,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -770,7 +771,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -831,7 +832,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -884,7 +885,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -935,7 +936,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -987,7 +988,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -1039,7 +1040,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -1085,7 +1086,7 @@ func TestRedisMgrJSONMergeStrategy(t *testing.T) {
 			redis.WithCmdArg("--loadmodule", "/opt/redis-stack/lib/rejson.so"),
 		)
 		require.NoError(t, err)
-		event, err := json.Marshal(transformedResponse)
+		event, err := jsonrs.Marshal(transformedResponse)
 		require.NoError(t, err)
 		config := map[string]interface{}{
 			"useJSONModule": true,
@@ -1121,7 +1122,7 @@ type benchmarkRedisHandle struct {
 func (b *benchmarkRedisHandle) formPayloads() {
 	b.bytesArr = lo.Map(lo.Range(b.size), func(i, _ int) []byte {
 		iStr := strconv.Itoa(i)
-		jsonBytes, _ := json.Marshal(transformedResponseJSON{
+		jsonBytes, _ := jsonrs.Marshal(transformedResponseJSON{
 			Message: map[string]interface{}{
 				"key": "user:" + iStr,
 				"value": map[string]interface{}{

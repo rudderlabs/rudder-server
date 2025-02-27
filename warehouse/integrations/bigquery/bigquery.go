@@ -2,7 +2,6 @@ package bigquery
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -23,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -1154,7 +1154,7 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 				if identityRule.MergeProperty1Value == "" && identityRule.MergeProperty2Value == "" {
 					continue
 				}
-				bytes, err := json.Marshal(identityRule)
+				bytes, err := jsonrs.Marshal(identityRule)
 				if err != nil {
 					break
 				}

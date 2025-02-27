@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	b64 "encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -38,6 +37,7 @@ import (
 	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -258,7 +258,7 @@ func TestKafkaBatching(t *testing.T) {
 	for i := 0; i < noOfMessages; i++ {
 		// assertion for order of messages
 		var m map[string]interface{}
-		require.NoError(t, json.Unmarshal(receivedMessages[i].Value, &m))
+		require.NoError(t, jsonrs.Unmarshal(receivedMessages[i].Value, &m))
 		require.Equal(t, fmt.Sprintf("msg_%d", i), m["messageId"])
 	}
 

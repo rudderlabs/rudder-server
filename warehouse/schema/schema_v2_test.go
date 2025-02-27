@@ -58,14 +58,14 @@ func TestSchemaV2(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("SyncRemoteSchema", func(t *testing.T) {
-		schema, err := v2.GetLocalSchema(ctx)
+		schema, err := v2.getSchema(ctx)
 		require.NoError(t, err)
 		require.Equal(t, model.Schema{}, schema)
 		require.True(t, v2.IsWarehouseSchemaEmpty(ctx))
 
 		_, err = v2.SyncRemoteSchema(ctx, nil, 0)
 		require.NoError(t, err)
-		schema, err = v2.GetLocalSchema(ctx)
+		schema, err = v2.getSchema(ctx)
 		require.NoError(t, err)
 		require.Equal(t, model.Schema{
 			"table1": {

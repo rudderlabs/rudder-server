@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -243,7 +244,7 @@ func TestUploads_Get(t *testing.T) {
 			"upload": time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
 		}}
 
-		r, err := json.Marshal(expected)
+		r, err := jsonrs.Marshal(expected)
 		require.NoError(t, err)
 
 		// TODO: implement and use repo method
@@ -1767,7 +1768,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		require.NoError(t, err)
 
 		if len(error) > 0 {
-			errorJson, err := json.Marshal(error)
+			errorJson, err := jsonrs.Marshal(error)
 			require.NoError(t, err)
 
 			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET error = $1, error_category = $2 WHERE id = $3`,
@@ -1778,7 +1779,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 			require.NoError(t, err)
 		}
 		if len(timings) > 0 {
-			timingsJson, err := json.Marshal(timings)
+			timingsJson, err := jsonrs.Marshal(timings)
 			require.NoError(t, err)
 
 			_, err = db.ExecContext(ctx, `UPDATE wh_uploads SET timings = $1 WHERE id = $2`,
@@ -2566,17 +2567,17 @@ func TestUploads_Update(t *testing.T) {
 		require.Equal(t, 50, op.Priority)
 
 		var timings model.Timings
-		err = json.Unmarshal(updatedTimings, &timings)
+		err = jsonrs.Unmarshal(updatedTimings, &timings)
 		require.NoError(t, err)
 		require.Equal(t, timings, op.Timings)
 
 		var schema model.Schema
-		err = json.Unmarshal(updatedSchema, &schema)
+		err = jsonrs.Unmarshal(updatedSchema, &schema)
 		require.NoError(t, err)
 		require.Equal(t, schema, op.UploadSchema)
 
 		var metadata repo.UploadMetadata
-		err = json.Unmarshal(updatedMetadata, &metadata)
+		err = jsonrs.Unmarshal(updatedMetadata, &metadata)
 		require.NoError(t, err)
 		require.Equal(t, metadata.Retried, op.Retried)
 		require.Equal(t, metadata.Priority, op.Priority)

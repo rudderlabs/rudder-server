@@ -13,6 +13,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
@@ -45,8 +48,11 @@ func TestWarehouse(t *testing.T) {
 
 		t.Cleanup(ts.Close)
 
-		c := client.NewWarehouse(ts.URL, client.WithTimeout(10*time.Millisecond))
-		err := c.Process(context.Background(), client.StagingFile{
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		c := client.NewWarehouse(ts.URL, statsStore, client.WithTimeout(10*time.Millisecond))
+		err = c.Process(context.Background(), client.StagingFile{
 			WorkspaceID:   "279L3V7FSpx43LaNJ0nIs9KRaNC",
 			SourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
 			DestinationID: "27CHciD6leAhurSyFAeN4dp14qZ",
@@ -109,10 +115,20 @@ func TestWarehouse(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
+		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
+			"sourceId":      "279L3gEKqwruBoKGsXZtSVX7vIy",
+			"destinationID": "27CHciD6leAhurSyFAeN4dp14qZ",
+			"workspaceId":   "279L3V7FSpx43LaNJ0nIs9KRaNC",
+			"status":        "success",
+			"statusCode":    "200",
+		}).LastValue())
 	})
 
 	t.Run("failure: unexpected status code", func(t *testing.T) {
 		t.Parallel()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
@@ -120,30 +136,70 @@ func TestWarehouse(t *testing.T) {
 		}))
 		t.Cleanup(ts.Close)
 
-		c := client.NewWarehouse(ts.URL)
-		err := c.Process(context.Background(), client.StagingFile{})
+		c := client.NewWarehouse(ts.URL, statsStore)
+		err = c.Process(context.Background(), client.StagingFile{
+			SourceID:      "sourceId",
+			DestinationID: "destinationId",
+			WorkspaceID:   "workspaceId",
+		})
 
 		require.EqualError(t, err, "unexpected status code \"400 Bad Request\" on "+ts.URL+": bad request")
+		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
+			"sourceId":      "sourceId",
+			"destinationID": "destinationId",
+			"workspaceId":   "workspaceId",
+			"status":        "non_200_response",
+			"statusCode":    "400",
+		}).LastValue())
 	})
 
 	t.Run("failure: nil context", func(t *testing.T) {
 		t.Parallel()
-		c := client.NewWarehouse("")
-		err := c.Process(nil, client.StagingFile{}) //nolint:staticcheck // SA1012: using nil context to trigger failure
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		c := client.NewWarehouse("", statsStore)
+		err = c.Process(nil, client.StagingFile{ //nolint:staticcheck // SA1012: using nil context to trigger failure
+			SourceID:      "sourceId",
+			DestinationID: "destinationId",
+			WorkspaceID:   "workspaceId",
+		})
 
 		require.EqualError(t, err, "creating request: net/http: nil Context")
+		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
+			"sourceId":      "sourceId",
+			"destinationID": "destinationId",
+			"workspaceId":   "workspaceId",
+			"status":        "request_creation_failure",
+			"statusCode":    "0",
+		}).LastValue())
 	})
 
 	t.Run("failure: json marshal", func(t *testing.T) {
 		t.Parallel()
-		c := client.NewWarehouse("")
-		err := c.Process(context.Background(), client.StagingFile{
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		c := client.NewWarehouse("", statsStore)
+		err = c.Process(context.Background(), client.StagingFile{
+			SourceID:      "sourceId",
+			DestinationID: "destinationId",
+			WorkspaceID:   "workspaceId",
 			Schema: map[string]map[string]interface{}{
 				"foo": {"bar": math.Inf(1)},
 			},
-		}) //nolint:staticcheck // SA1012: using nil context to trigger failure
+		})
 
 		require.ErrorContains(t, err, "unsupported value: +Inf")
+		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
+			"sourceId":      "sourceId",
+			"destinationID": "destinationId",
+			"workspaceId":   "workspaceId",
+			"status":        "marshal_failure",
+			"statusCode":    "0",
+		}).LastValue())
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -158,9 +214,23 @@ func TestWarehouse(t *testing.T) {
 			close(block)
 		})
 
-		c := client.NewWarehouse(ts.URL, client.WithTimeout(10*time.Millisecond))
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
-		err := c.Process(context.Background(), client.StagingFile{})
+		c := client.NewWarehouse(ts.URL, statsStore, client.WithTimeout(10*time.Millisecond))
+
+		err = c.Process(context.Background(), client.StagingFile{
+			SourceID:      "sourceId",
+			DestinationID: "destinationId",
+			WorkspaceID:   "workspaceId",
+		})
 		require.EqualError(t, err, fmt.Sprintf("http request to \"%[1]s\": Post \"%[1]s/v1/process\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)", ts.URL))
+		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
+			"sourceId":      "sourceId",
+			"destinationID": "destinationId",
+			"workspaceId":   "workspaceId",
+			"status":        "http_request_failure",
+			"statusCode":    "0",
+		}).LastValue())
 	})
 }

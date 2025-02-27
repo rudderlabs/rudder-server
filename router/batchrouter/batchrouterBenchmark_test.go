@@ -2,7 +2,6 @@ package batchrouter
 
 import (
 	"context"
-	jsonstd "encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
@@ -55,7 +55,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 				ReceivedAt: "2021-01-01T00:00:00Z",
 			}
 
-			p, _ := json.Marshal(params)
+			p, _ := jsonrs.Marshal(params)
 			jobs = append(jobs, &jobsdb.JobT{
 				UUID:       uuid.New(),
 				JobID:      int64(i),
@@ -71,9 +71,9 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 				MessageID: uuid.New().String(),
 			}
 
-			p, _ := json.Marshal(params)
+			p, _ := jsonrs.Marshal(params)
 			for i := range jobs {
-				err := jsonstd.Unmarshal(p, &jobs[i].Parameters)
+				err := jsonrs.Unmarshal(p, &jobs[i].Parameters)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -86,7 +86,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 		g.Go(func() error {
 			for i := range jobs {
 				var params routerutils.JobParameters
-				_ = json.Unmarshal(jobs[i].Parameters, &params)
+				_ = jsonrs.Unmarshal(jobs[i].Parameters, &params)
 			}
 
 			return nil

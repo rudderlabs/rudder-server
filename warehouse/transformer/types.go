@@ -7,8 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 type (
@@ -63,7 +62,7 @@ type (
 	}
 
 	transformEventContext struct {
-		event         *ptrans.TransformerEvent
+		event         *types.TransformerEvent
 		intrOpts      *intrOptions
 		destOpts      *destOptions
 		jsonPathsInfo *jsonPathInfo

@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 )
 
@@ -67,7 +68,7 @@ func (st *transformer) Stop() {
 // Transform transforms the job into a schema message and returns the schema message along with write key
 func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
 	var eventPayload map[string]interface{}
-	if err := json.Unmarshal(job.EventPayload, &eventPayload); err != nil {
+	if err := jsonrs.Unmarshal(job.EventPayload, &eventPayload); err != nil {
 		return nil, err
 	}
 	writeKey := st.getWriteKeyFromParams(job.Parameters)

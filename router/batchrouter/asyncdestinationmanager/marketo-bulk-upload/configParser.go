@@ -1,16 +1,14 @@
 package marketobulkupload
 
 import (
-	jsoniter "github.com/json-iterator/go"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func (m *MarketoConfig) UnmarshalJSON(data []byte) error {
 	var intermediate intermediateMarketoConfig
 
 	// use fastjson to parse the JSON
-	if err := jsonfast.Unmarshal(data, &intermediate); err != nil {
+	if err := jsonrs.Unmarshal(data, &intermediate); err != nil {
 		return err
 	}
 

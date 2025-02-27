@@ -17,6 +17,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -494,7 +496,7 @@ func TestPostToWarehouse(t *testing.T) {
 			job := Handle{
 				netHandle:       ts.Client(),
 				logger:          logger.NOP,
-				warehouseClient: client.NewWarehouse(ts.URL),
+				warehouseClient: client.NewWarehouse(ts.URL, stats.NOP),
 			}
 			batchJobs := BatchedJobs{
 				Jobs: []*jobsdb.JobT{

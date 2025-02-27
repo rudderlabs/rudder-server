@@ -2,13 +2,13 @@ package schemarepository
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -57,7 +57,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), credentialsEnv)
 	}
 
-	err = json.Unmarshal([]byte(credentialsStr), &credentials)
+	err = jsonrs.Unmarshal([]byte(credentialsStr), &credentials)
 	require.NoError(t, err)
 
 	testCases := []struct {

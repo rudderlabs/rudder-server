@@ -3,7 +3,6 @@ package forwarder
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
@@ -22,6 +21,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -103,7 +103,7 @@ func (jf *JobsForwarder) Start() error {
 				schemaBatcher := batcher.NewEventSchemaMessageBatcher(jf.transformer)
 				for _, job := range jobs {
 					if err := schemaBatcher.Add(job); err != nil { // mark job as aborted
-						errorResponse, _ := json.Marshal(map[string]string{"transform_error": err.Error()})
+						errorResponse, _ := jsonrs.Marshal(map[string]string{"transform_error": err.Error()})
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
 							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -183,7 +183,7 @@ func (jf *JobsForwarder) Start() error {
 				expB.MaxInterval = jf.maxRetryInterval.Load()
 				expB.MaxElapsedTime = jf.maxRetryElapsedTime.Load()
 				if err = backoff.Retry(tryForward, backoff.WithContext(expB, ctx)); err != nil {
-					errorResponse, _ := json.Marshal(map[string]string{"error": err.Error()})
+					errorResponse, _ := jsonrs.Marshal(map[string]string{"error": err.Error()})
 					var abortedCount int
 					for _, schemaBatch := range messageBatches { // mark all messageBatches left over as aborted
 						for _, job := range schemaBatch.Jobs {

@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +23,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -409,7 +409,7 @@ func TestHTTPApi(t *testing.T) {
 				a.healthHandler(resp, req)
 
 				var healthBody map[string]string
-				err = json.NewDecoder(resp.Body).Decode(&healthBody)
+				err = jsonrs.NewDecoder(resp.Body).Decode(&healthBody)
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, resp.Code)
 
@@ -500,7 +500,7 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			var pendingEventsResponse pendingEventsResponse
-			err := json.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
+			err := jsonrs.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
 			require.NoError(t, err)
 
 			require.EqualValues(t, pendingEventsResponse.PendingEvents, true)
@@ -526,7 +526,7 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			var pendingEventsResponse pendingEventsResponse
-			err := json.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
+			err := jsonrs.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
 			require.NoError(t, err)
 
 			defer func() {
@@ -556,7 +556,7 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			var pendingEventsResponse pendingEventsResponse
-			err := json.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
+			err := jsonrs.NewDecoder(resp.Body).Decode(&pendingEventsResponse)
 			require.NoError(t, err)
 			require.EqualValues(t, pendingEventsResponse.PendingEvents, false)
 			require.EqualValues(t, pendingEventsResponse.PendingUploadCount, 0)
@@ -617,7 +617,7 @@ func TestHTTPApi(t *testing.T) {
 			require.Equal(t, http.StatusOK, resp.Code)
 
 			var ftr fetchTablesResponse
-			err = json.NewDecoder(resp.Body).Decode(&ftr)
+			err = jsonrs.NewDecoder(resp.Body).Decode(&ftr)
 			require.NoError(t, err)
 			require.EqualValues(t, ftr.ConnectionsTables, []warehouseutils.FetchTableInfo{
 				{

@@ -27,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
@@ -68,7 +69,7 @@ func (brt *Handle) Setup(
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
-		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), client.WithTimeout(
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
 			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
 		))
 	}
@@ -271,7 +272,9 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &asynccommon.InvalidManager{}
+		manager = &asynccommon.InvalidManager{
+			Error: fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+		}
 	}
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}
@@ -297,7 +300,7 @@ func (brt *Handle) crashRecover() {
 		entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 		for _, entry := range entries {
 			var object ObjectStorageDefinition
-			if err := json.Unmarshal(entry.OpPayload, &object); err != nil {
+			if err := jsonrs.Unmarshal(entry.OpPayload, &object); err != nil {
 				panic(err)
 			}
 			if len(object.Config) == 0 {

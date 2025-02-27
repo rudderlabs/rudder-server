@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -71,6 +72,7 @@ type GRPC struct {
 	bcManager          *bcm.BackendConfigManager
 	tableUploadsRepo   *repo.TableUploads
 	stagingRepo        *repo.StagingFiles
+	schemaRepo         *repo.WHSchema
 	uploadRepo         *repo.Uploads
 	triggerStore       *sync.Map
 	fileManagerFactory filemanager.Factory
@@ -108,6 +110,7 @@ func NewGRPCServer(
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db),
+		schemaRepo:         repo.NewWHSchemas(db),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
@@ -613,7 +616,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 		}
 	)
 
-	err = json.Unmarshal(json.RawMessage(req.Body), &reqModel)
+	err = jsonrs.Unmarshal(json.RawMessage(req.Body), &reqModel)
 	if err != nil {
 		return &proto.WHValidationResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "invalid JSON in request body")
@@ -691,14 +694,14 @@ func (err invalidDestinationCredErr) Error() string {
 func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
 
-	byt, err := json.Marshal(request)
+	byt, err := jsonrs.Marshal(request)
 	if err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to marshal the request proto message with error: \n%s", err.Error())
 	}
 
 	var validateRequest validateObjectStorageRequest
-	if err := json.Unmarshal(byt, &validateRequest); err != nil {
+	if err := jsonrs.Unmarshal(byt, &validateRequest); err != nil {
 		return &proto.ValidateObjectStorageResponse{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "unable to extract data into validation request with error: \n%s", err)
 	}
@@ -986,6 +989,24 @@ func (g *GRPC) RetryFailedBatches(
 		RetriedSyncsCount: retriedCount,
 	}
 	return resp, nil
+}
+
+func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*emptypb.Empty, error) {
+	log := g.logger.With(
+		lf.DestinationID, req.GetDestinationId(),
+	)
+	log.Infow("Syncing warehouse schema")
+	if req.DestinationId == "" {
+		return &emptypb.Empty{},
+			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
+	}
+	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, g.now())
+	if err != nil {
+		log.Errorw("unable to set expiry for destination", obskit.Error(err))
+		return &emptypb.Empty{},
+			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
