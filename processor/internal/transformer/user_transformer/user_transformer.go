@@ -305,7 +305,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
 
+			start := time.Now()
 			resp, reqErr = u.client.Do(req)
+			u.log.Infon("Actual duration", logger.NewDurationField("duration", time.Since(start)))
 			defer func() { httputil.CloseResponse(resp) }()
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
