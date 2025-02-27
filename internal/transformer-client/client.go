@@ -4,7 +4,7 @@ package transformerclient
 
 import (
 	"context"
-	"fmt"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"time"
@@ -39,6 +39,23 @@ type Client interface {
 }
 
 func NewClient(config *ClientConfig) Client {
+	if config != nil && config.ClientType == "http2" {
+		client := &http.Client{
+			Transport: &http2.Transport{
+				IdleConnTimeout: 30 * time.Second,
+				AllowHTTP:       true,
+				DialTLSContext: func(_ context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+					return net.Dial(network, addr)
+				},
+			},
+			Timeout: 600 * time.Second,
+		}
+		if config.TransportConfig.IdleConnTimeout > 0 {
+			client.Transport.(*http2.Transport).IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+		}
+		return client
+	}
+
 	transport := &http.Transport{
 		DisableKeepAlives:   true,
 		MaxConnsPerHost:     100,
@@ -55,11 +72,6 @@ func NewClient(config *ClientConfig) Client {
 		}
 		if config.TransportConfig.IdleConnTimeout != 0 {
 			transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
-		}
-		if config.ClientType == "http2" {
-			if err := http2.ConfigureTransport(transport); err != nil {
-				panic(fmt.Errorf("failed to configure http2 transport: %w", err))
-			}
 		}
 	}
 	client := &http.Client{
@@ -80,7 +92,7 @@ func NewClient(config *ClientConfig) Client {
 	}
 
 	switch config.ClientType {
-	case "stdlib", "http2":
+	case "stdlib":
 		return client
 	case "recycled":
 		return sysUtils.NewRecycledHTTPClient(func() *http.Client {
