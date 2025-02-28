@@ -185,6 +185,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
+	u.log.Infon("Sending batch from user transformer")
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	// Call remote transformation
 	var (
