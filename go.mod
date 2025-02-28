@@ -122,6 +122,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.0.0 // indirect
 	github.com/apache/arrow/go/v16 v16.0.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.1.0 // indirect
+	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -282,7 +283,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
-	github.com/pierrec/lz4/v4 v4.1.21 // indirect
+	github.com/pierrec/lz4/v4 v4.1.21
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.7 // indirect
@@ -306,7 +307,7 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/throttled/throttled/v2 v2.13.0 // indirect
+	github.com/throttled/throttled/v2 v2.13.0
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect

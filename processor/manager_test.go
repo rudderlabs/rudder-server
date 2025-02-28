@@ -90,7 +90,7 @@ func TestProcessorManager(t *testing.T) {
 	require.NoError(t, err)
 
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
-	tempDB := jobsdb.NewForWrite(
+	tempDB := jobsdb.NewForReadWrite(
 		"gw",
 		jobsdb.WithConfig(c),
 		jobsdb.WithStats(statStore),
