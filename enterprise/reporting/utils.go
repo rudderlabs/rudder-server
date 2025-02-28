@@ -1,7 +1,6 @@
 package reporting
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
@@ -46,28 +45,15 @@ func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	return bucketStart, bucketEnd
 }
 
-func sanitizeStringForReports(input string) string {
-	// Remove null characters
-	return strings.ReplaceAll(input, "\u0000", "")
-}
-
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
 	if !eventSamplingEnabled || eventSampler == nil {
-		// Sanitize both sample event and response before returning
-		if sampleEvent != nil {
-			sampleEvent, err = misc.SanitizeJSON(sampleEvent)
-			if err != nil {
-				return []byte(`{}`), "", err
-			}
-		}
-		sampleResponse = sanitizeStringForReports(sampleResponse)
 		return sampleEvent, sampleResponse, nil
 	}
 
-	isValidSample := (sampleEvent != nil && string(sampleEvent) != "{}") || sampleResponse != ""
+	isValidSample := (sampleEvent != misc.EmptyPayloadString || sampleResponse != "")
 
 	if isValidSample {
 		sampleEventBucket, _ := getAggregationBucketMinute(reportedAt, eventSamplingDuration)
@@ -80,21 +66,10 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		}
 
 		if found {
-			sampleEvent = json.RawMessage(`{}`)
+			sampleEvent = misc.EmptyPayloadString
 			sampleResponse = ""
 		} else {
 			err = eventSampler.Put(hash)
-			if err != nil {
-				return sampleEvent, sampleResponse, err
-			}
-			// Sanitize both sample event and response before returning
-			if sampleEvent != nil {
-				sampleEvent, err = misc.SanitizeJSON(sampleEvent)
-				if err != nil {
-					return []byte(`{}`), "", err
-				}
-			}
-			sampleResponse = sanitizeStringForReports(sampleResponse)
 		}
 	}
 
@@ -105,7 +80,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	for _, col := range piiColumns {
 		switch col {
 		case "sample_event":
-			metric.StatusDetail.SampleEvent = []byte(`{}`)
+			metric.StatusDetail.SampleEvent = misc.EmptyPayloadString
 		case "sample_response":
 			metric.StatusDetail.SampleResponse = ""
 		case "event_name":
