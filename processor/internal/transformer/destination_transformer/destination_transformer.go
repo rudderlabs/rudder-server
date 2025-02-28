@@ -78,7 +78,7 @@ type Client struct {
 	client           transformerclient.Client
 }
 
-func (d *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 	batchSize := d.config.batchSize.Load()
 	if len(clientEvents) == 0 {
 		return types.Response{}
