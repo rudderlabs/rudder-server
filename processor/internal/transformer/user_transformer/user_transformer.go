@@ -44,7 +44,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
+	tcConf := transformerutils.TransformerClientConfig(conf, "UserTransformer")
+	handle.log.Infon("User transformer client", logger.NewStringField("type", tcConf.ClientType))
+	handle.client = transformerclient.NewClient(tcConf)
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
