@@ -289,6 +289,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	// MaxInterval caps the RetryInterval
 	retryStrategy.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
+	reqActualDuration := u.stat.NewStat("processor.transformer_actual_request_seconds", stats.HistogramType)
+
 	err := backoff.RetryNotify(
 		func() error {
 			var reqErr error
@@ -307,7 +309,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 			start := time.Now()
 			resp, reqErr = u.client.Do(req)
-			u.log.Infon("Actual duration", logger.NewDurationField("duration", time.Since(start)))
+			reqActualDuration.SendTiming(time.Since(start))
 			defer func() { httputil.CloseResponse(resp) }()
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
