@@ -185,7 +185,6 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
-	u.log.Infon("Sending batch from user transformer")
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	// Call remote transformation
 	var (
@@ -290,7 +289,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	// MaxInterval caps the RetryInterval
 	retryStrategy.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
-	reqActualDuration := u.stat.NewStat("processor.transformer_actual_request_seconds", stats.HistogramType)
+	reqActualDuration := u.stat.NewStat("processor.transformer_actual_request_seconds", stats.TimerType)
 
 	err := backoff.RetryNotify(
 		func() error {
