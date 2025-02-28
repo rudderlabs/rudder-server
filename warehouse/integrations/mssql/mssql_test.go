@@ -204,13 +204,9 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+				db := pingMSSQL(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
 					user, password, host, mssqlPort, database,
-				)
-				db, err := sql.Open("sqlserver", dsn)
-				require.NoError(t, err)
-				require.NoError(t, db.Ping())
-				t.Cleanup(func() { _ = db.Close() })
+				))
 
 				sqlClient := &client.Client{
 					SQL:  db,
@@ -288,6 +284,10 @@ func TestIntegration(t *testing.T) {
 
 		mssqlPort := c.Port("mssql", 1433)
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+
+		_ = pingMSSQL(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+			user, password, host, mssqlPort, database,
+		))
 
 		namespace := whth.RandSchema(destType)
 
@@ -404,13 +404,9 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+		db := pingMSSQL(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
 			user, password, host, mssqlPort, database,
-		)
-		db, err := sql.Open("sqlserver", dsn)
-		require.NoError(t, err)
-		require.NoError(t, db.Ping())
-		t.Cleanup(func() { _ = db.Close() })
+		))
 
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
@@ -782,4 +778,25 @@ func newMockUploader(
 	mockUploader.EXPECT().GetTableSchemaInWarehouse(tableName).Return(schemaInWarehouse).AnyTimes()
 
 	return mockUploader
+}
+
+func pingMSSQL(t testing.TB, ctx context.Context, dsn string) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlserver", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Eventually(t, func() bool {
+		if err := db.PingContext(ctx); err != nil {
+			t.Log("Ping failed:", err)
+			return false
+		}
+		return true
+	}, time.Minute, time.Second)
+
+	return db
 }
