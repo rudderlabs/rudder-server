@@ -135,6 +135,7 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
+		numPartitions                   int
 		pingerSleep                     config.ValueLoader[time.Duration]
 		readLoopSleep                   config.ValueLoader[time.Duration]
 		maxLoopSleep                    config.ValueLoader[time.Duration]
@@ -199,6 +200,7 @@ type processorStats struct {
 	destProcessing                func(partition string) stats.Measurement
 	pipeProcessing                func(partition string) stats.Measurement
 	statNumRequests               func(partition string) stats.Measurement
+	statNumRequestsPartitioned    func(partition string, partiton_index int) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
 	statDBReadRequests            func(partition string) stats.Measurement
 	statDBReadEvents              func(partition string) stats.Measurement
@@ -525,6 +527,14 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+
+	proc.stats.statNumRequestsPartitioned = func(partition string, partitionIndex int) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_num_requests_partitioned", stats.CountType, stats.Tags{
+			"partition":       partition,
+			"partition_index": strconv.Itoa(partitionIndex),
+		})
+	}
+
 	proc.stats.statNumEvents = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_events", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -805,6 +815,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
 	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.numPartitions = config.GetIntVar(3, 1, "Processor.numPartitions")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
@@ -2697,10 +2708,10 @@ type transformSrcDestOutput struct {
 func (proc *Handle) transformSrcDest(
 	ctx context.Context,
 	partition string,
-	// main inputs
+// main inputs
 	srcAndDestKey string, eventList []types.TransformerEvent,
 
-	// helpers
+// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
@@ -2964,12 +2975,13 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			if !proc.config.enableTransformationV2 {
+			if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; ok && proc.config.enableWarehouseTransformations.Load() {
+				response = proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+			} else if !proc.config.enableTransformationV2 {
 				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
 			} else {
 				response = proc.transformerClients.Destination().Transform(ctx, eventsToTransform)
 			}
-			proc.handleWarehouseTransformations(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3128,27 +3140,6 @@ func (proc *Handle) transformSrcDest(
 		routerDestIDs:   routerDestIDs,
 		droppedJobs:     droppedJobs,
 	}
-}
-
-func (proc *Handle) handleWarehouseTransformations(
-	ctx context.Context,
-	eventsToTransform []types.TransformerEvent,
-	pResponse types.Response,
-	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-) {
-	if len(eventsToTransform) == 0 {
-		return
-	}
-	if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
-		return
-	}
-	if !proc.config.enableWarehouseTransformations.Load() {
-		return
-	}
-
-	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
-	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse, commonMetaData, eventsByMessageID)
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
