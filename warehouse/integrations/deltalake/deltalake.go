@@ -337,18 +337,30 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, error) {
 	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
 	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
+	log := d.logger.With(
+		logfield.SourceID, d.Warehouse.Source.ID,
+		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, d.Warehouse.Destination.ID,
+		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+		logfield.Namespace, d.Namespace,
+	)
+	log.Debugn("Creating schema before fetching")
 	if err := d.CreateSchema(ctx); err != nil {
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
+	log.Debugn("Fetching tables")
 	schema := make(model.Schema)
 	tableNames, err := d.fetchTables(ctx, nonRudderStagingTableRegex)
 	if err != nil {
 		return model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
+	log.Debugn("Fetched tables", logger.NewIntField("tableCount", int64(len(tableNames))))
 
 	// For each table, fetch the attributes
 	for _, tableName := range tableNames {
+		log.Debugn("Fetching schema for table", logger.NewStringField("tableName", tableName))
 		tableSchema, err := d.fetchTableAttributes(ctx, tableName)
 		if err != nil {
 			return model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)

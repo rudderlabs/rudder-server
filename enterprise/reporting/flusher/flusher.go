@@ -417,9 +417,5 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 }
 
 func (f *Flusher) isHTTPRequestSuccessful(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
+	return status >= 200 && status < 300
 }
