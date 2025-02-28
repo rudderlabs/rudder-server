@@ -36,9 +36,10 @@ import (
 )
 
 const (
-	stringLengthLimit = 512
-	provider          = warehouseutils.AzureSynapse
-	tableNameLimit    = 127
+	varcharDefaultLength = 512
+	varcharMaxLength     = -1
+	provider             = warehouseutils.AzureSynapse
+	tableNameLimit       = 127
 )
 
 var errorsMappings []model.JobError
@@ -76,6 +77,10 @@ var azureSynapseDataTypesMapToRudder = map[string]string{
 	"jsonb":                    "json",
 	"bit":                      "boolean",
 }
+
+var stringColumns = lo.Keys(lo.PickBy(azureSynapseDataTypesMapToRudder, func(_, value string) bool {
+	return value == "string"
+}))
 
 type AzureSynapse struct {
 	db                 *sqlmw.DB
@@ -295,12 +300,18 @@ func (as *AzureSynapse) loadTable(
 		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
 	}
 
+	varcharLength, err := as.getVarcharLengths(ctx, tableName)
+	if err != nil {
+		return nil, "", fmt.Errorf("getting varchar column lengths: %w", err)
+	}
+
 	log.Infow("loading data into staging table")
 	for _, fileName := range fileNames {
 		err = as.loadDataIntoStagingTable(
 			ctx, log, stmt,
 			fileName, sortedColumnKeys,
 			extraColumns, tableSchemaInUpload,
+			varcharLength,
 		)
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", fileName, err)
@@ -341,6 +352,45 @@ func (as *AzureSynapse) loadTable(
 	}, stagingTableName, nil
 }
 
+func (as *AzureSynapse) getVarcharLengths(ctx context.Context, tableName string) (map[string]int, error) {
+	dataTypes := "'" + strings.Join(stringColumns, "', '") + "'"
+	query := fmt.Sprintf(`
+		SELECT column_name, CHARACTER_MAXIMUM_LENGTH
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = @schema
+		  AND TABLE_NAME = @tableName
+		  AND DATA_TYPE IN (%s);
+`,
+		dataTypes,
+	)
+
+	columnsMap := make(map[string]int)
+	rows, err := as.db.QueryContext(ctx, query,
+		sql.Named("schema", as.namespace),
+		sql.Named("tableName", tableName),
+	)
+	if errors.Is(err, io.EOF) {
+		return columnsMap, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying varchar columns length: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var columnName string
+		var maxLength int
+		if err := rows.Scan(&columnName, &maxLength); err != nil {
+			return nil, err
+		}
+		columnsMap[columnName] = maxLength
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating varchar columns length: %w", err)
+	}
+	return columnsMap, nil
+}
+
 func (as *AzureSynapse) loadDataIntoStagingTable(
 	ctx context.Context,
 	log logger.Logger,
@@ -349,6 +399,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	sortedColumnKeys []string,
 	extraColumns []string,
 	tableSchemaInUpload model.TableSchema,
+	varcharLengths map[string]int,
 ) error {
 	gzipFile, err := os.Open(fileName)
 	if err != nil {
@@ -405,9 +456,10 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 				continue
 			}
 
-			processedVal, err := as.ProcessColumnValue(
+			processedVal, err := ProcessColumnValue(
 				value.(string),
 				valueType,
+				varcharLengths[sortedColumnKeys[index]],
 			)
 			if err != nil {
 				log.Warnw("mismatch in datatype",
@@ -445,9 +497,10 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *AzureSynapse) ProcessColumnValue(
+func ProcessColumnValue(
 	value string,
 	valueType string,
+	varcharLength int,
 ) (interface{}, error) {
 	switch valueType {
 	case model.IntDataType:
@@ -459,15 +512,19 @@ func (as *AzureSynapse) ProcessColumnValue(
 	case model.BooleanDataType:
 		return strconv.ParseBool(value)
 	case model.StringDataType:
-		if len(value) > stringLengthLimit {
-			value = value[:stringLengthLimit]
+		if varcharLength == varcharMaxLength {
+			return value, nil
+		}
+		maxStringLength := max(varcharLength, varcharDefaultLength)
+		if len(value) > maxStringLength {
+			value = value[:maxStringLength]
 		}
 		if !hasDiacritics(value) {
 			return value, nil
 		} else {
 			byteArr := str2ucs2(value)
-			if len(byteArr) > stringLengthLimit {
-				byteArr = byteArr[:stringLengthLimit]
+			if len(byteArr) > maxStringLength {
+				byteArr = byteArr[:maxStringLength]
 			}
 			return byteArr, nil
 		}

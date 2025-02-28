@@ -671,14 +671,160 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+		t.Run("varchar max length", func(t *testing.T) {
+			tableName := "varchar_max_length_test_table"
+			smallString, bigString, biggerString := strings.Repeat("a", 512), strings.Repeat("a", 8000), strings.Repeat("a", 65535)
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "testdata/load.maxvarchar.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, ms.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, ms.CreateSchema(ctx))
+			require.NoError(t, ms.CreateTable(ctx, tableName, schemaInWarehouse))
+
+			loadTableStat, err := ms.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", smallString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", smallString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", smallString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", smallString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+
+			t.Log("Test varchar for big string (8000)")
+			_, err = db.ExecContext(ctx, "ALTER TABLE "+namespace+"."+tableName+" ALTER COLUMN test_string VARCHAR(8000);")
+			require.NoError(t, err)
+
+			loadTableStat, err = ms.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(0))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+			records = whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", bigString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", bigString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", bigString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", bigString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+
+			t.Log("Test varchar for bigger string (65535)")
+			_, err = db.ExecContext(ctx, "ALTER TABLE "+namespace+"."+tableName+" ALTER COLUMN test_string VARCHAR(MAX);")
+			require.NoError(t, err)
+
+			loadTableStat, err = ms.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(0))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+			records = whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", biggerString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", biggerString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", biggerString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", biggerString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+		})
 	})
 }
 
-func TestMSSQL_ProcessColumnValue(t *testing.T) {
+func TestProcessColumnValue(t *testing.T) {
 	testCases := []struct {
 		name          string
 		data          string
 		dataType      string
+		varcharLength int
 		expectedValue interface{}
 		wantError     bool
 	}{
@@ -737,10 +883,17 @@ func TestMSSQL_ProcessColumnValue(t *testing.T) {
 			expectedValue: "test",
 		},
 		{
-			name:          "valid string exceeding max length",
+			name:          "valid string exceeding max length when varcharMaxlength is not set",
 			data:          strings.Repeat("test", 200),
 			dataType:      model.StringDataType,
 			expectedValue: strings.Repeat("test", 128),
+		},
+		{
+			name:          "valid string exceeding max length when varcharMaxlength is set",
+			data:          strings.Repeat("test", 200),
+			dataType:      model.StringDataType,
+			varcharLength: 1024,
+			expectedValue: strings.Repeat("test", 200),
 		},
 		{
 			name:          "valid string with diacritics",
@@ -752,9 +905,7 @@ func TestMSSQL_ProcessColumnValue(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ms := mssql.New(config.New(), logger.NOP, stats.NOP)
-
-			value, err := ms.ProcessColumnValue(tc.data, tc.dataType)
+			value, err := mssql.ProcessColumnValue(tc.data, tc.dataType, tc.varcharLength)
 			if tc.wantError {
 				require.Error(t, err)
 				return
