@@ -44,7 +44,7 @@ func createStagingFile(t testing.TB, testConfig *TestConfig) {
 	payload := prepareStagingPayload(t, testConfig, stagingFile, uploadOutput)
 
 	url := fmt.Sprintf("http://localhost:%d", testConfig.HTTPPort)
-	err := warehouseclient.NewWarehouse(url).Process(context.Background(), payload)
+	err := warehouseclient.NewWarehouse(url, stats.NOP).Process(context.Background(), payload)
 	require.NoError(t, err)
 }
 

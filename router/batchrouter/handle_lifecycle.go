@@ -69,7 +69,7 @@ func (brt *Handle) Setup(
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
-		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), client.WithTimeout(
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
 			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
 		))
 	}
