@@ -343,10 +343,47 @@ func getErrorCodeFromStatTags(statTags map[string]string) string {
 func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
 	var score int
 
+	// Convert to lowercase for case-insensitive matching
 	errorMessage = strings.ToLower(errorMessage)
+
+	// 1. Check for direct keyword matches (existing approach)
 	for keyword, s := range lowercasedDeprecationKeywords {
 		if strings.Contains(errorMessage, keyword) {
 			score += s
+		}
+	}
+
+	// 2. Check for version-related patterns with negative context
+	if score <= ext.versionDeprecationThresholdScore.Load() {
+		// Version indicators
+		versionPatterns := []string{"version", "api", "endpoint"}
+
+		// status indicators
+		statusPatterns := []string{
+			"not.*active", "inactive", "no longer.*active",
+			"not.*supported", "unsupported", "no longer.*supported",
+			"not.*valid", "invalid", "no longer.*valid",
+			"not.*available", "unavailable", "no longer.*available",
+			"disabled", "expired", "removed", "discontinued",
+			"deprecated", "obsolete",
+		}
+
+		// Check for version + status combinations
+		for _, vPattern := range versionPatterns {
+			for _, sPattern := range statusPatterns {
+				// Check both orders (version then status, status then version)
+				pattern1 := fmt.Sprintf("%s.*%s", vPattern, sPattern)
+				pattern2 := fmt.Sprintf("%s.*%s", sPattern, vPattern)
+
+				if matched, _ := regexp.MatchString(pattern1, errorMessage); matched {
+					score += 3
+					break
+				}
+				if matched, _ := regexp.MatchString(pattern2, errorMessage); matched {
+					score += 3
+					break
+				}
+			}
 		}
 	}
 

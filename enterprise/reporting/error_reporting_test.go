@@ -299,6 +299,14 @@ func TestExtractErrorDetails(t *testing.T) {
 				errorCode: "dataValidation:configuration",
 			},
 		},
+		{
+			caseDescription: "should use complex patterns to match version deprecation",
+			inputErrMsg:     "version v1 not active",
+			output: depTcOutput{
+				errorMsg:  "version not active",
+				errorCode: "deprecation",
+			},
+		},
 	}
 
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
