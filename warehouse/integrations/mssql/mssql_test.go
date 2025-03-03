@@ -787,7 +787,7 @@ func pingMSSQL(t testing.TB, ctx context.Context, dsn string) *sql.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	require.Eventually(t, func() bool {
