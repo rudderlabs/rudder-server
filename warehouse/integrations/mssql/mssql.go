@@ -336,9 +336,9 @@ func (ms *MSSQL) loadTable(
 		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
 	}
 
-	varcharLength, err := ms.getVarcharLengths(ctx, tableName)
+	varcharLengthMap, err := ms.getVarcharLengthMap(ctx, tableName)
 	if err != nil {
-		return nil, "", fmt.Errorf("getting varchar column lengths: %w", err)
+		return nil, "", fmt.Errorf("getting varchar column length map: %w", err)
 	}
 
 	log.Infow("loading data into staging table")
@@ -347,7 +347,7 @@ func (ms *MSSQL) loadTable(
 			ctx, log, stmt,
 			fileName, sortedColumnKeys,
 			tableSchemaInUpload,
-			varcharLength,
+			varcharLengthMap,
 		)
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
@@ -388,7 +388,9 @@ func (ms *MSSQL) loadTable(
 	}, stagingTableName, nil
 }
 
-func (ms *MSSQL) getVarcharLengths(ctx context.Context, tableName string) (map[string]int, error) {
+// getVarcharLengthMap retrieves the maximum allowed length for varchar columns in a given table.
+// A `CHARACTER_MAXIMUM_LENGTH` of `-1` indicates that the column has the maximum possible length (i.e., `varchar(max)`).
+func (ms *MSSQL) getVarcharLengthMap(ctx context.Context, tableName string) (map[string]int, error) {
 	dataTypes := "'" + strings.Join(stringColumns, "', '") + "'"
 	query := fmt.Sprintf(`
 		SELECT column_name, CHARACTER_MAXIMUM_LENGTH
@@ -434,7 +436,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	fileName string,
 	sortedColumnKeys []string,
 	tableSchemaInUpload model.TableSchema,
-	varcharLengths map[string]int,
+	varcharLengthMap map[string]int,
 ) error {
 	gzipFile, err := os.Open(fileName)
 	if err != nil {
@@ -495,7 +497,7 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 			processedVal, err := ProcessColumnValue(
 				value.(string),
 				valueType,
-				varcharLengths[sortedColumnKeys[index]],
+				varcharLengthMap[sortedColumnKeys[index]],
 			)
 			if err != nil {
 				log.Warnw("mismatch in datatype",
@@ -517,6 +519,9 @@ func (ms *MSSQL) loadDataIntoStagingTable(
 	return nil
 }
 
+// ProcessColumnValue processes the input string `value` based on its specified `valueType`.
+// It converts the value to the appropriate type and ensures it adheres to the constraints
+// such as `varcharLength` for string types.
 func ProcessColumnValue(
 	value string,
 	valueType string,
@@ -532,9 +537,11 @@ func ProcessColumnValue(
 	case model.BooleanDataType:
 		return strconv.ParseBool(value)
 	case model.StringDataType:
+		// If the varchar length is set to the maximum allowed, return the string as is.
 		if varcharLength == varcharMaxLength {
 			return value, nil
 		}
+
 		maxStringLength := max(varcharLength, varcharDefaultLength)
 		if len(value) > maxStringLength {
 			value = value[:maxStringLength]

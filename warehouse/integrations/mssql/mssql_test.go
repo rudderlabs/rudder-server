@@ -408,10 +408,6 @@ func TestIntegration(t *testing.T) {
 			user, password, host, mssqlPort, database,
 		))
 
-		db := pingMSSQL(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-			user, password, host, mssqlPort, database,
-		))
-
 		t.Run("schema does not exists", func(t *testing.T) {
 			tableName := "schema_not_exists_test_table"
 
