@@ -163,6 +163,11 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
+
+	// Track active workers to prevent overlapping processing
+	activeWorkers := make(map[string]bool)
+	var activeWorkersMu sync.Mutex
+
 	mainLoopSleep := time.Duration(0)
 	for {
 		select {
@@ -173,13 +178,21 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 			anyPartitionNeedsProcessing := false
 
 			for _, partition := range brt.activePartitions(ctx) {
+				// Skip if this partition is already being processed
+				activeWorkersMu.Lock()
+				if activeWorkers[partition] {
+					activeWorkersMu.Unlock()
+					continue
+				}
+				activeWorkersMu.Unlock()
+
 				shouldProcess := false
 
 				// Check if this partition hit limits in its last execution
 				brt.limitsReachedMu.RLock()
 				limitsReached := brt.limitsReached[partition]
 				brt.limitsReachedMu.RUnlock()
-				brt.logger.Infof("BRT: Partition %s limits reached: %v", partition, limitsReached)
+
 				if limitsReached {
 					shouldProcess = true
 				} else {
@@ -187,21 +200,38 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 					brt.nextProcessAtMu.RLock()
 					nextProcessTime, exists := brt.nextProcessAt[partition]
 					brt.nextProcessAtMu.RUnlock()
-					brt.logger.Infof("BRT: Partition %s next process time: %v, now: %v", partition, nextProcessTime, now)
+
 					if !exists || now.After(nextProcessTime) {
 						shouldProcess = true
 					}
 				}
-				brt.logger.Infof("BRT: Partition %s should process: %v", partition, shouldProcess)
+
 				if shouldProcess {
-					pool.PingWorker(partition)
+					// Mark this partition as active before pinging
+					activeWorkersMu.Lock()
+					activeWorkers[partition] = true
+					activeWorkersMu.Unlock()
+
+					// Start a goroutine to handle the worker completion
+					go func(p string) {
+						pool.PingWorker(p)
+
+						// Wait a small duration to ensure the worker has started and potentially completed
+						time.Sleep(100 * time.Millisecond)
+
+						// Remove from active workers when done
+						activeWorkersMu.Lock()
+						delete(activeWorkers, p)
+						activeWorkersMu.Unlock()
+					}(partition)
+
 					anyPartitionNeedsProcessing = true
 				}
 			}
 
 			// If any partition needs processing, we should check again quickly
 			if anyPartitionNeedsProcessing {
-				mainLoopSleep = 0
+				mainLoopSleep = 100 * time.Millisecond // Small sleep to allow workers to start/complete
 			} else {
 				mainLoopSleep = brt.mainLoopFreq.Load()
 			}
@@ -255,7 +285,8 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	}
 	jobs = toProcess.Jobs
 	limitsReached = toProcess.LimitsReached
-
+	brt.logger.Infof("BRT: %s: Got %d jobs for partition %s", brt.destType, len(jobs), partition)
+	brt.logger.Infof("BRT: %s: Query params: %+v", brt.destType, queryParams)
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID
