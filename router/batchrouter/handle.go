@@ -166,6 +166,7 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
+			// Since the workers are now asynchronous, we always wait for the configured mainLoopFreq
 			mainLoopSleep = brt.mainLoopFreq.Load()
 		}
 	}
@@ -184,9 +185,9 @@ func (brt *Handle) activePartitions(ctx context.Context) []string {
 }
 
 // getWorkerJobs returns the list of jobs for a given partition. Jobs are grouped by destination
-func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJobs) {
+func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJobs, limitsReached bool) {
 	if brt.skipFetchingJobs(partition) {
-		return
+		return nil, false
 	}
 
 	defer brt.limiter.read.Begin("")()
@@ -207,7 +208,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-	var limitsReached bool
 
 	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
@@ -255,7 +255,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		}
 	}
 
-	return
+	return workerJobs, limitsReached
 }
 
 // upload the given batch of jobs to the given object storage provider

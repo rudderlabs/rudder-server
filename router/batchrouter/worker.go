@@ -45,7 +45,7 @@ type worker struct {
 // false otherwise.
 func (w *worker) Work() bool {
 	brt := w.brt
-	workerJobs := brt.getWorkerJobs(w.partition)
+	workerJobs, limitsReached := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
 		return false
 	}
@@ -56,6 +56,15 @@ func (w *worker) Work() bool {
 		w.processJobAsync(&jobsWg, workerJob)
 	}
 	jobsWg.Wait()
+
+	// If we hit limits and we're not in a failing state, we should process more jobs immediately
+	if limitsReached {
+		w.brt.logger.Debugf("BRT: Worker %s hit limits, triggering immediate processing", w.partition)
+		w.brt.lastExecTimesMu.Lock()
+		delete(w.brt.lastExecTimes, w.partition) // Reset the last execution time to allow immediate processing
+		w.brt.lastExecTimesMu.Unlock()
+	}
+
 	return true
 }
 
@@ -281,7 +290,8 @@ func (w *worker) SleepDurations() (min, max time.Duration) {
 			return sleepTime, w.brt.uploadFreq.Load()
 		}
 	}
-	return w.brt.minIdleSleep.Load(), w.brt.uploadFreq.Load() / 2
+	// If we hit limits in the last run, return minimum sleep durations to process more jobs quickly
+	return time.Duration(0), w.brt.minIdleSleep.Load()
 }
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.

@@ -88,7 +88,8 @@ type workerPool struct {
 
 // PingWorker pings the worker for the given partition
 func (wp *workerPool) PingWorker(partition string) {
-	wp.worker(partition).Ping()
+	w := wp.worker(partition)
+	w.Ping()
 }
 
 // Shutdown stops all workers in the pull and waits for them to stop

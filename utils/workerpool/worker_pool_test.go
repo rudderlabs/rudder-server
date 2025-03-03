@@ -104,14 +104,15 @@ type mockWorker struct {
 	stopped   bool
 }
 
-// Ping triggers the worker to pick more jobs
+// Work triggers the worker to pick more jobs
 func (mw *mockWorker) Work() bool {
 	if mw.firstPing.IsZero() {
 		mw.firstPing = time.Now()
 	}
 	mw.lastPing = time.Now()
 	mw.pings++
-	return mw.firstPing.Add(mw.idleAfter).Before(time.Now())
+	worked := mw.firstPing.Add(mw.idleAfter).Before(time.Now())
+	return worked
 }
 
 func (mw *mockWorker) SleepDurations() (min, max time.Duration) {
