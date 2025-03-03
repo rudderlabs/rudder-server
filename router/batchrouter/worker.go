@@ -47,6 +47,13 @@ func (w *worker) Work() bool {
 	brt := w.brt
 	workerJobs, limitsReached := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
+		// If no jobs were found, set the next processing time to mainLoopFreq from now
+		brt.nextProcessAtMu.Lock()
+		brt.nextProcessAt[w.partition] = brt.now().Add(brt.uploadFreq.Load())
+		brt.nextProcessAtMu.Unlock()
+		brt.limitsReachedMu.Lock()
+		brt.limitsReached[w.partition] = false
+		brt.limitsReachedMu.Unlock()
 		return false
 	}
 
@@ -57,12 +64,23 @@ func (w *worker) Work() bool {
 	}
 	jobsWg.Wait()
 
+	brt.logger.Infof("BRT: Worker %s processed %d jobs", w.partition, len(workerJobs[0].jobs))
+	brt.logger.Infof("BRT: Worker %s limits reached: %v", w.partition, limitsReached)
 	// If we hit limits and we're not in a failing state, we should process more jobs immediately
 	if limitsReached {
-		w.brt.logger.Debugf("BRT: Worker %s hit limits, triggering immediate processing", w.partition)
-		w.brt.lastExecTimesMu.Lock()
-		delete(w.brt.lastExecTimes, w.partition) // Reset the last execution time to allow immediate processing
-		w.brt.lastExecTimesMu.Unlock()
+		brt.logger.Debugf("BRT: Worker %s hit limits, triggering immediate processing", w.partition)
+		brt.limitsReachedMu.Lock()
+		brt.limitsReached[w.partition] = true
+		brt.limitsReachedMu.Unlock()
+	} else {
+		brt.limitsReachedMu.Lock()
+		brt.limitsReached[w.partition] = false
+		brt.limitsReachedMu.Unlock()
+
+		// Set next processing time based on upload frequency
+		brt.nextProcessAtMu.Lock()
+		brt.nextProcessAt[w.partition] = brt.now().Add(brt.uploadFreq.Load())
+		brt.nextProcessAtMu.Unlock()
 	}
 
 	return true

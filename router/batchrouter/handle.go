@@ -127,6 +127,12 @@ type Handle struct {
 	lastExecTimesMu sync.RWMutex
 	lastExecTimes   map[string]time.Time
 
+	limitsReachedMu sync.RWMutex
+	limitsReached   map[string]bool
+
+	nextProcessAtMu sync.RWMutex
+	nextProcessAt   map[string]time.Time
+
 	failingDestinationsMu sync.RWMutex
 	failingDestinations   map[string]bool
 
@@ -163,11 +169,42 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(mainLoopSleep):
+			now := brt.now()
+			anyPartitionNeedsProcessing := false
+
 			for _, partition := range brt.activePartitions(ctx) {
-				pool.PingWorker(partition)
+				shouldProcess := false
+
+				// Check if this partition hit limits in its last execution
+				brt.limitsReachedMu.RLock()
+				limitsReached := brt.limitsReached[partition]
+				brt.limitsReachedMu.RUnlock()
+				brt.logger.Infof("BRT: Partition %s limits reached: %v", partition, limitsReached)
+				if limitsReached {
+					shouldProcess = true
+				} else {
+					// Check if we've passed the next processing time for this partition
+					brt.nextProcessAtMu.RLock()
+					nextProcessTime, exists := brt.nextProcessAt[partition]
+					brt.nextProcessAtMu.RUnlock()
+					brt.logger.Infof("BRT: Partition %s next process time: %v, now: %v", partition, nextProcessTime, now)
+					if !exists || now.After(nextProcessTime) {
+						shouldProcess = true
+					}
+				}
+				brt.logger.Infof("BRT: Partition %s should process: %v", partition, shouldProcess)
+				if shouldProcess {
+					pool.PingWorker(partition)
+					anyPartitionNeedsProcessing = true
+				}
 			}
-			// Since the workers are now asynchronous, we always wait for the configured mainLoopFreq
-			mainLoopSleep = brt.mainLoopFreq.Load()
+
+			// If any partition needs processing, we should check again quickly
+			if anyPartitionNeedsProcessing {
+				mainLoopSleep = 0
+			} else {
+				mainLoopSleep = brt.mainLoopFreq.Load()
+			}
 		}
 	}
 }
@@ -234,7 +271,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
 			var processJobs bool
-			brt.lastExecTimesMu.Lock()
 			brt.failingDestinationsMu.RLock()
 			if limitsReached && !brt.failingDestinations[destID] { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
 				processJobs = true
@@ -246,7 +282,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 				}
 			}
 			brt.failingDestinationsMu.RUnlock()
-			brt.lastExecTimesMu.Unlock()
 			if processJobs {
 				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 			}
