@@ -59,6 +59,8 @@ var (
 	ExcludeWindowSetting             DestinationConfigSetting = destConfSetting("excludeWindow")
 	PartitionColumnSetting           DestinationConfigSetting = destConfSetting("partitionColumn")
 	PartitionTypeSetting             DestinationConfigSetting = destConfSetting("partitionType")
+	EnableIcebergSetting             DestinationConfigSetting = destConfSetting("enableIceberg")
+	ExternalVolumeSetting            DestinationConfigSetting = destConfSetting("externalVolume")
 	CleanupObjectStorageFilesSetting DestinationConfigSetting = destConfSetting("cleanupObjectStorageFiles")
 	UseOauthSetting                  DestinationConfigSetting = destConfSetting("useOauth")
 	OauthClientIDSetting             DestinationConfigSetting = destConfSetting("oauthClientID")
