@@ -4,6 +4,7 @@ package transformerclient
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
+	"golang.org/x/net/http2"
 
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -37,11 +39,40 @@ type Client interface {
 }
 
 func NewClient(config *ClientConfig) Client {
+	if config != nil && config.ClientType == "http2" {
+		client := &http.Client{
+			Transport: &http2.Transport{
+				IdleConnTimeout: 30 * time.Second,
+				AllowHTTP:       true,
+				DialTLSContext: func(_ context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+					return net.Dial(network, addr)
+				},
+			},
+			Timeout: 600 * time.Second,
+		}
+		if config.TransportConfig.IdleConnTimeout > 0 {
+			client.Transport.(*http2.Transport).IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+		}
+		return client
+	}
+
 	transport := &http.Transport{
 		DisableKeepAlives:   true,
 		MaxConnsPerHost:     100,
 		MaxIdleConnsPerHost: 10,
 		IdleConnTimeout:     30 * time.Second,
+	}
+	if config != nil {
+		transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
+		if config.TransportConfig.MaxConnsPerHost != 0 {
+			transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+		}
+		if config.TransportConfig.MaxIdleConnsPerHost != 0 {
+			transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+		}
+		if config.TransportConfig.IdleConnTimeout != 0 {
+			transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+		}
 	}
 	client := &http.Client{
 		Transport: transport,
@@ -49,17 +80,6 @@ func NewClient(config *ClientConfig) Client {
 	}
 	if config == nil {
 		return client
-	}
-
-	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
-	if config.TransportConfig.MaxConnsPerHost != 0 {
-		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
-	}
-	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
-		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
-	}
-	if config.TransportConfig.IdleConnTimeout != 0 {
-		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
 	}
 
 	if config.ClientTimeout != 0 {

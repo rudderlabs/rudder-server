@@ -156,6 +156,7 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
 
 	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
+	trans.logger.Infon("Transformer client type", logger.NewStringField("type", transformerClientConfig.ClientType))
 
 	for _, opt := range opts {
 		opt(&trans)
