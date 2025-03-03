@@ -1,0 +1,2 @@
+ALTER TABLE reports
+ALTER COLUMN sample_event TYPE TEXT;

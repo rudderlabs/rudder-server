@@ -1,9 +1,7 @@
 package reporting
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -39,7 +36,7 @@ var _ = Describe("Reporting", func() {
 					Count:          3,
 					StatusCode:     0,
 					SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
-					SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
+					SampleEvent:    `{"some-sample-event-key": "some-sample-event-value"}`,
 					EventName:      "some-event-name",
 					EventType:      "some-event-type",
 				},
@@ -64,7 +61,7 @@ var _ = Describe("Reporting", func() {
 					Count:          3,
 					StatusCode:     0,
 					SampleResponse: "",
-					SampleEvent:    []byte(`{}`),
+					SampleEvent:    `{}`,
 					EventName:      "",
 					EventType:      "",
 				},
@@ -121,7 +118,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				ViolationCount: 5,
 				StatusCode:     200,
 				SampleResponse: "",
-				SampleEvent:    []byte(`{}`),
+				SampleEvent:    `{}`,
 				ErrorType:      "",
 			},
 		},
@@ -148,7 +145,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				ViolationCount: 10,
 				StatusCode:     200,
 				SampleResponse: "",
-				SampleEvent:    []byte(`{}`),
+				SampleEvent:    `{}`,
 				ErrorType:      "some-error-type",
 			},
 		},
@@ -175,7 +172,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				ViolationCount: 10,
 				StatusCode:     200,
 				SampleResponse: "",
-				SampleEvent:    []byte(`{}`),
+				SampleEvent:    `{}`,
 				ErrorType:      "some-error-type",
 			},
 		},
@@ -215,7 +212,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 5,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "",
 					},
 				},
@@ -245,7 +242,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -275,7 +272,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -316,7 +313,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 5,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "",
 					},
 					{
@@ -325,7 +322,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -355,7 +352,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -393,7 +390,7 @@ func TestGetAggregatedReports(t *testing.T) {
 				ViolationCount: 10,
 				StatusCode:     200,
 				SampleResponse: "",
-				SampleEvent:    []byte(`{}`),
+				SampleEvent:    `{}`,
 				ErrorType:      "another-error-type",
 			},
 		}
@@ -424,7 +421,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 5,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "",
 					},
 					{
@@ -433,7 +430,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -463,7 +460,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "some-error-type",
 					},
 				},
@@ -493,7 +490,7 @@ func TestGetAggregatedReports(t *testing.T) {
 						ViolationCount: 10,
 						StatusCode:     200,
 						SampleResponse: "",
-						SampleEvent:    []byte(`{}`),
+						SampleEvent:    `{}`,
 						ErrorType:      "another-error-type",
 					},
 				},
@@ -503,151 +500,4 @@ func TestGetAggregatedReports(t *testing.T) {
 		aggregatedMetrics := reportHandle.getAggregatedReports(newInputReports)
 		assert.Equal(t, expectedResponse, aggregatedMetrics)
 	})
-}
-
-func TestSanitizeJSONForReports(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   json.RawMessage
-		want    json.RawMessage
-		wantErr bool
-	}{
-		{
-			name:    "empty input",
-			input:   json.RawMessage(``),
-			want:    json.RawMessage(`{}`),
-			wantErr: false,
-		},
-		{
-			name:    "valid json",
-			input:   json.RawMessage(`{"key":"value"}`),
-			want:    json.RawMessage(`{"key":"value"}`),
-			wantErr: false,
-		},
-		{
-			name:    "json with null characters",
-			input:   json.RawMessage(`{"key":"\u0000value\u0000"}`),
-			want:    json.RawMessage(`{"key":"value"}`),
-			wantErr: false,
-		},
-		{
-			name:    "json with html entities",
-			input:   json.RawMessage(`{"key":"\u0026value\u003ctest\u003e"}`),
-			want:    json.RawMessage(`{"key":"\u0026value\u003ctest\u003e"}`),
-			wantErr: false,
-		},
-		{
-			name:    "invalid json",
-			input:   json.RawMessage(`{"key":"value`),
-			want:    nil,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := misc.SanitizeJSON(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("sanitizeJSONForReports() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !bytes.Equal(got, tt.want) {
-				t.Errorf("sanitizeJSONForReports() = %s, want %s", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSanitizeStringForReports(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "empty string",
-			input: "",
-			want:  "",
-		},
-		{
-			name:  "string with null characters",
-			input: "test\u0000string\u0000",
-			want:  "teststring",
-		},
-		{
-			name:  "string without null characters",
-			input: "test string",
-			want:  "test string",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizeStringForReports(tt.input)
-			if got != tt.want {
-				t.Errorf("sanitizeStringForReports() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGetSampleWithEventSampling_WithSanitization(t *testing.T) {
-	tests := []struct {
-		name           string
-		sampleEvent    json.RawMessage
-		sampleResponse string
-		wantEvent      json.RawMessage
-		wantResponse   string
-		wantErr        bool
-	}{
-		{
-			name:           "sample event with null characters",
-			sampleEvent:    json.RawMessage(`{"key":"\u0000value\u0000"}`),
-			sampleResponse: "test\u0000response",
-			wantEvent:      json.RawMessage(`{"key":"value"}`),
-			wantResponse:   "testresponse",
-			wantErr:        false,
-		},
-		{
-			name:           "sample event with <, >",
-			sampleEvent:    json.RawMessage(`{"key":"\u0026value\u003ctest\u003e"}`),
-			sampleResponse: "test&response",
-			wantEvent:      json.RawMessage(`{"key":"\u0026value\u003ctest\u003e"}`),
-			wantResponse:   "test&response",
-			wantErr:        false,
-		},
-		{
-			name:           "invalid json in sample event",
-			sampleEvent:    json.RawMessage(`{"key":"value`),
-			sampleResponse: "test\u0000response",
-			wantEvent:      nil,
-			wantResponse:   "",
-			wantErr:        true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			metric := types.PUReportedMetric{
-				StatusDetail: &types.StatusDetail{
-					SampleEvent:    tt.sampleEvent,
-					SampleResponse: tt.sampleResponse,
-				},
-			}
-
-			gotEvent, gotResponse, err := getSampleWithEventSampling(metric, 0, nil, false, 0)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getSampleWithEventSampling() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr {
-				if !bytes.Equal(gotEvent, tt.wantEvent) {
-					t.Errorf("getSampleWithEventSampling() gotEvent = %s, want %s", gotEvent, tt.wantEvent)
-				}
-				if gotResponse != tt.wantResponse {
-					t.Errorf("getSampleWithEventSampling() gotResponse = %v, want %v", gotResponse, tt.wantResponse)
-				}
-			}
-		})
-	}
 }
