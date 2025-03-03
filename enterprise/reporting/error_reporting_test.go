@@ -300,10 +300,18 @@ func TestExtractErrorDetails(t *testing.T) {
 			},
 		},
 		{
-			caseDescription: "should use complex patterns to match version deprecation",
+			caseDescription: "should use complex patterns to match version deprecation 1",
 			inputErrMsg:     "version v1 not active",
 			output: depTcOutput{
 				errorMsg:  "version not active",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should use complex patterns to match version deprecation 2",
+			inputErrMsg:     "expired 202402 version is used",
+			output: depTcOutput{
+				errorMsg:  "expired version is used",
 				errorCode: "deprecation",
 			},
 		},
