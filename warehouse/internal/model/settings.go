@@ -60,4 +60,7 @@ var (
 	PartitionColumnSetting           DestinationConfigSetting = destConfSetting("partitionColumn")
 	PartitionTypeSetting             DestinationConfigSetting = destConfSetting("partitionType")
 	CleanupObjectStorageFilesSetting DestinationConfigSetting = destConfSetting("cleanupObjectStorageFiles")
+	UseOauthSetting                  DestinationConfigSetting = destConfSetting("useOauth")
+	OauthClientIDSetting             DestinationConfigSetting = destConfSetting("oauthClientID")
+	OauthClientSecretSetting         DestinationConfigSetting = destConfSetting("oauthClientSecret")
 )
