@@ -124,17 +124,11 @@ type Handle struct {
 		upload  kitsync.Limiter
 	}
 
-	lastExecTimesMu sync.RWMutex
-	lastExecTimes   map[string]time.Time
-
-	limitsReachedMu sync.RWMutex
-	limitsReached   map[string]bool
-
-	nextProcessAtMu sync.RWMutex
-	nextProcessAt   map[string]time.Time
-
 	failingDestinationsMu sync.RWMutex
 	failingDestinations   map[string]bool
+
+	lastExecTimesMu sync.RWMutex
+	lastExecTimes   map[string]time.Time
 
 	batchRequestsMetricMu sync.RWMutex
 	batchRequestsMetric   []batchRequestMetric
@@ -164,77 +158,15 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
 
-	// Track active workers to prevent overlapping processing
-	activeWorkers := make(map[string]bool)
-	var activeWorkersMu sync.Mutex
-
-	mainLoopSleep := time.Duration(0)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(mainLoopSleep):
-			now := brt.now()
-			anyPartitionNeedsProcessing := false
-
+		default:
 			for _, partition := range brt.activePartitions(ctx) {
-				// Skip if this partition is already being processed
-				activeWorkersMu.Lock()
-				if activeWorkers[partition] {
-					activeWorkersMu.Unlock()
-					continue
-				}
-				activeWorkersMu.Unlock()
-
-				shouldProcess := false
-
-				// Check if this partition hit limits in its last execution
-				brt.limitsReachedMu.RLock()
-				limitsReached := brt.limitsReached[partition]
-				brt.limitsReachedMu.RUnlock()
-
-				if limitsReached {
-					shouldProcess = true
-				} else {
-					// Check if we've passed the next processing time for this partition
-					brt.nextProcessAtMu.RLock()
-					nextProcessTime, exists := brt.nextProcessAt[partition]
-					brt.nextProcessAtMu.RUnlock()
-
-					if !exists || now.After(nextProcessTime) {
-						shouldProcess = true
-					}
-				}
-
-				if shouldProcess {
-					// Mark this partition as active before pinging
-					activeWorkersMu.Lock()
-					activeWorkers[partition] = true
-					activeWorkersMu.Unlock()
-
-					// Start a goroutine to handle the worker completion
-					go func(p string) {
-						pool.PingWorker(p)
-
-						// Wait a small duration to ensure the worker has started and potentially completed
-						time.Sleep(100 * time.Millisecond)
-
-						// Remove from active workers when done
-						activeWorkersMu.Lock()
-						delete(activeWorkers, p)
-						activeWorkersMu.Unlock()
-					}(partition)
-
-					anyPartitionNeedsProcessing = true
-				}
+				pool.PingWorker(partition)
 			}
-
-			// If any partition needs processing, we should check again quickly
-			if anyPartitionNeedsProcessing {
-				mainLoopSleep = 100 * time.Millisecond // Small sleep to allow workers to start/complete
-			} else {
-				mainLoopSleep = brt.mainLoopFreq.Load()
-			}
+			time.Sleep(brt.mainLoopFreq.Load())
 		}
 	}
 }
@@ -252,11 +184,12 @@ func (brt *Handle) activePartitions(ctx context.Context) []string {
 }
 
 // getWorkerJobs returns the list of jobs for a given partition. Jobs are grouped by destination
-func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJobs, limitsReached bool) {
+func (brt *Handle) getWorkerJobs(partition string) ([]*DestinationJobs, bool) {
 	if brt.skipFetchingJobs(partition) {
 		return nil, false
 	}
 
+	var workerJobs []*DestinationJobs
 	defer brt.limiter.read.Begin("")()
 
 	brt.configSubscriberMu.RLock()
@@ -284,9 +217,10 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		panic(err)
 	}
 	jobs = toProcess.Jobs
-	limitsReached = toProcess.LimitsReached
+	limitsReached := toProcess.LimitsReached
 	brt.logger.Infof("BRT: %s: Got %d jobs for partition %s", brt.destType, len(jobs), partition)
 	brt.logger.Infof("BRT: %s: Query params: %+v", brt.destType, queryParams)
+
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].JobID < jobs[j].JobID
@@ -302,6 +236,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
 			var processJobs bool
+			brt.lastExecTimesMu.Lock()
 			brt.failingDestinationsMu.RLock()
 			if limitsReached && !brt.failingDestinations[destID] { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
 				processJobs = true
@@ -313,6 +248,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 				}
 			}
 			brt.failingDestinationsMu.RUnlock()
+			brt.lastExecTimesMu.Unlock()
 			if processJobs {
 				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 			}

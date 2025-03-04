@@ -111,6 +111,7 @@ func (brt *Handle) Setup(
 	ctx, cancel := context.WithCancel(context.Background())
 	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
 	brt.backgroundCancel = cancel
+	brt.lastExecTimes = map[string]time.Time{}
 	brt.backgroundWait = brt.backgroundGroup.Wait
 
 	brt.backendConfigInitializedOnce = sync.Once{}
@@ -120,9 +121,6 @@ func (brt *Handle) Setup(
 	brt.connectionWHNamespaceMap = map[string]string{}
 	brt.encounteredMergeRuleMap = map[string]map[string]bool{}
 	brt.uploadIntervalMap = map[string]time.Duration{}
-	brt.lastExecTimes = map[string]time.Time{}
-	brt.limitsReached = map[string]bool{}
-	brt.nextProcessAt = map[string]time.Time{}
 	brt.failingDestinations = map[string]bool{}
 	brt.dateFormatProvider = &storageDateFormatProvider{dateFormatsCache: make(map[string]string)}
 	diagnosisTickerTime := config.GetDurationVar(600, time.Second, "Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS")

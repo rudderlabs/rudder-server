@@ -44,16 +44,10 @@ type worker struct {
 // The function returns when processing completes and the return value is true if at least 1 job was processed,
 // false otherwise.
 func (w *worker) Work() bool {
+start:
 	brt := w.brt
 	workerJobs, limitsReached := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
-		// If no jobs were found, set the next processing time to mainLoopFreq from now
-		brt.nextProcessAtMu.Lock()
-		brt.nextProcessAt[w.partition] = brt.now().Add(brt.uploadFreq.Load())
-		brt.nextProcessAtMu.Unlock()
-		brt.limitsReachedMu.Lock()
-		brt.limitsReached[w.partition] = false
-		brt.limitsReachedMu.Unlock()
 		return false
 	}
 
@@ -66,21 +60,9 @@ func (w *worker) Work() bool {
 
 	brt.logger.Infof("BRT: Worker %s processed %d jobs", w.partition, len(workerJobs[0].jobs))
 	brt.logger.Infof("BRT: Worker %s limits reached: %v", w.partition, limitsReached)
-	// If we hit limits and we're not in a failing state, we should process more jobs immediately
-	if limitsReached {
-		brt.logger.Debugf("BRT: Worker %s hit limits, triggering immediate processing", w.partition)
-		brt.limitsReachedMu.Lock()
-		brt.limitsReached[w.partition] = true
-		brt.limitsReachedMu.Unlock()
-	} else {
-		brt.limitsReachedMu.Lock()
-		brt.limitsReached[w.partition] = false
-		brt.limitsReachedMu.Unlock()
 
-		// Set next processing time based on upload frequency
-		brt.nextProcessAtMu.Lock()
-		brt.nextProcessAt[w.partition] = brt.now().Add(brt.uploadFreq.Load())
-		brt.nextProcessAtMu.Unlock()
+	if limitsReached {
+		goto start
 	}
 
 	return true
@@ -308,8 +290,7 @@ func (w *worker) SleepDurations() (min, max time.Duration) {
 			return sleepTime, w.brt.uploadFreq.Load()
 		}
 	}
-	// If we hit limits in the last run, return minimum sleep durations to process more jobs quickly
-	return time.Duration(0), w.brt.minIdleSleep.Load()
+	return w.brt.minIdleSleep.Load(), w.brt.uploadFreq.Load() / 2
 }
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.
