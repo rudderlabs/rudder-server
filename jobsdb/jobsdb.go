@@ -2930,8 +2930,18 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 	})
 	tx.AddSuccessListener(func() {
 		statTags := tags.getStatsTags(jd.tablePrefix)
-		jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(len(statusList))
-		jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(lo.SumBy(statusList, func(j *JobStatusT) int { return len(j.ErrorResponse) }))
+		statusCounters := make(map[string]lo.Tuple2[int, int], 0)
+		for i := range statusList {
+			t := statusCounters[statusList[i].JobState]
+			t.A++
+			t.B += len(statusList[i].ErrorResponse)
+			statusCounters[statusList[i].JobState] = t
+		}
+		for state, count := range statusCounters {
+			statTags["jobState"] = state
+			jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(count.A)
+			jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(count.B)
+		}
 	})
 
 	return nil
