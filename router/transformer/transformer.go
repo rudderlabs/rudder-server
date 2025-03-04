@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -26,6 +26,8 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -38,8 +40,6 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
 const (
 	BATCH            = "BATCH"
 	ROUTER_TRANSFORM = "ROUTER_TRANSFORM"
@@ -50,7 +50,7 @@ const (
 type handle struct {
 	tr *http.Transport
 	// http client for router transformation request
-	client *http.Client
+	client sysUtils.HTTPClientI
 	// Mockable http.client for transformer proxy request
 	proxyClient sysUtils.HTTPClientI
 	// http client timeout for transformer proxy request
@@ -59,6 +59,8 @@ type handle struct {
 	transformTimeout          time.Duration
 	transformRequestTimerStat stats.Measurement
 	logger                    logger.Logger
+
+	stats stats.Stats
 
 	// clientOAuthV2 is the HTTP client for router transformation requests using OAuth V2.
 	clientOAuthV2 *http.Client
@@ -126,24 +128,45 @@ func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendC
 
 var loggerOverride logger.Logger
 
+// Add transformerMetricLabels struct and methods
+type transformerMetricLabels struct {
+	Endpoint        string // hostname of the service
+	DestinationType string // BQ, etc.
+	SourceType      string // webhook
+	Stage           string // processor, router, gateway
+	WorkspaceID     string // workspace identifier
+	SourceID        string // source identifier
+	DestinationID   string // destination identifier
+}
+
+// ToStatsTag converts transformerMetricLabels to stats.Tags
+func (t transformerMetricLabels) ToStatsTag() stats.Tags {
+	tags := stats.Tags{
+		"endpoint":        t.Endpoint,
+		"destinationType": t.DestinationType,
+		"sourceType":      t.SourceType,
+		"stage":           t.Stage,
+		"workspaceId":     t.WorkspaceID,
+		"destinationId":   t.DestinationID,
+		"sourceId":        t.SourceID,
+
+		// Legacy tags: to be removed
+		"destType": t.DestinationType,
+	}
+	return tags
+}
+
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy, jobs := transformMessage.Dehydrate()
 
 	// Call remote transformation
-	rawJSON, err := jsonfast.Marshal(&transformMessageCopy)
+	rawJSON, err := jsonrs.Marshal(&transformMessageCopy)
 	if err != nil {
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
 	}
-	trans.logger.Debugf("[Router Transformer] :: input payload : %s", string(rawJSON))
-
-	retryCount := 0
-	var resp *http.Response
-	var respData []byte
-	// We should rarely have error communicating with our JS
-	reqFailed := false
 
 	var url string
 	if transformType == BATCH {
@@ -151,9 +174,29 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	} else if transformType == ROUTER_TRANSFORM {
 		url = getRouterTransformURL()
 	} else {
-		// Unexpected transformType returning empty
 		return []types.DestinationJobT{}
 	}
+
+	// Create metric labels
+	labels := transformerMetricLabels{
+		Endpoint:        getEndpointFromURL(url),
+		Stage:           "router",
+		DestinationType: transformMessage.Data[0].Destination.DestinationDefinition.Name,
+		SourceType:      transformMessage.Data[0].JobMetadata.SourceCategory,
+		WorkspaceID:     transformMessage.Data[0].JobMetadata.WorkspaceID,
+		SourceID:        transformMessage.Data[0].JobMetadata.SourceID,
+		DestinationID:   transformMessage.Data[0].Destination.ID,
+	}
+
+	// Record request metrics
+	trans.stats.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformMessage.Data))
+	trans.stats.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, labels.ToStatsTag()).Count(len(rawJSON))
+
+	retryCount := 0
+	var resp *http.Response
+	var respData []byte
+	// We should rarely have error communicating with our JS
+	reqFailed := false
 
 	for {
 		s := time.Now()
@@ -182,14 +225,19 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			resp, err = trans.client.Do(req)
 		}
 
+		duration := time.Since(s)
+		trans.stats.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, labels.ToStatsTag()).Count(int(duration.Seconds()))
+
 		if err == nil {
 			// If no err returned by client.Post, reading body.
 			// If reading body fails, retrying.
 			respData, err = io.ReadAll(resp.Body)
+			trans.stats.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, labels.ToStatsTag()).Count(len(respData))
+
 		}
 
 		if err != nil {
-			trans.transformRequestTimerStat.SendTiming(time.Since(s))
+			trans.transformRequestTimerStat.SendTiming(duration)
 			reqFailed = true
 			trans.logger.Errorn(
 				"JS HTTP connection error",
@@ -214,7 +262,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			)
 		}
 
-		trans.transformRequestTimerStat.SendTiming(time.Since(s))
+		trans.transformRequestTimerStat.SendTiming(duration)
 		break
 	}
 
@@ -226,7 +274,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	if trans.oAuthV2EnabledLoader.Load() {
 		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 		// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
-		err = json.Unmarshal(respData, &transResp)
+		err = jsonrs.Unmarshal(respData, &transResp)
 		if err == nil && transResp.OriginalResponse != "" {
 			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
 		}
@@ -246,12 +294,15 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		if transformType == BATCH {
 			integrations.CollectIntgTransformErrorStats(respData)
-			err = jsonfast.Unmarshal(respData, &destinationJobs)
+			err = jsonrs.Unmarshal(respData, &destinationJobs)
 		} else if transformType == ROUTER_TRANSFORM {
 			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
 			integrations.CollectIntgTransformErrorStats(rawResp)
-			err = jsonfast.Unmarshal(rawResp, &destinationJobs)
+			err = jsonrs.Unmarshal(rawResp, &destinationJobs)
 		}
+
+		// Record response events metric
+		trans.stats.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(destinationJobs))
 
 		// Validate the response received from the transformer
 		in := transformMessage.JobIDs()
@@ -358,11 +409,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		routerJobDontBatchDirectives[m.JobID] = m.DontBatch
 	}
 
-	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{
-		"destType":      proxyReqParams.DestName,
-		"workspaceId":   proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
-		"destinationId": proxyReqParams.ResponseData.Metadata[0].DestinationID,
-	}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request starts - %[1]v`, proxyReqParams.DestName)
 
 	payload, err := proxyReqParams.Adapter.getPayload(proxyReqParams)
@@ -376,6 +422,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			DontBatchDirectives:      routerJobDontBatchDirectives,
 		}
 	}
+
 	proxyURL, err := proxyReqParams.Adapter.getProxyURL(proxyReqParams.DestName)
 	if err != nil {
 		return ProxyRequestResponse{
@@ -388,13 +435,32 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
+	// Create metric labels
+	labels := transformerMetricLabels{
+		Endpoint:        getEndpointFromURL(proxyURL),
+		Stage:           "router_proxy",
+		DestinationType: proxyReqParams.DestName,
+		WorkspaceID:     proxyReqParams.ResponseData.Metadata[0].WorkspaceID,
+		DestinationID:   proxyReqParams.ResponseData.Metadata[0].DestinationID,
+	}.ToStatsTag()
+
+	// Record request metrics
+	trans.stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, labels).Increment()
+	trans.stats.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, labels).Count(len(payload))
+	trans.stats.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels).Count(len(proxyReqParams.ResponseData.Metadata))
+
 	rdlTime := time.Now()
 	httpPrxResp := trans.doProxyRequest(ctx, proxyURL, proxyReqParams, payload)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 
-	reqSuccessStr := strconv.FormatBool(requestError == nil)
-	stats.Default.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
-	stats.Default.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).Increment()
+	duration := time.Since(rdlTime)
+
+	trans.stats.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, labels).Count(int(duration.Seconds()))
+	trans.stats.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, labels).Count(len(respData))
+
+	labelsWithSuccess := lo.Assign(labels, stats.Tags{"requestSuccess": strconv.FormatBool(requestError == nil)})
+	trans.stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, labelsWithSuccess).SendTiming(duration)
+	trans.stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, labelsWithSuccess).Increment()
 
 	if requestError != nil {
 		return ProxyRequestResponse{
@@ -412,7 +478,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
 	if trans.oAuthV2EnabledLoader.Load() {
-		_ = json.Unmarshal(respData, &transportResponse)
+		_ = jsonrs.Unmarshal(respData, &transportResponse)
 		// unmarshal unsuccessful scenarios
 		// if respData is not a valid json
 		if transportResponse.OriginalResponse != "" {
@@ -470,6 +536,8 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
 
+	trans.stats.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels).Count(len(transResp.routerJobResponseCodes))
+
 	return ProxyRequestResponse{
 		ProxyRequestStatusCode:   respCode,
 		ProxyRequestResponseBody: string(respData),
@@ -501,7 +569,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
+	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
 		Augmenter:          extensions.RouterBodyAugmenter,
@@ -517,10 +585,25 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 		Logger:             logger.NewLogger().Child("TransformerProxyHttpClient"),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
+	trans.proxyClient = transformerclient.NewClient(trans.transformerClientConfig())
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
+	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
+}
+
+func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: config.GetDurationVar(600, time.Second, "HttpClient.backendProxy.timeout", "HttpClient.routerTransformer.timeout"),
+		ClientTTL:     config.GetDurationVar(10, time.Second, "Transformer.Client.ttl"),
+		ClientType:    config.GetStringVar("stdlib", "Transformer.Client.type"),
+		PickerType:    config.GetStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	return transformerClientConfig
 }
 
 type httpProxyResponse struct {
@@ -643,7 +726,7 @@ type transformerResponse struct {
 // {input: [{}, {}, {}, {}]} -> {output: [{200}, {200}, {401,authErr}, {401,authErr}]}
 func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) {
 	var transformedJobs []transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	err := jsonrs.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}
@@ -659,9 +742,17 @@ func GetAuthErrorCategoryFromTransformResponse(respData []byte) (string, error) 
 
 func GetAuthErrorCategoryFromTransformProxyResponse(respData []byte) (string, error) {
 	var transformedJobs transformerResponse
-	err := jsonfast.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
+	err := jsonrs.Unmarshal([]byte(gjson.GetBytes(respData, "output").Raw), &transformedJobs)
 	if err != nil {
 		return "", err
 	}
 	return transformedJobs.AuthErrorCategory, nil
+}
+
+// Helper function to get endpoint from URL
+func getEndpointFromURL(urlStr string) string {
+	if parsedURL, err := url.Parse(urlStr); err == nil {
+		return parsedURL.Host
+	}
+	return ""
 }

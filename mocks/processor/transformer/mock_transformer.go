@@ -13,7 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
-	transformer "github.com/rudderlabs/rudder-server/processor/transformer"
+	types "github.com/rudderlabs/rudder-server/processor/types"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -42,10 +42,10 @@ func (m *MockTransformer) EXPECT() *MockTransformerMockRecorder {
 }
 
 // Transform mocks base method.
-func (m *MockTransformer) Transform(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
+func (m *MockTransformer) Transform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Transform", ctx, clientEvents, batchSize)
-	ret0, _ := ret[0].(transformer.Response)
+	ret0, _ := ret[0].(types.Response)
 	return ret0
 }
 
@@ -56,10 +56,10 @@ func (mr *MockTransformerMockRecorder) Transform(ctx, clientEvents, batchSize an
 }
 
 // UserTransform mocks base method.
-func (m *MockTransformer) UserTransform(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
+func (m *MockTransformer) UserTransform(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UserTransform", ctx, clientEvents, batchSize)
-	ret0, _ := ret[0].(transformer.Response)
+	ret0, _ := ret[0].(types.Response)
 	return ret0
 }
 
@@ -70,10 +70,10 @@ func (mr *MockTransformerMockRecorder) UserTransform(ctx, clientEvents, batchSiz
 }
 
 // Validate mocks base method.
-func (m *MockTransformer) Validate(ctx context.Context, clientEvents []transformer.TransformerEvent, batchSize int) transformer.Response {
+func (m *MockTransformer) Validate(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Validate", ctx, clientEvents, batchSize)
-	ret0, _ := ret[0].(transformer.Response)
+	ret0, _ := ret[0].(types.Response)
 	return ret0
 }
 

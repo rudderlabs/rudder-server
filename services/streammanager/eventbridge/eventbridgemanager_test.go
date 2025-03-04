@@ -1,13 +1,13 @@
 package eventbridge
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
 
 	"go.uber.org/mock/gomock"
@@ -55,7 +55,7 @@ func TestProduceHappyCase(t *testing.T) {
 			&sampleEvent,
 		}}).
 		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{{}}}, nil)
-	sampleEventJson, _ := json.Marshal(sampleEvent)
+	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
@@ -98,7 +98,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{
 			{ErrorCode: aws.String(errorCode), ErrorMessage: aws.String(errorCode)},
 		}}, nil)
-	sampleEventJson, _ := json.Marshal(sampleEvent)
+	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)

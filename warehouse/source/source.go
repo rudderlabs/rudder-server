@@ -12,6 +12,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -96,7 +97,7 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		JobType   string    `json:"jobtype"`
 		StartTime time.Time `json:"start_time"`
 	}
-	metadataJson, err := json.Marshal(metadata{
+	metadataJson, err := jsonrs.Marshal(metadata{
 		JobRunID:  payload.JobRunID,
 		TaskRunID: payload.TaskRunID,
 		StartTime: payload.StartTime.Time,
@@ -171,7 +172,7 @@ func (m *Manager) process(ctx context.Context) error {
 func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.SourceJob) error {
 	claims := make([]json.RawMessage, 0, len(pendingJobs))
 	for _, job := range pendingJobs {
-		message, err := json.Marshal(NotifierRequest{
+		message, err := jsonrs.Marshal(NotifierRequest{
 			ID:            job.ID,
 			SourceID:      job.SourceID,
 			DestinationID: job.DestinationID,
@@ -228,7 +229,7 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 			var response NotifierResponse
 			var jobStatus model.SourceJobStatus
 
-			if err = json.Unmarshal(job.Payload, &response); err != nil {
+			if err = jsonrs.Unmarshal(job.Payload, &response); err != nil {
 				return fmt.Errorf("unmarshalling notifier response for source job %d: %w", job.ID, err)
 			}
 			if jobStatus, err = model.FromSourceJobStatus(string(job.Status)); err != nil {

@@ -3,7 +3,6 @@ package deltalake_test
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +30,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -62,7 +62,7 @@ func deltaLakeTestCredentials() (*testCredentials, error) {
 	}
 
 	var credentials testCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
+	err := jsonrs.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal deltaLake test credentials: %w", err)
 	}
@@ -1318,6 +1318,75 @@ func TestIntegration(t *testing.T) {
 				}).LastValue())
 			}
 		})
+	})
+
+	t.Run("Add columns to table", func(t *testing.T) {
+		tableName := "test_add_existing_columns"
+		namespace := whth.RandSchema(destType)
+
+		loadFiles := []whutils.LoadFile{{Location: "dummy_location"}}
+		mockUploader := newMockUploader(t, loadFiles, tableName, nil, nil, whutils.LoadFileTypeCsv, false, false)
+		ctx := context.Background()
+
+		d := deltalake.New(config.New(), logger.NOP, stats.NOP)
+		warehouse := model.Warehouse{
+			Destination: backendconfig.DestinationT{
+				ID: "test_destination_id",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":           credentials.Host,
+					"port":           credentials.Port,
+					"path":           credentials.Path,
+					"token":          credentials.Token,
+					"namespace":      namespace,
+					"bucketProvider": whutils.AzureBlob,
+					"containerName":  credentials.ContainerName,
+					"accountName":    credentials.AccountName,
+					"accountKey":     credentials.AccountKey,
+				},
+			},
+			Namespace: namespace,
+		}
+		err := d.Setup(ctx, warehouse, mockUploader)
+		require.NoError(t, err)
+
+		err = d.CreateSchema(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			dropSchema(t, d.DB.DB, d.Namespace)
+		})
+		columns := map[string]string{
+			"col1": "int",
+			"col2": "string",
+		}
+
+		err = d.CreateTable(ctx, tableName, columns)
+		require.NoError(t, err)
+
+		columnsToAdd := []whutils.ColumnInfo{
+			{
+				Name: "col1",
+				Type: "int",
+			},
+			{
+				Name: "col3",
+				Type: "int",
+			},
+		}
+
+		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
+		require.NoError(t, d.AddColumns(ctx, tableName, columnsToAdd))
+
+		schema, err := d.FetchSchema(ctx)
+		require.NoError(t, err)
+		require.Contains(t, schema, tableName)
+		require.Equal(t, model.TableSchema{
+			"col1": "int",
+			"col2": "string",
+			"col3": "int",
+		}, schema[tableName])
 	})
 }
 

@@ -12,10 +12,9 @@ import (
 	"sync"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -39,13 +38,12 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
-
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	// dependencies
@@ -463,7 +461,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	if len(destinationID) != 0 {
 		params["destination_id"] = destinationID
 	}
-	marshalledParams, err = json.Marshal(params)
+	marshalledParams, err = jsonrs.Marshal(params)
 	if err != nil {
 		gw.logger.Errorf(
 			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
@@ -496,7 +494,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 				WriteKey:   arctx.WriteKey,
 				ReceivedAt: receivedAt,
 			}
-			payload, err = json.Marshal(singularEventBatch)
+			payload, err = jsonrs.Marshal(singularEventBatch)
 			if err != nil {
 				err = errors.New(response.InvalidJSON)
 				return
@@ -675,13 +673,15 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
 				for _, jws := range jobsWithStats {
-					jws.stat.RequestEventsFailed(1, "storeFailed")
+					jws.stat.EventsFailed(1, "storeFailed")
 					jws.stat.Report(gw.stats)
 				}
+				stat.RequestFailed("storeFailed")
+				stat.Report(gw.stats)
 				goto requestError
 			}
 			for _, jws := range jobsWithStats {
-				jws.stat.RequestEventsSucceeded(1)
+				jws.stat.EventsSuccess(1)
 				jws.stat.Report(gw.stats)
 				// Sending events to config backend
 				if jws.stat.WriteKey == "" {
@@ -690,6 +690,8 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 				}
 				gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
 			}
+			stat.RequestSucceeded()
+			stat.Report(gw.stats)
 		} else {
 			stat.RequestEventsSucceeded(0)
 			stat.Report(gw.stats)
@@ -760,7 +762,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
-	err := jsonfast.Unmarshal(body, &messages)
+	err := jsonrs.Unmarshal(body, &messages)
 	if err != nil {
 		stat.RequestFailed(response.InvalidJSON)
 		stat.Report(gw.stats)
@@ -879,7 +881,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			SourceCategory:  msg.Properties.SourceType,
 		}
 
-		marshalledParams, err := json.Marshal(jobsDBParams)
+		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
 				logger.NewField("params", jobsDBParams),
@@ -916,7 +918,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			WriteKey:   writeKey,
 		}
 
-		payload, err := json.Marshal(eventBatch)
+		payload, err := jsonrs.Marshal(eventBatch)
 		if err != nil {
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())

@@ -2,7 +2,6 @@ package testhelper
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"github.com/spf13/cast"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/iterator"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 type TestCredentials struct {
@@ -33,7 +34,7 @@ func GetBQTestCredentials() (*TestCredentials, error) {
 	}
 
 	var credentials TestCredentials
-	err := json.Unmarshal([]byte(cred), &credentials)
+	err := jsonrs.Unmarshal([]byte(cred), &credentials)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal bq credentials: %w", err)
 	}

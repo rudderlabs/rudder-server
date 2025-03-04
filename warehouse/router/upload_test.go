@@ -19,6 +19,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -136,16 +137,23 @@ func TestColumnCountStat(t *testing.T) {
 
 			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
+			db := sqlmiddleware.New(pgResource.DB)
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
 
 			uploadJobFactory := &UploadJobFactory{
 				logger:       logger.NOP,
 				statsFactory: statsStore,
 				conf:         conf,
-				db:           sqlmiddleware.New(pgResource.DB),
+				db:           db,
 			}
 			whManager, err := manager.New(warehouseutils.POSTGRES, conf, logger.NOP, statsStore)
 			require.NoError(t, err)
-			j := uploadJobFactory.NewUploadJob(context.Background(), &model.UploadJob{
+			ctx := context.Background()
+			j := uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
@@ -163,11 +171,12 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 			}, whManager)
-			j.schemaHandle.UpdateWarehouseTableSchema(tableName, model.TableSchema{
+			err = j.schemaHandle.UpdateWarehouseTableSchema(ctx, tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
 				"test-column-3": "string",
 			})
+			require.NoError(t, err)
 
 			tags := j.buildTags()
 			tags["tableName"] = warehouseutils.TableNameForStats(tableName)
@@ -178,7 +187,9 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), j.schemaHandle.GetColumnsCountInWarehouseSchema(tableName))
+				columnsCount, err := j.schemaHandle.GetColumnsCountInWarehouseSchema(ctx, tableName)
+				require.NoError(t, err)
+				require.EqualValues(t, m1.LastValue(), columnsCount)
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)
@@ -487,11 +498,7 @@ func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int
 }
 
 func TestUploadJobT_TablesToSkip(t *testing.T) {
-	t.Parallel()
-
 	t.Run("repo error", func(t *testing.T) {
-		t.Parallel()
-
 		job := &UploadJob{
 			upload: model.Upload{
 				ID: 1,
@@ -509,8 +516,6 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	})
 
 	t.Run("should populate only once", func(t *testing.T) {
-		t.Parallel()
-
 		ptRepo := &mockPendingTablesRepo{}
 
 		job := &UploadJob{
@@ -528,74 +533,88 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 	})
 
 	t.Run("skip tables", func(t *testing.T) {
-		t.Parallel()
-
-		const (
-			namespace = "namespace"
-			destID    = "destID"
-		)
-
 		pendingTables := []model.PendingTableUpload{
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "previously_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadUpdatingSchemaFailed,
 				TableName:     "previously_failed_table_2",
 				Error:         "",
 			},
 			{
 				UploadID:      1,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "previously_succeeded_table_1",
 				Error:         "",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExportingFailed,
 				TableName:     "current_failed_table_1",
 				Error:         "some error",
 			},
 			{
 				UploadID:      5,
-				DestinationID: destID,
-				Namespace:     namespace,
+				DestinationID: "destID",
+				Namespace:     "namespace",
 				Status:        model.TableUploadExported,
 				TableName:     "current_succeeded_table_1",
 				Error:         "",
 			},
 		}
 
-		job := &UploadJob{
-			upload: model.Upload{
-				ID: 5,
+		testCases := []struct {
+			name                           string
+			skipPreviouslyFailedTables     bool
+			expectedPreviouslyFailedTables map[string]model.PendingTableUpload
+		}{
+			{
+				name:                           "skip previously failed tables",
+				skipPreviouslyFailedTables:     true,
+				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{},
 			},
-			pendingTableUploadsRepo: &mockPendingTablesRepo{
-				pendingTables: pendingTables,
+			{
+				name:                       "do not skip previously failed tables",
+				skipPreviouslyFailedTables: false,
+				expectedPreviouslyFailedTables: map[string]model.PendingTableUpload{
+					"previously_failed_table_1": pendingTables[0],
+				},
 			},
-			ctx: context.Background(),
 		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				job := &UploadJob{
+					upload: model.Upload{
+						ID: 5,
+					},
+					pendingTableUploadsRepo: &mockPendingTablesRepo{
+						pendingTables: pendingTables,
+					},
+					ctx: context.Background(),
+				}
+				job.config.skipPreviouslyFailedTables = tc.skipPreviouslyFailedTables
 
-		previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
-		require.NoError(t, err)
-		require.Equal(t, previouslyFailedTables, map[string]model.PendingTableUpload{
-			"previously_failed_table_1": pendingTables[0],
-		})
-		require.Equal(t, currentJobSucceededTables, map[string]model.PendingTableUpload{
-			"current_succeeded_table_1": pendingTables[4],
-		})
+				previouslyFailedTables, currentJobSucceededTables, err := job.TablesToSkip()
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedPreviouslyFailedTables, previouslyFailedTables)
+				require.Equal(t, map[string]model.PendingTableUpload{
+					"current_succeeded_table_1": pendingTables[4],
+				}, currentJobSucceededTables)
+			})
+		}
 	})
 }
 

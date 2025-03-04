@@ -1,7 +1,6 @@
 package eloqua
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -69,7 +69,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("got error while creating body for import definition. ", err, destination.ID, asyncDestStruct)
 	}
-	marshalledData, err := stdjson.Marshal(importDefinitionBody)
+	marshalledData, err := jsonrs.Marshal(importDefinitionBody)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
@@ -115,7 +115,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	runSyncBody := map[string]interface{}{
 		"syncedInstanceUri": importDefinition.URI,
 	}
-	marshalledData, err = stdjson.Marshal(runSyncBody)
+	marshalledData, err = jsonrs.Marshal(runSyncBody)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable marshal importDefinitionBody. ", err, destination.ID, asyncDestStruct)
 	}
@@ -130,7 +130,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	}
 	var parameters common.ImportParameters
 	parameters.ImportId = syncURI + ":" + importDefinition.URI
-	importParameters, err := stdjson.Marshal(parameters)
+	importParameters, err := jsonrs.Marshal(parameters)
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}

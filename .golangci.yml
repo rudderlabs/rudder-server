@@ -25,6 +25,7 @@ linters:
     - unconvert
     - depguard
     - unused
+    - forbidigo
 
 issues:
   exclude-use-default: true
@@ -53,15 +54,35 @@ issues:
         - bodyclose
 
 linters-settings:
+  forbidigo:
+    analyze-types: true
+    forbid:
+      - p: ^json\.Marshal.*$
+        pkg: ^encoding/json$
+        msg: use jsonrs.Marshal instead
+      - p: ^json\.Unmarshal$
+        pkg: ^encoding/json$
+        msg: use jsonrs.UnMarshal instead
+      - p: ^json\.NewDecoder.*$
+        pkg: ^encoding/json$
+        msg: use jsonrs.NewDecoder instead
+      - p: ^json\.NewEncoder.*$
+        pkg: ^encoding/json$
+        msg: use jsonrs.NewEncoder instead
   depguard:
     rules:
       main:
         files:
           - $all
           - "!**/uuid_test.go"
+          - "!**/jsonrs/*.go"
         deny:
           - pkg: "github.com/gofrs/uuid"
             desc: 'use github.com/google/uuid instead'
           - pkg: "golang.org/x/exp/slices"
             desc: 'use "slices" instead'
+          - pkg: "github.com/json-iterator/go"
+            desc: 'use "jsonrs" instead'
+          - pkg: "github.com/sugawarayuuta/sonnet"
+            desc: 'use "jsonrs" instead'
 

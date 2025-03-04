@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -38,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -198,7 +198,7 @@ func TestWorkerWriter(t *testing.T) {
 				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
 				payloads = append(payloads, p)
 
-				epJSON, err := json.Marshal(p)
+				epJSON, err := jsonrs.Marshal(p)
 				require.NoError(t, err)
 
 				jobs = append(jobs, &jobsdb.JobT{
@@ -346,7 +346,7 @@ func TestWorkerWriter(t *testing.T) {
 				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Hour))
 				payloads = append(payloads, p)
 
-				epJSON, err := json.Marshal(p)
+				epJSON, err := jsonrs.Marshal(p)
 				require.NoError(t, err)
 
 				jobs = append(jobs, &jobsdb.JobT{
@@ -467,7 +467,7 @@ func TestWorkerWriter(t *testing.T) {
 				p.SetReceivedAt(receivedAt)
 				p.SetFailedAt(failedAt.Add(time.Duration(i) * time.Second))
 
-				epJSON, err := json.Marshal(p)
+				epJSON, err := jsonrs.Marshal(p)
 				require.NoError(t, err)
 
 				jobs = append(jobs, &jobsdb.JobT{
@@ -686,7 +686,7 @@ func BenchmarkFileFormat(b *testing.B) {
 		}
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024))
-		e := json.NewEncoder(buf)
+		e := jsonrs.NewEncoder(buf)
 
 		for _, record := range records {
 			require.NoError(b, e.Encode(record))

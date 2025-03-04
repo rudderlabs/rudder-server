@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -292,7 +293,7 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 	}
 	schema[warehouseutils.ToProviderCase(r.destType, warehouseutils.IdentityMappingsTable)] = identityMappings
 
-	marshalledSchema, err := json.Marshal(schema)
+	marshalledSchema, err := jsonrs.Marshal(schema)
 	if err != nil {
 		panic(err)
 	}

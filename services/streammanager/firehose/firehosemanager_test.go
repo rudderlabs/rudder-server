@@ -1,7 +1,6 @@
 package firehose
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
 	"github.com/stretchr/testify/assert"
@@ -72,7 +72,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[FireHose] error :: message from payload not found", respMsg)
 
 	// Payload without deliveryStreamMapTo
-	sampleEventJson, _ = json.Marshal(map[string]string{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]string{
 		"message": sampleMessage,
 	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
@@ -81,7 +81,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[FireHose] error  :: Delivery Stream not found", respMsg)
 
 	// Payload with empty deliveryStreamMapTo
-	sampleEventJson, _ = json.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": "",
 	})
@@ -91,7 +91,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[FireHose] error :: empty delivery stream", respMsg)
 
 	// Payload with invalid deliveryStreamMapTo
-	sampleEventJson, _ = json.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": 1,
 	})
@@ -108,12 +108,12 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
-	sampleEventJson, _ := json.Marshal(map[string]string{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]string{
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": sampleDeliveryStreamName,
 	})
 
-	sampleMessageJson, _ := json.Marshal(sampleMessage)
+	sampleMessageJson, _ := jsonrs.Marshal(sampleMessage)
 
 	sampleRecord := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(sampleDeliveryStreamName),

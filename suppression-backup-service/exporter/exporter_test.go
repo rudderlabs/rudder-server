@@ -2,7 +2,6 @@ package exporter_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	suppressModel "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
@@ -201,7 +201,7 @@ func getSuppressions(w http.ResponseWriter, _ *http.Request) {
 		Items: []suppressModel.Suppression{defaultSuppression},
 		Token: tokenKey,
 	}
-	body, err := json.Marshal(respStruct)
+	body, err := jsonrs.Marshal(respStruct)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -219,7 +219,7 @@ func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
 	}
-	body, err := json.Marshal(config)
+	body, err := jsonrs.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -232,7 +232,7 @@ func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := map[string]backendconfig.ConfigT{namespaceID: {
 		WorkspaceID: "reg-test-workspaceId",
 	}}
-	body, err := json.Marshal(config)
+	body, err := jsonrs.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

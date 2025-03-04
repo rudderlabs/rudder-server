@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -22,6 +23,12 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+type DestinationValidationResponse struct {
+	Success bool          `json:"success"`
+	Error   string        `json:"error"`
+	Steps   []*model.Step `json:"steps"`
+}
 
 type Validator interface {
 	Validate(ctx context.Context) error
@@ -57,7 +64,7 @@ type loadTable struct {
 }
 
 type DestinationValidator interface {
-	Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse
+	Validate(ctx context.Context, dest *backendconfig.DestinationT) *DestinationValidationResponse
 }
 
 type destinationValidationImpl struct{}
@@ -66,15 +73,15 @@ func NewDestinationValidator() DestinationValidator {
 	return &destinationValidationImpl{}
 }
 
-func (*destinationValidationImpl) Validate(ctx context.Context, dest *backendconfig.DestinationT) *model.DestinationValidationResponse {
+func (*destinationValidationImpl) Validate(ctx context.Context, dest *backendconfig.DestinationT) *DestinationValidationResponse {
 	return validateDestination(ctx, dest, "")
 }
 
 func validateDestinationFunc(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) (json.RawMessage, error) {
-	return json.Marshal(validateDestination(ctx, dest, stepToValidate))
+	return jsonrs.Marshal(validateDestination(ctx, dest, stepToValidate))
 }
 
-func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) *model.DestinationValidationResponse {
+func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, stepToValidate string) *DestinationValidationResponse {
 	var (
 		destID          = dest.ID
 		destType        = dest.DestinationDefinition.Name
@@ -95,7 +102,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 	if stepToValidate != "" {
 		stepI, err := strconv.Atoi(stepToValidate)
 		if err != nil {
-			return &model.DestinationValidationResponse{
+			return &DestinationValidationResponse{
 				Error: fmt.Sprintf("Invalid step: %s", stepToValidate),
 			}
 		}
@@ -110,7 +117,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		}
 
 		if vs == nil {
-			return &model.DestinationValidationResponse{
+			return &DestinationValidationResponse{
 				Error: fmt.Sprintf("Invalid step: %s", stepToValidate),
 			}
 		}
@@ -158,7 +165,7 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		}
 	}
 
-	res := &model.DestinationValidationResponse{
+	res := &DestinationValidationResponse{
 		Steps:   stepsToValidate,
 		Success: err == nil,
 	}
@@ -242,6 +249,13 @@ func (os *objectStorage) Validate(ctx context.Context) error {
 
 	if err = downloadFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
 		return fmt.Errorf("download file: %w", err)
+	}
+
+	cleanupObjectStorageFiles, _ := os.destination.Config[model.CleanupObjectStorageFilesSetting.String()].(bool)
+	if cleanupObjectStorageFiles {
+		if err = deleteFile(ctx, os.destination, uploadObject.ObjectName); err != nil {
+			return fmt.Errorf("delete file: %w. Ensure that delete permissions are granted because the option to delete files after a successful sync is enabled", err)
+		}
 	}
 
 	return nil
@@ -400,6 +414,20 @@ func uploadFile(ctx context.Context, dest *backendconfig.DestinationT, filePath 
 	}
 
 	return output, nil
+}
+
+func deleteFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {
+	var (
+		err error
+		fm  filemanager.FileManager
+	)
+	if fm, err = createFileManager(dest); err != nil {
+		return fmt.Errorf("create file manager: %w", err)
+	}
+	if err = fm.Delete(ctx, []string{location}); err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	return nil
 }
 
 func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, location string) error {

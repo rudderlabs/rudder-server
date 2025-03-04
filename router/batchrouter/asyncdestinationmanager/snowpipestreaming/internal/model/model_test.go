@@ -6,6 +6,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -123,7 +124,7 @@ func TestChannelResponse_UnmarshalJSON(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var response ChannelResponse
-			err := json.Unmarshal(tc.response, &response)
+			err := jsonrs.Unmarshal(tc.response, &response)
 			if tc.wantError {
 				require.Error(t, err)
 				return

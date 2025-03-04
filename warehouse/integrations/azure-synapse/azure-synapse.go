@@ -36,9 +36,10 @@ import (
 )
 
 const (
-	stringLengthLimit = 512
-	provider          = warehouseutils.AzureSynapse
-	tableNameLimit    = 127
+	varcharDefaultLength = 512
+	varcharMaxLength     = -1
+	provider             = warehouseutils.AzureSynapse
+	tableNameLimit       = 127
 )
 
 var errorsMappings []model.JobError
@@ -77,14 +78,18 @@ var azureSynapseDataTypesMapToRudder = map[string]string{
 	"bit":                      "boolean",
 }
 
+var stringColumns = lo.Keys(lo.PickBy(azureSynapseDataTypesMapToRudder, func(_, value string) bool {
+	return value == "string"
+}))
+
 type AzureSynapse struct {
-	DB                 *sqlmw.DB
-	Namespace          string
-	ObjectStorage      string
-	Warehouse          model.Warehouse
-	Uploader           warehouseutils.Uploader
+	db                 *sqlmw.DB
+	namespace          string
+	objectStorage      string
+	warehouse          model.Warehouse
+	uploader           warehouseutils.Uploader
 	connectTimeout     time.Duration
-	LoadFileDownLoader downloader.Downloader
+	loadFileDownLoader downloader.Downloader
 
 	stats  stats.Stats
 	conf   *config.Config
@@ -169,12 +174,12 @@ func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
 		sqlmw.WithStats(as.stats),
 		sqlmw.WithLogger(as.logger),
 		sqlmw.WithKeyAndValues([]any{
-			logfield.SourceID, as.Warehouse.Source.ID,
-			logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, as.Warehouse.Destination.ID,
-			logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-			logfield.Namespace, as.Namespace,
+			logfield.SourceID, as.warehouse.Source.ID,
+			logfield.SourceType, as.warehouse.Source.SourceDefinition.Name,
+			logfield.DestinationID, as.warehouse.Destination.ID,
+			logfield.DestinationType, as.warehouse.Destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, as.warehouse.WorkspaceID,
+			logfield.Namespace, as.namespace,
 		}),
 		sqlmw.WithQueryTimeout(as.connectTimeout),
 		sqlmw.WithSlowQueryThreshold(as.config.slowQueryThreshold),
@@ -184,12 +189,12 @@ func (as *AzureSynapse) connect() (*sqlmw.DB, error) {
 
 func (as *AzureSynapse) connectionCredentials() *credentials {
 	return &credentials{
-		host:     as.Warehouse.GetStringDestinationConfig(as.conf, model.HostSetting),
-		dbName:   as.Warehouse.GetStringDestinationConfig(as.conf, model.DatabaseSetting),
-		user:     as.Warehouse.GetStringDestinationConfig(as.conf, model.UserSetting),
-		password: as.Warehouse.GetStringDestinationConfig(as.conf, model.PasswordSetting),
-		port:     as.Warehouse.GetStringDestinationConfig(as.conf, model.PortSetting),
-		sslMode:  as.Warehouse.GetStringDestinationConfig(as.conf, model.SSLModeSetting),
+		host:     as.warehouse.GetStringDestinationConfig(as.conf, model.HostSetting),
+		dbName:   as.warehouse.GetStringDestinationConfig(as.conf, model.DatabaseSetting),
+		user:     as.warehouse.GetStringDestinationConfig(as.conf, model.UserSetting),
+		password: as.warehouse.GetStringDestinationConfig(as.conf, model.PasswordSetting),
+		port:     as.warehouse.GetStringDestinationConfig(as.conf, model.PortSetting),
+		sslMode:  as.warehouse.GetStringDestinationConfig(as.conf, model.SSLModeSetting),
 		timeout:  as.connectTimeout,
 	}
 }
@@ -212,17 +217,17 @@ func (as *AzureSynapse) loadTable(
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
 	log := as.logger.With(
-		logfield.SourceID, as.Warehouse.Source.ID,
-		logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, as.Warehouse.Destination.ID,
-		logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-		logfield.Namespace, as.Namespace,
+		logfield.SourceID, as.warehouse.Source.ID,
+		logfield.SourceType, as.warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, as.warehouse.Destination.ID,
+		logfield.DestinationType, as.warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, as.warehouse.WorkspaceID,
+		logfield.Namespace, as.namespace,
 		logfield.TableName, tableName,
 	)
 	log.Infow("started loading")
 
-	fileNames, err := as.LoadFileDownLoader.Download(ctx, tableName)
+	fileNames, err := as.loadFileDownLoader.Download(ctx, tableName)
 	if err != nil {
 		return nil, "", fmt.Errorf("downloading load files: %w", err)
 	}
@@ -250,11 +255,11 @@ func (as *AzureSynapse) loadTable(
 		  TOP 0 * INTO %[1]s.%[2]s
 		FROM
 		  %[1]s.%[3]s;`,
-		as.Namespace,
+		as.namespace,
 		stagingTableName,
 		tableName,
 	)
-	if _, err = as.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+	if _, err = as.db.ExecContext(ctx, createStagingTableStmt); err != nil {
 		return nil, "", fmt.Errorf("creating temporary table: %w", err)
 	}
 
@@ -264,7 +269,7 @@ func (as *AzureSynapse) loadTable(
 		}()
 	}
 
-	txn, err := as.DB.BeginTx(ctx, &sql.TxOptions{})
+	txn, err := as.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, "", fmt.Errorf("begin transaction: %w", err)
 	}
@@ -278,7 +283,7 @@ func (as *AzureSynapse) loadTable(
 		tableSchemaInUpload,
 	)
 	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		as.Uploader.GetTableSchemaInWarehouse(
+		as.uploader.GetTableSchemaInWarehouse(
 			tableName,
 		),
 	)
@@ -287,12 +292,17 @@ func (as *AzureSynapse) loadTable(
 	})
 
 	log.Debugw("creating prepared stmt for loading data")
-	copyInStmt := mssql.CopyIn(as.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
+	copyInStmt := mssql.CopyIn(as.namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
 		append(sortedColumnKeys, extraColumns...)...,
 	)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
+	}
+
+	varcharLengthMap, err := as.getVarcharLengthMap(ctx, tableName)
+	if err != nil {
+		return nil, "", fmt.Errorf("getting varchar column length map: %w", err)
 	}
 
 	log.Infow("loading data into staging table")
@@ -301,6 +311,7 @@ func (as *AzureSynapse) loadTable(
 			ctx, log, stmt,
 			fileName, sortedColumnKeys,
 			extraColumns, tableSchemaInUpload,
+			varcharLengthMap,
 		)
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", fileName, err)
@@ -341,6 +352,47 @@ func (as *AzureSynapse) loadTable(
 	}, stagingTableName, nil
 }
 
+// getVarcharLengthMap retrieves the maximum allowed length for varchar columns in a given table.
+// A `CHARACTER_MAXIMUM_LENGTH` of `-1` indicates that the column has the maximum possible length (i.e., `varchar(max)`).
+func (as *AzureSynapse) getVarcharLengthMap(ctx context.Context, tableName string) (map[string]int, error) {
+	dataTypes := "'" + strings.Join(stringColumns, "', '") + "'"
+	query := fmt.Sprintf(`
+		SELECT column_name, CHARACTER_MAXIMUM_LENGTH
+		FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = @schema
+		  AND TABLE_NAME = @tableName
+		  AND DATA_TYPE IN (%s);
+`,
+		dataTypes,
+	)
+
+	columnsMap := make(map[string]int)
+	rows, err := as.db.QueryContext(ctx, query,
+		sql.Named("schema", as.namespace),
+		sql.Named("tableName", tableName),
+	)
+	if errors.Is(err, io.EOF) {
+		return columnsMap, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying varchar columns length: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var columnName string
+		var maxLength int
+		if err := rows.Scan(&columnName, &maxLength); err != nil {
+			return nil, err
+		}
+		columnsMap[columnName] = maxLength
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating varchar columns length: %w", err)
+	}
+	return columnsMap, nil
+}
+
 func (as *AzureSynapse) loadDataIntoStagingTable(
 	ctx context.Context,
 	log logger.Logger,
@@ -349,6 +401,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	sortedColumnKeys []string,
 	extraColumns []string,
 	tableSchemaInUpload model.TableSchema,
+	varcharLengthMap map[string]int,
 ) error {
 	gzipFile, err := os.Open(fileName)
 	if err != nil {
@@ -405,9 +458,10 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 				continue
 			}
 
-			processedVal, err := as.ProcessColumnValue(
+			processedVal, err := ProcessColumnValue(
 				value.(string),
 				valueType,
+				varcharLengthMap[sortedColumnKeys[index]],
 			)
 			if err != nil {
 				log.Warnw("mismatch in datatype",
@@ -445,9 +499,13 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 	return nil
 }
 
-func (as *AzureSynapse) ProcessColumnValue(
+// ProcessColumnValue processes the input string `value` based on its specified `valueType`.
+// It converts the value to the appropriate type and ensures it adheres to the constraints
+// such as `varcharLength` for string types.
+func ProcessColumnValue(
 	value string,
 	valueType string,
+	varcharLength int,
 ) (interface{}, error) {
 	switch valueType {
 	case model.IntDataType:
@@ -459,15 +517,21 @@ func (as *AzureSynapse) ProcessColumnValue(
 	case model.BooleanDataType:
 		return strconv.ParseBool(value)
 	case model.StringDataType:
-		if len(value) > stringLengthLimit {
-			value = value[:stringLengthLimit]
+		// If the varchar length is set to the maximum allowed, return the string as is.
+		if varcharLength == varcharMaxLength {
+			return value, nil
+		}
+
+		maxStringLength := max(varcharLength, varcharDefaultLength)
+		if len(value) > maxStringLength {
+			value = value[:maxStringLength]
 		}
 		if !hasDiacritics(value) {
 			return value, nil
 		} else {
 			byteArr := str2ucs2(value)
-			if len(byteArr) > stringLengthLimit {
-				byteArr = byteArr[:stringLengthLimit]
+			if len(byteArr) > maxStringLength {
+				byteArr = byteArr[:maxStringLength]
 			}
 			return byteArr, nil
 		}
@@ -490,7 +554,7 @@ func (as *AzureSynapse) deleteFromLoadTable(
 	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]q.%[2]q.%[3]q AND _source.%[4]s = %[1]q.%[2]q.%[4]q`,
-			as.Namespace,
+			as.namespace,
 			tableName,
 			"table_name",
 			"column_name",
@@ -506,7 +570,7 @@ func (as *AzureSynapse) deleteFromLoadTable(
 		  (
 			_source.%[4]s = %[1]q.%[2]q.%[4]q %[5]s
 		  );`,
-		as.Namespace,
+		as.namespace,
 		tableName,
 		stagingTableName,
 		primaryKey,
@@ -554,7 +618,7 @@ func (as *AzureSynapse) insertIntoLoadTable(
 		  ) AS _
 		WHERE
 		  _rudder_staging_row_number = 1;`,
-		as.Namespace,
+		as.namespace,
 		tableName,
 		quotedColumnNames,
 		stagingTableName,
@@ -591,13 +655,13 @@ func hasDiacritics(str string) bool {
 func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	as.logger.Infof("AZ: Starting load for identifies and users tables\n")
-	_, identifyStagingTable, err := as.loadTable(ctx, warehouseutils.IdentifiesTable, as.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	_, identifyStagingTable, err := as.loadTable(ctx, warehouseutils.IdentifiesTable, as.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
 	}
 
-	if len(as.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+	if len(as.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
@@ -608,7 +672,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	defer as.dropStagingTable(ctx, unionStagingTableName)
 	defer as.dropStagingTable(ctx, identifyStagingTable)
 
-	userColMap := as.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := as.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		if colName == "id" {
@@ -622,7 +686,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 							  and %[1]q is not null
 							order by received_at desc
 							)
-						  end as %[1]q`, colName, as.Namespace+"."+unionStagingTableName)
+						  end as %[1]q`, colName, as.namespace+"."+unionStagingTableName)
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
@@ -637,10 +701,10 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 												(
 													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
 												)) a
-											`, as.Namespace, as.Namespace+"."+warehouseutils.UsersTable, as.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.Namespace+"."+unionStagingTableName)
+											`, as.namespace, as.namespace+"."+warehouseutils.UsersTable, as.namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.namespace+"."+unionStagingTableName)
 
 	as.logger.Debugf("AZ: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = as.DB.ExecContext(ctx, sqlStatement)
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -653,13 +717,13 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 											FROM %[3]s as x
 										) as xyz
 									) a`,
-		as.Namespace+"."+stagingTableName,
+		as.namespace+"."+stagingTableName,
 		strings.Join(firstValProps, ","),
-		as.Namespace+"."+unionStagingTableName,
+		as.namespace+"."+unionStagingTableName,
 	)
 
 	as.logger.Debugf("AZ: Creating staging table for users: %s\n", sqlStatement)
-	_, err = as.DB.ExecContext(ctx, sqlStatement)
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		as.logger.Errorf("AZ: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
@@ -667,14 +731,14 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := as.DB.BeginTx(ctx, &sql.TxOptions{})
+	tx, err := as.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, as.namespace, warehouseutils.UsersTable, as.namespace+"."+stagingTableName, primaryKey)
 	as.logger.Infof("AZ: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -684,7 +748,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.Namespace, warehouseutils.UsersTable, as.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.namespace, warehouseutils.UsersTable, as.namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	as.logger.Infof("AZ: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.ExecContext(ctx, sqlStatement)
 	if err != nil {
@@ -710,9 +774,9 @@ func (*AzureSynapse) DeleteBy(context.Context, []string, warehouseutils.DeleteBy
 
 func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
-    EXEC('CREATE SCHEMA [%s]');`, as.Namespace, as.Namespace)
-	as.logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.DB.ExecContext(ctx, sqlStatement)
+    EXEC('CREATE SCHEMA [%s]');`, as.namespace, as.namespace)
+	as.logger.Infof("SYNAPSE: Creating schema name in synapse for AZ:%s : %v", as.warehouse.Destination.ID, sqlStatement)
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
@@ -721,9 +785,9 @@ func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
 
 func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName string) {
 	as.logger.Infof("AZ: dropping table %+v\n", stagingTableName)
-	_, err := as.DB.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, as.Namespace+"."+stagingTableName))
+	_, err := as.db.ExecContext(ctx, fmt.Sprintf(`IF OBJECT_ID ('%[1]s','U') IS NOT NULL DROP TABLE %[1]s;`, as.namespace+"."+stagingTableName))
 	if err != nil {
-		as.logger.Errorf("AZ:  Error dropping staging table %s in synapse: %v", as.Namespace+"."+stagingTableName, err)
+		as.logger.Errorf("AZ:  Error dropping staging table %s in synapse: %v", as.namespace+"."+stagingTableName, err)
 	}
 }
 
@@ -731,21 +795,21 @@ func (as *AzureSynapse) createTable(ctx context.Context, name string, columns mo
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
-	as.logger.Infof("AZ: Creating table in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.DB.ExecContext(ctx, sqlStatement)
+	as.logger.Infof("AZ: Creating table in synapse for AZ:%s : %v", as.warehouse.Destination.ID, sqlStatement)
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return
 }
 
 func (as *AzureSynapse) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
-	err = as.createTable(ctx, as.Namespace+"."+tableName, columnMap)
+	err = as.createTable(ctx, as.namespace+"."+tableName, columnMap)
 	return err
 }
 
 func (as *AzureSynapse) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	as.logger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.DB.ExecContext(ctx, fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	as.logger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", as.warehouse.Destination.ID, sqlStatement)
+	_, err = as.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, as.namespace, tableName))
 	return
 }
 
@@ -766,7 +830,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
 				AND name = '%[3]s'
 			)`,
-			as.Namespace,
+			as.namespace,
 			tableName,
 			columnsInfo[0].Name,
 		))
@@ -776,7 +840,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 		ALTER TABLE
 		  %s.%s
 		ADD`,
-		as.Namespace,
+		as.namespace,
 		tableName,
 	))
 
@@ -787,8 +851,8 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
-	as.logger.Infof("AZ: Adding columns for destinationID: %s, tableName: %s with query: %v", as.Warehouse.Destination.ID, tableName, query)
-	_, err = as.DB.ExecContext(ctx, query)
+	as.logger.Infof("AZ: Adding columns for destinationID: %s, tableName: %s with query: %v", as.warehouse.Destination.ID, tableName, query)
+	_, err = as.db.ExecContext(ctx, query)
 	return
 }
 
@@ -797,7 +861,7 @@ func (*AzureSynapse) AlterColumn(_ context.Context, _, _, _ string) (model.Alter
 }
 
 func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) error {
-	err := as.DB.PingContext(ctx)
+	err := as.db.PingContext(ctx)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("connection timeout: %w", err)
 	}
@@ -809,13 +873,13 @@ func (as *AzureSynapse) TestConnection(ctx context.Context, _ model.Warehouse) e
 }
 
 func (as *AzureSynapse) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
-	as.Uploader = uploader
-	as.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.AzureSynapse, warehouse.Destination.Config, as.Uploader.UseRudderStorage())
-	as.LoadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.config.numWorkersDownloadLoadFiles)
+	as.warehouse = warehouse
+	as.namespace = warehouse.Namespace
+	as.uploader = uploader
+	as.objectStorage = warehouseutils.ObjectStorageType(warehouseutils.AzureSynapse, warehouse.Destination.Config, as.uploader.UseRudderStorage())
+	as.loadFileDownLoader = downloader.NewDownloader(&warehouse, uploader, as.config.numWorkersDownloadLoadFiles)
 
-	if as.DB, err = as.connect(); err != nil {
+	if as.db, err = as.connect(); err != nil {
 		return fmt.Errorf("connecting to azure synapse: %w", err)
 	}
 	return err
@@ -831,10 +895,10 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 		  table_schema = '%s'
 		  AND table_name like '%s';
 	`,
-		as.Namespace,
+		as.namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	rows, err := as.DB.QueryContext(ctx, sqlStatement)
+	rows, err := as.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		return fmt.Errorf("querying for dangling staging tables: %w", err)
 	}
@@ -854,9 +918,9 @@ func (as *AzureSynapse) dropDanglingStagingTables(ctx context.Context) error {
 	}
 	as.logger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	for _, stagingTableName := range stagingTableNames {
-		_, err := as.DB.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
+		_, err := as.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.namespace, stagingTableName))
 		if err != nil {
-			return fmt.Errorf("dropping dangling staging table %q.%q: %w", as.Namespace, stagingTableName, err)
+			return fmt.Errorf("dropping dangling staging table %q.%q: %w", as.namespace, stagingTableName, err)
 		}
 	}
 	return nil
@@ -877,10 +941,10 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, error) {
 			table_schema = @schema
 			and table_name not like @prefix
 `
-	rows, err := as.DB.QueryContext(
+	rows, err := as.db.QueryContext(
 		ctx,
 		sqlStatement,
-		sql.Named("schema", as.Namespace),
+		sql.Named("schema", as.namespace),
 		sql.Named("prefix", fmt.Sprintf("%s%%", warehouseutils.StagingTablePrefix(provider))),
 	)
 	if errors.Is(err, io.EOF) {
@@ -904,7 +968,7 @@ func (as *AzureSynapse) FetchSchema(ctx context.Context) (model.Schema, error) {
 		if datatype, ok := azureSynapseDataTypesMapToRudder[columnType]; ok {
 			schema[tableName][columnName] = datatype
 		} else {
-			warehouseutils.WHCounterStat(as.stats, warehouseutils.RudderMissingDatatype, &as.Warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
+			warehouseutils.WHCounterStat(as.stats, warehouseutils.RudderMissingDatatype, &as.warehouse, warehouseutils.Tag{Name: "datatype", Value: columnType}).Count(1)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -922,31 +986,31 @@ func (as *AzureSynapse) LoadTable(ctx context.Context, tableName string) (*types
 	loadTableStat, _, err := as.loadTable(
 		ctx,
 		tableName,
-		as.Uploader.GetTableSchemaInUpload(tableName),
+		as.uploader.GetTableSchemaInUpload(tableName),
 		false,
 	)
 	return loadTableStat, err
 }
 
 func (as *AzureSynapse) Cleanup(ctx context.Context) {
-	if as.DB != nil {
+	if as.db != nil {
 		// extra check aside dropStagingTable(table)
 		err := as.dropDanglingStagingTables(ctx)
 		if err != nil {
 			as.logger.Warnw("Error dropping dangling staging tables",
-				logfield.DestinationID, as.Warehouse.Destination.ID,
-				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.SourceID, as.Warehouse.Source.ID,
-				logfield.SourceType, as.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, as.Warehouse.Destination.ID,
-				logfield.DestinationType, as.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, as.Warehouse.WorkspaceID,
-				logfield.Namespace, as.Warehouse.Namespace,
+				logfield.DestinationID, as.warehouse.Destination.ID,
+				logfield.DestinationType, as.warehouse.Destination.DestinationDefinition.Name,
+				logfield.SourceID, as.warehouse.Source.ID,
+				logfield.SourceType, as.warehouse.Source.SourceDefinition.Name,
+				logfield.DestinationID, as.warehouse.Destination.ID,
+				logfield.DestinationType, as.warehouse.Destination.DestinationDefinition.Name,
+				logfield.WorkspaceID, as.warehouse.WorkspaceID,
+				logfield.Namespace, as.warehouse.Namespace,
 
 				logfield.Error, err,
 			)
 		}
-		_ = as.DB.Close()
+		_ = as.db.Close()
 	}
 }
 
@@ -963,8 +1027,8 @@ func (*AzureSynapse) DownloadIdentityRules(context.Context, *misc.GZipWriter) (e
 }
 
 func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
-	as.Warehouse = warehouse
-	as.Namespace = warehouse.Namespace
+	as.warehouse = warehouse
+	as.namespace = warehouse.Namespace
 
 	db, err := as.connect()
 	if err != nil {
@@ -976,12 +1040,12 @@ func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (c
 
 func (as *AzureSynapse) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
-		as.Namespace,
+		as.namespace,
 		tableName,
 		fmt.Sprintf(`%q, %q`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = as.DB.ExecContext(ctx, sqlStatement)
+	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return
 }
 

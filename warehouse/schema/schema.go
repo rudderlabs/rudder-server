@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -16,14 +16,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // deprecatedColumnsRegex
 // This regex is used to identify deprecated columns in the warehouse
@@ -47,15 +46,14 @@ type fetchSchemaRepo interface {
 
 type Handler interface {
 	SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error)
-	IsWarehouseSchemaEmpty() bool
-	GetTableSchemaInWarehouse(tableName string) model.TableSchema
-	GetLocalSchema(ctx context.Context) (model.Schema, error)
+	IsWarehouseSchemaEmpty(ctx context.Context) bool
+	GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema
 	UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error
-	UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema)
-	GetColumnsCountInWarehouseSchema(tableName string) int
+	UpdateWarehouseTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error
+	GetColumnsCountInWarehouseSchema(ctx context.Context, tableName string) (int, error)
 	ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error)
 	UpdateLocalSchemaWithWarehouse(ctx context.Context) error
-	TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff
+	TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error)
 	FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error
 }
 
@@ -83,6 +81,7 @@ func New(
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,
+	fetchSchemaRepo fetchSchemaRepo,
 ) Handler {
 	s := &schema{
 		warehouse:                        warehouse,
@@ -99,6 +98,10 @@ func New(
 		"sourceId":      warehouse.Source.ID,
 		"destinationId": warehouse.Destination.ID,
 	})
+	if conf.GetBoolVar(true, "Warehouse.enableSchemaTTL") {
+		ttlInMinutes := conf.GetDurationVar(720, time.Minute, "Warehouse.schemaTTLInMinutes")
+		return newSchemaV2(s, warehouse, logger.Child("schema_v2"), ttlInMinutes, fetchSchemaRepo)
+	}
 	return s
 }
 
@@ -276,7 +279,7 @@ func (sh *schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 1. Inserts the updated schema into the local schema table
 // 2. Updates the local schema instance
 func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
-	updatedSchemaInBytes, err := json.Marshal(updatedSchema)
+	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
@@ -307,7 +310,7 @@ func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 4. Updates local schema with warehouse schema if it has changed
 // 5. Returns true if schema has changed
 func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
+	localSchema, err := sh.getLocalSchema(ctx)
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -335,7 +338,7 @@ func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 }
 
 // GetLocalSchema returns the local schema from wh_schemas table
-func (sh *schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
+func (sh *schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
@@ -371,15 +374,19 @@ func (sh *schema) FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchema
 
 // removeDeprecatedColumns skips deprecated columns from the schema map
 func (sh *schema) removeDeprecatedColumns(schema model.Schema) {
+	removeDeprecatedColumns(schema, sh.warehouse, sh.log)
+}
+
+func removeDeprecatedColumns(schema model.Schema, warehouse model.Warehouse, log logger.Logger) {
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if deprecatedColumnsRegex.MatchString(columnName) {
-				sh.log.Debugw("skipping deprecated column",
-					logfield.SourceID, sh.warehouse.Source.ID,
-					logfield.DestinationID, sh.warehouse.Destination.ID,
-					logfield.DestinationType, sh.warehouse.Destination.DestinationDefinition.Name,
-					logfield.WorkspaceID, sh.warehouse.WorkspaceID,
-					logfield.Namespace, sh.warehouse.Namespace,
+				log.Debugw("skipping deprecated column",
+					logfield.SourceID, warehouse.Source.ID,
+					logfield.DestinationID, warehouse.Destination.ID,
+					logfield.DestinationType, warehouse.Destination.DestinationDefinition.Name,
+					logfield.WorkspaceID, warehouse.WorkspaceID,
+					logfield.Namespace, warehouse.Namespace,
 					logfield.TableName, tableName,
 					logfield.ColumnName, columnName,
 				)
@@ -395,16 +402,20 @@ func (sh *schema) hasSchemaChanged(localSchema model.Schema) bool {
 }
 
 // TableSchemaDiff returns the diff between the warehouse schema and the upload schema
-func (sh *schema) TableSchemaDiff(tableName string, tableSchema model.TableSchema) whutils.TableSchemaDiff {
+func (sh *schema) TableSchemaDiff(_ context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error) {
+	sh.schemaInWarehouseMu.RLock()
+	defer sh.schemaInWarehouseMu.RUnlock()
+	return tableSchemaDiff(tableName, sh.schemaInWarehouse, tableSchema), nil
+}
+
+func tableSchemaDiff(tableName string, schemaMap model.Schema, tableSchema model.TableSchema) whutils.TableSchemaDiff {
 	diff := whutils.TableSchemaDiff{
 		ColumnMap:        make(model.TableSchema),
 		UpdatedSchema:    make(model.TableSchema),
 		AlteredColumnMap: make(model.TableSchema),
 	}
 
-	sh.schemaInWarehouseMu.RLock()
-	currentTableSchema, ok := sh.schemaInWarehouse[tableName]
-	sh.schemaInWarehouseMu.RUnlock()
+	currentTableSchema, ok := schemaMap[tableName]
 
 	if !ok {
 		if len(tableSchema) == 0 {
@@ -436,29 +447,30 @@ func (sh *schema) TableSchemaDiff(tableName string, tableSchema model.TableSchem
 	return diff
 }
 
-func (sh *schema) GetTableSchemaInWarehouse(tableName string) model.TableSchema {
+func (sh *schema) GetTableSchemaInWarehouse(_ context.Context, tableName string) model.TableSchema {
 	sh.schemaInWarehouseMu.RLock()
 	defer sh.schemaInWarehouseMu.RUnlock()
 	return sh.schemaInWarehouse[tableName]
 }
 
-func (sh *schema) UpdateWarehouseTableSchema(tableName string, tableSchema model.TableSchema) {
+func (sh *schema) UpdateWarehouseTableSchema(_ context.Context, tableName string, tableSchema model.TableSchema) error {
 	sh.schemaInWarehouseMu.Lock()
 	defer sh.schemaInWarehouseMu.Unlock()
 	if sh.schemaInWarehouse == nil {
 		sh.schemaInWarehouse = make(model.Schema)
 	}
 	sh.schemaInWarehouse[tableName] = tableSchema
+	return nil
 }
 
-func (sh *schema) IsWarehouseSchemaEmpty() bool {
+func (sh *schema) IsWarehouseSchemaEmpty(_ context.Context) bool {
 	sh.schemaInWarehouseMu.RLock()
 	defer sh.schemaInWarehouseMu.RUnlock()
 	return len(sh.schemaInWarehouse) == 0
 }
 
-func (sh *schema) GetColumnsCountInWarehouseSchema(tableName string) int {
+func (sh *schema) GetColumnsCountInWarehouseSchema(_ context.Context, tableName string) (int, error) {
 	sh.schemaInWarehouseMu.RLock()
 	defer sh.schemaInWarehouseMu.RUnlock()
-	return len(sh.schemaInWarehouse[tableName])
+	return len(sh.schemaInWarehouse[tableName]), nil
 }

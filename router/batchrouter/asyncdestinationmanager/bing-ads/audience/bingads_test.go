@@ -2,7 +2,7 @@ package audience
 
 import (
 	"archive/zip"
-	stdjson "encoding/json"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +26,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksoauthservice "github.com/rudderlabs/rudder-server/mocks/services/oauth"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/services/oauth"
@@ -114,14 +115,14 @@ var _ = Describe("Bing ads Audience", func() {
 				FailedReason:        "{\"error\":\"Add:error in uploading the bulk file: unable to get bulk upload url, check your credentials\"}",
 				ImportingJobIDs:     []int64{3, 4},
 				FailedJobIDs:        []int64{1, 2},
-				ImportingParameters: stdjson.RawMessage{},
+				ImportingParameters: json.RawMessage{},
 				ImportingCount:      2,
 				FailedCount:         2,
 			}
 
 			// making upload function call
 			received := bulkUploader.Upload(&asyncDestination)
-			received.ImportingParameters = stdjson.RawMessage{}
+			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -151,7 +152,7 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to unmarshal parameters: %v\n", err)
 				return
@@ -162,7 +163,7 @@ var _ = Describe("Bing ads Audience", func() {
 				ImportingCount:      0,
 				FailedCount:         4,
 				AbortCount:          0,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
 			if err != nil {
@@ -205,7 +206,7 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
 				return
@@ -215,7 +216,7 @@ var _ = Describe("Bing ads Audience", func() {
 				FailedReason:        "{\"error\":\"Remove:error in getting bulk upload url: unable to get bulk upload url, check your credentials,Add:error in getting bulk upload url: unable to get bulk upload url, check your credentials\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 
 			dir, err := os.MkdirTemp("/tmp", "rudder-server")
@@ -282,7 +283,7 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 			var parameters common.ImportParameters
 			parameters.ImportId = ""
-			importParameters, err := stdjson.Marshal(parameters)
+			importParameters, err := jsonrs.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
 				return
@@ -292,7 +293,7 @@ var _ = Describe("Bing ads Audience", func() {
 				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: Error in uploading bulk file,Add:error in uploading the bulk file: Error in uploading bulk file\"}",
 				FailedCount:         4,
 				DestinationID:       destination.ID,
-				ImportingParameters: stdjson.RawMessage(importParameters),
+				ImportingParameters: json.RawMessage(importParameters),
 			}
 			received := bulkUploader.Upload(&asyncDestination)
 
@@ -633,14 +634,14 @@ var _ = Describe("Bing ads Audience", func() {
 			expected := common.AsyncUploadOutput{
 				FailedReason:        "{\"error\":\"Remove:error in uploading the bulk file: unable to upload bulk file, check your credentials,Add:error in uploading the bulk file: unable to upload bulk file, check your credentials\"}",
 				FailedJobIDs:        []int64{3, 4, 1, 2},
-				ImportingParameters: stdjson.RawMessage{},
+				ImportingParameters: json.RawMessage{},
 				ImportingCount:      0,
 				FailedCount:         4,
 			}
 
 			// making upload function call
 			received := bulkUploader.Upload(&asyncDestination)
-			received.ImportingParameters = stdjson.RawMessage{}
+			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)

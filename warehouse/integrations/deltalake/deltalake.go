@@ -3,13 +3,14 @@ package deltalake
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
@@ -20,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -35,8 +37,7 @@ const (
 )
 
 const (
-	schemaNotFound       = "[SCHEMA_NOT_FOUND]"
-	columnsAlreadyExists = "already exists in root"
+	schemaNotFound = "[SCHEMA_NOT_FOUND]"
 )
 
 const (
@@ -183,12 +184,15 @@ func (d *Deltalake) Setup(_ context.Context, warehouse model.Warehouse, uploader
 // connect connects to the warehouse
 func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	var (
-		host       = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
-		portString = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
-		path       = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
-		token      = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
-		catalog    = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
-		timeout    = d.connectTimeout
+		host              = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
+		portString        = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
+		path              = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
+		token             = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
+		catalog           = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
+		timeout           = d.connectTimeout
+		useOauth          = d.Warehouse.GetBoolDestinationConfig(model.UseOauthSetting)
+		oauthClientID     = d.Warehouse.GetStringDestinationConfig(d.conf, model.OauthClientIDSetting)
+		oauthClientSecret = d.Warehouse.GetStringDestinationConfig(d.conf, model.OauthClientSecretSetting)
 	)
 
 	port, err := strconv.Atoi(portString)
@@ -197,12 +201,15 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	}
 
 	data := sqlconnectconfig.Databricks{
-		Host:    host,
-		Port:    port,
-		Path:    path,
-		Token:   token,
-		Catalog: catalog,
-		Timeout: timeout,
+		Host:              host,
+		Port:              port,
+		Path:              path,
+		Token:             token,
+		Catalog:           catalog,
+		UseOAuth:          useOauth,
+		OAuthClientID:     oauthClientID,
+		OAuthClientSecret: oauthClientSecret,
+		Timeout:           timeout,
 		SessionParams: map[string]string{
 			"ansi_mode": "false",
 		},
@@ -211,7 +218,7 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 		MaxRetryWaitTime: d.config.retryMaxWait,
 	}
 
-	credentialsJSON, err := json.Marshal(data)
+	credentialsJSON, err := jsonrs.Marshal(data)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling credentials: %w", err)
 	}
@@ -336,18 +343,30 @@ func (d *Deltalake) dropTable(ctx context.Context, table string) error {
 func (d *Deltalake) FetchSchema(ctx context.Context) (model.Schema, error) {
 	// Since error handling is not so good with the Databricks driver we need to verify the exact string in the error.
 	// Therefore, creating the schema every time before we fetch it. Also, creating the schema is idempotent.
+	log := d.logger.With(
+		logfield.SourceID, d.Warehouse.Source.ID,
+		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
+		logfield.DestinationID, d.Warehouse.Destination.ID,
+		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
+		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
+		logfield.Namespace, d.Namespace,
+	)
+	log.Debugn("Creating schema before fetching")
 	if err := d.CreateSchema(ctx); err != nil {
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
+	log.Debugn("Fetching tables")
 	schema := make(model.Schema)
 	tableNames, err := d.fetchTables(ctx, nonRudderStagingTableRegex)
 	if err != nil {
 		return model.Schema{}, fmt.Errorf("fetching tables: %w", err)
 	}
+	log.Debugn("Fetched tables", logger.NewIntField("tableCount", int64(len(tableNames))))
 
 	// For each table, fetch the attributes
 	for _, tableName := range tableNames {
+		log.Debugn("Fetching schema for table", logger.NewStringField("tableName", tableName))
 		tableSchema, err := d.fetchTableAttributes(ctx, tableName)
 		if err != nil {
 			return model.Schema{}, fmt.Errorf("fetching table attributes: %w", err)
@@ -526,6 +545,18 @@ func (d *Deltalake) tableLocationQuery(tableName string) string {
 
 // AddColumns adds columns to the table.
 func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	tableSchema, err := d.fetchTableAttributes(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("fetch table attributes: %w", err)
+	}
+	columnsToAddInfo := lo.Filter(columnsInfo, func(columnInfo warehouseutils.ColumnInfo, _ int) bool {
+		_, ok := tableSchema[columnInfo.Name]
+		return !ok
+	})
+	if len(columnsToAddInfo) == 0 {
+		return nil
+	}
+
 	var queryBuilder strings.Builder
 
 	queryBuilder.WriteString(fmt.Sprintf(`
@@ -536,33 +567,14 @@ func (d *Deltalake) AddColumns(ctx context.Context, tableName string, columnsInf
 		tableName,
 	))
 
-	for _, columnInfo := range columnsInfo {
+	for _, columnInfo := range columnsToAddInfo {
 		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
 	query := strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
-	_, err := d.DB.ExecContext(ctx, query)
-
-	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
-		if err != nil && strings.Contains(err.Error(), columnsAlreadyExists) {
-			d.logger.Infow("column already exists",
-				logfield.SourceID, d.Warehouse.Source.ID,
-				logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, d.Warehouse.Destination.ID,
-				logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-				logfield.Namespace, d.Namespace,
-				logfield.TableName, tableName,
-				logfield.ColumnName, columnsInfo[0].Name,
-				logfield.Error, err.Error(),
-			)
-			return nil
-		}
-	}
-
+	_, err = d.DB.ExecContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("adding columns: %w", err)
 	}

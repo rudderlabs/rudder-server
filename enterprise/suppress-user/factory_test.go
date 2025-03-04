@@ -2,7 +2,6 @@ package suppression
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -104,7 +104,7 @@ func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
 	}
-	body, err := json.Marshal(config)
+	body, err := jsonrs.Marshal(config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,7 +118,7 @@ func getSuppressionFromManager(w http.ResponseWriter, _ *http.Request) {
 		Items: []model.Suppression{},
 		Token: "_token_",
 	}
-	body, err := json.Marshal(s)
+	body, err := jsonrs.Marshal(s)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

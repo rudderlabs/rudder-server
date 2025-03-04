@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -558,12 +559,12 @@ var _ = Describe("Gateway", func() {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
-			_ = json.Unmarshal(job.Parameters, &paramsMap)
+			_ = jsonrs.Unmarshal(job.Parameters, &paramsMap)
 			expectedStr := []byte(fmt.Sprintf(
 				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "","source_category": "webhook", "traceparent": ""}`,
 				SourceIDEnabled,
 			))
-			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
+			_ = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(BeTrue())
 
@@ -1450,7 +1451,7 @@ var _ = Describe("Gateway", func() {
 					},
 				},
 			}
-			payload, err := json.Marshal(payloadMap)
+			payload, err := jsonrs.Marshal(payloadMap)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -1471,7 +1472,7 @@ var _ = Describe("Gateway", func() {
 					},
 				},
 			}
-			payload, err = json.Marshal(payloadMap)
+			payload, err = jsonrs.Marshal(payloadMap)
 			Expect(err).To(BeNil())
 			Expect(err).To(BeNil())
 			req = &webRequestT{
@@ -1496,7 +1497,7 @@ var _ = Describe("Gateway", func() {
 					},
 				},
 			}
-			payload, err := json.Marshal(payloadMap)
+			payload, err := jsonrs.Marshal(payloadMap)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -1514,7 +1515,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 
-			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
 
 			u, err := uuid.Parse(job.Batch[0].MessageID)
@@ -1533,7 +1534,7 @@ var _ = Describe("Gateway", func() {
 					},
 				},
 			}
-			payload, err := json.Marshal(payloadMap)
+			payload, err := jsonrs.Marshal(payloadMap)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -1551,7 +1552,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 
-			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch[0].MessageID).To(Equal("-a-random-string"))
 		})
@@ -1573,7 +1574,7 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000000001Z"))
 			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
@@ -1597,7 +1598,7 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobForm.jobs[0].EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.jobs[0].EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch[0].ReceivedAt).To(Not(BeEmpty()))
 			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
@@ -1670,8 +1671,8 @@ var _ = Describe("Gateway", func() {
 								expectedStr = []byte(fmt.Sprintf(`{"source_id": "%v", "stage": "webhook", "source_type": "af", "reason": "err2"}`, SourceIDEnabled))
 							}
 
-							_ = json.Unmarshal(job.Parameters, &paramsMap)
-							_ = json.Unmarshal(expectedStr, &expectedParamsMap)
+							_ = jsonrs.Unmarshal(job.Parameters, &paramsMap)
+							_ = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 							Expect(equals).To(BeTrue())
 						}
@@ -1756,15 +1757,9 @@ var _ = Describe("Gateway", func() {
 			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
 		}
 
+		var statStore *memstats.Store
 		// a second after receivedAt
 		now, err := time.Parse(time.RFC3339Nano, "2024-01-01T01:01:02.000000001Z")
-		Expect(err).To(BeNil())
-
-		statStore, err := memstats.New(
-			memstats.WithNow(func() time.Time {
-				return now
-			}),
-		)
 		Expect(err).To(BeNil())
 
 		BeforeEach(func() {
@@ -1788,6 +1783,13 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			internalBatchEndpoint = fmt.Sprintf("http://localhost:%d/internal/v1/batch", serverPort)
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
+
+			statStore, err = memstats.New(
+				memstats.WithNow(func() time.Time {
+					return now
+				}),
+			)
+			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
@@ -1872,12 +1874,12 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_requests",
 					Tags: map[string]string{
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
 					},
 					Value: 1,
@@ -1888,10 +1890,10 @@ var _ = Describe("Gateway", func() {
 					Name: "gateway.write_key_successful_requests",
 					Tags: map[string]string{
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 					},
@@ -1903,10 +1905,10 @@ var _ = Describe("Gateway", func() {
 					Name: "gateway.write_key_failed_requests",
 					Tags: map[string]string{
 						"source":      "",
-						"writeKey":    WriteKeyEnabled,
+						"writeKey":    "",
 						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
+						"workspaceId": "",
+						"sourceID":    "",
 						"sourceType":  "",
 						"sdkVersion":  "",
 					},
@@ -2007,10 +2009,10 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
@@ -2029,16 +2031,16 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
 			})
 			Expect(successfulReqStat).To(Not(BeNil()))
-			Expect(successfulReqStat.LastValue()).To(Equal(float64(3)))
+			Expect(successfulReqStat.LastValue()).To(Equal(float64(1)))
 			successfulEventStat := statStore.Get("gateway.write_key_successful_events", map[string]string{
 				"writeKey":    WriteKeyEnabled,
 				"reqType":     "internalBatch",
@@ -2049,7 +2051,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(successfulEventStat).To(Not(BeNil()))
-			Expect(successfulEventStat.LastValue()).To(Equal(float64(3)))
+			Expect(successfulEventStat.LastValue()).To(Equal(float64(2)))
 			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
 				"writeKey":    WriteKeyEnabled,
 				"reqType":     "internalBatch",
@@ -2060,7 +2062,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3}))
+			Expect(eventsStat.Values()).To(Equal([]float64{1, 2}))
 		})
 
 		It("request failed db error", func() {
@@ -2072,10 +2074,10 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
 			failedReqStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
-				"writeKey":    WriteKeyEnabled,
+				"writeKey":    "",
 				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
+				"workspaceId": "",
+				"sourceID":    "",
 				"sourceType":  "",
 				"sdkVersion":  "",
 				"source":      "",
@@ -2105,7 +2107,7 @@ var _ = Describe("Gateway", func() {
 				"source":      "",
 			})
 			Expect(eventsStat).To(Not(BeNil()))
-			Expect(eventsStat.Values()).To(Equal([]float64{1, 2, 3, 4}))
+			Expect(eventsStat.Values()).To(Equal([]float64{1}))
 		})
 	})
 
@@ -2139,7 +2141,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "request_ip": "dummyIPFromPayload"}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 
 			req := &webRequestT{
@@ -2166,7 +2168,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			jobForm := jobsWithStats[0].job
-			err = json.Unmarshal(jobForm.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
@@ -2188,7 +2190,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2211,7 +2213,7 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000Z"))
@@ -2233,7 +2235,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2256,7 +2258,7 @@ var _ = Describe("Gateway", func() {
 					RudderID  string `json:"rudderId"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].MessageID).To(Not(BeEmpty()))
@@ -2278,7 +2280,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{"messageId": "dummyMessageID"}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 
 			req := &webRequestT{
@@ -2304,7 +2306,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			jobForm := jobsWithStats[0].job
-			err = json.Unmarshal(jobForm.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].MessageID).To(ContainSubstring("dummyMessageID"))
@@ -2325,7 +2327,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2347,7 +2349,7 @@ var _ = Describe("Gateway", func() {
 					Type string `json:"type"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].Type).To(ContainSubstring("dummyRequestType"))
@@ -2370,7 +2372,7 @@ var _ = Describe("Gateway", func() {
 					Payload:    []byte(`{"type": "dummyType"}`),
 				}
 				messages := []stream.Message{msg}
-				payload, err := json.Marshal(messages)
+				payload, err := jsonrs.Marshal(messages)
 				Expect(err).To(BeNil())
 				req := &webRequestT{
 					reqType:        "batch",
@@ -2392,7 +2394,7 @@ var _ = Describe("Gateway", func() {
 						Type string `json:"type"`
 					} `json:"batch"`
 				}
-				err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+				err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 				Expect(err).To(BeNil())
 				Expect(job.Batch).To(HaveLen(1))
 				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))

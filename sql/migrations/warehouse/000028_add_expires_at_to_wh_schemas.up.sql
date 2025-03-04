@@ -1,0 +1,1 @@
+ALTER TABLE wh_schemas ADD COLUMN IF NOT EXISTS expires_at timestamp;

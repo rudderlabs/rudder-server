@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -280,14 +281,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
 	destConfig := configuration{}
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Kafka] Error while marshaling destination configuration %+v, got error: %w",
 			destination.Config, err,
 		)
 	}
-	err = json.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling destination configuration %+v, got error: %w",
 			destination.Config, err,
@@ -399,14 +400,14 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
 	destConfig := azureEventHubConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Azure Event Hubs] Error while marshaling destination configuration %+v, got error: %w",
 			destination.Config, err,
 		)
 	}
-	err = json.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Azure Event Hubs] Error while unmarshaling destination configuration %+v, got error: %w",
@@ -447,7 +448,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
 	destConfig := confluentCloudConfig{}
-	jsonConfig, err := json.Marshal(destination.Config)
+	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Confluent Cloud] Error while marshaling destination configuration %+v, got error: %w",
@@ -455,7 +456,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		)
 	}
 
-	err = json.Unmarshal(jsonConfig, &destConfig)
+	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Confluent Cloud] Error while unmarshaling destination configuration %+v, got error: %w",
@@ -585,7 +586,7 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 			addErrorSample("batch from topic %s is missing the userId attribute", topic)
 			continue
 		}
-		marshalledMsg, err := json.Marshal(message)
+		marshalledMsg, err := jsonrs.Marshal(message)
 		if err != nil {
 			kafkaStats.jsonSerializationMsgErr.Increment()
 			addErrorSample("unable to marshal message at index %d", i)
@@ -658,11 +659,11 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
 
 	conf := configuration{}
-	jsonConfig, err := json.Marshal(destConfig)
+	jsonConfig, err := jsonrs.Marshal(destConfig)
 	if err != nil {
 		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
-	err = json.Unmarshal(jsonConfig, &conf)
+	err = jsonrs.Unmarshal(jsonConfig, &conf)
 	if err != nil {
 		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
@@ -682,7 +683,7 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
 	var batch []map[string]interface{}
-	err := json.Unmarshal(jsonData, &batch)
+	err := jsonrs.Unmarshal(jsonData, &batch)
 	if err != nil {
 		return 400, "Failure", "Error while unmarshalling json data: " + err.Error()
 	}
@@ -711,7 +712,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 		return 400, "Failure", "Invalid message"
 	}
 
-	value, err := json.Marshal(messageValue)
+	value, err := jsonrs.Marshal(messageValue)
 	if err != nil {
 		return makeErrorResponse(err)
 	}

@@ -2,7 +2,6 @@ package marketobulkupload
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
@@ -481,8 +481,8 @@ func TestReadJobsFromFile(t *testing.T) {
 	}
 
 	// Convert jobs to JSON strings
-	job1JSON, _ := json.Marshal(job1)
-	job2JSON, _ := json.Marshal(job2)
+	job1JSON, _ := jsonrs.Marshal(job1)
+	job2JSON, _ := jsonrs.Marshal(job2)
 
 	tests := []struct {
 		name        string
@@ -518,7 +518,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				"",
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found \x00, error found in #0 byte of ...||..., bigger context ...||...",
+			errContains: "BRT: Error in Unmarshalling Job: ",
 		},
 		{
 			name: "Invalid JSON in line",
@@ -527,7 +527,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				`{"invalid json`,
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: common.AsyncJob.readFieldHash: incomplete field name, error found in #10 byte of ...|valid json|..., bigger context ...|{\"invalid json|...",
+			errContains: "BRT: Error in Unmarshalling Job: ",
 		},
 		{
 			name: "Line with non-JSON content",
@@ -536,7 +536,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				"This is not JSON at all",
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found T, error found in #1 byte of ...|This is not|..., bigger context ...|This is not JSON at all|...",
+			errContains: "BRT: Error in Unmarshalling Job: ",
 		},
 		{
 			name: "Line with array instead of object",
@@ -545,7 +545,7 @@ func TestReadJobsFromFile(t *testing.T) {
 				"[1, 2, 3]",
 			},
 			wantErr:     true,
-			errContains: "BRT: Error in Unmarshalling Job: readObjectStart: expect { or n, but found [, error found in #1 byte of ...|[1, 2, 3]|..., bigger context ...|[1, 2, 3]|...",
+			errContains: "BRT: Error in Unmarshalling Job: ",
 		},
 		{
 			name: "Line with extra whitespace",
@@ -629,7 +629,7 @@ func TestReadJobsFromFile(t *testing.T) {
 					"job_id": float64(i),
 				},
 			}
-			jobJSON, _ := json.Marshal(job)
+			jobJSON, _ := jsonrs.Marshal(job)
 			lines = append(lines, string(jobJSON))
 		}
 		filePath := createTestFile(lines)

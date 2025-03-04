@@ -15,7 +15,6 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -28,6 +27,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	snowpipeapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
@@ -35,9 +35,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 func New(
 	conf *config.Config,
@@ -57,6 +56,7 @@ func New(
 		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
+		validator:           validations.NewDestinationValidator(),
 	}
 
 	m.config.client.url = conf.GetString("SnowpipeStreaming.Client.URL", "http://localhost:9078")
@@ -138,6 +138,15 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 	return client
 }
 
+func (m *Manager) validateConfig(ctx context.Context, dest *backendconfig.DestinationT) error {
+	dest.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
+	response := m.validator.Validate(ctx, dest)
+	if response.Success {
+		return nil
+	}
+	return errors.New(response.Error)
+}
+
 func (m *Manager) Now() time.Time {
 	return m.now()
 }
@@ -175,7 +184,11 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	if err != nil {
 		switch {
 		case errors.Is(err, errAuthz):
-			m.setBackOff()
+			m.setBackOff(err)
+			validationError := m.validateConfig(ctx, asyncDest.Destination)
+			if validationError != nil {
+				err = fmt.Errorf("failed to validate snowpipe credentials: %s", validationError.Error())
+			}
 			return m.failedJobs(asyncDest, err.Error())
 		case errors.Is(err, errBackoff):
 			return m.failedJobs(asyncDest, err.Error())
@@ -212,6 +225,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importingJobIDs, failedJobIDs []int64
 		importInfos                   []*importInfo
 		discardImportInfo             *importInfo
+		failedReason                  string
 	)
 	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
 	isBackoffSet := false      // should not be set again if already set
@@ -223,7 +237,11 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				shouldResetBackoff = false
 				if !isBackoffSet {
 					isBackoffSet = true
-					m.setBackOff()
+					m.setBackOff(err)
+					validationError := m.validateConfig(ctx, asyncDest.Destination)
+					if validationError != nil && failedReason == "" {
+						failedReason = fmt.Sprintf("failed to validate snowpipe credentials: %s", validationError.Error())
+					}
 				}
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
@@ -232,7 +250,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				logger.NewStringField("table", info.tableName),
 				obskit.Error(err),
 			)
-
+			if failedReason == "" {
+				failedReason = err.Error()
+			}
 			failedJobIDs = append(failedJobIDs, info.jobIDs...)
 			continue
 		}
@@ -256,7 +276,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	var importParameters stdjson.RawMessage
 	if len(importInfos) > 0 {
-		importIDBytes, err := json.Marshal(importInfos)
+		importIDBytes, err := jsonrs.Marshal(importInfos)
 		if err != nil {
 			return m.abortJobs(asyncDest, fmt.Errorf("failed to marshal import id: %w", err).Error())
 		}
@@ -273,6 +293,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		ImportingCount:      len(importingJobIDs),
 		ImportingParameters: importParameters,
 		FailedJobIDs:        failedJobIDs,
+		FailedReason:        failedReason,
 		FailedCount:         len(failedJobIDs),
 		DestinationID:       asyncDest.Destination.ID,
 	}
@@ -295,7 +316,7 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 
 	for scanner.Scan() {
 		var e event
-		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
+		if err := jsonrs.Unmarshal(scanner.Bytes(), &e); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 		}
 		e.setUUIDTimestamp(formattedTS)
@@ -424,7 +445,7 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
 	var importInfos []*importInfo
-	err := json.Unmarshal([]byte(pollInput.ImportId), &importInfos)
+	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &importInfos)
 	if err != nil {
 		return common.PollStatusResponse{
 			InProgress: false,
@@ -562,7 +583,7 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 	m.logger.Infon("Getting import stats for snowpipe streaming destination")
 
 	var importInfos []*importInfo
-	err := json.Unmarshal([]byte(input.FailedJobParameters), &importInfos)
+	err := jsonrs.Unmarshal([]byte(input.FailedJobParameters), &importInfos)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: http.StatusBadRequest,
@@ -614,9 +635,10 @@ func (m *Manager) isInBackoff() bool {
 func (m *Manager) resetBackoff() {
 	m.backoff.next = time.Time{}
 	m.backoff.attempts = 0
+	m.backoff.error = ""
 }
 
-func (m *Manager) setBackOff() {
+func (m *Manager) setBackOff(err error) {
 	b := backoff.NewExponentialBackOff(
 		backoff.WithInitialInterval(m.config.backoff.initialInterval.Load()),
 		backoff.WithMultiplier(m.config.backoff.multiplier.Load()),
@@ -627,6 +649,7 @@ func (m *Manager) setBackOff() {
 	)
 	b.Reset()
 	m.backoff.attempts++
+	m.backoff.error = err.Error()
 
 	var d time.Duration
 	for index := int64(0); index < int64(m.backoff.attempts); index++ {

@@ -7,7 +7,6 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -45,7 +45,7 @@ func handleQueryParam(param interface{}) string {
 	case string:
 		return p
 	case map[string]interface{}:
-		temp, err := json.Marshal(p)
+		temp, err := jsonrs.Marshal(p)
 		if err != nil {
 			return fmt.Sprint(p)
 		}
@@ -97,7 +97,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
 			case "JSON":
-				jsonValue, err := json.Marshal(bodyValue)
+				jsonValue, err := jsonrs.Marshal(bodyValue)
 				if err != nil {
 					panic(err)
 				}

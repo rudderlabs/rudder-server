@@ -14,12 +14,12 @@ var (
 
 	customBucketsServer = map[string][]float64{
 		"event_delivery_time": {
-			0.5, 1, 2.5, 5, 10, 30, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 0.5s, 1s, 2.5s, 5s, 10s, 30s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
+			1, 2.5, 5, 7.5, 10, 15, 20, 25, 30, 45, 60, 300, 600, 1800, 3600, 7200, 10800, 21600, 32400, 86400, // 1s, 2.5s, 5s, 7.5s, 10s, 15s, 20s, 25s, 30s, 45s, 1m, 5m, 10m, 30m, 1h, 2h, 3h, 6h, 9h, 24h
 		},
 	}
 	customBucketsWarehouse = map[string][]float64{
 		"event_delivery_time": {
-			60, 300, 900, 1800, 2100, 2700, 3900, 4500, 5400, 9900, 11100, 12600, 21600, 23400, 43200, 45000, 82800, 86400, 88200, 108000, 129600, // 1m, 5m, 15m, 30m, 35m, 45m, 1h5m, 1h15m, 1h30m, 2h45m, 3h5m, 3h30m, 6h, 6h30m, 12h, 12h30m, 23h, 24h, 24h30m, 30h, 36h
+			60, 300, 1800, 3600, 5400, 12600, 23400, 45000, 88200, // 1m, 5m, 30m, 1h, 1.5h, 3.5h, 6.5h, 12.5h, 24.5h
 		},
 		"warehouse_schema_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
@@ -140,6 +140,26 @@ var (
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+		},
+		"throttling": {
+			// 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s
+			0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+		},
+
+		"warehouse_dest_transform_matched_events": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 7.5, 10, 12.5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+		},
+		"warehouse_dest_transform_mismatched_events": {
+			0.1, 0.25, 0.5, 1, 2.5, 5, 7.5, 10, 12.5, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+		},
+		"warehouse_dest_transform_input_events": {
+			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 12500, 15000, 30000, 50000, 75000, 100000,
+		},
+		"warehouse_dest_transform_output_events": {
+			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 12500, 15000, 30000, 50000, 75000, 100000,
+		},
+		"warehouse_dest_transform_output_failed_events": {
+			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 12500, 15000, 30000, 50000, 75000, 100000,
 		},
 	}
 )

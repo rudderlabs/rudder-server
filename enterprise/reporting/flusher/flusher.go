@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -374,7 +375,7 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 }
 
 func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -416,9 +417,5 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 }
 
 func (f *Flusher) isHTTPRequestSuccessful(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
+	return status >= 200 && status < 300
 }
