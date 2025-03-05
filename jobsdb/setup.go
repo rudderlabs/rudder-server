@@ -12,6 +12,10 @@ func (jd *Handle) SchemaMigrationTable() string {
 	return fmt.Sprintf("%s_schema_migrations", jd.tablePrefix)
 }
 
+func (jd *Handle) RunAlwaysSchemaMigrationTable() string {
+	return fmt.Sprintf("%s_runalways_migrations", jd.tablePrefix)
+}
+
 // setupDatabaseTables will initialize jobsdb tables using migration templates inside 'sql/migrations/jobsdb'.
 // Dataset tables are not created via migration scripts, they can only be updated.
 // The following data are passed to JobsDB migration templates:
@@ -51,7 +55,8 @@ func (jd *Handle) dropDatabaseTables(l lock.LockToken) {
 }
 
 func (jd *Handle) dropSchemaMigrationTables() {
-	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, jd.SchemaMigrationTable())
-	_, err := jd.dbHandle.Exec(sqlStatement)
+	_, err := jd.dbHandle.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, jd.SchemaMigrationTable()))
+	jd.assertError(err)
+	_, err = jd.dbHandle.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, jd.RunAlwaysSchemaMigrationTable()))
 	jd.assertError(err)
 }

@@ -1642,9 +1642,9 @@ func (jd *Handle) postDropDs(ds dataSetT) {
 
 func (jd *Handle) dropAllDS(l lock.LockToken) error {
 	var err error
-	dList, err := jd.doRefreshDSList(l)
+	dList, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 	if err != nil {
-		return fmt.Errorf("refreshDSList: %w", err)
+		return fmt.Errorf("getDSList: %w", err)
 	}
 	for _, ds := range dList {
 		if err = jd.dropDS(ds); err != nil {
