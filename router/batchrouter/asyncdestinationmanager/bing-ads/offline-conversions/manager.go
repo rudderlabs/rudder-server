@@ -37,7 +37,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		OauthClientV2:   oauthClientV2,
 		DestinationID:   destination.ID,
 	}
-	secret, err := token.GenerateToken()
+	secret, err := token.GenerateTokenV2()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
 	}
