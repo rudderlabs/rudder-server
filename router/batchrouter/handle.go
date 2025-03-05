@@ -498,25 +498,20 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	schemaMap := make(map[string]map[string]interface{})
 	startTime := time.Now()
 	for _, job := range batchJobs.Jobs {
-		var payload map[string]interface{}
-		err := jsonrs.Unmarshal(job.EventPayload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		var ok bool
-		tableName, ok := payload["metadata"].(map[string]interface{})["table"].(string)
-		if !ok {
-			brt.logger.Errorf(`BRT: tableName not found in event metadata: %v`, payload["metadata"])
+		metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+		tableName := metadata["table"].String()
+		if tableName == "" {
+			brt.logger.Errorf(`BRT: tableName not found in event metadata`)
 			return nil
 		}
-		if _, ok = schemaMap[tableName]; !ok {
+		if _, ok := schemaMap[tableName]; !ok {
 			schemaMap[tableName] = make(map[string]interface{})
 		}
-		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
+		columns := metadata["columns"].Map()
 		for columnName, columnType := range columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {
 				schemaMap[tableName][columnName] = columnType
-			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
+			} else if columnType.String() == "text" && schemaMap[tableName][columnName] == "string" {
 				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
 				schemaMap[tableName][columnName] = columnType
 			}
