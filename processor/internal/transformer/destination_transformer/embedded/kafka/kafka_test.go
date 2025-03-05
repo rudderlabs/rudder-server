@@ -488,7 +488,7 @@ func TestTransform(t *testing.T) {
 					Message: map[string]interface{}{
 						"userId": "user-123",
 					},
-					Destination: destinationWithConfigTopic,
+					Destination: destinationWithEventMappingTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
@@ -496,7 +496,7 @@ func TestTransform(t *testing.T) {
 						"userId": "user-123",
 						"type":   "unknown-event-type",
 					},
-					Destination: destinationWithConfigTopic,
+					Destination: destinationWithEventMappingTopic,
 					Metadata:    metadataWithRudderID,
 				},
 			},
@@ -714,6 +714,63 @@ func TestTransform(t *testing.T) {
 								"userId": "user-123",
 								"event":  "event-C",
 								"type":   "track",
+							},
+							"topic":  "default-topic",
+							"userId": "user-123",
+						},
+						Metadata:   expectedMetadataWithDefaultTopic,
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name: "should should throw error if topic is not present",
+			events: []types.TransformerEvent{
+				{
+					Message: map[string]interface{}{
+						"userId":    "user-123",
+						"messageId": "message-id-1",
+					},
+					Destination: backendconfig.DestinationT{},
+					Metadata:    metadataWithRudderID,
+				},
+				{
+					Message: map[string]interface{}{
+						"userId":    "user-123",
+						"messageId": "message-id-2",
+					},
+					Destination: backendconfig.DestinationT{},
+					Metadata:    metadataWithRudderID,
+				},
+				{
+					Message: map[string]interface{}{
+						"userId":    "user-123",
+						"messageId": "message-id-3",
+					},
+					Destination: destinationWithConfigTopic,
+					Metadata:    metadataWithRudderID,
+				},
+			},
+			want: types.Response{
+				FailedEvents: []types.TransformerResponse{
+					{
+						Error:      "failed to get topic map: topic is required for Kafka destination",
+						Metadata:   metadataWithRudderID,
+						StatusCode: http.StatusInternalServerError,
+					},
+					{
+						Error:      "failed to get topic map: topic is required for Kafka destination",
+						Metadata:   metadataWithRudderID,
+						StatusCode: http.StatusInternalServerError,
+					},
+				},
+				Events: []types.TransformerResponse{
+					{
+						Output: types.SingularEventT{
+							"message": types.SingularEventT{
+								"userId":    "user-123",
+								"messageId": "message-id-3",
 							},
 							"topic":  "default-topic",
 							"userId": "user-123",

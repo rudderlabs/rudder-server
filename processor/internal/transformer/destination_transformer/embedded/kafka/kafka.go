@@ -72,7 +72,7 @@ func getTopic(event types.TransformerEvent, integrationsObj map[string]interface
 		return destTopic, nil
 	}
 
-	return "", fmt.Errorf("Topic is required for Kafka destination")
+	return "", fmt.Errorf("topic is required for Kafka destination")
 }
 
 func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT) string {
