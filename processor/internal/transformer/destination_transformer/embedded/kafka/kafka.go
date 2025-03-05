@@ -28,7 +28,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 		if id, ok := event.Message["userId"].(string); ok && id != "" {
 			userId = id
 		} else {
-			userId = event.Message["anonymousId"].(string)
+			userId, _ = event.Message["anonymousId"].(string)
 		}
 
 		topic, err := getTopic(event, integrationsObj)
@@ -85,11 +85,16 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 		switch messageType {
 		case "identify", "screen", "page", "group", "alias":
 			{
+				var eventTypeToTopicMapList []interface{}
+				if eventTypeToTopicMapList, ok = destination.Config["eventTypeToTopicMap"].([]interface{}); !ok {
+					return ""
+				}
+
 				var mappedTopic string
 				// we will pick the last mapping that matches
-				for _, eventTypeTopicMap := range destination.Config["eventTypeToTopicMap"].([]interface{}) {
-					if mapping, ok := eventTypeTopicMap.(map[string]interface{}); ok && mapping["from"] == messageType {
-						mappedTopic = mapping["to"].(string)
+				for _, eventTypeToTopicMap := range eventTypeToTopicMapList {
+					if mapping, ok := eventTypeToTopicMap.(map[string]interface{}); ok && mapping["from"] == messageType {
+						mappedTopic, _ = mapping["to"].(string)
 					}
 				}
 
@@ -97,12 +102,17 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 			}
 		case "track":
 			{
+				var eventToTopicMapList []interface{}
+				if eventToTopicMapList, ok = destination.Config["eventToTopicMap"].([]interface{}); !ok {
+					return ""
+				}
+
 				var mappedTopic string
 				if eventName, ok := message["event"].(string); ok && eventName != "" {
 					// we will pick the last mapping that matches
-					for _, eventNameTopicMap := range destination.Config["eventToTopicMap"].([]interface{}) {
+					for _, eventNameTopicMap := range eventToTopicMapList {
 						if mapping, ok := eventNameTopicMap.(map[string]interface{}); ok && mapping["from"] == eventName {
-							mappedTopic = mapping["to"].(string)
+							mappedTopic, _ = mapping["to"].(string)
 						}
 					}
 				}
