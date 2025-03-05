@@ -493,33 +493,101 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 }
 
-// pingWarehouse notifies the warehouse about a new data upload (staging files)
-func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
-	schemaMap := make(map[string]map[string]interface{})
-	startTime := time.Now()
-	for _, job := range batchJobs.Jobs {
-		metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
-		tableName := metadata["table"].String()
-		if tableName == "" {
-			brt.logger.Errorf(`BRT: tableName not found in event metadata`)
-			return nil
+// OptimizedSchemaMapGeneration generates a schema map from batch jobs using parallel processing
+func OptimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[string]map[string]interface{} {
+	// Split jobs into chunks for each worker
+	chunkSize := (len(batchJobs.Jobs) + workers - 1) / workers
+	chunks := make([][]*jobsdb.JobT, workers)
+	for i := 0; i < workers; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(batchJobs.Jobs) {
+			end = len(batchJobs.Jobs)
 		}
-		if _, ok := schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
+		if start < len(batchJobs.Jobs) {
+			chunks[i] = batchJobs.Jobs[start:end]
 		}
-		columns := metadata["columns"].Map()
-		for columnName, columnType := range columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			} else if columnType.String() == "text" && schemaMap[tableName][columnName] == "string" {
-				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				schemaMap[tableName][columnName] = columnType
+	}
+
+	// Each worker processes its chunk and returns a local schema map
+	type workerResult struct {
+		schema map[string]map[string]interface{}
+		index  int
+	}
+	results := make(chan workerResult, workers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		if len(chunks[i]) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(chunk []*jobsdb.JobT, idx int) {
+			defer wg.Done()
+			// Each worker builds its own schema map independently
+			localSchema := make(map[string]map[string]interface{})
+
+			for _, job := range chunk {
+				metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+				tableName := metadata["table"].String()
+				if tableName == "" {
+					continue
+				}
+
+				if _, ok := localSchema[tableName]; !ok {
+					localSchema[tableName] = make(map[string]interface{})
+				}
+
+				columns := metadata["columns"].Map()
+				for columnName, columnType := range columns {
+					if existingType, ok := localSchema[tableName][columnName]; !ok {
+						localSchema[tableName][columnName] = columnType
+					} else if columnType.String() == "text" && existingType == "string" {
+						localSchema[tableName][columnName] = columnType
+					}
+				}
+			}
+			results <- workerResult{schema: localSchema, index: idx}
+		}(chunks[i], i)
+	}
+
+	// Close results channel when all workers are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Merge results from all workers
+	finalSchema := make(map[string]map[string]interface{})
+	for result := range results {
+		for tableName, columns := range result.schema {
+			if _, ok := finalSchema[tableName]; !ok {
+				finalSchema[tableName] = make(map[string]interface{})
+			}
+			for columnName, columnType := range columns {
+				if existingType, ok := finalSchema[tableName][columnName]; !ok {
+					finalSchema[tableName][columnName] = columnType
+				} else if columnType.(gjson.Result).String() == "text" && existingType == "string" {
+					finalSchema[tableName][columnName] = columnType
+				}
 			}
 		}
 	}
+
+	return finalSchema
+}
+
+// pingWarehouse notifies the warehouse about a new data upload (staging files)
+func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
+	startTime := time.Now()
+
+	// Use optimized schema generation with 8 workers (can be tuned based on CPU cores)
+	schemaMap := OptimizedSchemaMapGeneration(batchJobs, 8)
+
 	brt.stat.NewTaggedStat("batch_router.schema_map_creation_time", stats.TimerType, stats.Tags{
 		"destType": brt.destType,
 	}).Since(startTime)
+
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {

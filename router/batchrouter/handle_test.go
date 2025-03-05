@@ -2,12 +2,73 @@ package batchrouter
 
 import (
 	"fmt"
+	"sync"
 	"testing"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/tidwall/gjson"
 )
+
+func ParallelSchemaMapGeneration(batchJobs *BatchedJobs, workers int) {
+	schemaMap := make(map[string]map[string]interface{})
+	var schemaMapMu sync.Mutex // Mutex to protect concurrent map access
+
+	// Process jobs in parallel using worker pool
+	maxWorkers := workers
+	jobsChan := make(chan *jobsdb.JobT, len(batchJobs.Jobs))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobsChan {
+				metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+				tableName := metadata["table"].String()
+				if tableName == "" {
+					continue
+				}
+
+				// Create local schema map for this job
+				localSchema := make(map[string]map[string]interface{})
+				if _, ok := localSchema[tableName]; !ok {
+					localSchema[tableName] = make(map[string]interface{})
+				}
+
+				columns := metadata["columns"].Map()
+				for columnName, columnType := range columns {
+					localSchema[tableName][columnName] = columnType
+				}
+
+				// Merge local schema into global schema with mutex protection
+				schemaMapMu.Lock()
+				if _, ok := schemaMap[tableName]; !ok {
+					schemaMap[tableName] = make(map[string]interface{})
+				}
+				for columnName, columnType := range localSchema[tableName] {
+					if existingType, ok := schemaMap[tableName][columnName]; !ok {
+						schemaMap[tableName][columnName] = columnType
+					} else if columnType.(gjson.Result).String() == "text" && existingType == "string" {
+						schemaMap[tableName][columnName] = columnType
+					}
+				}
+				schemaMapMu.Unlock()
+			}
+		}()
+	}
+
+	// Send jobs to workers
+	for _, job := range batchJobs.Jobs {
+		jobsChan <- job
+	}
+	close(jobsChan)
+
+	// Wait for all workers to complete
+	wg.Wait()
+}
 
 func BaseLine(batchJobs *BatchedJobs) {
 	schemaMap := make(map[string]map[string]interface{})
@@ -30,7 +91,6 @@ func BaseLine(batchJobs *BatchedJobs) {
 			}
 		}
 	}
-	return
 }
 
 func OldSchemaMap(batchJobs *BatchedJobs) {
@@ -59,7 +119,6 @@ func OldSchemaMap(batchJobs *BatchedJobs) {
 			}
 		}
 	}
-	return
 }
 
 // Generate a sample EventPayload with many more tables and columns
@@ -109,16 +168,15 @@ func generateBatchJobs(count int) *BatchedJobs {
 	return batchJobs
 }
 
-//BenchmarkBaseLine
-//BenchmarkBaseLine/jobsCount=100
-//BenchmarkBaseLine/jobsCount=100-12         	   13258	     92678 ns/op
-//BenchmarkBaseLine/jobsCount=1000
-//BenchmarkBaseLine/jobsCount=1000-12        	    1365	    880910 ns/op
-//BenchmarkBaseLine/jobsCount=10000
-//BenchmarkBaseLine/jobsCount=10000-12       	     129	   9197343 ns/op
-//BenchmarkBaseLine/jobsCount=100000
-//BenchmarkBaseLine/jobsCount=100000-12      	      12	  86795309 ns/op
-
+// BenchmarkBaseLine
+// BenchmarkBaseLine/jobsCount=100
+// BenchmarkBaseLine/jobsCount=100-12         	   13258	     92678 ns/op
+// BenchmarkBaseLine/jobsCount=1000
+// BenchmarkBaseLine/jobsCount=1000-12        	    1365	    880910 ns/op
+// BenchmarkBaseLine/jobsCount=10000
+// BenchmarkBaseLine/jobsCount=10000-12       	     129	   9197343 ns/op
+// BenchmarkBaseLine/jobsCount=100000
+// BenchmarkBaseLine/jobsCount=100000-12      	      12	  86795309 ns/op
 func BenchmarkBaseLine(b *testing.B) {
 	jobsCount := []int{100, 1000, 10000, 100000}
 	for _, count := range jobsCount {
@@ -131,16 +189,15 @@ func BenchmarkBaseLine(b *testing.B) {
 	}
 }
 
-//BenchmarkOldSchemaMap
-//BenchmarkOldSchemaMap/jobsCount=100
-//BenchmarkOldSchemaMap/jobsCount=100-12         	    8232	    130948 ns/op
-//BenchmarkOldSchemaMap/jobsCount=1000
-//BenchmarkOldSchemaMap/jobsCount=1000-12        	     912	   1290493 ns/op
-//BenchmarkOldSchemaMap/jobsCount=10000
-//BenchmarkOldSchemaMap/jobsCount=10000-12       	      92	  12730642 ns/op
-//BenchmarkOldSchemaMap/jobsCount=100000
-//BenchmarkOldSchemaMap/jobsCount=100000-12      	       9	 126674972 ns/op
-
+// BenchmarkOldSchemaMap
+// BenchmarkOldSchemaMap/jobsCount=100
+// BenchmarkOldSchemaMap/jobsCount=100-12         	    8232	    130948 ns/op
+// BenchmarkOldSchemaMap/jobsCount=1000
+// BenchmarkOldSchemaMap/jobsCount=1000-12        	     912	   1290493 ns/op
+// BenchmarkOldSchemaMap/jobsCount=10000
+// BenchmarkOldSchemaMap/jobsCount=10000-12       	      92	  12730642 ns/op
+// BenchmarkOldSchemaMap/jobsCount=100000
+// BenchmarkOldSchemaMap/jobsCount=100000-12      	       9	 126674972 ns/op
 func BenchmarkOldSchemaMap(b *testing.B) {
 	jobsCount := []int{100, 1000, 10000, 100000}
 	for _, count := range jobsCount {
@@ -150,5 +207,153 @@ func BenchmarkOldSchemaMap(b *testing.B) {
 				OldSchemaMap(batchJobs)
 			}
 		})
+	}
+}
+
+// BenchmarkParallelSchemaMapGeneration
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=10
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=10-12         	   10000	    128204 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=20
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=20-12         	   10000	    117502 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=40
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=40-12         	   10000	    117866 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=80
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100,workers=80-12         	    9591	    133180 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=10
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=10-12        	    1324	    885033 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=20
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=20-12        	    1248	    908129 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=40
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=40-12        	    1300	    915411 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=80
+// BenchmarkParallelSchemaMapGeneration/jobsCount=1000,workers=80-12        	    1292	    948777 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=10
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=10-12       	     142	   8412655 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=20
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=20-12       	     139	   8550822 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=40
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=40-12       	     139	   8603418 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=80
+// BenchmarkParallelSchemaMapGeneration/jobsCount=10000,workers=80-12       	     138	   8596863 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=10
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=10-12      	      14	  78992500 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=20
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=20-12      	      14	  80797381 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=40
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=40-12      	      14	  81011595 ns/op
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=80
+// BenchmarkParallelSchemaMapGeneration/jobsCount=100000,workers=80-12      	      14	  80271583 ns/op
+func BenchmarkParallelSchemaMapGeneration(b *testing.B) {
+	jobsCount := []int{100, 1000, 10000, 100000}
+	for _, count := range jobsCount {
+		batchJobs := generateBatchJobs(count)
+		workers := []int{10, 20, 40, 80}
+		for _, worker := range workers {
+			b.Run(fmt.Sprintf("jobsCount=%d,workers=%d", count, worker), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					ParallelSchemaMapGeneration(batchJobs, worker)
+				}
+			})
+		}
+	}
+}
+
+func OptimizedSchemaMapGenerationTest(batchJobs *BatchedJobs, workers int) map[string]map[string]interface{} {
+	// Split jobs into chunks for each worker
+	chunkSize := (len(batchJobs.Jobs) + workers - 1) / workers
+	chunks := make([][]*jobsdb.JobT, workers)
+	for i := 0; i < workers; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > len(batchJobs.Jobs) {
+			end = len(batchJobs.Jobs)
+		}
+		if start < len(batchJobs.Jobs) {
+			chunks[i] = batchJobs.Jobs[start:end]
+		}
+	}
+
+	// Each worker processes its chunk and returns a local schema map
+	type workerResult struct {
+		schema map[string]map[string]interface{}
+		index  int
+	}
+	results := make(chan workerResult, workers)
+
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		if len(chunks[i]) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(chunk []*jobsdb.JobT, idx int) {
+			defer wg.Done()
+			// Each worker builds its own schema map independently
+			localSchema := make(map[string]map[string]interface{})
+
+			for _, job := range chunk {
+				metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+				tableName := metadata["table"].String()
+				if tableName == "" {
+					continue
+				}
+
+				if _, ok := localSchema[tableName]; !ok {
+					localSchema[tableName] = make(map[string]interface{})
+				}
+
+				columns := metadata["columns"].Map()
+				for columnName, columnType := range columns {
+					if existingType, ok := localSchema[tableName][columnName]; !ok {
+						localSchema[tableName][columnName] = columnType
+					} else if columnType.String() == "text" && existingType == "string" {
+						localSchema[tableName][columnName] = columnType
+					}
+				}
+			}
+			results <- workerResult{schema: localSchema, index: idx}
+		}(chunks[i], i)
+	}
+
+	// Close results channel when all workers are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Merge results from all workers
+	finalSchema := make(map[string]map[string]interface{})
+	for result := range results {
+		for tableName, columns := range result.schema {
+			if _, ok := finalSchema[tableName]; !ok {
+				finalSchema[tableName] = make(map[string]interface{})
+			}
+			for columnName, columnType := range columns {
+				if existingType, ok := finalSchema[tableName][columnName]; !ok {
+					finalSchema[tableName][columnName] = columnType
+				} else if columnType.(gjson.Result).String() == "text" && existingType == "string" {
+					finalSchema[tableName][columnName] = columnType
+				}
+			}
+		}
+	}
+
+	return finalSchema
+}
+
+// BenchmarkOptimizedSchemaMapGeneration benchmarks the optimized version with different job counts and worker counts
+func BenchmarkOptimizedSchemaMapGeneration(b *testing.B) {
+	jobsCount := []int{100, 1000, 10000, 100000}
+	workers := []int{4, 8, 16}
+
+	for _, count := range jobsCount {
+		batchJobs := generateBatchJobs(count)
+		for _, worker := range workers {
+			b.Run(fmt.Sprintf("jobsCount=%d,workers=%d", count, worker), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					OptimizedSchemaMapGenerationTest(batchJobs, worker)
+				}
+			})
+		}
 	}
 }
