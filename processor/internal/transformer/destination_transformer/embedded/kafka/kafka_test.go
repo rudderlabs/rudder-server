@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTransform(t *testing.T) {
@@ -73,7 +74,6 @@ func TestTransform(t *testing.T) {
 		events []types.TransformerEvent
 		want   types.Response
 	}{
-
 		{
 			name: "should set correct userId for each event",
 			events: []types.TransformerEvent{
@@ -98,7 +98,8 @@ func TestTransform(t *testing.T) {
 					},
 					Destination: destinationWithConfigTopic,
 					Metadata:    metadataWithRudderID,
-				}, {
+				},
+				{
 					Message: map[string]interface{}{
 						"userId":      "user-123",
 						"anonymousId": "",
