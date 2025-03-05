@@ -1660,13 +1660,19 @@ func (jd *Handle) dropAllDS(l lock.LockToken) error {
 }
 
 func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
+	tags := &statTags{CustomValFilters: []string{jd.tablePrefix}}
 	defer jd.getTimerStat(
 		"store_jobs",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+		tags,
 	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
+	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		jd.stats.NewTaggedStat("jobsdb_stored_jobs", stats.CountType, statTags).Count(len(jobList))
+		jd.stats.NewTaggedStat("jobsdb_stored_bytes", stats.CountType, statTags).Count(lo.SumBy(jobList, func(j *JobT) int { return len(j.EventPayload) }))
 	})
 
 	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
@@ -2814,6 +2820,21 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 			}
 		}
 	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		statusCounters := make(map[string]lo.Tuple2[int, int], 0)
+		for i := range statusList {
+			t := statusCounters[statusList[i].JobState]
+			t.A++                                   // job count
+			t.B += len(statusList[i].ErrorResponse) // bytes count
+			statusCounters[statusList[i].JobState] = t
+		}
+		for state, count := range statusCounters {
+			statTags["jobState"] = state
+			jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(count.A)
+			jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(count.B)
+		}
+	})
 
 	return nil
 }
@@ -3203,6 +3224,8 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		mtoken.afterJobID = &retryAfterJobID
 	}
 
+	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))
+	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) }))
 	return res, nil
 }
 
