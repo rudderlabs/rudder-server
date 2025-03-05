@@ -71,6 +71,7 @@ type Handle struct {
 	adaptiveLimit      func(int64) int64
 	isolationStrategy  isolation.Strategy
 	now                func() time.Time
+	stat               stats.Stats
 
 	// configuration
 
@@ -495,6 +496,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
 func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
 	schemaMap := make(map[string]map[string]interface{})
+	startTime := time.Now()
 	for _, job := range batchJobs.Jobs {
 		var payload map[string]interface{}
 		err := jsonrs.Unmarshal(job.EventPayload, &payload)
@@ -520,6 +522,9 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 			}
 		}
 	}
+	brt.stat.NewTaggedStat("batch_router.schema_map_creation_time", stats.TimerType, stats.Tags{
+		"destType": brt.destType,
+	}).Since(startTime)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
@@ -552,6 +557,9 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		brt.logger.Errorf("BRT: Failed to route staging file: %v", err)
 		return
 	}
+	brt.stat.NewTaggedStat("batch_router.process_staging_file_time", stats.TimerType, stats.Tags{
+		"destType": brt.destType,
+	}).Since(startTime)
 	brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service")
 	return
 }

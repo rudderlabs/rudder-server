@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -19,6 +20,7 @@ type Factory struct {
 	RsourcesService  rsources.JobService
 	Debugger         destinationdebugger.DestinationDebugger
 	AdaptiveLimit    func(int64) int64
+	Stats            stats.Stats
 }
 
 func (f *Factory) New(destType string) *Handle {
@@ -36,6 +38,7 @@ func (f *Factory) New(destType string) *Handle {
 		f.RsourcesService,
 		f.Debugger,
 		config.Default,
+		f.Stats,
 	)
 	return r
 }

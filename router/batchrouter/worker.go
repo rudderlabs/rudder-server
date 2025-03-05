@@ -73,6 +73,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		drainStatsbyDest := make(map[string]*routerutils.DrainStats)
 		jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 
+		start := time.Now()
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
 			sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
@@ -180,6 +181,9 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				)
 			}
 		}
+		brt.stat.NewTaggedStat("batch_router.drain_time", stats.TimerType, stats.Tags{
+			"destType": brt.destType,
+		}).Since(start)
 		// Mark the jobs as executing
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
@@ -188,6 +192,10 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 			panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
 		}
 		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+
+		brt.stat.NewTaggedStat("batch_router.mark_jobs_executing_time", stats.TimerType, stats.Tags{
+			"destType": brt.destType,
+		}).Since(start)
 
 		var wg sync.WaitGroup
 		wg.Add(len(jobsBySource))
@@ -232,29 +240,45 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					destUploadStat.Since(destUploadStart)
 				case IsWarehouseDestination(brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
+					brt.stat.NewTaggedStat("batch_router.use_rudder_storage", stats.TimerType, stats.Tags{
+						"destType": brt.destType,
+					}).Since(start)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
-					destUploadStat := stats.Default.NewTaggedStat("batch_router.dest_upload_time", stats.TimerType, stats.Tags{
-						"destType":          brt.destType,
-						"objectStorageType": objectStorageType,
-					})
-					destUploadStart := time.Now()
+					brt.stat.NewTaggedStat("batch_router.get_object_storage_type", stats.TimerType, stats.Tags{
+						"destType": brt.destType,
+					}).Since(start)
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchedJobs)
+					brt.stat.NewTaggedStat("batch_router.split_batch_jobs_on_time_window", stats.TimerType, stats.Tags{
+						"destType": brt.destType,
+					}).Since(start)
 					for _, batchJob := range splitBatchJobs {
 						output := brt.upload(objectStorageType, batchJob, true)
+						brt.stat.NewTaggedStat("batch_router.upload_to_object_storage", stats.TimerType, stats.Tags{
+							"destType": brt.destType,
+						}).Since(start)
 						notifyWarehouseErr := false
 						if output.Error == nil && output.Key != "" {
 							output.Error = brt.pingWarehouse(batchJob, output)
 							if output.Error != nil {
 								notifyWarehouseErr = true
 							}
-							warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.Connection.Destination.ID).Count(1)
-							warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.Connection.Destination.ID).Count(len(batchJob.Jobs))
 						}
+						brt.stat.NewTaggedStat("batch_router.ping_warehouse", stats.TimerType, stats.Tags{
+							"destType": brt.destType,
+						}).Since(start)
 						brt.recordDeliveryStatus(*batchJob.Connection, output, true)
+						brt.stat.NewTaggedStat("batch_router.record_delivery_status", stats.TimerType, stats.Tags{
+							"destType": brt.destType,
+						}).Since(start)
 						brt.updateJobStatus(batchJob, true, output.Error, notifyWarehouseErr)
+						brt.stat.NewTaggedStat("batch_router.update_job_status", stats.TimerType, stats.Tags{
+							"destType": brt.destType,
+						}).Since(start)
+						brt.stat.NewTaggedStat("batch_router.total_jobs_processed", stats.CountType, stats.Tags{
+							"destType": brt.destType,
+						}).Count(len(batchJob.Jobs))
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
-					destUploadStat.Since(destUploadStart)
 				case asynccommon.IsAsyncDestination(brt.destType):
 					destUploadStat := stats.Default.NewTaggedStat("batch_router.dest_upload_time", stats.TimerType, stats.Tags{
 						"destType": brt.destType,
