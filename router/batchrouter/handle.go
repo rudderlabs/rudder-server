@@ -150,6 +150,12 @@ type Handle struct {
 	asyncAbortedJobCount    stats.Measurement
 }
 
+// workerResult holds the schema map and index for each worker's processing result
+type workerResult struct {
+	schema map[string]map[string]interface{}
+	index  int
+}
+
 // mainLoop is responsible for pinging the workers periodically for every active partition
 func (brt *Handle) mainLoop(ctx context.Context) {
 	if brt.now == nil {
@@ -494,10 +500,12 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 }
 
 // OptimizedSchemaMapGeneration generates a schema map from batch jobs using parallel processing
-func OptimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[string]map[string]interface{} {
+func optimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[string]map[string]interface{} {
 	// Split jobs into chunks for each worker
 	chunkSize := (len(batchJobs.Jobs) + workers - 1) / workers
 	chunks := make([][]*jobsdb.JobT, workers)
+	activeWorkers := 0 // Track actual number of workers with data
+
 	for i := 0; i < workers; i++ {
 		start := i * chunkSize
 		end := start + chunkSize
@@ -506,17 +514,19 @@ func OptimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[strin
 		}
 		if start < len(batchJobs.Jobs) {
 			chunks[i] = batchJobs.Jobs[start:end]
+			activeWorkers++
 		}
 	}
 
-	// Each worker processes its chunk and returns a local schema map
-	type workerResult struct {
-		schema map[string]map[string]interface{}
-		index  int
-	}
-	results := make(chan workerResult, workers)
+	// Create buffered channel with exact size needed
+	results := make(chan workerResult, activeWorkers)
+
+	// Create slice to store all results to ensure nothing is lost
+	allResults := make([]workerResult, 0, activeWorkers)
 
 	var wg sync.WaitGroup
+
+	// Launch only the workers that have data
 	for i := 0; i < workers; i++ {
 		if len(chunks[i]) == 0 {
 			continue
@@ -524,6 +534,7 @@ func OptimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[strin
 		wg.Add(1)
 		go func(chunk []*jobsdb.JobT, idx int) {
 			defer wg.Done()
+
 			// Each worker builds its own schema map independently
 			localSchema := make(map[string]map[string]interface{})
 
@@ -551,15 +562,32 @@ func OptimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[strin
 		}(chunks[i], i)
 	}
 
-	// Close results channel when all workers are done
+	// Use a separate goroutine to collect results
+	var collectWg sync.WaitGroup
+	collectWg.Add(1)
+
 	go func() {
-		wg.Wait()
-		close(results)
+		defer collectWg.Done()
+		// Collect exactly activeWorkers results
+		for i := 0; i < activeWorkers; i++ {
+			result := <-results
+			allResults = append(allResults, result)
+		}
 	}()
 
-	// Merge results from all workers
+	// Wait for all workers to finish
+	wg.Wait()
+	// Wait for result collection to complete
+	collectWg.Wait()
+
+	// Verify we got all results
+	if len(allResults) != activeWorkers {
+		panic(fmt.Sprintf("Critical error: Expected %d results but got %d", activeWorkers, len(allResults)))
+	}
+
+	// Merge all results into final schema
 	finalSchema := make(map[string]map[string]interface{})
-	for result := range results {
+	for _, result := range allResults {
 		for tableName, columns := range result.schema {
 			if _, ok := finalSchema[tableName]; !ok {
 				finalSchema[tableName] = make(map[string]interface{})
@@ -582,7 +610,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	startTime := time.Now()
 
 	// Use optimized schema generation with 8 workers (can be tuned based on CPU cores)
-	schemaMap := OptimizedSchemaMapGeneration(batchJobs, 8)
+	schemaMap := optimizedSchemaMapGeneration(batchJobs, 8)
 
 	brt.stat.NewTaggedStat("batch_router.schema_map_creation_time", stats.TimerType, stats.Tags{
 		"destType": brt.destType,
