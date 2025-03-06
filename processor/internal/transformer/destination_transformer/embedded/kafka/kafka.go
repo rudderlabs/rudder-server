@@ -34,7 +34,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			userId = id
 		}
 
-		topic, err := getTopic(event, integrationsObj, &eventTypeToTopicMap, &eventToTopicMap)
+		topic, err := getTopic(event, integrationsObj, eventTypeToTopicMap, eventToTopicMap)
 		if err != nil {
 			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
 				Error:      err.Error(),
@@ -70,7 +70,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	return response
 }
 
-func getTopic(event types.TransformerEvent, integrationsObj map[string]interface{}, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) (string, error) {
+func getTopic(event types.TransformerEvent, integrationsObj map[string]interface{}, eventTypeToTopicMap, eventToTopicMap map[string]string) (string, error) {
 	if topic, ok := integrationsObj["topic"].(string); ok && topic != "" {
 		return topic, nil
 	}
@@ -86,7 +86,7 @@ func getTopic(event types.TransformerEvent, integrationsObj map[string]interface
 	return "", fmt.Errorf("Topic is required for Kafka destination")
 }
 
-func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) (string, bool) {
+func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT, eventTypeToTopicMap, eventToTopicMap map[string]string) (string, bool) {
 	if destination.Config["enableMultiTopic"] == true {
 		messageType, ok := message["type"].(string)
 		if !ok {
@@ -96,7 +96,7 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 		switch messageType {
 		case "identify", "screen", "page", "group", "alias":
 			{
-				if topic, ok := (*eventTypeToTopicMap)[messageType]; ok {
+				if topic, ok := eventTypeToTopicMap[messageType]; ok {
 					return topic, true
 				}
 				break
@@ -108,7 +108,7 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 					return "", false
 				}
 
-				if topic, ok := (*eventToTopicMap)[eventName]; ok {
+				if topic, ok := eventToTopicMap[eventName]; ok {
 					return topic, true
 				}
 				break
