@@ -24,6 +24,7 @@ import (
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -395,5 +396,14 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return nil
 	})
 
+	if config.GetBool("JobsDB.Bench.enabled", false) {
+		g.Go(func() error {
+			b, err := bench.New(config, statsFactory, a.log.Child("jobsdb.benchmark"), dbPool)
+			if err != nil {
+				return fmt.Errorf("creating jobsdb benchmarker: %w", err)
+			}
+			return b.Run(ctx)
+		})
+	}
 	return g.Wait()
 }
