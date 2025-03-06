@@ -75,7 +75,7 @@ func getTopic(event types.TransformerEvent, integrationsObj map[string]interface
 		return topic, nil
 	}
 
-	if topic := filterConfigTopics(event.Message, event.Destination, eventTypeToTopicMap, eventToTopicMap); topic != "" {
+	if topic, ok := filterConfigTopics(event.Message, event.Destination, eventTypeToTopicMap, eventToTopicMap); ok && topic != "" {
 		return topic, nil
 	}
 
@@ -86,27 +86,34 @@ func getTopic(event types.TransformerEvent, integrationsObj map[string]interface
 	return "", fmt.Errorf("Topic is required for Kafka destination")
 }
 
-func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) string {
+func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) (string, bool) {
 	if destination.Config["enableMultiTopic"] == true {
 		messageType, ok := message["type"].(string)
 		if !ok {
-			return ""
+			return "", false
 		}
 
 		switch messageType {
 		case "identify", "screen", "page", "group", "alias":
 			{
-				return (*eventTypeToTopicMap)[messageType]
+				if topic, ok := (*eventTypeToTopicMap)[messageType]; ok {
+					return topic, true
+				}
+				break
 			}
 		case "track":
 			{
 				eventName, ok := message["event"].(string)
 				if !ok || eventName == "" {
-					return ""
+					return "", false
 				}
-				return (*eventToTopicMap)[eventName]
+
+				if topic, ok := (*eventToTopicMap)[eventName]; ok {
+					return topic, true
+				}
+				break
 			}
 		}
 	}
-	return ""
+	return "", false
 }
