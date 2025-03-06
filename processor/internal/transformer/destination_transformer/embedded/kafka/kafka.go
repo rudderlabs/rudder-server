@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	utils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -14,6 +15,8 @@ var canonicalNames = []string{"KAFKA", "kafka", "Kafka"}
 
 func Transform(_ context.Context, events []types.TransformerEvent) types.Response {
 	response := types.Response{}
+	eventTypeToTopicMap := utils.GetTopicMap(events[0].Destination, "eventTypeToTopicMap", true)
+	eventToTopicMap := utils.GetTopicMap(events[0].Destination, "eventToTopicMap", false)
 
 	for _, event := range events {
 		var integrationsObj map[string]interface{}
@@ -31,7 +34,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			userId, _ = event.Message["anonymousId"].(string)
 		}
 
-		topic, err := getTopic(event, integrationsObj)
+		topic, err := getTopic(event, integrationsObj, &eventTypeToTopicMap, &eventToTopicMap)
 		if err != nil {
 			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
 				Error:      fmt.Errorf("failed to get topic map: %w", err).Error(),
@@ -67,10 +70,10 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	return response
 }
 
-func getTopic(event types.TransformerEvent, integrationsObj map[string]interface{}) (string, error) {
+func getTopic(event types.TransformerEvent, integrationsObj map[string]interface{}, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) (string, error) {
 	if topic, ok := integrationsObj["topic"].(string); ok && topic != "" {
 		return topic, nil
-	} else if configTopic := filterConfigTopics(event.Message, event.Destination); configTopic != "" {
+	} else if configTopic := filterConfigTopics(event.Message, event.Destination, eventTypeToTopicMap, eventToTopicMap); configTopic != "" {
 		return configTopic, nil
 	} else if destTopic, ok := event.Destination.Config["topic"].(string); ok {
 		return destTopic, nil
@@ -79,7 +82,7 @@ func getTopic(event types.TransformerEvent, integrationsObj map[string]interface
 	return "", fmt.Errorf("topic is required for Kafka destination")
 }
 
-func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT) string {
+func filterConfigTopics(message types.SingularEventT, destination backendconfig.DestinationT, eventTypeToTopicMap *map[string]string, eventToTopicMap *map[string]string) string {
 	if destination.Config["enableMultiTopic"] == true {
 		messageType, ok := message["type"].(string)
 		if !ok {
@@ -89,39 +92,15 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 		switch messageType {
 		case "identify", "screen", "page", "group", "alias":
 			{
-				var eventTypeToTopicMapList []interface{}
-				if eventTypeToTopicMapList, ok = destination.Config["eventTypeToTopicMap"].([]interface{}); !ok {
-					return ""
-				}
-
-				var mappedTopic string
-				// we will pick the last mapping that matches
-				for _, eventTypeToTopicMap := range eventTypeToTopicMapList {
-					if mapping, ok := eventTypeToTopicMap.(map[string]interface{}); ok && mapping["from"] == messageType {
-						mappedTopic, _ = mapping["to"].(string)
-					}
-				}
-
-				return mappedTopic
+				return (*eventTypeToTopicMap)[messageType]
 			}
 		case "track":
 			{
-				var eventToTopicMapList []interface{}
-				if eventToTopicMapList, ok = destination.Config["eventToTopicMap"].([]interface{}); !ok {
+				eventName, ok := message["event"].(string)
+				if !ok || eventName == "" {
 					return ""
 				}
-
-				var mappedTopic string
-				if eventName, ok := message["event"].(string); ok && eventName != "" {
-					// we will pick the last mapping that matches
-					for _, eventNameTopicMap := range eventToTopicMapList {
-						if mapping, ok := eventNameTopicMap.(map[string]interface{}); ok && mapping["from"] == eventName {
-							mappedTopic, _ = mapping["to"].(string)
-						}
-					}
-				}
-
-				return mappedTopic
+				return (*eventToTopicMap)[eventName]
 			}
 		}
 	}
