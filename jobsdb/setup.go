@@ -38,7 +38,7 @@ func (jd *Handle) runAlwaysChangesets(templateData map[string]interface{}) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
 		Handle:          jd.dbHandle,
-		MigrationsTable: fmt.Sprintf("%s_runalways_migrations", jd.tablePrefix),
+		MigrationsTable: jd.RunAlwaysSchemaMigrationTable(),
 		RunAlways:       true,
 	}
 	// execute any necessary migrations
