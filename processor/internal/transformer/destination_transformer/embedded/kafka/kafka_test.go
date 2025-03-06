@@ -752,16 +752,33 @@ func TestTransform(t *testing.T) {
 					Destination: destinationWithConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
+				{
+					Message: map[string]interface{}{
+						"userId":    "user-123",
+						"messageId": "message-id-4",
+					},
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{
+							"topic": "",
+						},
+					},
+					Metadata: metadataWithRudderID,
+				},
 			},
 			want: types.Response{
 				FailedEvents: []types.TransformerResponse{
 					{
-						Error:      "failed to get topic map: topic is required for Kafka destination",
+						Error:      "Topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
 					},
 					{
-						Error:      "failed to get topic map: topic is required for Kafka destination",
+						Error:      "Topic is required for Kafka destination",
+						Metadata:   metadataWithRudderID,
+						StatusCode: http.StatusInternalServerError,
+					},
+					{
+						Error:      "Topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
 					},
