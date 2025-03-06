@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	utils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
 	types "github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -15,40 +16,24 @@ import (
 var sourceKeys = []string{"properties", "traits", "context.traits"}
 
 func Transform(_ context.Context, events []types.TransformerEvent) types.Response {
-	topicMap, err := getTopicMap(events[0].Destination)
 	response := types.Response{}
-	if err != nil {
-		for _, event := range events {
-			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
-				Error:      fmt.Errorf("failed to get topic map: %w", err).Error(),
-				Metadata:   event.Metadata,
-				StatusCode: http.StatusInternalServerError,
-			})
-		}
-		return response
-	}
-
-	attributesMap, err := getAttributesMap(events[0].Destination)
-	if err != nil {
-		for _, event := range events {
-			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
-				Error:      fmt.Errorf("failed to get attributes map: %w", err).Error(),
-				Metadata:   event.Metadata,
-				StatusCode: http.StatusInternalServerError,
-			})
-		}
-		return response
-	}
+	topicMap := utils.GetTopicMap(events[0].Destination, "eventToTopicMap", true)
+	attributesMap := getAttributesMap(events[0].Destination)
 
 	for _, event := range events {
+		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+
 		topic, err := getTopic(event, topicMap)
 		if err != nil {
 			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
-				Error:      fmt.Errorf("failed to get topic: %w", err).Error(),
+				Error:      err.Error(),
 				Metadata:   event.Metadata,
-				StatusCode: http.StatusInternalServerError,
+				StatusCode: http.StatusBadRequest,
+				// TODO: add stats
 			})
+			continue
 		}
+		// TODO: check getAttributesMapFromEvent logic
 		attributes := getAttributesMapFromEvent(event, attributesMap)
 		userID := ""
 		if id, ok := event.Message["userId"].(string); ok {
@@ -56,10 +41,14 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 		} else if id, ok := event.Message["anonymousId"].(string); ok {
 			userID = id
 		}
+
+		var message map[string]interface{}
+		message = event.Message
+
 		response.Events = append(response.Events, types.TransformerResponse{
 			Output: map[string]interface{}{
 				"userId":     userID,
-				"message":    event.Message,
+				"message":    message,
 				"topicId":    topic,
 				"attributes": attributes,
 			},
@@ -71,39 +60,18 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	return response
 }
 
-func getTopicMap(destination backendconfig.DestinationT) (map[string]string, error) {
-	eventToTopicMap, ok := destination.Config["eventToTopicMap"]
-	if !ok {
-		return nil, fmt.Errorf("eventToTopicMap not found in destination config")
-	}
-	eventToTopicMapList, ok := eventToTopicMap.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("eventToTopicMap is not a list")
-	}
-	topicMap := make(map[string]string)
-	for _, mapping := range eventToTopicMapList {
-		if m, ok := mapping.(map[string]interface{}); ok {
-			from, fromOk := m["from"].(string)
-			to, toOk := m["to"].(string)
-			if fromOk && toOk {
-				topicMap[strings.ToLower(from)] = to
-			}
-		}
-	}
-	return topicMap, nil
-}
+func getAttributesMap(destination backendconfig.DestinationT) map[string][]string {
+	attributesMap := make(map[string][]string)
 
-func getAttributesMap(destination backendconfig.DestinationT) (map[string][]string, error) {
 	eventToAttributesMap, ok := destination.Config["eventToAttributesMap"]
 	if !ok {
-		return nil, fmt.Errorf("eventToAttributesMap not found in destination config")
+		return attributesMap
 	}
 	eventToAttributesMapList, ok := eventToAttributesMap.([]interface{})
 	if !ok || len(eventToAttributesMapList) == 0 {
-		return nil, fmt.Errorf("eventToAttributesMap is not a list")
+		return attributesMap
 	}
 
-	attributesMap := make(map[string][]string)
 	for _, mapping := range eventToAttributesMapList {
 		if m, ok := mapping.(map[string]interface{}); ok {
 			from, fromOk := m["from"].(string)
@@ -113,31 +81,32 @@ func getAttributesMap(destination backendconfig.DestinationT) (map[string][]stri
 			}
 		}
 	}
-	return attributesMap, nil
+	return attributesMap
 }
 
 func getTopic(event types.TransformerEvent, topicMap map[string]string) (string, error) {
-	if msgType, ok := event.Message["type"].(string); !ok || msgType == "" {
+	var eventType string
+	if et, ok := event.Message["type"].(string); ok && et != "" {
+		eventType = et
+	} else {
 		return "", fmt.Errorf("type is required for event")
 	}
 
-	if eventName, ok := event.Message["event"].(string); ok {
-		if topic, exists := topicMap[strings.ToLower(eventName)]; exists {
+	if eventName, ok := event.Message["event"].(string); ok && eventName != "" {
+		if topic, exists := topicMap[strings.ToLower(eventName)]; exists && topic != "" {
 			return topic, nil
 		}
 	}
 
-	if eventType, ok := event.Message["eventType"].(string); ok {
-		if topic, exists := topicMap[strings.ToLower(eventType)]; exists {
-			return topic, nil
-		}
-	}
-
-	if topic, exists := topicMap["*"]; exists {
+	if topic, exists := topicMap[strings.ToLower(eventType)]; exists && topic != "" {
 		return topic, nil
 	}
 
-	return "", nil
+	if topic, exists := topicMap["*"]; exists && topic != "" {
+		return topic, nil
+	}
+
+	return "", fmt.Errorf("No topic set for this event")
 }
 
 func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[string][]string) []string {
@@ -160,9 +129,9 @@ func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[s
 	return attributesMap["*"]
 }
 
-func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]string {
+func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]any {
 	attributes := getAttributeKeysFromEvent(event, attributesMap)
-	attributeMetadata := make(map[string]string)
+	attributeMetadata := make(map[string]any)
 	for _, attribute := range attributes {
 		if v, ok := event.Message[attribute]; ok {
 			attributeMetadata[attribute] = stringify.Any(v)
@@ -178,7 +147,7 @@ func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[s
 		}
 	}
 
-	refinedMetadata := make(map[string]string)
+	refinedMetadata := make(map[string]any)
 	for key, value := range attributeMetadata {
 		parts := strings.Split(key, ".")
 		refinedKey := parts[len(parts)-1]
