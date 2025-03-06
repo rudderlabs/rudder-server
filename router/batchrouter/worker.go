@@ -3,8 +3,6 @@ package batchrouter
 import (
 	"context"
 	"fmt"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +16,6 @@ import (
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -75,73 +72,8 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		defer jobsWg.Done()
 		destWithSources := destinationJobs.destWithSources
 		parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destWithSources.Destination.ID}}
-		var statusList []*jobsdb.JobStatusT
-		var drainList []*jobsdb.JobStatusT
-		var drainJobList []*jobsdb.JobT
-		drainStatsbyDest := make(map[string]*routerutils.DrainStats)
-		jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-
 		start := time.Now()
-		jobsBySource := make(map[string][]*jobsdb.JobT)
-		for _, job := range destinationJobs.jobs {
-			sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-			destinationID := destWithSources.Destination.ID
-			jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
-				SourceID:      sourceID,
-				DestinationID: destinationID,
-			}
-			if drain, reason := brt.drainer.Drain(
-				job,
-			); drain {
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.Aborted.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     routerutils.DRAIN_ERROR_CODE,
-					ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", reason),
-					Parameters:    []byte(`{}`), // check
-					JobParameters: job.Parameters,
-					WorkspaceId:   job.WorkspaceId,
-				}
-				// Enhancing job parameter with the drain reason.
-				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
-				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
-				drainList = append(drainList, &status)
-				drainJobList = append(drainJobList, job)
-				if _, ok := drainStatsbyDest[destinationID]; !ok {
-					drainStatsbyDest[destinationID] = &routerutils.DrainStats{
-						Count:     0,
-						Reasons:   []string{},
-						Workspace: job.WorkspaceId,
-					}
-				}
-				drainStatsbyDest[destinationID].Count = drainStatsbyDest[destinationID].Count + 1
-				if !slices.Contains(drainStatsbyDest[destinationID].Reasons, reason) {
-					drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, reason)
-				}
-			} else {
-				if _, ok := jobsBySource[sourceID]; !ok {
-					jobsBySource[sourceID] = []*jobsdb.JobT{}
-				}
-				jobsBySource[sourceID] = append(jobsBySource[sourceID], job)
-
-				status := jobsdb.JobStatusT{
-					JobID:         job.JobID,
-					AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-					JobState:      jobsdb.Executing.State,
-					ExecTime:      time.Now(),
-					RetryTime:     time.Now(),
-					ErrorCode:     "",
-					ErrorResponse: []byte(`{}`), // check
-					Parameters:    []byte(`{}`), // check
-					JobParameters: job.Parameters,
-					WorkspaceId:   job.WorkspaceId,
-				}
-				statusList = append(statusList, &status)
-			}
-		}
+		drainList, drainJobList, statusList, jobIDConnectionDetailsMap, jobsBySource := brt.getDrainList(destinationJobs, destWithSources)
 		// Mark the drainList jobs as Aborted
 		if len(drainList) > 0 {
 			err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
@@ -173,21 +105,6 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				panic(err)
 			}
 			routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
-			for destID, destDrainStat := range drainStatsbyDest {
-				stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
-					"destType":    brt.destType,
-					"destId":      destID,
-					"module":      "batchrouter",
-					"reasons":     strings.Join(destDrainStat.Reasons, ", "),
-					"workspaceId": destDrainStat.Workspace,
-				}).Count(destDrainStat.Count)
-				rmetrics.DecreasePendingEvents(
-					"batch_rt",
-					destDrainStat.Workspace,
-					brt.destType,
-					float64(destDrainStat.Count),
-				)
-			}
 		}
 		brt.stat.NewTaggedStat("batch_router.drain_time", stats.TimerType, stats.Tags{
 			"destType": brt.destType,
@@ -300,6 +217,129 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 		}
 		wg.Wait()
 	})
+}
+
+type drainResult struct {
+	drainList                 []*jobsdb.JobStatusT
+	drainJobList              []*jobsdb.JobT
+	statusList                []*jobsdb.JobStatusT
+	jobIDConnectionDetailsMap map[int64]jobsdb.ConnectionDetails
+	jobsBySource              map[string][]*jobsdb.JobT
+}
+
+func (brt *Handle) getDrainList(destinationJobs *DestinationJobs, destWithSources routerutils.DestinationWithSources) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, []*jobsdb.JobStatusT, map[int64]jobsdb.ConnectionDetails, map[string][]*jobsdb.JobT) {
+	jobs := destinationJobs.jobs
+	numWorkers := 8
+	chunks := lo.Chunk(jobs, numWorkers)
+	results := make(chan drainResult, numWorkers)
+	var wg sync.WaitGroup
+	wg.Add(len(chunks))
+
+	for _, chunk := range chunks {
+		go func(chunk []*jobsdb.JobT) {
+			defer wg.Done()
+			// Create local slices and maps for this goroutine
+			var localDrainList []*jobsdb.JobStatusT
+			var localDrainJobList []*jobsdb.JobT
+			var localStatusList []*jobsdb.JobStatusT
+			localJobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+			localJobsBySource := make(map[string][]*jobsdb.JobT)
+
+			for _, job := range chunk {
+				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+				destinationID := destWithSources.Destination.ID
+				localJobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+					SourceID:      sourceID,
+					DestinationID: destinationID,
+				}
+				if drain, reason := brt.drainer.Drain(job); drain {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Aborted.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+						ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", reason),
+						Parameters:    []byte(`{}`),
+						JobParameters: job.Parameters,
+						WorkspaceId:   job.WorkspaceId,
+					}
+					// Enhancing job parameter with the drain reason.
+					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
+					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
+					localDrainList = append(localDrainList, &status)
+					localDrainJobList = append(localDrainJobList, job)
+				} else {
+					if _, ok := localJobsBySource[sourceID]; !ok {
+						localJobsBySource[sourceID] = []*jobsdb.JobT{}
+					}
+					localJobsBySource[sourceID] = append(localJobsBySource[sourceID], job)
+
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+						JobState:      jobsdb.Executing.State,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						ErrorCode:     "",
+						ErrorResponse: []byte(`{}`),
+						Parameters:    []byte(`{}`),
+						JobParameters: job.Parameters,
+						WorkspaceId:   job.WorkspaceId,
+					}
+					localStatusList = append(localStatusList, &status)
+				}
+			}
+			results <- drainResult{
+				drainList:                 localDrainList,
+				drainJobList:              localDrainJobList,
+				statusList:                localStatusList,
+				jobIDConnectionDetailsMap: localJobIDConnectionDetailsMap,
+				jobsBySource:              localJobsBySource,
+			}
+		}(chunk)
+	}
+
+	// Initialize final result containers
+	var drainList []*jobsdb.JobStatusT
+	var drainJobList []*jobsdb.JobT
+	var statusList []*jobsdb.JobStatusT
+	jobIDConnectionDetails := make(map[int64]jobsdb.ConnectionDetails)
+	jobsBySources := make(map[string][]*jobsdb.JobT)
+
+	// Collect and aggregate results
+	var collectWg sync.WaitGroup
+	collectWg.Add(1)
+
+	go func() {
+		defer collectWg.Done()
+		for i := 0; i < len(chunks); i++ {
+			result := <-results
+			drainList = append(drainList, result.drainList...)
+			drainJobList = append(drainJobList, result.drainJobList...)
+			statusList = append(statusList, result.statusList...)
+
+			// Merge connection details
+			for k, v := range result.jobIDConnectionDetailsMap {
+				jobIDConnectionDetails[k] = v
+			}
+
+			// Merge jobs by source
+			for sourceID, jobs := range result.jobsBySource {
+				if existing, ok := jobsBySources[sourceID]; ok {
+					jobsBySources[sourceID] = append(existing, jobs...)
+				} else {
+					jobsBySources[sourceID] = jobs
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	collectWg.Wait()
+
+	return drainList, drainJobList, statusList, jobIDConnectionDetails, jobsBySources
 }
 
 // SleepDurations returns the min and max sleep durations for the worker when idle, i.e when [Work] returns false.

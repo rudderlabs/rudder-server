@@ -500,28 +500,12 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 // OptimizedSchemaMapGeneration generates a schema map from batch jobs using parallel processing
 func optimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[string]map[string]interface{} {
-	// Split jobs into chunks for each worker
-	chunkSize := (len(batchJobs.Jobs) + workers - 1) / workers
-	chunks := make([][]*jobsdb.JobT, workers)
-	activeWorkers := 0 // Track actual number of workers with data
-
-	for i := 0; i < workers; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
-		if end > len(batchJobs.Jobs) {
-			end = len(batchJobs.Jobs)
-		}
-		if start < len(batchJobs.Jobs) {
-			chunks[i] = batchJobs.Jobs[start:end]
-			activeWorkers++
-		}
-	}
-
+	chunks := lo.Chunk(batchJobs.Jobs, workers)
 	// Create buffered channel with exact size needed
-	results := make(chan workerResult, activeWorkers)
+	results := make(chan workerResult, workers)
 
 	// Create slice to store all results to ensure nothing is lost
-	allResults := make([]workerResult, 0, activeWorkers)
+	allResults := make([]workerResult, 0, workers)
 
 	var wg sync.WaitGroup
 
@@ -568,7 +552,7 @@ func optimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[strin
 	go func() {
 		defer collectWg.Done()
 		// Collect exactly activeWorkers results
-		for i := 0; i < activeWorkers; i++ {
+		for i := 0; i < workers; i++ {
 			result := <-results
 			allResults = append(allResults, result)
 		}
@@ -580,8 +564,8 @@ func optimizedSchemaMapGeneration(batchJobs *BatchedJobs, workers int) map[strin
 	collectWg.Wait()
 
 	// Verify we got all results
-	if len(allResults) != activeWorkers {
-		panic(fmt.Sprintf("Critical error: Expected %d results but got %d", activeWorkers, len(allResults)))
+	if len(allResults) != workers {
+		panic(fmt.Sprintf("Critical error: Expected %d results but got %d", workers, len(allResults)))
 	}
 
 	// Merge all results into final schema

@@ -5,13 +5,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -140,9 +140,8 @@ func (d *drainer) Drain(
 	job *jobsdb.JobT,
 ) (bool, string) {
 	createdAt := job.CreatedAt
-	var jobParams JobParameters
-	_ = jsonrs.Unmarshal(job.Parameters, &jobParams)
-	destID := jobParams.DestinationID
+	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
+	sourceJobRunID := gjson.GetBytes(job.Parameters, "source_job_run_id").String()
 	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
 		return true, DrainReasonJobExpired
 	}
@@ -157,8 +156,8 @@ func (d *drainer) Drain(
 		return true, DrainReasonDestAbort
 	}
 
-	if jobParams.SourceJobRunID != "" &&
-		slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+	if sourceJobRunID != "" &&
+		slices.Contains(d.jobRunIDs.Load(), sourceJobRunID) {
 		return true, DrainReasonJobRunIDCancelled
 	}
 
