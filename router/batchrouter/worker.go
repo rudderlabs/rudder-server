@@ -44,18 +44,26 @@ type worker struct {
 // The function returns when processing completes and the return value is true if at least 1 job was processed,
 // false otherwise.
 func (w *worker) Work() bool {
+start:
 	brt := w.brt
-	workerJobs := brt.getWorkerJobs(w.partition)
+	workerJobs, limitsReached := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
 		return false
 	}
-
 	var jobsWg sync.WaitGroup
 	jobsWg.Add(len(workerJobs))
 	for _, workerJob := range workerJobs {
 		w.processJobAsync(&jobsWg, workerJob)
 	}
 	jobsWg.Wait()
+
+	brt.logger.Infof("BRT: Worker %s processed %d jobs", w.partition, len(workerJobs[0].jobs))
+	brt.logger.Infof("BRT: Worker %s limits reached: %v", w.partition, limitsReached)
+
+	if limitsReached {
+		goto start
+	}
+
 	return true
 }
 
