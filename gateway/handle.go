@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/processor"
+
 	"github.com/samber/lo"
 
 	"github.com/google/uuid"
@@ -781,6 +783,48 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	res = make([]jobWithStat, 0, len(messages))
 
+	// Create the chain of processors
+	reqTypeProcessor := &processor.ReqTypeProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get reqType", loggerFields...)
+		},
+	}
+	messageIDProcessor := &processor.MessageIDProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get messageID", loggerFields...)
+		},
+	}
+	rudderIDProcessor := &processor.RudderIDProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get rudderId", loggerFields...)
+		},
+	}
+	receivedAtProcessor := &processor.ReceivedAtProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get receivedAt", loggerFields...)
+		},
+	}
+	requestIPProcessor := &processor.RequestIPProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get requestIP", loggerFields...)
+		},
+	}
+
+	reqTypeProcessor.SetNext(messageIDProcessor)
+	messageIDProcessor.SetNext(rudderIDProcessor)
+	rudderIDProcessor.SetNext(receivedAtProcessor)
+	receivedAtProcessor.SetNext(requestIPProcessor)
+
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.streamMsgValidator(&msg)
@@ -793,64 +837,18 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			stat.Report(gw.stats)
 			return nil, errors.New(response.InvalidStreamMessage)
 		}
-		// TODO: get rid of this check
-		if msg.Properties.RequestType != "" {
-			switch msg.Properties.RequestType {
-			case "batch", "replay", "retl", "import":
-			default:
-				msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
-				if err != nil {
-					stat.RequestEventsFailed(1, response.NotRudderEvent)
-					stat.Report(gw.stats)
-					loggerFields := msg.Properties.LoggerFields()
-					loggerFields = append(loggerFields, obskit.Error(err))
-					gw.logger.Errorn("failed to set type in message", loggerFields...)
-					return nil, errors.New(response.NotRudderEvent)
-				}
-			}
-		}
 
-		anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
-		userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
-		messageID, changed := getMessageID(msg.Payload)
-		if changed {
-			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
-			if err != nil {
-				stat.RequestFailed(response.NotRudderEvent)
-				stat.Report(gw.stats)
-				gw.logger.Errorn("failed to set messageID in message",
-					obskit.Error(err))
-				return nil, errors.New(response.NotRudderEvent)
-			}
-		}
-		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
-		if err != nil {
-			stat.RequestFailed(response.NotRudderEvent)
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to get rudderId",
-				obskit.Error(err))
-			return nil, errors.New(response.NotRudderEvent)
-		}
-		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
-		if err != nil {
-			stat.RequestFailed(response.NotRudderEvent)
-			stat.Report(gw.stats)
-			loggerFields := msg.Properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to set rudderId in message",
-				loggerFields...)
-			return nil, errors.New(response.NotRudderEvent)
-		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
 			gw.logger.Errorn("unable to get writeKey for job",
-				logger.NewStringField("messageId", messageID),
+				logger.NewStringField("routingKey", msg.Properties.RoutingKey),
 				obskit.SourceID(msg.Properties.SourceID))
 		}
 		stat.SourceID = msg.Properties.SourceID
 		stat.WorkspaceID = msg.Properties.WorkspaceID
 		stat.WriteKey = writeKey
+
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
@@ -865,6 +863,90 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			).Increment()
 			continue
 		}
+
+		if gw.config.GetReloadableBoolVar(false, "gateway.internalBatch.chainedProcessor.enabled").Load() {
+			// Process the message through the chain of processors
+			event, err := reqTypeProcessor.Process(msg.Payload, msg.Properties)
+			if err != nil {
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("failed to process message through chain of processors", loggerFields...)
+				return nil, err
+			}
+			msg.Payload = event
+		} else {
+			// TODO: get rid of this check
+			if msg.Properties.RequestType != "" {
+				switch msg.Properties.RequestType {
+				case "batch", "replay", "retl", "import":
+				default:
+					msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
+					if err != nil {
+						stat.RequestEventsFailed(1, response.NotRudderEvent)
+						stat.Report(gw.stats)
+						loggerFields := msg.Properties.LoggerFields()
+						loggerFields = append(loggerFields, obskit.Error(err))
+						gw.logger.Errorn("failed to set type in message", loggerFields...)
+						return nil, errors.New(response.NotRudderEvent)
+					}
+				}
+			}
+
+			anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
+			userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
+			messageID, changed := getMessageID(msg.Payload)
+			if changed {
+				msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
+				if err != nil {
+					stat.RequestFailed(response.NotRudderEvent)
+					stat.Report(gw.stats)
+					gw.logger.Errorn("failed to set messageID in message",
+						obskit.Error(err))
+					return nil, errors.New(response.NotRudderEvent)
+				}
+			}
+			rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
+			if err != nil {
+				stat.RequestFailed(response.NotRudderEvent)
+				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to get rudderId",
+					obskit.Error(err))
+				return nil, errors.New(response.NotRudderEvent)
+			}
+			msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
+			if err != nil {
+				stat.RequestFailed(response.NotRudderEvent)
+				stat.Report(gw.stats)
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("failed to set rudderId in message",
+					loggerFields...)
+				return nil, errors.New(response.NotRudderEvent)
+			}
+
+			msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
+			if err != nil {
+				err = fmt.Errorf("filling receivedAt: %w", err)
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to fill receivedAt in message",
+					obskit.Error(err))
+				return nil, fmt.Errorf("filling receivedAt: %w", err)
+			}
+			msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
+			if err != nil {
+				err = fmt.Errorf("filling request_ip: %w", err)
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to fill request_ip in message",
+					obskit.Error(err))
+				return nil, fmt.Errorf("filling request_ip: %w", err)
+			}
+		}
+
+		messageID := gjson.GetBytes(msg.Payload, "messageId").String()
 
 		gw.stats.NewTaggedStat("gateway.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
 			"workspaceId": msg.Properties.WorkspaceID,
@@ -890,25 +972,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			marshalledParams = []byte(
 				`{"error": "rudder-server gateway failed to marshal params"}`,
 			)
-		}
-
-		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
-		if err != nil {
-			err = fmt.Errorf("filling receivedAt: %w", err)
-			stat.RequestEventsFailed(1, err.Error())
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to fill receivedAt in message",
-				obskit.Error(err))
-			return nil, fmt.Errorf("filling receivedAt: %w", err)
-		}
-		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
-		if err != nil {
-			err = fmt.Errorf("filling request_ip: %w", err)
-			stat.RequestEventsFailed(1, err.Error())
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to fill request_ip in message",
-				obskit.Error(err))
-			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
 
 		eventBatch := singularEventBatch{
