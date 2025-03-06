@@ -54,6 +54,16 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = config.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
 
+	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Processor.DestinationTransformer.maxLoggedEvents")
+
+	handle.stats.comparisonTime = handle.stat.NewStat("embedded_destination_transform_comparison_time", stats.TimerType)
+	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
+	handle.stats.mismatchedEvents = handle.stat.NewStat("embedded_destination_transform_mismatched_events", stats.CountType)
+
+	handle.loggedEvents = 0
+	handle.loggedEventsMu = sync.Mutex{}
+	handle.loggedFileName = generateLogFileName()
+
 	for _, opt := range opts {
 		opt(handle)
 	}
@@ -70,12 +80,24 @@ type Client struct {
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
 		batchSize               config.ValueLoader[int]
+
+		maxLoggedEvents config.ValueLoader[int]
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
 	log              logger.Logger
 	stat             stats.Stats
 	client           transformerclient.Client
+
+	stats struct {
+		comparisonTime   stats.Timer
+		matchedEvents    stats.Counter
+		mismatchedEvents stats.Counter
+	}
+
+	loggedEventsMu sync.Mutex
+	loggedEvents   int64
+	loggedFileName string
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
