@@ -111,8 +111,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 							},
 							"topic":  "default-topic",
@@ -122,8 +122,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"anonymousId": "anonymous-123",
 							},
 							"topic":  "default-topic",
@@ -133,8 +133,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId":      "",
 								"anonymousId": "anonymous-123",
 							},
@@ -145,8 +145,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId":      "user-123",
 								"anonymousId": "",
 							},
@@ -190,8 +190,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"kafka": map[string]interface{}{
@@ -207,8 +207,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"KAFKA": map[string]interface{}{
@@ -286,8 +286,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"kafka": map[string]interface{}{
@@ -304,8 +304,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"Kafka": map[string]interface{}{
@@ -322,8 +322,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"KAFKA": map[string]interface{}{
@@ -340,8 +340,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"integrations": map[string]interface{}{
 									"KAFKA": map[string]interface{}{
@@ -404,8 +404,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "123",
 							},
 							"topic":  "default-topic",
@@ -415,8 +415,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "456",
 								"integrations": map[string]interface{}{
 									"unknown": map[string]interface{}{
@@ -431,8 +431,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "456",
 								"integrations": map[string]interface{}{
 									"kafka": map[string]interface{}{
@@ -504,8 +504,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "identify",
 							},
@@ -518,8 +518,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "group",
 							},
@@ -532,8 +532,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "",
 							},
@@ -544,8 +544,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "alias",
 							},
@@ -556,8 +556,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 							},
 							"topic":  "default-topic",
@@ -567,8 +567,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "unknown-event-type",
 							},
@@ -641,8 +641,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"event":  "unknown-event",
 								"type":   "track",
@@ -655,8 +655,8 @@ func TestTransform(t *testing.T) {
 					},
 
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"event":  "event-A",
 								"type":   "track",
@@ -670,8 +670,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"event":  "",
 								"type":   "track",
@@ -683,8 +683,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"type":   "track",
 							},
@@ -695,8 +695,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"event":  "event-B",
 								"type":   "track",
@@ -710,8 +710,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId": "user-123",
 								"event":  "event-C",
 								"type":   "track",
@@ -768,8 +768,8 @@ func TestTransform(t *testing.T) {
 				},
 				Events: []types.TransformerResponse{
 					{
-						Output: types.SingularEventT{
-							"message": types.SingularEventT{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
 								"userId":    "user-123",
 								"messageId": "message-id-3",
 							},

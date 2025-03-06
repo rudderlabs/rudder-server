@@ -41,8 +41,11 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			continue
 		}
 
+		var message map[string]interface{}
+		message = event.Message
+
 		outputEvent := map[string]interface{}{
-			"message": event.Message,
+			"message": message,
 			"userId":  userId,
 			"topic":   topic,
 		}
@@ -52,6 +55,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 		}
 
 		event.Metadata.RudderID = fmt.Sprintf("%s<<>>%s", event.Metadata.RudderID, topic)
+		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
 		response.Events = append(response.Events, types.TransformerResponse{
 			Output:     outputEvent,
