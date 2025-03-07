@@ -884,6 +884,9 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
 		cacheParameterFilters,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
+		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
+			jd.config.GetReloadableBoolVar(true, "JobsDB."+jd.tablePrefix+".logCacheBranchInvalidation", "JobsDB.logCacheBranchInvalidation"),
+			jd.logger),
 	)
 
 	jd.logger.Infon("Connected to DB")
