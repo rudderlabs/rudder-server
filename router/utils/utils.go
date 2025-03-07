@@ -69,7 +69,6 @@ type JobParameters struct {
 	MessageID               string      `json:"message_id"`
 	EventName               string      `json:"event_name"`
 	EventType               string      `json:"event_type"`
-	WorkspaceID             string      `json:"workspaceId"`
 	RudderAccountID         string      `json:"rudderAccountId"`
 	DontBatch               bool        `json:"dontBatch"`
 	TraceParent             string      `json:"traceparent"`

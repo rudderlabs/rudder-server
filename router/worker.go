@@ -181,7 +181,7 @@ func (w *worker) workLoop() {
 				FirstAttemptedAt:   firstAttemptedAt,
 				TransformAt:        parameters.TransformAt,
 				JobT:               job,
-				WorkspaceID:        parameters.WorkspaceID,
+				WorkspaceID:        job.WorkspaceId,
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
@@ -655,7 +655,7 @@ func (w *worker) processDestinationJobs() {
 			RetryTime:     time.Now(),
 			Parameters:    routerutils.EmptyPayload,
 			JobParameters: destinationJobMetadata.JobT.Parameters,
-			WorkspaceId:   destinationJobMetadata.WorkspaceID,
+			WorkspaceId:   destinationJobMetadata.JobT.WorkspaceId,
 		}
 
 		routerJobResponse.status = &status
