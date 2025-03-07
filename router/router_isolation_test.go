@@ -169,7 +169,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Reset()
 	defer logger.Reset()
 	defer config.Reset()
-	config.Set("LOG_LEVEL", "ERROR")
+	config.Set("LOG_LEVEL", "WARN")
 	logger.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
