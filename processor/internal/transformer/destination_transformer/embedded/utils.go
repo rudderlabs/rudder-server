@@ -35,3 +35,16 @@ func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyT
 	}
 	return topicMap
 }
+
+func GetValidationErrorStatTags(destination backendconfig.DestinationT) map[string]string {
+	return map[string]string{
+		"destinationId":  destination.ID,
+		"workspaceId":    destination.WorkspaceID,
+		"destType":       destination.DestinationDefinition.Name,
+		"module":         "destination",
+		"implementation": "native",
+		"errorCategory":  "dataValidation",
+		"errorType":      "configuration",
+		"feature":        "processor",
+	}
+}

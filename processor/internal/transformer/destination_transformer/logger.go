@@ -28,7 +28,8 @@ func (c *Client) CompareAndLog(
 	c.stats.comparisonTime.RecordDuration()()
 
 	differingResponse, sampleDiff := c.differingEvents(embeddedResponse, legacyResponse)
-	if len(differingResponse) == 0 {
+	if len(differingResponse) == 0 && sampleDiff == "" {
+		c.log.Infof("Embedded and legacy responses are matches")
 		return
 	}
 
