@@ -1161,7 +1161,7 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%q
-		ADD COLUMN`,
+		ADD COLUMN IF NOT EXISTS`,
 		schemaIdentifier,
 		tableName,
 	))
@@ -1179,19 +1179,6 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	)
 	log.Infow("Adding columns", lf.Query, query)
 	_, err = sf.DB.ExecContext(ctx, query)
-
-	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
-		if err != nil {
-			if checkAndIgnoreAlreadyExistError(err) {
-				log.Infow("Column already exists",
-					lf.ColumnName, columnsInfo[0].Name,
-					lf.Error, err.Error(),
-				)
-				err = nil
-			}
-		}
-	}
 	return
 }
 

@@ -1258,6 +1258,99 @@ func TestIntegration(t *testing.T) {
 		require.NoError(t, rows.Err())
 		require.Empty(t, ids2, "no more rows left")
 	})
+
+	t.Run("Add Columns", func(t *testing.T) {
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
+			Account:   credentials.Account,
+			User:      credentials.User,
+			Role:      credentials.Role,
+			Password:  credentials.Password,
+			DBName:    credentials.Database,
+			Warehouse: credentials.Warehouse,
+		})
+		require.NoError(t, err)
+
+		sqlConnectDB, err := sqlconnect.NewDB("snowflake", credentialsJSON)
+		require.NoError(t, err)
+
+		db := sqlConnectDB.SqlDB()
+		require.NoError(t, db.Ping())
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			dropSchema(t, db, namespace)
+		})
+
+		sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+		sf.DB = sqlquerywrapper.New(db)
+		sf.Namespace = namespace
+
+		_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
+		require.NoError(t, err, "should create schema")
+
+		tableName := "TEST_TABLE"
+		_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s.%q (col1 VARCHAR)`, namespace, tableName))
+		require.NoError(t, err, "should create table")
+
+		testCases := []struct {
+			name        string
+			columnsInfo []whutils.ColumnInfo
+			wantErr     bool
+		}{
+			{
+				name: "add single column",
+				columnsInfo: []whutils.ColumnInfo{
+					{Name: "col2", Type: "string"},
+				},
+				wantErr: false,
+			},
+			{
+				name: "add multiple columns",
+				columnsInfo: []whutils.ColumnInfo{
+					{Name: "col3", Type: "int"},
+					{Name: "col4", Type: "float"},
+				},
+				wantErr: false,
+			},
+			{
+				name: "add column that already exists",
+				columnsInfo: []whutils.ColumnInfo{
+					{Name: "col2", Type: "string"},
+				},
+				wantErr: false,
+			},
+			{
+				name: "add multiple columns that already exist",
+				columnsInfo: []whutils.ColumnInfo{
+					{Name: "col2", Type: "string"},
+					{Name: "col3", Type: "int"},
+				},
+				wantErr: true,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				err := sf.AddColumns(ctx, tableName, tc.columnsInfo)
+				if (err != nil) != tc.wantErr {
+					t.Errorf("AddColumns() error = %v, wantErr %v", err, tc.wantErr)
+				}
+
+				schema, err := sf.FetchSchema(ctx)
+				require.NoError(t, err, "should fetch schema")
+
+				tableSchema, ok := schema[tableName]
+				require.True(t, ok, "table should exist in schema")
+
+				for _, col := range tc.columnsInfo {
+					_, exists := tableSchema[col.Name]
+					require.True(t, exists, "column %s should exist", col.Name)
+				}
+			})
+		}
+	})
 }
 
 func TestSnowflake_ShouldMerge(t *testing.T) {
