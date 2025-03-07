@@ -57,3 +57,15 @@ func GetValidationErrorStatTags(destination backendconfig.DestinationT) map[stri
 func GetMessageAsMap(message types.SingularEventT) map[string]interface{} {
 	return message
 }
+
+/* TODO: remove this once we stop comparing response from embedded and legacy
+ * we need this because response from legacy is a map[string]interface{} and not a map[string]string
+ * and we need to convert it to map[string]string to compare with response from embedded
+ */
+func GetAttributesAsMapOfInterface(attributes map[string]string) map[string]interface{} {
+	attributesMap := make(map[string]interface{}, len(attributes))
+	for k, v := range attributes {
+		attributesMap[k] = v
+	}
+	return attributesMap
+}
