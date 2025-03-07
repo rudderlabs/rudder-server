@@ -1294,54 +1294,51 @@ func TestIntegration(t *testing.T) {
 		_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %s.%q (col1 VARCHAR)`, namespace, tableName))
 		require.NoError(t, err, "should create table")
 
+		columns := []whutils.ColumnInfo{
+			{Name: "col2", Type: "string"},
+			{Name: "col3", Type: "int"},
+			{Name: "col4", Type: "float"},
+			{Name: "col5", Type: "boolean"},
+		}
 		testCases := []struct {
-			name        string
-			columnsInfo []whutils.ColumnInfo
+			desc    string
+			columns []whutils.ColumnInfo
 		}{
 			{
-				name: "add single new column",
-				columnsInfo: []whutils.ColumnInfo{
-					{Name: "col2", Type: "string"},
-				},
+				desc:    "single column",
+				columns: columns[0:1],
 			},
 			{
-				name: "add multiple new columns",
-				columnsInfo: []whutils.ColumnInfo{
-					{Name: "col3", Type: "int"},
-					{Name: "col4", Type: "float"},
-				},
+				desc:    "multiple columns",
+				columns: columns[1:3],
 			},
 			{
-				name: "add single existing column",
-				columnsInfo: []whutils.ColumnInfo{
-					{Name: "col2", Type: "string"},
-				},
+				desc:    "existing single column",
+				columns: columns[0:1],
 			},
 			{
-				name: "add multiple new + existing columns",
-				columnsInfo: []whutils.ColumnInfo{
-					{Name: "col2", Type: "string"},
-					{Name: "col3", Type: "int"},
-					{Name: "col4", Type: "float"},
-				},
+				desc:    "existing multiple columns",
+				columns: columns[1:3],
+			},
+			{
+				desc:    "existing column + new column",
+				columns: columns[2:4],
 			},
 		}
 
 		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				err := sf.AddColumns(ctx, tableName, tc.columnsInfo)
-				require.NoError(t, err, "should add columns")
-				schema, err := sf.FetchSchema(ctx)
-				require.NoError(t, err, "should fetch schema")
+			err = sf.AddColumns(ctx, tableName, tc.columns)
+			require.NoError(t, err, "should add columns")
+		}
+		schema, err := sf.FetchSchema(ctx)
+		require.NoError(t, err, "should fetch schema")
 
-				tableSchema, ok := schema[tableName]
-				require.True(t, ok, "table should exist in schema")
+		tableSchema, ok := schema[tableName]
+		require.True(t, ok, "table should exist in schema")
 
-				for _, col := range tc.columnsInfo {
-					_, exists := tableSchema[col.Name]
-					require.True(t, exists, "column %s should exist", col.Name)
-				}
-			})
+		for _, col := range columns {
+			_, exists := tableSchema[col.Name]
+			require.True(t, exists, "column %s should exist", col.Name)
 		}
 	})
 }
