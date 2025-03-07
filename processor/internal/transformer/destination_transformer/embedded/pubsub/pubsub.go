@@ -23,34 +23,35 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	for _, event := range events {
 		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
+		if event.Destination.ID != events[0].Destination.ID {
+			panic("all events must have the same destination")
+		}
+
 		topic, err := getTopic(event, topicMap)
 		if err != nil {
 			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
 				Error:      err.Error(),
 				Metadata:   event.Metadata,
 				StatusCode: http.StatusBadRequest,
-				// TODO: add stats
+				StatTags:   utils.GetValidationErrorStatTags(event.Destination),
 			})
 			continue
 		}
-		// TODO: check getAttributesMapFromEvent logic
+
 		attributes := getAttributesMapFromEvent(event, attributesMap)
 		userID := ""
-		if id, ok := event.Message["userId"].(string); ok {
+		if id, ok := event.Message["userId"].(string); ok && id != "" {
 			userID = id
 		} else if id, ok := event.Message["anonymousId"].(string); ok {
 			userID = id
 		}
 
-		var message map[string]interface{}
-		message = event.Message
-
 		response.Events = append(response.Events, types.TransformerResponse{
 			Output: map[string]interface{}{
 				"userId":     userID,
-				"message":    message,
+				"message":    utils.GetMessageAsMap(event.Message),
 				"topicId":    topic,
-				"attributes": attributes,
+				"attributes": utils.GetAttributesAsMapOfInterface(attributes),
 			},
 			StatusCode: http.StatusOK,
 			Metadata:   event.Metadata,
@@ -76,6 +77,8 @@ func getAttributesMap(destination backendconfig.DestinationT) map[string][]strin
 		if m, ok := mapping.(map[string]interface{}); ok {
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
+
+			fromOk = fromOk && from != ""
 			if fromOk && toOk {
 				attributesMap[strings.ToLower(from)] = append(attributesMap[strings.ToLower(from)], to)
 			}
@@ -110,48 +113,47 @@ func getTopic(event types.TransformerEvent, topicMap map[string]string) (string,
 }
 
 func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[string][]string) []string {
-	if eventName, ok := event.Message["event"]; ok {
-		if eventName, ok := eventName.(string); ok {
-			if keys, ok := attributesMap[strings.ToLower(eventName)]; ok {
-				return keys
-			}
+	if eventName, ok := event.Message["event"].(string); ok && eventName != "" {
+		if keys, ok := attributesMap[strings.ToLower(eventName)]; ok {
+			return keys
 		}
 	}
 
-	if eventType, ok := event.Message["eventType"]; ok {
-		if eventType, ok := eventType.(string); ok {
-			if keys, ok := attributesMap[strings.ToLower(eventType)]; ok {
-				return keys
-			}
+	if eventType, ok := event.Message["eventType"].(string); ok {
+		if keys, ok := attributesMap[strings.ToLower(eventType)]; ok {
+			return keys
 		}
 	}
 
 	return attributesMap["*"]
 }
 
-func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]any {
+func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]string {
 	attributes := getAttributeKeysFromEvent(event, attributesMap)
-	attributeMetadata := make(map[string]any)
+	attributeMetadata := make(map[string]string)
 	for _, attribute := range attributes {
-		if v, ok := event.Message[attribute]; ok {
-			attributeMetadata[attribute] = stringify.Any(v)
-			continue
-		}
-		for _, sourceKey := range sourceKeys {
-			keys := append(strings.Split(sourceKey, "."), attribute)
-			v := misc.MapLookup(event.Message, keys...)
-			if v != nil {
-				attributeMetadata[attribute] = stringify.Any(v)
-				break
-			}
+		if value, found := findAttributeValue(event.Message, attribute); found {
+			parts := strings.Split(attribute, ".")
+			key := parts[len(parts)-1]
+			attributeMetadata[key] = value
 		}
 	}
 
-	refinedMetadata := make(map[string]any)
-	for key, value := range attributeMetadata {
-		parts := strings.Split(key, ".")
-		refinedKey := parts[len(parts)-1]
-		refinedMetadata[refinedKey] = value
+	return attributeMetadata
+}
+
+// findAttributeValue searches for an attribute in the message and its nested structures
+func findAttributeValue(message map[string]interface{}, attribute string) (string, bool) {
+	if v, ok := message[attribute]; ok {
+		return stringify.Any(v), true
 	}
-	return refinedMetadata
+
+	for _, sourceKey := range sourceKeys {
+		keys := append(strings.Split(sourceKey, "."), attribute)
+		if v := misc.MapLookup(message, keys...); v != nil {
+			return stringify.Any(v), true
+		}
+	}
+
+	return "", false
 }

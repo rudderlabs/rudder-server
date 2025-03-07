@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyToLower bool) map[string]string {
@@ -34,4 +35,37 @@ func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyT
 		}
 	}
 	return topicMap
+}
+
+func GetValidationErrorStatTags(destination backendconfig.DestinationT) map[string]string {
+	return map[string]string{
+		"destinationId":  destination.ID,
+		"workspaceId":    destination.WorkspaceID,
+		"destType":       destination.DestinationDefinition.Name,
+		"module":         "destination",
+		"implementation": "native",
+		"errorCategory":  "dataValidation",
+		"errorType":      "configuration",
+		"feature":        "processor",
+	}
+}
+
+/* TODO: remove this once we stop comparing response from embedded and legacy
+ * we need this because response from legacy is a map[string]interface{} and not a types.SingularEventT
+ * and we need to convert it to types.SingularEventT to compare with response from embedded
+ */
+func GetMessageAsMap(message types.SingularEventT) map[string]interface{} {
+	return message
+}
+
+/* TODO: remove this once we stop comparing response from embedded and legacy
+ * we need this because response from legacy is a map[string]interface{} and not a map[string]string
+ * and we need to convert it to map[string]string to compare with response from embedded
+ */
+func GetAttributesAsMapOfInterface(attributes map[string]string) map[string]interface{} {
+	attributesMap := make(map[string]interface{}, len(attributes))
+	for k, v := range attributes {
+		attributesMap[k] = v
+	}
+	return attributesMap
 }
