@@ -316,6 +316,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		RsourcesService:  rsourcesService,
 		Debugger:         destinationHandle,
 		AdaptiveLimit:    adaptiveLimit,
+		Stats:            statsFactory,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

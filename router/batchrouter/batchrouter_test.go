@@ -185,6 +185,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
+				stats.NOP,
 			)
 		})
 	})
@@ -208,6 +209,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
+				stats.NOP,
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -326,6 +328,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.New(),
+				stats.NOP,
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -640,6 +643,7 @@ func TestBatchRouter(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		c,
+		stats.NOP,
 	)
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
