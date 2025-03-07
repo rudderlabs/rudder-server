@@ -2407,14 +2407,14 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			conf.Set("gateway.internalBatch.chainedProcessor.enabled", true)
+			conf.Set("gateway.internalBatch.eventProcessor.enabled", true)
 			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
 
 		AfterEach(func() {
-			conf.Set("gateway.internalBatch.chainedProcessor.enabled", false)
+			conf.Set("gateway.internalBatch.eventProcessor.enabled", false)
 			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})

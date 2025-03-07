@@ -126,6 +126,8 @@ type Handle struct {
 	internalHttpHandlers map[string]http.Handler
 
 	streamMsgValidator func(message *stream.Message) error
+
+	internalBatchEventProcessor processor.Processor
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -783,48 +785,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	res = make([]jobWithStat, 0, len(messages))
 
-	// Create the chain of processors
-	reqTypeProcessor := &processor.ReqTypeProcessor{
-		OnError: func(properties stream.MessageProperties, err error) {
-			loggerFields := properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to get reqType", loggerFields...)
-		},
-	}
-	messageIDProcessor := &processor.MessageIDProcessor{
-		OnError: func(properties stream.MessageProperties, err error) {
-			loggerFields := properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to get messageID", loggerFields...)
-		},
-	}
-	rudderIDProcessor := &processor.RudderIDProcessor{
-		OnError: func(properties stream.MessageProperties, err error) {
-			loggerFields := properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to get rudderId", loggerFields...)
-		},
-	}
-	receivedAtProcessor := &processor.ReceivedAtProcessor{
-		OnError: func(properties stream.MessageProperties, err error) {
-			loggerFields := properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to get receivedAt", loggerFields...)
-		},
-	}
-	requestIPProcessor := &processor.RequestIPProcessor{
-		OnError: func(properties stream.MessageProperties, err error) {
-			loggerFields := properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to get requestIP", loggerFields...)
-		},
-	}
-
-	reqTypeProcessor.SetNext(messageIDProcessor)
-	messageIDProcessor.SetNext(rudderIDProcessor)
-	rudderIDProcessor.SetNext(receivedAtProcessor)
-	receivedAtProcessor.SetNext(requestIPProcessor)
-
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
 		err := gw.streamMsgValidator(&msg)
@@ -864,9 +824,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			continue
 		}
 
-		if gw.config.GetReloadableBoolVar(false, "gateway.internalBatch.chainedProcessor.enabled").Load() {
+		if gw.config.GetReloadableBoolVar(false, "gateway.internalBatch.eventProcessor.enabled").Load() {
 			// Process the message through the chain of processors
-			event, err := reqTypeProcessor.Process(msg.Payload, msg.Properties)
+			event, err := gw.internalBatchEventProcessor.Process(msg.Payload, msg.Properties)
 			if err != nil {
 				stat.RequestEventsFailed(1, err.Error())
 				stat.Report(gw.stats)
