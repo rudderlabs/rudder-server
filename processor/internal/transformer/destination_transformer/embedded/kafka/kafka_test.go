@@ -855,3 +855,18 @@ func TestTransform(t *testing.T) {
 		})
 	}
 }
+
+func TestPanicIfDestinationIDIsDifferent(t *testing.T) {
+	events := []types.TransformerEvent{
+		{
+			Destination: backendconfig.DestinationT{ID: "destination-id-123"},
+		},
+		{
+			Destination: backendconfig.DestinationT{ID: "destination-id-456"},
+		},
+	}
+
+	require.Panics(t, func() {
+		Transform(context.Background(), events)
+	})
+}
