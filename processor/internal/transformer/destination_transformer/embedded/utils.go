@@ -23,6 +23,8 @@ func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyT
 		if m, ok := mapping.(map[string]interface{}); ok {
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
+
+			fromOk = fromOk && strings.TrimSpace(from) != ""
 			if !fromOk || !toOk {
 				continue
 			}

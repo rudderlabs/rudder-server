@@ -78,7 +78,7 @@ func getAttributesMap(destination backendconfig.DestinationT) map[string][]strin
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
 
-			fromOk = fromOk && from != ""
+			fromOk = fromOk && strings.TrimSpace(from) != ""
 			if fromOk && toOk {
 				attributesMap[strings.ToLower(from)] = append(attributesMap[strings.ToLower(from)], to)
 			}
