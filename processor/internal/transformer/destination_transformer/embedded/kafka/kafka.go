@@ -21,6 +21,10 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	for _, event := range events {
 		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
+		if event.Destination.ID != events[0].Destination.ID {
+			panic("all events must have the same destination")
+		}
+
 		var integrationsObj map[string]interface{}
 		for _, canonicalName := range canonicalNames {
 			if inObj, ok := misc.MapLookup(event.Message, "integrations", canonicalName).(map[string]interface{}); ok {
@@ -42,15 +46,13 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 				Error:      err.Error(),
 				Metadata:   event.Metadata,
 				StatusCode: http.StatusInternalServerError,
+				StatTags:   utils.GetValidationErrorStatTags(event.Destination),
 			})
 			continue
 		}
 
-		var message map[string]interface{}
-		message = event.Message
-
 		outputEvent := map[string]interface{}{
-			"message": message,
+			"message": utils.GetMessageAsMap(event.Message),
 			"userId":  userId,
 			"topic":   topic,
 		}

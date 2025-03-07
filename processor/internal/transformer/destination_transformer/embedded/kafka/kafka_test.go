@@ -12,13 +12,43 @@ import (
 )
 
 func TestTransform(t *testing.T) {
+
+	destinationWithNoConfigTopic := backendconfig.DestinationT{
+		ID:          "destination-id-123",
+		WorkspaceID: "workspace-id-123",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "destination-type-123",
+		},
+	}
+
+	destinationWithNoConfigTopicStatTags := map[string]string{
+		"destinationId":  "destination-id-123",
+		"workspaceId":    "workspace-id-123",
+		"destType":       "destination-type-123",
+		"module":         "destination",
+		"implementation": "native",
+		"errorCategory":  "dataValidation",
+		"errorType":      "configuration",
+		"feature":        "processor",
+	}
+
 	destinationWithConfigTopic := backendconfig.DestinationT{
+		ID:          "destination-id-456",
+		WorkspaceID: "workspace-id-456",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "destination-type-456",
+		},
 		Config: map[string]interface{}{
 			"topic": "default-topic",
 		},
 	}
 
 	destinationWithEventMappingTopic := backendconfig.DestinationT{
+		ID:          "destination-id-789",
+		WorkspaceID: "workspace-id-789",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "destination-type-789",
+		},
 		Config: map[string]interface{}{
 			"topic":            "default-topic",
 			"enableMultiTopic": true,
@@ -733,7 +763,7 @@ func TestTransform(t *testing.T) {
 						"userId":    "user-123",
 						"messageId": "message-id-1",
 					},
-					Destination: backendconfig.DestinationT{},
+					Destination: destinationWithNoConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
@@ -741,15 +771,21 @@ func TestTransform(t *testing.T) {
 						"userId":    "user-123",
 						"messageId": "message-id-2",
 					},
-					Destination: backendconfig.DestinationT{},
+					Destination: destinationWithNoConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
+				// this event should be transformed
 				{
 					Message: map[string]interface{}{
 						"userId":    "user-123",
 						"messageId": "message-id-3",
+						"integrations": map[string]interface{}{
+							"kafka": map[string]interface{}{
+								"topic": "default-topic",
+							},
+						},
 					},
-					Destination: destinationWithConfigTopic,
+					Destination: destinationWithNoConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
@@ -758,6 +794,9 @@ func TestTransform(t *testing.T) {
 						"messageId": "message-id-4",
 					},
 					Destination: backendconfig.DestinationT{
+						ID:                    destinationWithNoConfigTopic.ID,
+						DestinationDefinition: destinationWithNoConfigTopic.DestinationDefinition,
+						WorkspaceID:           destinationWithNoConfigTopic.WorkspaceID,
 						Config: map[string]interface{}{
 							"topic": "",
 						},
@@ -771,16 +810,19 @@ func TestTransform(t *testing.T) {
 						Error:      "Topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
+						StatTags:   destinationWithNoConfigTopicStatTags,
 					},
 					{
 						Error:      "Topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
+						StatTags:   destinationWithNoConfigTopicStatTags,
 					},
 					{
 						Error:      "Topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
+						StatTags:   destinationWithNoConfigTopicStatTags,
 					},
 				},
 				Events: []types.TransformerResponse{
@@ -789,6 +831,11 @@ func TestTransform(t *testing.T) {
 							"message": map[string]interface{}{
 								"userId":    "user-123",
 								"messageId": "message-id-3",
+								"integrations": map[string]interface{}{
+									"kafka": map[string]interface{}{
+										"topic": "default-topic",
+									},
+								},
 							},
 							"topic":  "default-topic",
 							"userId": "user-123",
