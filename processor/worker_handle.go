@@ -36,6 +36,7 @@ type workerHandleConfig struct {
 	enablePipelining      bool
 	pipelineBufferedItems int
 	subJobSize            int
+	numPartitions         int
 
 	readLoopSleep config.ValueLoader[time.Duration]
 	maxLoopSleep  config.ValueLoader[time.Duration]
