@@ -1297,47 +1297,40 @@ func TestIntegration(t *testing.T) {
 		testCases := []struct {
 			name        string
 			columnsInfo []whutils.ColumnInfo
-			wantErr     bool
 		}{
 			{
-				name: "add single column",
+				name: "add single new column",
 				columnsInfo: []whutils.ColumnInfo{
 					{Name: "col2", Type: "string"},
 				},
-				wantErr: false,
 			},
 			{
-				name: "add multiple columns",
+				name: "add multiple new columns",
 				columnsInfo: []whutils.ColumnInfo{
 					{Name: "col3", Type: "int"},
 					{Name: "col4", Type: "float"},
 				},
-				wantErr: false,
 			},
 			{
-				name: "add column that already exists",
+				name: "add single existing column",
 				columnsInfo: []whutils.ColumnInfo{
 					{Name: "col2", Type: "string"},
 				},
-				wantErr: false,
 			},
 			{
-				name: "add multiple columns that already exist",
+				name: "add multiple new + existing columns",
 				columnsInfo: []whutils.ColumnInfo{
 					{Name: "col2", Type: "string"},
 					{Name: "col3", Type: "int"},
+					{Name: "col4", Type: "float"},
 				},
-				wantErr: true,
 			},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				err := sf.AddColumns(ctx, tableName, tc.columnsInfo)
-				if (err != nil) != tc.wantErr {
-					t.Errorf("AddColumns() error = %v, wantErr %v", err, tc.wantErr)
-				}
-
+				require.NoError(t, err, "should add columns")
 				schema, err := sf.FetchSchema(ctx)
 				require.NoError(t, err, "should fetch schema")
 

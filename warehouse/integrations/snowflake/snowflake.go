@@ -1161,13 +1161,13 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%q
-		ADD COLUMN IF NOT EXISTS`,
+		ADD COLUMN`,
 		schemaIdentifier,
 		tableName,
 	))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",") + ";"
