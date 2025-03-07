@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -108,7 +107,9 @@ func IsNotEmptyString(s string) bool {
 
 type Drainer interface {
 	Drain(
-		job *jobsdb.JobT,
+		destinationID string,
+		sourceJobRunID string,
+		createdAt time.Time,
 	) (bool, string)
 }
 
@@ -137,22 +138,21 @@ type drainer struct {
 }
 
 func (d *drainer) Drain(
-	job *jobsdb.JobT,
+	destinationID string,
+	sourceJobRunID string,
+	createdAt time.Time,
 ) (bool, string) {
-	createdAt := job.CreatedAt
-	destID := gjson.GetBytes(job.Parameters, "destination_id").String()
-	sourceJobRunID := gjson.GetBytes(job.Parameters, "source_job_run_id").String()
-	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
+	if time.Since(createdAt) > getRetentionTimeForDestination(destinationID) {
 		return true, DrainReasonJobExpired
 	}
 
-	if destination, ok := d.destinationResolver(destID); !ok {
+	if destination, ok := d.destinationResolver(destinationID); !ok {
 		return true, DrainReasonDestNotFound
 	} else if !destination.Destination.Enabled {
 		return true, DrainReasonDestDisabled
 	}
 
-	if slices.Contains(d.destinationIDs.Load(), destID) {
+	if slices.Contains(d.destinationIDs.Load(), destinationID) {
 		return true, DrainReasonDestAbort
 	}
 

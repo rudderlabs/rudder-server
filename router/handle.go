@@ -582,7 +582,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
-	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to its worker right away
+	abortedJob, abortReason := rt.drainOrRetryLimitReached(parameters.DestinationID, parameters.SourceJobRunID, job.CreatedAt, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
@@ -648,12 +648,12 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 }
 
 // checks if job is configured to drain or if it's retry limit is reached
-func (rt *Handle) drainOrRetryLimitReached(job *jobsdb.JobT) (bool, string) {
-	drain, reason := rt.drainer.Drain(job)
+func (rt *Handle) drainOrRetryLimitReached(destinationID, sourceJobRunID string, createdAt time.Time, status *jobsdb.JobStatusT) (bool, string) {
+	drain, reason := rt.drainer.Drain(destinationID, sourceJobRunID, createdAt)
 	if drain {
 		return true, reason
 	}
-	retryLimitReached := rt.retryLimitReached(&job.LastJobStatus)
+	retryLimitReached := rt.retryLimitReached(status)
 	if retryLimitReached {
 		return true, "retry limit reached"
 	}

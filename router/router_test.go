@@ -168,7 +168,7 @@ type drainer struct {
 	reason string
 }
 
-func (d *drainer) Drain(_ *jobsdb.JobT) (bool, string) {
+func (d *drainer) Drain(_, _ string, _ time.Time) (bool, string) {
 	return d.drain, d.reason
 }
 

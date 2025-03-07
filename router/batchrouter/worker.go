@@ -229,30 +229,51 @@ type drainResult struct {
 
 func (brt *Handle) getDrainList(destinationJobs *DestinationJobs, destWithSources routerutils.DestinationWithSources) ([]*jobsdb.JobStatusT, []*jobsdb.JobT, []*jobsdb.JobStatusT, map[int64]jobsdb.ConnectionDetails, map[string][]*jobsdb.JobT) {
 	jobs := destinationJobs.jobs
+	totalJobs := len(jobs)
 	numWorkers := 8
-	chunks := lo.Chunk(jobs, numWorkers)
-	results := make(chan drainResult, numWorkers)
-	var wg sync.WaitGroup
-	wg.Add(len(chunks))
 
-	for _, chunk := range chunks {
-		go func(chunk []*jobsdb.JobT) {
+	// Calculate chunk size
+	chunkSize := (totalJobs + numWorkers - 1) / numWorkers
+
+	// Create result channels with exact sizes
+	results := make([]drainResult, numWorkers)
+	var wg sync.WaitGroup
+
+	// Process chunks in parallel with no locks
+	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		if start >= totalJobs {
+			continue
+		}
+		end := start + chunkSize
+		if end > totalJobs {
+			end = totalJobs
+		}
+
+		wg.Add(1)
+		go func(chunk []*jobsdb.JobT, resultIdx int) {
 			defer wg.Done()
-			// Create local slices and maps for this goroutine
-			var localDrainList []*jobsdb.JobStatusT
-			var localDrainJobList []*jobsdb.JobT
-			var localStatusList []*jobsdb.JobStatusT
-			localJobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-			localJobsBySource := make(map[string][]*jobsdb.JobT)
+
+			// Pre-allocate local containers
+			chunkLen := len(chunk)
+			result := drainResult{
+				drainList:                 make([]*jobsdb.JobStatusT, 0, chunkLen),
+				drainJobList:              make([]*jobsdb.JobT, 0, chunkLen),
+				statusList:                make([]*jobsdb.JobStatusT, 0, chunkLen),
+				jobIDConnectionDetailsMap: make(map[int64]jobsdb.ConnectionDetails, chunkLen),
+				jobsBySource:              make(map[string][]*jobsdb.JobT),
+			}
 
 			for _, job := range chunk {
 				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+				sourceJobRunID := gjson.GetBytes(job.Parameters, "source_job_run_id").String()
 				destinationID := destWithSources.Destination.ID
-				localJobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+				result.jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
 					SourceID:      sourceID,
 					DestinationID: destinationID,
 				}
-				if drain, reason := brt.drainer.Drain(job); drain {
+
+				if drain, reason := brt.drainer.Drain(destinationID, sourceJobRunID, job.CreatedAt); drain {
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -265,16 +286,15 @@ func (brt *Handle) getDrainList(destinationJobs *DestinationJobs, destWithSource
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					// Enhancing job parameter with the drain reason.
 					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
-					localDrainList = append(localDrainList, &status)
-					localDrainJobList = append(localDrainJobList, job)
+					result.drainList = append(result.drainList, &status)
+					result.drainJobList = append(result.drainJobList, job)
 				} else {
-					if _, ok := localJobsBySource[sourceID]; !ok {
-						localJobsBySource[sourceID] = []*jobsdb.JobT{}
+					if _, ok := result.jobsBySource[sourceID]; !ok {
+						result.jobsBySource[sourceID] = make([]*jobsdb.JobT, 0, chunkLen)
 					}
-					localJobsBySource[sourceID] = append(localJobsBySource[sourceID], job)
+					result.jobsBySource[sourceID] = append(result.jobsBySource[sourceID], job)
 
 					status := jobsdb.JobStatusT{
 						JobID:         job.JobID,
@@ -288,56 +308,53 @@ func (brt *Handle) getDrainList(destinationJobs *DestinationJobs, destWithSource
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					localStatusList = append(localStatusList, &status)
+					result.statusList = append(result.statusList, &status)
 				}
 			}
-			results <- drainResult{
-				drainList:                 localDrainList,
-				drainJobList:              localDrainJobList,
-				statusList:                localStatusList,
-				jobIDConnectionDetailsMap: localJobIDConnectionDetailsMap,
-				jobsBySource:              localJobsBySource,
-			}
-		}(chunk)
+
+			results[resultIdx] = result
+		}(jobs[start:end], i)
 	}
 
-	// Initialize final result containers
-	var drainList []*jobsdb.JobStatusT
-	var drainJobList []*jobsdb.JobT
-	var statusList []*jobsdb.JobStatusT
-	jobIDConnectionDetails := make(map[int64]jobsdb.ConnectionDetails)
+	wg.Wait()
+
+	// Calculate final sizes for pre-allocation
+	totalDrainListSize := 0
+	totalDrainJobListSize := 0
+	totalStatusListSize := 0
+	for i := 0; i < numWorkers; i++ {
+		totalDrainListSize += len(results[i].drainList)
+		totalDrainJobListSize += len(results[i].drainJobList)
+		totalStatusListSize += len(results[i].statusList)
+	}
+
+	// Pre-allocate final slices with exact sizes
+	drainList := make([]*jobsdb.JobStatusT, 0, totalDrainListSize)
+	drainJobList := make([]*jobsdb.JobT, 0, totalDrainJobListSize)
+	statusList := make([]*jobsdb.JobStatusT, 0, totalStatusListSize)
+	jobIDConnectionDetails := make(map[int64]jobsdb.ConnectionDetails, totalJobs)
 	jobsBySources := make(map[string][]*jobsdb.JobT)
 
-	// Collect and aggregate results
-	var collectWg sync.WaitGroup
-	collectWg.Add(1)
+	// Merge results without locks - we own all the data at this point
+	for i := 0; i < numWorkers; i++ {
+		result := results[i]
+		drainList = append(drainList, result.drainList...)
+		drainJobList = append(drainJobList, result.drainJobList...)
+		statusList = append(statusList, result.statusList...)
 
-	go func() {
-		defer collectWg.Done()
-		for i := 0; i < len(chunks); i++ {
-			result := <-results
-			drainList = append(drainList, result.drainList...)
-			drainJobList = append(drainJobList, result.drainJobList...)
-			statusList = append(statusList, result.statusList...)
+		// Merge maps
+		for k, v := range result.jobIDConnectionDetailsMap {
+			jobIDConnectionDetails[k] = v
+		}
 
-			// Merge connection details
-			for k, v := range result.jobIDConnectionDetailsMap {
-				jobIDConnectionDetails[k] = v
-			}
-
-			// Merge jobs by source
-			for sourceID, jobs := range result.jobsBySource {
-				if existing, ok := jobsBySources[sourceID]; ok {
-					jobsBySources[sourceID] = append(existing, jobs...)
-				} else {
-					jobsBySources[sourceID] = jobs
-				}
+		for sourceID, jobs := range result.jobsBySource {
+			if existing, ok := jobsBySources[sourceID]; ok {
+				jobsBySources[sourceID] = append(existing, jobs...)
+			} else {
+				jobsBySources[sourceID] = jobs
 			}
 		}
-	}()
-
-	wg.Wait()
-	collectWg.Wait()
+	}
 
 	return drainList, drainJobList, statusList, jobIDConnectionDetails, jobsBySources
 }
