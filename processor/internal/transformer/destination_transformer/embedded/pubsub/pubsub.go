@@ -51,7 +51,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 				"userId":     userID,
 				"message":    utils.GetMessageAsMap(event.Message),
 				"topicId":    topic,
-				"attributes": utils.GetAttributesAsMapOfInterface(attributes),
+				"attributes": attributes,
 			},
 			StatusCode: http.StatusOK,
 			Metadata:   event.Metadata,
@@ -128,9 +128,9 @@ func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[s
 	return attributesMap["*"]
 }
 
-func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]string {
+func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]interface{} {
 	attributes := getAttributeKeysFromEvent(event, attributesMap)
-	attributeMetadata := make(map[string]string)
+	attributeMetadata := make(map[string]interface{})
 	for _, attribute := range attributes {
 		if value, found := findAttributeValue(event.Message, attribute); found {
 			parts := strings.Split(attribute, ".")
