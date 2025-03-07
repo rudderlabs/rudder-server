@@ -3,6 +3,7 @@ package destination_transformer
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/kafka"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -11,6 +12,7 @@ type transformerImpl func(ctx context.Context, clientEvents []types.TransformerE
 
 var embeddedTransformerImpls = map[string]transformerImpl{
 	"GOOGLEPUBSUB": pubsub.Transform,
+	"KAFKA":        kafka.Transform,
 }
 
 func (c *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
