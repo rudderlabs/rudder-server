@@ -6,8 +6,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
 
-	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 )
 
 type ReqTypeProcessor struct {

@@ -3,9 +3,10 @@ package processor
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 )
 
 type RequestIPProcessor struct {

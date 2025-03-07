@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 type MessageIDProcessor struct {

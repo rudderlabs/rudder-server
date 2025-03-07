@@ -2434,7 +2434,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "request_ip": "dummyIPFromPayload"}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 
 			req := &webRequestT{
@@ -2461,7 +2461,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			jobForm := jobsWithStats[0].job
-			err = json.Unmarshal(jobForm.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
@@ -2483,7 +2483,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2506,7 +2506,7 @@ var _ = Describe("Gateway", func() {
 					RequestIP  string `json:"request_ip"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000Z"))
@@ -2528,7 +2528,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2551,7 +2551,7 @@ var _ = Describe("Gateway", func() {
 					RudderID  string `json:"rudderId"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].MessageID).To(Not(BeEmpty()))
@@ -2573,7 +2573,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{"messageId": "dummyMessageID"}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 
 			req := &webRequestT{
@@ -2599,7 +2599,7 @@ var _ = Describe("Gateway", func() {
 				} `json:"batch"`
 			}
 			jobForm := jobsWithStats[0].job
-			err = json.Unmarshal(jobForm.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].MessageID).To(ContainSubstring("dummyMessageID"))
@@ -2620,7 +2620,7 @@ var _ = Describe("Gateway", func() {
 				Payload:    []byte(`{}`),
 			}
 			messages := []stream.Message{msg}
-			payload, err := json.Marshal(messages)
+			payload, err := jsonrs.Marshal(messages)
 			Expect(err).To(BeNil())
 			req := &webRequestT{
 				reqType:        "batch",
@@ -2642,7 +2642,7 @@ var _ = Describe("Gateway", func() {
 					Type string `json:"type"`
 				} `json:"batch"`
 			}
-			err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 			Expect(err).To(BeNil())
 			Expect(job.Batch).To(HaveLen(1))
 			Expect(job.Batch[0].Type).To(ContainSubstring("dummyRequestType"))
@@ -2665,7 +2665,7 @@ var _ = Describe("Gateway", func() {
 					Payload:    []byte(`{"type": "dummyType"}`),
 				}
 				messages := []stream.Message{msg}
-				payload, err := json.Marshal(messages)
+				payload, err := jsonrs.Marshal(messages)
 				Expect(err).To(BeNil())
 				req := &webRequestT{
 					reqType:        "batch",
@@ -2687,7 +2687,7 @@ var _ = Describe("Gateway", func() {
 						Type string `json:"type"`
 					} `json:"batch"`
 				}
-				err = json.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+				err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
 				Expect(err).To(BeNil())
 				Expect(job.Batch).To(HaveLen(1))
 				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))

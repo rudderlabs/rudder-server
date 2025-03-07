@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-schemas/go/stream"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type ReceivedAtProcessor struct {
