@@ -46,13 +46,10 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			userID = id
 		}
 
-		var message map[string]interface{}
-		message = event.Message
-
 		response.Events = append(response.Events, types.TransformerResponse{
 			Output: map[string]interface{}{
 				"userId":     userID,
-				"message":    message,
+				"message":    utils.GetMessageAsMap(event.Message),
 				"topicId":    topic,
 				"attributes": attributes,
 			},
