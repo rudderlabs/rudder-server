@@ -1810,6 +1810,8 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
@@ -3134,11 +3136,10 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
-	defer jd.getTimerStat(
-		"jobsdb_get_jobs_time",
-		tags,
-	).RecordDuration()()
+	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -3214,18 +3215,20 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		}
 	}
 
-	statTags := tags.getStatsTags(jd.tablePrefix)
-	statTags["query"] = "get"
-	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
-
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID
 		mtoken.afterJobID = &retryAfterJobID
 	}
 
-	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))
-	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) }))
+	statTags := tags.getStatsTags(jd.tablePrefix)
+	statTags["query"] = "get"
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount) // number of actual ds tables that we queried
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)    // number of ds tables that we skipped querying due to noResultsCache
+	if len(res.Jobs) == 0 {
+		jd.stats.NewTaggedStat("jobsdb_queried_no_jobs", stats.CountType, statTags).Increment() // number of times that we queried and got no jobs
+	}
+	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))                                                         // number of jobs that we queried
+	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
 	return res, nil
 }
 
@@ -3245,6 +3248,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
 	}
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
