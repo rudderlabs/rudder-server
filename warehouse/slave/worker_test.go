@@ -715,264 +715,266 @@ func TestSlaveWorker(t *testing.T) {
 }
 
 func TestHandleSchemaChange(t *testing.T) {
-	inputs := []struct {
-		name             string
-		existingDatatype string
-		currentDataType  string
-		value            any
-
-		newColumnVal any
-		convError    error
+	testCases := []struct {
+		name              string
+		existingDatatype  string
+		currentDataType   string
+		value             any
+		expectedColumnVal any
+		expectedError     error
 	}{
 		{
-			name:             "should send int values if existing datatype is int, new datatype is float",
-			existingDatatype: "int",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     1,
+			name:              "should send int values if existing datatype is int, new datatype is float",
+			existingDatatype:  "int",
+			currentDataType:   "float",
+			value:             1.501,
+			expectedColumnVal: 1,
 		},
 		{
-			name:             "should send float values if existing datatype is float, new datatype is int",
-			existingDatatype: "float",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     1.0,
+			name:              "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype:  "float",
+			currentDataType:   "int",
+			value:             1,
+			expectedColumnVal: 1.0,
 		},
 		{
-			name:             "should send string values if existing datatype is string, new datatype is boolean",
-			existingDatatype: "string",
-			currentDataType:  "boolean",
-			value:            false,
-			newColumnVal:     "false",
+			name:              "should send string values if existing datatype is string, new datatype is boolean",
+			existingDatatype:  "string",
+			currentDataType:   "boolean",
+			value:             false,
+			expectedColumnVal: "false",
 		},
 		{
-			name:             "should send string values if existing datatype is string, new datatype is int",
-			existingDatatype: "string",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     "1",
+			name:              "should send string values if existing datatype is string, new datatype is int",
+			existingDatatype:  "string",
+			currentDataType:   "int",
+			value:             1,
+			expectedColumnVal: "1",
 		},
 		{
-			name:             "should send string values if existing datatype is string, new datatype is float",
-			existingDatatype: "string",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     "1.501",
+			name:              "should send string values if existing datatype is string, new datatype is float",
+			existingDatatype:  "string",
+			currentDataType:   "float",
+			value:             1.501,
+			expectedColumnVal: "1.501",
 		},
 		{
-			name:             "should send string values if existing datatype is string, new datatype is datetime",
-			existingDatatype: "string",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			newColumnVal:     "2022-05-05T00:00:00.000Z",
+			name:              "should send string values if existing datatype is string, new datatype is datetime",
+			existingDatatype:  "string",
+			currentDataType:   "datetime",
+			value:             "2022-05-05T00:00:00.000Z",
+			expectedColumnVal: "2022-05-05T00:00:00.000Z",
 		},
 		{
-			name:             "should send string values if existing datatype is string, new datatype is string",
-			existingDatatype: "string",
-			currentDataType:  "json",
-			value:            `{"json":true}`,
-			newColumnVal:     `{"json":true}`,
+			name:              "should send string values if existing datatype is string, new datatype is string",
+			existingDatatype:  "string",
+			currentDataType:   "json",
+			value:             `{"json":true}`,
+			expectedColumnVal: `{"json":true}`,
 		},
 		{
-			name:             "should send json string values if existing datatype is json, new datatype is boolean",
-			existingDatatype: "json",
-			currentDataType:  "boolean",
-			value:            false,
-			newColumnVal:     "false",
+			name:              "should send json string values if existing datatype is json, new datatype is boolean",
+			existingDatatype:  "json",
+			currentDataType:   "boolean",
+			value:             false,
+			expectedColumnVal: "false",
 		},
 		{
-			name:             "should send json string values if existing datatype is jso, new datatype is int",
-			existingDatatype: "json",
-			currentDataType:  "int",
-			value:            1,
-			newColumnVal:     "1",
+			name:              "should send json string values if existing datatype is jso, new datatype is int",
+			existingDatatype:  "json",
+			currentDataType:   "int",
+			value:             1,
+			expectedColumnVal: "1",
 		},
 		{
-			name:             "should send json string values if existing datatype is json, new datatype is float",
-			existingDatatype: "json",
-			currentDataType:  "float",
-			value:            1.501,
-			newColumnVal:     "1.501",
+			name:              "should send json string values if existing datatype is json, new datatype is float",
+			existingDatatype:  "json",
+			currentDataType:   "float",
+			value:             1.501,
+			expectedColumnVal: "1.501",
 		},
 		{
-			name:             "should send json string values if existing datatype is json, new datatype is json",
-			existingDatatype: "json",
-			currentDataType:  "datetime",
-			value:            "2022-05-05T00:00:00.000Z",
-			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
+			name:              "should send json string values if existing datatype is json, new datatype is json",
+			existingDatatype:  "json",
+			currentDataType:   "datetime",
+			value:             "2022-05-05T00:00:00.000Z",
+			expectedColumnVal: `"2022-05-05T00:00:00.000Z"`,
 		},
 		{
-			name:             "should send json string values if existing datatype is json, new datatype is string",
-			existingDatatype: "json",
-			currentDataType:  "string",
-			value:            "string value",
-			newColumnVal:     `"string value"`,
+			name:              "should send json string values if existing datatype is json, new datatype is string",
+			existingDatatype:  "json",
+			currentDataType:   "string",
+			value:             "string value",
+			expectedColumnVal: `"string value"`,
 		},
 		{
-			name:             "should send json string values if existing datatype is json, new datatype is array",
-			existingDatatype: "json",
-			currentDataType:  "array",
-			value:            []any{false, 1, "string value"},
-			newColumnVal:     []any{false, 1, "string value"},
+			name:              "should send json string values if existing datatype is json, new datatype is string with json value",
+			existingDatatype:  "json",
+			currentDataType:   "string",
+			value:             `{"json":"value"}`,
+			expectedColumnVal: `"{\"json\":\"value\"}"`,
+		},
+		{
+			name:              "should send json string values if existing datatype is json, new datatype is array",
+			existingDatatype:  "json",
+			currentDataType:   "array",
+			value:             []any{false, 1, "string value"},
+			expectedColumnVal: []any{false, 1, "string value"},
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is int",
 			existingDatatype: "boolean",
 			currentDataType:  "int",
 			value:            1,
-			convError:        errors.New("incompatible schema conversion from boolean to int"),
+			expectedError:    errors.New("incompatible schema conversion from boolean to int"),
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is float",
 			existingDatatype: "boolean",
 			currentDataType:  "float",
 			value:            1.501,
-			convError:        errors.New("incompatible schema conversion from boolean to float"),
+			expectedError:    errors.New("incompatible schema conversion from boolean to float"),
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is string",
 			existingDatatype: "boolean",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        errors.New("incompatible schema conversion from boolean to string"),
+			expectedError:    errors.New("incompatible schema conversion from boolean to string"),
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is datetime",
 			existingDatatype: "boolean",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errors.New("incompatible schema conversion from boolean to datetime"),
+			expectedError:    errors.New("incompatible schema conversion from boolean to datetime"),
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is json",
 			existingDatatype: "boolean",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        errors.New("incompatible schema conversion from boolean to json"),
+			expectedError:    errors.New("incompatible schema conversion from boolean to json"),
 		},
 		{
 			name:             "existing datatype is int, new datatype is boolean",
 			existingDatatype: "int",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        errors.New("incompatible schema conversion from int to boolean"),
+			expectedError:    errors.New("incompatible schema conversion from int to boolean"),
 		},
 		{
 			name:             "existing datatype is int, new datatype is string",
 			existingDatatype: "int",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        errors.New("incompatible schema conversion from int to string"),
+			expectedError:    errors.New("incompatible schema conversion from int to string"),
 		},
 		{
 			name:             "existing datatype is int, new datatype is datetime",
 			existingDatatype: "int",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errors.New("incompatible schema conversion from int to datetime"),
+			expectedError:    errors.New("incompatible schema conversion from int to datetime"),
 		},
 		{
 			name:             "existing datatype is int, new datatype is json",
 			existingDatatype: "int",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        errors.New("incompatible schema conversion from int to json"),
+			expectedError:    errors.New("incompatible schema conversion from int to json"),
 		},
 		{
 			name:             "existing datatype is int, new datatype is float",
 			existingDatatype: "int",
 			currentDataType:  "float",
 			value:            1,
-			convError:        errors.New("incompatible schema conversion from int to float"),
+			expectedError:    errors.New("incompatible schema conversion from int to float"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is boolean",
 			existingDatatype: "float",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        errors.New("incompatible schema conversion from float to boolean"),
+			expectedError:    errors.New("incompatible schema conversion from float to boolean"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is int",
 			existingDatatype: "float",
 			currentDataType:  "int",
 			value:            1.0,
-			convError:        errors.New("incompatible schema conversion from float to int"),
+			expectedError:    errors.New("incompatible schema conversion from float to int"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is string",
 			existingDatatype: "float",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        errors.New("incompatible schema conversion from float to string"),
+			expectedError:    errors.New("incompatible schema conversion from float to string"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is datetime",
 			existingDatatype: "float",
 			currentDataType:  "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			convError:        errors.New("incompatible schema conversion from float to datetime"),
+			expectedError:    errors.New("incompatible schema conversion from float to datetime"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is json",
 			existingDatatype: "float",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        errors.New("incompatible schema conversion from float to json"),
+			expectedError:    errors.New("incompatible schema conversion from float to json"),
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is boolean",
 			existingDatatype: "datetime",
 			currentDataType:  "boolean",
 			value:            false,
-			convError:        errors.New("incompatible schema conversion from datetime to boolean"),
+			expectedError:    errors.New("incompatible schema conversion from datetime to boolean"),
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is string",
 			existingDatatype: "datetime",
 			currentDataType:  "string",
 			value:            "string value",
-			convError:        errors.New("incompatible schema conversion from datetime to string"),
+			expectedError:    errors.New("incompatible schema conversion from datetime to string"),
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is int",
 			existingDatatype: "datetime",
 			currentDataType:  "int",
 			value:            1,
-			convError:        errors.New("incompatible schema conversion from datetime to int"),
+			expectedError:    errors.New("incompatible schema conversion from datetime to int"),
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is float",
 			existingDatatype: "datetime",
 			currentDataType:  "float",
 			value:            1.501,
-			convError:        errors.New("incompatible schema conversion from datetime to float"),
+			expectedError:    errors.New("incompatible schema conversion from datetime to float"),
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is json",
 			existingDatatype: "datetime",
 			currentDataType:  "json",
 			value:            `{"json":true}`,
-			convError:        errors.New("incompatible schema conversion from datetime to json"),
+			expectedError:    errors.New("incompatible schema conversion from datetime to json"),
 		},
 	}
-	for _, ip := range inputs {
-		tc := ip
-
+	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			newColumnVal, convError := HandleSchemaChange(
 				tc.existingDatatype,
 				tc.currentDataType,
 				tc.value,
 			)
-			if convError != nil {
+			if tc.expectedError != nil {
 				require.Nil(t, newColumnVal)
-				require.EqualError(t, convError, tc.convError.Error())
+				require.EqualError(t, convError, tc.expectedError.Error())
 				return
 			}
-			require.Equal(t, newColumnVal, tc.newColumnVal)
+			require.EqualValues(t, newColumnVal, tc.expectedColumnVal)
 			require.NoError(t, convError)
 		})
 	}

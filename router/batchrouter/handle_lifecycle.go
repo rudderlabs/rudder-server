@@ -69,7 +69,7 @@ func (brt *Handle) Setup(
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
-		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), client.WithTimeout(
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
 			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
 		))
 	}
@@ -272,7 +272,9 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 			"destType": destination.DestinationDefinition.Name,
 		})
 		destInitFailStat.Count(1)
-		manager = &asynccommon.InvalidManager{}
+		manager = &asynccommon.InvalidManager{
+			Error: fmt.Errorf("%s initialization failed with error: %v", destination.Name, err),
+		}
 	}
 	if !ok {
 		brt.asyncDestinationStruct[destination.ID] = &asynccommon.AsyncDestinationStruct{}

@@ -48,7 +48,6 @@ type Handler interface {
 	SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error)
 	IsWarehouseSchemaEmpty(ctx context.Context) bool
 	GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema
-	GetLocalSchema(ctx context.Context) (model.Schema, error)
 	UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error
 	UpdateWarehouseTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error
 	GetColumnsCountInWarehouseSchema(ctx context.Context, tableName string) (int, error)
@@ -311,7 +310,7 @@ func (sh *schema) updateLocalSchema(ctx context.Context, updatedSchema model.Sch
 // 4. Updates local schema with warehouse schema if it has changed
 // 5. Returns true if schema has changed
 func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error) {
-	localSchema, err := sh.GetLocalSchema(ctx)
+	localSchema, err := sh.getLocalSchema(ctx)
 	if err != nil {
 		return false, fmt.Errorf("fetching schema from local: %w", err)
 	}
@@ -339,7 +338,7 @@ func (sh *schema) SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSch
 }
 
 // GetLocalSchema returns the local schema from wh_schemas table
-func (sh *schema) GetLocalSchema(ctx context.Context) (model.Schema, error) {
+func (sh *schema) getLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
 		sh.warehouse.Source.ID,
