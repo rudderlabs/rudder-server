@@ -42,7 +42,7 @@ func TestNoResultsCache(t *testing.T) {
 			require.False(t, c.Get(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}), "it should return false if noresult is not set")
 		})
 
-		c.StartNoResultTx(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit()
+		require.True(t, c.StartNoResultTx(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit())
 		require.True(t, c.Get(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}), "it should return true if no result is set for valid token")
 
 		t.Run("expiration", func(t *testing.T) {
@@ -65,7 +65,7 @@ func TestNoResultsCache(t *testing.T) {
 			c := cache.NewNoResultsCache[paramFilter](supportedParamFilters, func() time.Duration { return time.Hour })
 			tx := c.StartNoResultTx(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}})
 			c.Invalidate(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}})
-			tx.Commit()
+			require.False(t, tx.Commit())
 			require.False(t, c.Get(dataset, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}), "it should return false if invalidation is called before SetNoResult")
 		})
 
