@@ -140,6 +140,7 @@ type statTags struct {
 	ParameterFilters []ParameterFilterT
 	StateFilters     []string
 	WorkspaceID      string
+	MoreToken        bool
 }
 
 func (jd *Handle) getTimerStat(stat string, tags *statTags) stats.Measurement {
@@ -172,6 +173,9 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 
 		for _, paramTag := range tags.ParameterFilters {
 			statTagsMap[paramTag.Name] = paramTag.Value
+		}
+		if tags.MoreToken {
+			statTagsMap["moreToken"] = "true"
 		}
 	}
 
