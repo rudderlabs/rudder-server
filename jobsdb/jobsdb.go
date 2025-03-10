@@ -3172,8 +3172,10 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 			return nil, err
 		}
 		if dsHit {
+			jd.logger.Infof("DS hit for ds: %s, %s", ds, params.ParameterFilters, params.ParameterFilters)
 			dsQueryCount++
 		} else {
+			jd.logger.Infof("Cache hit for ds: %s, %s", ds, params.ParameterFilters, params.ParameterFilters)
 			cacheHitCount++
 		}
 		res.Jobs = append(res.Jobs, jobs.Jobs...)
