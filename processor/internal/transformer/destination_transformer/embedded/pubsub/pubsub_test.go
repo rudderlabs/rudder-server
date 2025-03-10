@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	types "github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTransform(t *testing.T) {
-
 	destinationWithConfigTopic := backendconfig.DestinationT{
 		ID: "destination-id-123",
 		Config: map[string]interface{}{
