@@ -44,6 +44,70 @@ func TestTransform(t *testing.T) {
 		},
 	}
 
+	destinationWithConfigAttributes := backendconfig.DestinationT{
+		ID: "destination-id-123",
+		Config: map[string]interface{}{
+			"eventToAttributesMap": []interface{}{
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "attr-key-1",
+				},
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "attr-key-2",
+				},
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "attr-key-3",
+				},
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "A.B.attr-key-4",
+				},
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "A.B.C.attr-key-5",
+				},
+				map[string]interface{}{
+					"from": "event-A",
+					"to":   "A.B.attr-key-6",
+				},
+				map[string]interface{}{
+					"from": "event-B",
+					"to":   "attr-key-1",
+				},
+				map[string]interface{}{
+					"from": "event-B",
+					"to":   "",
+				},
+				map[string]interface{}{
+					"from": "event-C",
+				},
+				map[string]interface{}{
+					"from": "identify",
+					"to":   "attr-key-1",
+				},
+				map[string]interface{}{
+					"from": "identify",
+					"to":   "attr-key-2",
+				},
+				map[string]interface{}{
+					"from": "identify",
+					"to":   "attr-key-3",
+				},
+				map[string]interface{}{
+					"from": "*",
+					"to":   "attr-key-default",
+				},
+			},
+			"eventToTopicMap": []interface{}{
+				map[string]interface{}{
+					"from": "*",
+					"to":   "topic-default",
+				},
+			},
+		},
+	}
 	destinationStatTags := map[string]string{
 		"destinationId":  "",
 		"workspaceId":    "",
@@ -356,6 +420,196 @@ func TestTransform(t *testing.T) {
 						Metadata:   types.Metadata{},
 						StatusCode: http.StatusBadRequest,
 						StatTags:   destinationStatTags,
+					},
+				},
+			},
+		},
+		{
+			name: "should set correct correct attributes for each event",
+			events: []types.TransformerEvent{
+				{
+					Destination: destinationWithConfigAttributes,
+					Message: map[string]interface{}{
+						"type":       "track",
+						"event":      "event-B",
+						"attr-key-1": "value-1",
+						"":           "empty-attr-key-value",
+						"properties": map[string]interface{}{
+							"attr-key-2": "value-2",
+							"A": map[string]interface{}{
+								"B": map[string]interface{}{
+									"attr-key-6": "value-6",
+								},
+							},
+						},
+					},
+				},
+				{
+					Destination: destinationWithConfigAttributes,
+					Message: map[string]interface{}{
+						"type":             "track",
+						"event":            "event-unknown",
+						"attr-key-1":       "value-1",
+						"attr-key-default": "value-default",
+						"properties": map[string]interface{}{
+							"attr-key-2": "value-2",
+							"A": map[string]interface{}{
+								"B": map[string]interface{}{
+									"attr-key-6": "value-6",
+								},
+							},
+						},
+					},
+				},
+				{
+					Destination: destinationWithConfigAttributes,
+					Message: map[string]interface{}{
+						"type":       "identify",
+						"attr-key-1": "value-1",
+						"attr-key-3": "value-3",
+					},
+				},
+				{
+					Destination: destinationWithConfigAttributes,
+					Message: map[string]interface{}{
+						"type":       "track",
+						"event":      "event-A",
+						"attr-key-1": "value-1",
+						"properties": map[string]interface{}{
+							"attr-key-2": "value-2",
+							"A": map[string]interface{}{
+								"B": map[string]interface{}{
+									"attr-key-6": "value-6",
+								},
+							},
+						},
+						"context": map[string]interface{}{
+							"traits": map[string]interface{}{
+								"attr-key-3": "value-3",
+								"A": map[string]interface{}{
+									"B": map[string]interface{}{
+										"attr-key-4": "value-4",
+										"C": map[string]interface{}{
+											"attr-key-5": "",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":       "track",
+								"event":      "event-B",
+								"attr-key-1": "value-1",
+								"":           "empty-attr-key-value",
+								"properties": map[string]interface{}{
+									"attr-key-2": "value-2",
+									"A": map[string]interface{}{
+										"B": map[string]interface{}{
+											"attr-key-6": "value-6",
+										},
+									},
+								},
+							},
+							"attributes": map[string]interface{}{
+								"attr-key-1": "value-1",
+								"":           "empty-attr-key-value",
+							},
+							"topicId": "topic-default",
+							"userId":  "",
+						},
+						StatusCode: http.StatusOK,
+						Metadata:   types.Metadata{},
+					},
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":             "track",
+								"event":            "event-unknown",
+								"attr-key-1":       "value-1",
+								"attr-key-default": "value-default",
+								"properties": map[string]interface{}{
+									"attr-key-2": "value-2",
+									"A": map[string]interface{}{
+										"B": map[string]interface{}{
+											"attr-key-6": "value-6",
+										},
+									},
+								},
+							},
+							"attributes": map[string]interface{}{
+								"attr-key-default": "value-default",
+							},
+							"topicId": "topic-default",
+							"userId":  "",
+						},
+						StatusCode: http.StatusOK,
+						Metadata:   types.Metadata{},
+					},
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":       "identify",
+								"attr-key-1": "value-1",
+								"attr-key-3": "value-3",
+							},
+							"attributes": map[string]interface{}{
+								"attr-key-1": "value-1",
+								"attr-key-3": "value-3",
+							},
+							"topicId": "topic-default",
+							"userId":  "",
+						},
+						StatusCode: http.StatusOK,
+						Metadata:   types.Metadata{},
+					},
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":       "track",
+								"event":      "event-A",
+								"attr-key-1": "value-1",
+								"properties": map[string]interface{}{
+									"attr-key-2": "value-2",
+									"A": map[string]interface{}{
+										"B": map[string]interface{}{
+											"attr-key-6": "value-6",
+										},
+									},
+								},
+								"context": map[string]interface{}{
+									"traits": map[string]interface{}{
+										"attr-key-3": "value-3",
+										"A": map[string]interface{}{
+											"B": map[string]interface{}{
+												"attr-key-4": "value-4",
+												"C": map[string]interface{}{
+													"attr-key-5": "",
+												},
+											},
+										},
+									},
+								},
+							},
+							"attributes": map[string]interface{}{
+								"attr-key-1": "value-1",
+								"attr-key-2": "value-2",
+								"attr-key-3": "value-3",
+								"attr-key-4": "value-4",
+								"attr-key-5": "",
+								"attr-key-6": "value-6",
+							},
+							"topicId": "topic-default",
+							"userId":  "",
+						},
+						StatusCode: http.StatusOK,
+						Metadata:   types.Metadata{},
 					},
 				},
 			},
