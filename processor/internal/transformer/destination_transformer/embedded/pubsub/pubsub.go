@@ -51,7 +51,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 				"userId":     userID,
 				"message":    utils.GetMessageAsMap(event.Message),
 				"topicId":    topic,
-				"attributes": utils.GetAttributesAsMapOfInterface(attributes),
+				"attributes": attributes,
 			},
 			StatusCode: http.StatusOK,
 			Metadata:   event.Metadata,
@@ -78,7 +78,7 @@ func getAttributesMap(destination backendconfig.DestinationT) map[string][]strin
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
 
-			fromOk = fromOk && from != ""
+			fromOk = fromOk && strings.TrimSpace(from) != ""
 			if fromOk && toOk {
 				attributesMap[strings.ToLower(from)] = append(attributesMap[strings.ToLower(from)], to)
 			}
@@ -128,11 +128,11 @@ func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[s
 	return attributesMap["*"]
 }
 
-func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]string {
+func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]interface{} {
 	attributes := getAttributeKeysFromEvent(event, attributesMap)
-	attributeMetadata := make(map[string]string)
+	attributeMetadata := make(map[string]interface{})
 	for _, attribute := range attributes {
-		if value, found := findAttributeValue(event.Message, attribute); found {
+		if value, found := getAttributeValue(event.Message, attribute); found {
 			parts := strings.Split(attribute, ".")
 			key := parts[len(parts)-1]
 			attributeMetadata[key] = value
@@ -142,14 +142,15 @@ func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[s
 	return attributeMetadata
 }
 
-// findAttributeValue searches for an attribute in the message and its nested structures
-func findAttributeValue(message map[string]interface{}, attribute string) (string, bool) {
-	if v, ok := message[attribute]; ok {
+// getAttributeValue searches for an attribute in the message and its nested structures
+func getAttributeValue(message map[string]interface{}, attribute string) (string, bool) {
+	attributeKeys := strings.Split(attribute, ".")
+	if v := misc.MapLookup(message, attributeKeys...); v != nil {
 		return stringify.Any(v), true
 	}
 
 	for _, sourceKey := range sourceKeys {
-		keys := append(strings.Split(sourceKey, "."), attribute)
+		keys := append(strings.Split(sourceKey, "."), attributeKeys...)
 		if v := misc.MapLookup(message, keys...); v != nil {
 			return stringify.Any(v), true
 		}
