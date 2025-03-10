@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/gateway/processor"
+
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"golang.org/x/sync/errgroup"
@@ -144,6 +147,50 @@ func (gw *Handle) Setup(
 		streamMsgValidator = stream.NewMessageValidator()
 	}
 	gw.streamMsgValidator = streamMsgValidator
+
+	// Create the chain of processors
+	reqTypeProcessor := &processor.ReqTypeProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get reqType", loggerFields...)
+		},
+	}
+	messageIDProcessor := &processor.MessageIDProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get messageID", loggerFields...)
+		},
+	}
+	rudderIDProcessor := &processor.RudderIDProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get rudderId", loggerFields...)
+		},
+	}
+	receivedAtProcessor := &processor.ReceivedAtProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get receivedAt", loggerFields...)
+		},
+	}
+	requestIPProcessor := &processor.RequestIPProcessor{
+		OnError: func(properties stream.MessageProperties, err error) {
+			loggerFields := properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("failed to get requestIP", loggerFields...)
+		},
+	}
+
+	reqTypeProcessor.SetNext(messageIDProcessor)
+	messageIDProcessor.SetNext(rudderIDProcessor)
+	rudderIDProcessor.SetNext(receivedAtProcessor)
+	receivedAtProcessor.SetNext(requestIPProcessor)
+
+	gw.internalBatchEventProcessor = reqTypeProcessor
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
