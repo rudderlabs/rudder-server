@@ -1,0 +1,98 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rudder-warehouse-benchmarks
+  namespace: <K8S_NAMESPACE>
+  labels:
+    app: rudder-warehouse-benchmarks
+
+spec:
+  template:
+    metadata:
+      labels:
+        app: rudder-warehouse-benchmarks
+    spec:
+      containers:
+        - name: rudder-warehouse-benchmarks
+          image: "<DOCKER_USER>/rudder-warehouse-benchmarks:latest"
+          imagePullPolicy: Always
+          command: ["./warehouse-transformer-benchmark"]
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 10001
+            runAsGroup: 10001
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+            requests:
+              cpu: "1"
+              memory: "512Mi"
+
+          env:
+            - name: DEST_TRANSFORM_URL
+              value: "http://localhost:9090"
+            - name: SAMPLE_CLIENT_EVENT
+              value: |
+                {
+                  "message": {
+                    "anonymousId": "anonymousId",
+                    "channel": "web",
+                    "context": {
+                      "ip": "1.2.3.4",
+                      "traits": {
+                        "email": "rhedricks@example.com",
+                        "logins": 2,
+                        "name": "Richard Hendricks"
+                      }
+                    },
+                    "messageId": "messageId",
+                    "originalTimestamp": "2021-09-01T00:00:00.000Z",
+                    "receivedAt": "2021-09-01T00:00:00.000Z",
+                    "request_ip": "5.6.7.8",
+                    "sentAt": "2021-09-01T00:00:00.000Z",
+                    "timestamp": "2021-09-01T00:00:00.000Z",
+                    "traits": {
+                      "product_id": "9578257311",
+                      "review_id": "86ac1cd43"
+                    },
+                    "type": "identify",
+                    "userId": "userId",
+                    "userProperties": {
+                      "rating": 3,
+                      "review_body": "OK for the price. It works but the material feels flimsy."
+                    }
+                  },
+                  "metadata": {
+                    "sourceId": "sourceID",
+                    "destinationId": "destinationID",
+                    "destinationType": "POSTGRES",
+                    "messageId": "messageId",
+                    "receivedAt": "2021-09-01T00:00:00.000Z",
+                    "eventType": "identify"
+                  },
+                  "destination": {
+                    "ID": "",
+                    "Name": "POSTGRES",
+                    "Enabled": false
+                  }
+                }
+            - name: EVENTS_IN_BATCH
+              value: "10000"
+            - name: BATCH_SIZE
+              value: "200"
+            - name: ITERATIONS
+              value: "100"
+            - name: MODE
+              value: "PROCESSOR_TRANSFORMATIONS"
+
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: 30
+  backoffLimit: 1
+
