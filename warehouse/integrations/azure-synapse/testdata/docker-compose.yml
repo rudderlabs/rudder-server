@@ -1,6 +1,6 @@
 services:
   azure_synapse:
-    image: rudderstack/azure-sql-edge:1.0.6
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=reallyStrongPwd123

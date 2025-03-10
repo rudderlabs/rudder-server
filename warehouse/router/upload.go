@@ -72,6 +72,7 @@ type UploadJob struct {
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles
 	loadFilesRepo        *repo.LoadFiles
+	whSchemaRepo         *repo.WHSchema
 	whManager            manager.Manager
 	schemaHandle         schema.Handler
 	conf                 *config.Config
@@ -102,6 +103,7 @@ type UploadJob struct {
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
+		skipPreviouslyFailedTables          bool
 	}
 
 	errorHandler    ErrorHandler
@@ -165,6 +167,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db),
 		schemaHandle: schema.New(
 			f.db,
 			dto.Warehouse,
@@ -202,6 +205,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
+	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -269,6 +273,7 @@ func (job *UploadJob) run() (err error) {
 		ch <- struct{}{}
 	}()
 
+	job.logger.Infon("Starting upload job")
 	_ = job.uploadsRepo.Update(
 		job.ctx,
 		job.upload.ID,
@@ -277,6 +282,7 @@ func (job *UploadJob) run() (err error) {
 			repo.UploadFieldInProgress(true),
 		},
 	)
+	job.logger.Infon("Upload job is in progress")
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -288,6 +294,8 @@ func (job *UploadJob) run() (err error) {
 	whManager.SetConnectionTimeout(whutils.GetConnectionTimeout(
 		job.warehouse.Type, job.warehouse.Destination.ID,
 	))
+
+	job.logger.Infon("Setting up warehouse manager")
 	err = whManager.Setup(job.ctx, job.warehouse, job)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
@@ -295,14 +303,13 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
+	job.logger.Infon("Syncing remote schema")
 	hasSchemaChanged, err := job.schemaHandle.SyncRemoteSchema(job.ctx, whManager, job.upload.ID)
 	if err != nil {
 		_, _ = job.setUploadError(err, FetchingRemoteSchemaFailed)
 		return err
 	}
-	if hasSchemaChanged {
-		job.logger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
-	}
+	job.logger.Infon("Synced remote schema", logger.NewStringField("hasSchemaChanged", fmt.Sprint(hasSchemaChanged)))
 
 	var (
 		newStatus       string
@@ -942,7 +949,19 @@ func (job *UploadJob) DTO() *model.UploadJob {
 }
 
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
-	return job.schemaHandle.GetLocalSchema(ctx)
+	whSchema, err := job.whSchemaRepo.GetForNamespace(
+		ctx,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+		job.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		return model.Schema{}, nil
+	}
+	return whSchema.Schema, nil
 }
 
 func (job *UploadJob) UpdateLocalSchema(ctx context.Context, schema model.Schema) error {

@@ -119,7 +119,7 @@ func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[s
 		}
 	}
 
-	if eventType, ok := event.Message["eventType"].(string); ok {
+	if eventType, ok := event.Message["type"].(string); ok {
 		if keys, ok := attributesMap[strings.ToLower(eventType)]; ok {
 			return keys
 		}
