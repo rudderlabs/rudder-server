@@ -8,19 +8,37 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 const (
 	wildcard = "*"
 )
 
-// NewNoResultsCache creates a new, properly initialised NoResultsCache.
-func NewNoResultsCache[T ParameterFilter](supportedParams []string, ttlFn func() time.Duration) *NoResultsCache[T] {
-	return &NoResultsCache[T]{
-		ttl:             ttlFn,
-		supportedParams: supportedParams,
-		cacheTree:       make(cacheTree),
+type Option[T ParameterFilter] func(*NoResultsCache[T])
+
+// WithWarnOnBranchInvalidation is a config option that enables logging of branch invalidations.
+func WithWarnOnBranchInvalidation[T ParameterFilter](enabled config.ValueLoader[bool], logger logger.Logger) Option[T] {
+	return func(c *NoResultsCache[T]) {
+		c.warnOnBranchInvalidation = enabled
+		c.logger = logger
 	}
+}
+
+// NewNoResultsCache creates a new, properly initialised NoResultsCache.
+func NewNoResultsCache[T ParameterFilter](supportedParams []string, ttlFn func() time.Duration, opts ...Option[T]) *NoResultsCache[T] {
+	c := &NoResultsCache[T]{
+		ttl:                      ttlFn,
+		supportedParams:          supportedParams,
+		cacheTree:                make(cacheTree),
+		warnOnBranchInvalidation: config.SingleValueLoader(false),
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type ParameterFilter interface {
@@ -29,8 +47,10 @@ type ParameterFilter interface {
 }
 
 type NoResultsCache[T ParameterFilter] struct {
-	ttl             func() time.Duration // returns the time to live for a cache entry
-	supportedParams []string             // a list of parameters that are supported by the cache
+	ttl                      func() time.Duration // returns the time to live for a cache entry
+	supportedParams          []string             // a list of parameters that are supported by the cache
+	warnOnBranchInvalidation config.ValueLoader[bool]
+	logger                   logger.Logger
 
 	cacheTreeMu sync.RWMutex // protects the cacheTree
 	cacheTree   cacheTree    // a hierarchical tree of cache entries
@@ -77,6 +97,15 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 	workspaces, states, customVals, params := c.filtersToInvalidationKeys(workspace, states, customVals, parameters)
 
 	if len(workspaces) == 0 { // if no workspace is provided, invalidate all by deleting the workspace's parent node
+		if c.warnOnBranchInvalidation.Load() && !(len(customVals) == 0 && len(states) == 0 && len(parameters) == 0) {
+			c.logger.Warnw("Invalidating entire dataset",
+				"dataset", dataset,
+				"workspace", workspace,
+				"customVals", customVals,
+				"states", states,
+				"parameters", lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }),
+			)
+		}
 		delete(c.cacheTree, dataset)
 		return
 	}
@@ -85,6 +114,15 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 	}
 	for _, workspace := range workspaces {
 		if len(customVals) == 0 { // if no custom value is provided, invalidate all by deleting the customVal's parent node
+			if c.warnOnBranchInvalidation.Load() {
+				c.logger.Warnw("Invalidating entire workspace branch",
+					"dataset", dataset,
+					"workspace", workspace,
+					"customVals", customVals,
+					"states", states,
+					"parameters", lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }),
+				)
+			}
 			delete(c.cacheTree[dataset], workspace)
 			continue
 		}
@@ -93,6 +131,15 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 		}
 		for _, customVal := range customVals {
 			if len(states) == 0 { // if no state is provided, invalidate all by deleting the state's parent node
+				if c.warnOnBranchInvalidation.Load() {
+					c.logger.Warnw("Invalidating entire customVal branch",
+						"dataset", dataset,
+						"workspace", workspace,
+						"customVal", customVal,
+						"states", states,
+						"parameters", lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }),
+					)
+				}
 				delete(c.cacheTree[dataset][workspace], customVal)
 				continue
 			}
@@ -101,6 +148,15 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 			}
 			for _, state := range states {
 				if len(params) == 0 { // if no parameter is provided, invalidate all by deleting the param's parent node
+					if c.warnOnBranchInvalidation.Load() {
+						c.logger.Warnw("Invalidating entire state branch",
+							"dataset", dataset,
+							"workspace", workspace,
+							"customVal", customVal,
+							"state", state,
+							"parameters", lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }),
+						)
+					}
 					delete(c.cacheTree[dataset][workspace][customVal], state)
 					continue
 				}
@@ -108,6 +164,15 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 					continue
 				}
 				for _, param := range params {
+					if c.warnOnBranchInvalidation.Load() {
+						c.logger.Warnw("Invalidating leaf",
+							"dataset", dataset,
+							"workspace", workspace,
+							"customVal", customVal,
+							"state", state,
+							"parameter", param,
+						)
+					}
 					delete(c.cacheTree[dataset][workspace][customVal][state], param)
 				}
 			}
@@ -295,7 +360,7 @@ type cacheEntry struct {
 func (ce *cacheEntry) AddToken(token string) {
 	ce.tokens = append(ce.tokens, token)
 	if len(ce.tokens) > 10 {
-		ce.tokens = lo.Slice(ce.tokens, 0, 10)
+		ce.tokens = lo.Slice(ce.tokens, len(ce.tokens)-10, len(ce.tokens))
 	}
 }
 

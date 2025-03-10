@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -108,7 +107,9 @@ func IsNotEmptyString(s string) bool {
 
 type Drainer interface {
 	Drain(
-		job *jobsdb.JobT,
+		destinationID string,
+		sourceJobRunID string,
+		createdAt time.Time,
 	) (bool, string)
 }
 
@@ -137,28 +138,26 @@ type drainer struct {
 }
 
 func (d *drainer) Drain(
-	job *jobsdb.JobT,
+	destinationID string,
+	sourceJobRunID string,
+	createdAt time.Time,
 ) (bool, string) {
-	createdAt := job.CreatedAt
-	var jobParams JobParameters
-	_ = jsonrs.Unmarshal(job.Parameters, &jobParams)
-	destID := jobParams.DestinationID
-	if time.Since(createdAt) > getRetentionTimeForDestination(destID) {
+	if time.Since(createdAt) > getRetentionTimeForDestination(destinationID) {
 		return true, DrainReasonJobExpired
 	}
 
-	if destination, ok := d.destinationResolver(destID); !ok {
+	if destination, ok := d.destinationResolver(destinationID); !ok {
 		return true, DrainReasonDestNotFound
 	} else if !destination.Destination.Enabled {
 		return true, DrainReasonDestDisabled
 	}
 
-	if slices.Contains(d.destinationIDs.Load(), destID) {
+	if slices.Contains(d.destinationIDs.Load(), destinationID) {
 		return true, DrainReasonDestAbort
 	}
 
-	if jobParams.SourceJobRunID != "" &&
-		slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+	if sourceJobRunID != "" &&
+		slices.Contains(d.jobRunIDs.Load(), sourceJobRunID) {
 		return true, DrainReasonJobRunIDCancelled
 	}
 

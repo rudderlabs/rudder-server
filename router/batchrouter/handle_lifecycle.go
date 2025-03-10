@@ -53,7 +53,9 @@ func (brt *Handle) Setup(
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
 	conf *config.Config,
+	stat stats.Stats,
 ) {
+	brt.stat = stat
 	brt.destType = destType
 	brt.backendConfig = backendConfig
 	brt.logger = logger.NewLogger().Child("batchrouter").Child(destType)
@@ -69,7 +71,7 @@ func (brt *Handle) Setup(
 	brt.transientSources = transientSources
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
-		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stat, client.WithTimeout(
 			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
 		))
 	}
@@ -131,7 +133,7 @@ func (brt *Handle) Setup(
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
 	brt.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "brt_read",
 		getBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
-		stats.Default,
+		stat,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
@@ -140,7 +142,7 @@ func (brt *Handle) Setup(
 	)
 	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
 		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
-		stats.Default,
+		stat,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
@@ -149,7 +151,7 @@ func (brt *Handle) Setup(
 	)
 	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
 		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
-		stats.Default,
+		stat,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
@@ -169,7 +171,7 @@ func (brt *Handle) Setup(
 			case <-ctx.Done():
 				return nil
 			case <-time.After(15 * time.Second):
-				stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+				stat.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
 					"module":   "batch_router",
 					"destType": brt.destType,
 					"state":    jobsdb.Executing.State,

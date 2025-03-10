@@ -884,6 +884,9 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
 		cacheParameterFilters,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
+		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
+			jd.config.GetReloadableBoolVar(true, "JobsDB."+jd.tablePrefix+".logCacheBranchInvalidation", "JobsDB.logCacheBranchInvalidation"),
+			jd.logger),
 	)
 
 	jd.logger.Infon("Connected to DB")
@@ -3169,8 +3172,10 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 			return nil, err
 		}
 		if dsHit {
+			jd.logger.Infof("DS hit for ds: %s, %s", ds, params.ParameterFilters, params.ParameterFilters)
 			dsQueryCount++
 		} else {
+			jd.logger.Infof("Cache hit for ds: %s, %s", ds, params.ParameterFilters, params.ParameterFilters)
 			cacheHitCount++
 		}
 		res.Jobs = append(res.Jobs, jobs.Jobs...)
