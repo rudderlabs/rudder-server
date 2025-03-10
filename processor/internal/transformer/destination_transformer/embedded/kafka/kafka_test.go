@@ -12,7 +12,6 @@ import (
 )
 
 func TestTransform(t *testing.T) {
-
 	destinationWithNoConfigTopic := backendconfig.DestinationT{
 		ID:          "destination-id-123",
 		WorkspaceID: "workspace-id-123",
