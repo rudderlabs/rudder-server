@@ -5,7 +5,14 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
+
+var genericTimestampFieldMap = []string{"timestamp", "originalTimestamp"}
+var timestampValsMap = map[string][]string{
+	"identify": append([]string{"context.timestamp", "context.traits.timestamp", "traits.timestamp"}, genericTimestampFieldMap...),
+	"track":    append([]string{"properties.timestamp"}, genericTimestampFieldMap...),
+}
 
 func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyToLower bool) map[string]string {
 	topicMap := make(map[string]string)
@@ -58,4 +65,34 @@ func GetValidationErrorStatTags(destination backendconfig.DestinationT) map[stri
  */
 func GetMessageAsMap(message types.SingularEventT) map[string]interface{} {
 	return message
+}
+
+func UpdateTimestampFieldForRETLEvent(eventMessage types.SingularEventT) types.SingularEventT {
+	if eventMessage["channel"] != "sources" {
+		return eventMessage
+	}
+
+	if v := misc.MapLookup(eventMessage, "context", "mappedToDestination"); v != nil && v != "" {
+		return eventMessage
+	}
+
+	eventType, ok := eventMessage["type"].(string)
+	if !ok {
+		return eventMessage
+	}
+
+	newEventMessage := types.SingularEventT{}
+	for k, v := range eventMessage {
+		newEventMessage[k] = v
+	}
+
+	for _, timestampVal := range timestampValsMap[eventType] {
+		timestampValParts := strings.Split(timestampVal, ".")
+		if v := misc.MapLookup(eventMessage, timestampValParts...); v != nil && v != "" {
+			newEventMessage["timestamp"] = v
+			break
+		}
+	}
+
+	return newEventMessage
 }

@@ -23,8 +23,8 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return c.transform(ctx, clientEvents)
 	}
 	if c.conf.GetBoolVar(true, "Processor.Transformer.Embedded."+destType+".Verify") {
-		embeddedTransformerResponse := impl(ctx, clientEvents)
 		legacyTransformerResponse := c.transform(ctx, clientEvents)
+		embeddedTransformerResponse := impl(ctx, clientEvents)
 
 		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
 

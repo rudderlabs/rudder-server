@@ -27,6 +27,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			panic("all events must have the same destination")
 		}
 
+		event.Message = utils.UpdateTimestampFieldForRETLEvent(event.Message)
 		topic, err := getTopic(event, topicMap)
 		if err != nil {
 			response.FailedEvents = append(response.FailedEvents, types.TransformerResponse{
