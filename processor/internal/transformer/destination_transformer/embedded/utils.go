@@ -8,11 +8,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var genericTimestampFieldMap = []string{"timestamp", "originalTimestamp"}
-var timestampValsMap = map[string][]string{
-	"identify": append([]string{"context.timestamp", "context.traits.timestamp", "traits.timestamp"}, genericTimestampFieldMap...),
-	"track":    append([]string{"properties.timestamp"}, genericTimestampFieldMap...),
-}
+var (
+	genericTimestampFieldMap = []string{"timestamp", "originalTimestamp"}
+	timestampValsMap         = map[string][]string{
+		"identify": append([]string{"context.timestamp", "context.traits.timestamp", "traits.timestamp"}, genericTimestampFieldMap...),
+		"track":    append([]string{"properties.timestamp"}, genericTimestampFieldMap...),
+	}
+)
 
 func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyToLower bool) map[string]string {
 	topicMap := make(map[string]string)
