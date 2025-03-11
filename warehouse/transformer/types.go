@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -27,6 +28,7 @@ type (
 			populateSrcDestInfoInContext config.ValueLoader[bool]
 			maxColumnsInEvent            config.ValueLoader[int]
 			maxLoggedEvents              config.ValueLoader[int]
+			concurrentTransformations    config.ValueLoader[int]
 		}
 
 		loggedEvents   int64
