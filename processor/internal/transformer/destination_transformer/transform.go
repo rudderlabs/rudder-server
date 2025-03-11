@@ -16,6 +16,10 @@ var embeddedTransformerImpls = map[string]transformerImpl{
 }
 
 func (c *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
 	impl, ok := embeddedTransformerImpls[destType]
 	if !ok {
