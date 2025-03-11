@@ -614,6 +614,42 @@ func TestTransform(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "should update timestamp field for RETL events",
+			events: []types.TransformerEvent{
+				{
+					Destination: destinationWithConfigAttributes,
+					Message: map[string]interface{}{
+						"type":    "identify",
+						"channel": "sources",
+						"traits": map[string]interface{}{
+							"timestamp": "2020-01-01T00:00:00Z",
+						},
+					},
+				},
+			},
+			want: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":      "identify",
+								"channel":   "sources",
+								"timestamp": "2020-01-01T00:00:00Z",
+								"traits": map[string]interface{}{
+									"timestamp": "2020-01-01T00:00:00Z",
+								},
+							},
+							"attributes": map[string]interface{}{},
+							"topicId":    "topic-default",
+							"userId":     "",
+						},
+						StatusCode: http.StatusOK,
+						Metadata:   types.Metadata{},
+					},
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
