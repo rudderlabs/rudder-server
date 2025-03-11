@@ -14,7 +14,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 		expected     types.SingularEventT
 	}{
 		{
-			name: "it should not update the timestamp field if the channel is not sources",
+			name: "should not update the timestamp field if the channel is not sources",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "destinations",
@@ -31,7 +31,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should not update the timestamp field if channel is not present",
+			name: "should not update the timestamp field if channel is not present",
 			eventMessage: types.SingularEventT{
 				"type": "track",
 				"properties": map[string]interface{}{
@@ -46,7 +46,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should not update the timestamp field if mappedToDestination is present",
+			name: "should not update the timestamp field if mappedToDestination is present",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
@@ -65,7 +65,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should not update the timestamp field if event type is not present",
+			name: "should not update the timestamp field if event type is not present",
 			eventMessage: types.SingularEventT{
 				"channel": "sources",
 				"context": map[string]interface{}{
@@ -80,7 +80,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should not update the timestamp field if event type is not identify or track",
+			name: "should not update the timestamp field if event type is not identify or track",
 			eventMessage: types.SingularEventT{
 				"type":    "page",
 				"channel": "sources",
@@ -97,7 +97,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is identify from context.timestamp",
+			name: "should update the timestamp field if event type is identify from context.timestamp",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
@@ -121,7 +121,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is identify from context.traits.timestamp",
+			name: "should update the timestamp field if event type is identify from context.traits.timestamp",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
@@ -143,7 +143,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is identify from traits.timestamp",
+			name: "should update the timestamp field if event type is identify from traits.timestamp",
 			eventMessage: types.SingularEventT{
 				"type":              "identify",
 				"channel":           "sources",
@@ -164,7 +164,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is identify from timestamp field",
+			name: "should update the timestamp field if event type is identify from timestamp field",
 			eventMessage: types.SingularEventT{
 				"type":              "identify",
 				"channel":           "sources",
@@ -179,7 +179,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is identify from originalTimestamp field",
+			name: "should update the timestamp field if event type is identify from originalTimestamp field",
 			eventMessage: types.SingularEventT{
 				"type":              "identify",
 				"channel":           "sources",
@@ -193,7 +193,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is track from properties.timestamp field",
+			name: "should update the timestamp field if event type is track from properties.timestamp field",
 			eventMessage: types.SingularEventT{
 				"type":              "track",
 				"channel":           "sources",
@@ -213,7 +213,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is track from timestamp field",
+			name: "should update the timestamp field if event type is track from timestamp field",
 			eventMessage: types.SingularEventT{
 				"type":              "track",
 				"channel":           "sources",
@@ -234,7 +234,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field if event type is track from originalTimestamp field",
+			name: "should update the timestamp field if event type is track from originalTimestamp field",
 			eventMessage: types.SingularEventT{
 				"type":              "track",
 				"channel":           "sources",
@@ -248,7 +248,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field even if mappedToDestination is empty string",
+			name: "should update the timestamp field even if mappedToDestination is empty string",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
@@ -268,7 +268,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			},
 		},
 		{
-			name: "it should update the timestamp field with the first non empty timestamp field",
+			name: "should update the timestamp field with the first non empty timestamp field",
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",

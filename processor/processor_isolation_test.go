@@ -181,7 +181,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	defer jsonrs.Reset()
 	defer logger.Reset()
 	defer config.Reset()
-	config.Set("LOG_LEVEL", "ERROR")
+	config.Set("LOG_LEVEL", "WARN")
 	config.Set("Json.Library.Marshaller", spec.marshallerLib)
 	config.Set("Json.Library.Unmarshaller", spec.unmarshallerLib)
 	logger.Reset()

@@ -883,9 +883,17 @@ func (jd *Handle) init() {
 func (jd *Handle) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
+	var defaultLogCacheBranchInvalidation bool
+	switch jd.tablePrefix {
+	case "gw", "rt", "batch_rt":
+		defaultLogCacheBranchInvalidation = true
+	}
+	jd.noResultsCache = cache.NewNoResultsCache(
 		cacheParameterFilters,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
+		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
+			jd.config.GetReloadableBoolVar(defaultLogCacheBranchInvalidation, "JobsDB."+jd.tablePrefix+".logCacheBranchInvalidation", "JobsDB.logCacheBranchInvalidation"),
+			jd.logger),
 	)
 
 	jd.logger.Infon("Connected to DB")
@@ -2320,7 +2328,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			// (a) no jobs are returned by the query or
 			// (b) the state is not present in the resultset and limits have not been reached
 			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
-				cacheTx.Commit()
+				if allEntriesCommitted := cacheTx.Commit(); !allEntriesCommitted {
+					tags := &statTags{
+						StateFilters:     []string{state},
+						CustomValFilters: params.CustomValFilters,
+						WorkspaceID:      params.WorkspaceID,
+						ParameterFilters: params.ParameterFilters,
+					}
+					statTags := tags.getStatsTags(jd.tablePrefix)
+					jd.stats.NewTaggedStat("jobsdb_cache_commit_misses", stats.CountType, statTags).Increment()
+				}
 			}
 		}
 	}
