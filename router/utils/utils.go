@@ -3,6 +3,7 @@ package utils
 import (
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tidwall/sjson"
@@ -49,8 +50,19 @@ type SendPostResponse struct {
 	ResponseBody        []byte
 }
 
-func getRetentionTimeForDestination(destID string) time.Duration {
-	return config.GetDurationVar(720, time.Hour, "Router."+destID+".jobRetention", "Router.jobRetention")
+func (d *drainer) getRetentionTimeForDestination(destID string) time.Duration {
+	d.retentionMu.RLock()
+	loader, exists := d.retentionTimes[destID]
+	d.retentionMu.RUnlock()
+
+	if exists && loader != nil {
+		return loader.Load()
+	}
+
+	d.retentionMu.Lock()
+	defer d.retentionMu.Unlock()
+	d.retentionTimes[destID] = config.GetReloadableDurationVar(720, time.Hour, "Router."+destID+".jobRetention", "Router.jobRetention")
+	return d.retentionTimes[destID].Load()
 }
 
 type JobParameters struct {
@@ -117,6 +129,7 @@ func NewDrainer(
 	conf *config.Config,
 	destDrainFunc func(string) (*DestinationWithSources, bool),
 ) Drainer {
+	retentionTimes := make(map[string]config.ValueLoader[time.Duration])
 	return &drainer{
 		destinationIDs: conf.GetReloadableStringSliceVar(
 			nil,
@@ -127,12 +140,15 @@ func NewDrainer(
 			"drain.jobRunIDs",
 		),
 		destinationResolver: destDrainFunc,
+		retentionTimes:      retentionTimes,
 	}
 }
 
 type drainer struct {
 	destinationIDs config.ValueLoader[[]string]
 	jobRunIDs      config.ValueLoader[[]string]
+	retentionTimes map[string]config.ValueLoader[time.Duration]
+	retentionMu    sync.RWMutex
 
 	destinationResolver func(string) (*DestinationWithSources, bool)
 }
@@ -142,7 +158,7 @@ func (d *drainer) Drain(
 	sourceJobRunID string,
 	createdAt time.Time,
 ) (bool, string) {
-	if time.Since(createdAt) > getRetentionTimeForDestination(destinationID) {
+	if time.Since(createdAt) > d.getRetentionTimeForDestination(destinationID) {
 		return true, DrainReasonJobExpired
 	}
 
