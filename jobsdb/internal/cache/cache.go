@@ -165,8 +165,8 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 					continue
 				}
 				for _, param := range params {
-					if c.warnOnBranchInvalidation.Load() {
-						c.logger.Warnn("Invalidating leaf",
+					if c.warnOnBranchInvalidation.Load() { // if logging is enabled, log the invalidation of the leaf node at debug level, since this is the most granular level
+						c.logger.Debugn("Invalidating leaf",
 							logger.NewStringField("dataset", dataset),
 							logger.NewStringField("workspace", workspace),
 							logger.NewStringField("customVal", customVal),
