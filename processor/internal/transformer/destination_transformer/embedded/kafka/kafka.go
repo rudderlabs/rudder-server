@@ -25,6 +25,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			panic("all events must have the same destination")
 		}
 
+		event.Message = utils.UpdateTimestampFieldForRETLEvent(event.Message)
 		var integrationsObj map[string]interface{}
 		for _, canonicalName := range canonicalNames {
 			if inObj, ok := misc.MapLookup(event.Message, "integrations", canonicalName).(map[string]interface{}); ok {

@@ -845,6 +845,44 @@ func TestTransform(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "should set correct timestamp for retl event",
+			events: []types.TransformerEvent{
+				{
+					Message: map[string]interface{}{
+						"userId":  "user-123",
+						"type":    "identify",
+						"channel": "sources",
+						"context": map[string]interface{}{
+							"timestamp": "2021-01-01T00:00:00Z",
+						},
+					},
+					Destination: destinationWithConfigTopic,
+					Metadata:    metadataWithRudderID,
+				},
+			},
+			want: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output: map[string]interface{}{
+							"message": map[string]interface{}{
+								"userId":    "user-123",
+								"type":      "identify",
+								"channel":   "sources",
+								"timestamp": "2021-01-01T00:00:00Z",
+								"context": map[string]interface{}{
+									"timestamp": "2021-01-01T00:00:00Z",
+								},
+							},
+							"topic":  "default-topic",
+							"userId": "user-123",
+						},
+						Metadata:   expectedMetadataWithDefaultTopic,
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
