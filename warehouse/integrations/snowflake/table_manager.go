@@ -59,8 +59,7 @@ func (m *standardTableManager) addColumnsQuery(schemaIdentifier, tableName strin
 	))
 
 	for _, columnInfo := range columnsInfo {
-		dataType := m.dataTypesMap[columnInfo.Type]
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataType))
+		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, m.dataTypesMap[columnInfo.Type]))
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
@@ -113,7 +112,7 @@ func (m *icebergTableManager) addColumnsQuery(schemaIdentifier, tableName string
 		if !ok {
 			return "", fmt.Errorf("invalid data type: %s", columnInfo.Type)
 		}
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataType))
+		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, dataType))
 	}
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
