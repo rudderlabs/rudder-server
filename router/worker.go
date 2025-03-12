@@ -1126,6 +1126,7 @@ func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadata
 					})
 
 				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
+				w.logger.Infof("Event Delivery Time: %s", time.Since(receivedTime))
 			}
 		}
 	}
