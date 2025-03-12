@@ -2,6 +2,7 @@ package destination_transformer
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/kafka"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
@@ -20,8 +21,13 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return types.Response{}
 	}
 
+	// TODO: remove this
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
 	impl, ok := embeddedTransformerImpls[destType]
+	e := c.conf.GetBoolVar(false, "Processor.Transformer.Embedded."+destType+".Enabled")
+
+	fmt.Println("Destination Transformer", destType, e, ok)
+
 	if !ok {
 		return c.transform(ctx, clientEvents)
 	}
