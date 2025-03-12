@@ -13,8 +13,9 @@ import (
 	http "net/http"
 	reflect "reflect"
 
+	"github.com/rudderlabs/rudder-server/gateway/types"
+
 	stats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	types "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	model "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	gomock "go.uber.org/mock/gomock"
 )

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
@@ -19,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"

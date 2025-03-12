@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/samber/lo"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -12,7 +14,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
 

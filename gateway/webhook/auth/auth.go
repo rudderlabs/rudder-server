@@ -4,17 +4,18 @@ import (
 	"context"
 	"net/http"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
 
 type WebhookAuth struct {
-	onFailure             func(errorMessage, reqType string)
+	onFailure             func(w http.ResponseWriter, errMsg string)
 	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext
 }
 
 func NewWebhookAuth(
-	onFailure func(errorMessage, reqType string),
+	onFailure func(w http.ResponseWriter, errMsg string),
 	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext,
 ) *WebhookAuth {
 	return &WebhookAuth{
@@ -25,11 +26,10 @@ func NewWebhookAuth(
 
 func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 		var arctx *gwtypes.AuthRequestContext
 		var errorMessage string
 		defer func() {
-			wa.onFailure(errorMessage, reqType)
+			wa.onFailure(w, errorMessage)
 		}()
 
 		var writeKey string
