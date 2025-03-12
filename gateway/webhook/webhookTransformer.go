@@ -41,7 +41,7 @@ type V1TransformerEvent struct {
 }
 
 func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v1TransformerEvent := V1TransformerEvent{
 		EventRequest: eventRequest,
@@ -79,7 +79,7 @@ type V2TransformerEvent struct {
 }
 
 func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v2TransformerEvent := V2TransformerEvent{
 		EventRequest: eventRequest,

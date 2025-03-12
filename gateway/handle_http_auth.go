@@ -237,6 +237,15 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		ReplaySource:   s.IsReplaySource(),
 		Source:         s,
 	}
+	arctx.SourceDetails.SourceDefinition = s.SourceDefinition
+	arctx.SourceDetails.ID = s.ID
+	arctx.SourceDetails.OriginalID = s.OriginalID
+	arctx.SourceDetails.Name = s.Name
+	arctx.SourceDetails.Enabled = s.Enabled
+	arctx.SourceDetails.WorkspaceID = s.WorkspaceID
+	arctx.SourceDetails.WriteKey = s.WriteKey
+	arctx.SourceDetails.Config = s.Config
+	arctx.SourceDetails.Transient = s.Transient
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory
 	}
