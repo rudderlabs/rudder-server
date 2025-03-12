@@ -1273,17 +1273,15 @@ func (proc *Handle) updateMetricMaps(
 		}
 	}
 
-	key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d:%s:%d:%s:%s",
-		event.Metadata.SourceID,
-		event.Metadata.DestinationID,
-		event.Metadata.SourceJobRunID,
-		event.Metadata.TransformationID,
-		event.Metadata.TransformationVersionID,
-		event.Metadata.TrackingPlanID,
-		event.Metadata.TrackingPlanVersion,
-		status, event.StatusCode,
-		eventName, eventType,
-	)
+	key := event.Metadata.SourceID + ":" +
+		event.Metadata.DestinationID + ":" +
+		event.Metadata.SourceJobRunID + ":" +
+		event.Metadata.TransformationID + ":" +
+		event.Metadata.TransformationVersionID + ":" +
+		event.Metadata.TrackingPlanID + ":" +
+		strconv.Itoa(event.Metadata.TrackingPlanVersion) + ":" +
+		status + ":" + strconv.Itoa(event.StatusCode) + ":" +
+		eventName + ":" + eventType
 
 	if _, ok := connectionDetailsMap[key]; !ok {
 		connectionDetailsMap[key] = &reportingtypes.ConnectionDetails{
@@ -1317,7 +1315,7 @@ func (proc *Handle) updateMetricMaps(
 	}
 	sdkeySet := map[string]struct{}{}
 	for _, ve := range event.ValidationErrors {
-		sdkey := fmt.Sprintf("%s:%d:%s:%s:%s", status, event.StatusCode, eventName, eventType, ve.Type)
+		sdkey := status + ":" + strconv.Itoa(event.StatusCode) + ":" + eventName + ":" + eventType + ":" + ve.Type
 		sdkeySet[sdkey] = struct{}{}
 
 		sd, ok := statusDetailsMap[key][sdkey]
@@ -1341,7 +1339,7 @@ func (proc *Handle) updateMetricMaps(
 	}
 
 	// create status details for a whole event
-	sdkey := fmt.Sprintf("%s:%d:%s:%s:%s", status, event.StatusCode, eventName, eventType, "")
+	sdkey := status + ":" + strconv.Itoa(event.StatusCode) + ":" + eventName + ":" + eventType + ":"
 	sd, ok := statusDetailsMap[key][sdkey]
 	if !ok {
 		sd = &reportingtypes.StatusDetail{

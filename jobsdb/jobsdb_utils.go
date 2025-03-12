@@ -104,13 +104,11 @@ func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 
 // checkValidJobState Function to check validity of states
 func checkValidJobState(jd assertInterface, stateFilters []string) {
-	jobStateMap := make(map[string]jobStateT)
-	for _, js := range jobStates {
-		jobStateMap[js.State] = js
-	}
+	jobStateMap := lo.SliceToMap(jobStates, func(js jobStateT) (string, struct{}) { return js.State, struct{}{} })
 	for _, st := range stateFilters {
-		_, ok := jobStateMap[st]
-		jd.assert(ok, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
+		if _, ok := jobStateMap[st]; !ok {
+			jd.assert(false, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
+		}
 	}
 }
 
