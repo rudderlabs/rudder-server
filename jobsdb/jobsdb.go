@@ -1810,7 +1810,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 
 		for _, key := range cacheParameterFilters {
 			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, fmt.Sprintf("%s:%s", key, val))
+			params = append(params, key+":"+val)
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 

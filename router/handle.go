@@ -75,6 +75,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
+	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
@@ -350,7 +351,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + workerJobStatus.status.JobState + ":" + workerJobStatus.status.ErrorCode + ":" + eventName + ":" + eventType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
