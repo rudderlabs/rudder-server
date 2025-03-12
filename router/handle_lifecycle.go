@@ -142,11 +142,13 @@ func (rt *Handle) Setup(
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
+	orderingDisabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledWorkspaceIDs")
 	rt.eventOrderingDisabledForWorkspace = func(workspaceID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+		return slices.Contains(orderingDisabledWorkspaceIDs.Load(), workspaceID)
 	}
+	orderingDisabledDestinationIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledDestinationIDs")
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
 	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 		"destType":         rt.destType,
