@@ -109,6 +109,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
 	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, "Router."+destType+".reportJobsdbPayload", "Router.reportJobsdbPayload")
+	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, "Router."+destType+".saveDestinationResponseOverride", "Router.saveDestinationResponseOverride")
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")

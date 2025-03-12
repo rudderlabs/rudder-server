@@ -870,7 +870,7 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 	// We can override via env saveDestinationResponseOverride
 
 	for k, respStatusCode := range respStatusCodes {
-		if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", w.rt.destType, false) && !w.rt.saveDestinationResponse {
+		if isSuccessStatus(respStatusCode) && !w.rt.saveDestinationResponseOverride.Load() && !w.rt.saveDestinationResponse {
 			respBodys[k] = ""
 		}
 	}
