@@ -23,6 +23,7 @@ type TokenSource struct {
 	AccountID          string
 	OauthClientV2      oauthv2.Authorizer
 	DestinationID      string
+	CurrentTime        func() time.Time
 }
 
 // authentication related utils
@@ -68,7 +69,7 @@ func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
 	if err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
-	currentTime := time.Now()
+	currentTime := ts.CurrentTime()
 	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
 	if err != nil {
 		return nil, fmt.Errorf("error in parsing expirationDate: %w", err)
@@ -95,11 +96,12 @@ func (ts *TokenSource) Token() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generating the accessToken: %w", err)
 	}
-
+	expiryTime, _ := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
+	// skipping error check as similar check is already done on the previous function
 	token := &oauth2.Token{
 		AccessToken:  secret.AccessToken,
 		RefreshToken: secret.RefreshToken,
-		Expiry:       time.Now().Add(time.Hour), // Set the token expiry time
+		Expiry:       expiryTime,
 	}
 	return token, nil
 }

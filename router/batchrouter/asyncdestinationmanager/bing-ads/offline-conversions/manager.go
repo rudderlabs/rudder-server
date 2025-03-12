@@ -30,12 +30,12 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 	}
 
 	token := common.TokenSource{
-		WorkspaceID:     destination.WorkspaceID,
-		DestinationName: destination.Name,
-		AccountID:       destConfig.RudderAccountID,
-		OauthClient:     oauthClient,
-		OauthClientV2:   oauthClientV2,
-		DestinationID:   destination.ID,
+		WorkspaceID:        destination.WorkspaceID,
+		DestinationDefName: destination.DestinationDefinition.Name,
+		AccountID:          destConfig.RudderAccountID,
+		OauthClientV2:      oauthClientV2,
+		DestinationID:      destination.ID,
+		CurrentTime:        time.Now,
 	}
 	secret, err := token.GenerateTokenV2()
 	if err != nil {
