@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"golang.org/x/oauth2"
 )
 
 type SecretStruct struct {

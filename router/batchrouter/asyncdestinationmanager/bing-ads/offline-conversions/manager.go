@@ -14,11 +14,11 @@ import (
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/common"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/services/oauth"
+
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
@@ -54,11 +54,10 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 }
 
 func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (asynccommon.AsyncDestinationManager, error) {
-	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
 		oauthv2.WithLogger(logger),
 		oauthv2.WithCPConnectorTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
 		oauthv2.WithStats(statsFactory),
 	)
-	return newManagerInternal(logger, statsFactory, destination, oauthClient, oauthClientV2)
+	return newManagerInternal(logger, statsFactory, destination, oauthClientV2)
 }

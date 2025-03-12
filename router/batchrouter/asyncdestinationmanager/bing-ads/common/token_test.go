@@ -108,7 +108,6 @@ var _ = Describe("Token", func() {
 		Expect(err).To(Equal(
 			fmt.Errorf("generating the accessToken: %w", fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", fmt.Errorf("error refreshing token"), 400))),
 		)
-
 	})
 
 	It("Handle error when parsing the expiration date", func() {
@@ -139,6 +138,5 @@ var _ = Describe("Token", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("error in parsing expirationDate"))
 		Expect(err.Error()).To(ContainSubstring("invalid-date"))
-
 	})
 })
