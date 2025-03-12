@@ -89,7 +89,7 @@ func TestTableManager(t *testing.T) {
 				expectedAddColumnsQuery: `
 		ALTER TABLE
 		  myschema."mytable"
-		ADD COLUMN "new_col1" varchar, "new_col2" number;`,
+		ADD COLUMN IF NOT EXISTS "new_col1" varchar, IF NOT EXISTS "new_col2" number;`,
 			},
 			{
 				name:      "iceberg table",
@@ -101,7 +101,7 @@ func TestTableManager(t *testing.T) {
 				expectedAddColumnsQuery: `
 		ALTER ICEBERG TABLE
 		  myschema."mytable"
-		ADD COLUMN "new_col1" varchar, "new_col2" number(10,0);`,
+		ADD COLUMN IF NOT EXISTS "new_col1" varchar, IF NOT EXISTS "new_col2" number(10,0);`,
 			},
 			{
 				name:      "iceberg table - invalid data type",
