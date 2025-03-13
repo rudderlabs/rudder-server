@@ -58,7 +58,7 @@ type worker struct {
 
 type workerJob struct {
 	job         *jobsdb.JobT
-	parameters  routerutils.JobParameters
+	parameters  *routerutils.JobParameters
 	assignedAt  time.Time
 	drainReason string
 }
@@ -115,7 +115,7 @@ func (w *worker) workLoop() {
 					job:        job,
 					status:     &status,
 					payload:    job.EventPayload,
-					parameters: parameters,
+					parameters: *parameters,
 				}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    w.rt.destType,
@@ -159,7 +159,7 @@ func (w *worker) workLoop() {
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: parameters}
+					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: *parameters}
 					continue
 				}
 			}
@@ -182,7 +182,7 @@ func (w *worker) workLoop() {
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
-				Parameters:         parameters,
+				Parameters:         *parameters,
 			}
 
 			w.rt.destinationsMapMu.RLock()

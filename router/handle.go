@@ -220,7 +220,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
-			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason, parameters: reservedJob.parameters})
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason, parameters: &reservedJob.parameters})
 		}
 		pickupCount += len(reservedJobs)
 		reservedJobs = nil
