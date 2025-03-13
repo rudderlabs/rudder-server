@@ -18,9 +18,8 @@ func TestDehydrateAndHydrate(t *testing.T) {
 		},
 	}
 
-	msgCopy, jobs := msg.Dehydrate()
+	msgCopy, preservedData := msg.Dehydrate()
 
-	require.Equal(t, len(msg.Data), len(jobs))
 	require.Equal(t, len(msg.Data), len(msgCopy.Data))
 	for i := range msg.Data {
 		require.NotNil(t, msg.Data[i].JobMetadata.JobT, "JobT should not be nil")
@@ -32,7 +31,7 @@ func TestDehydrateAndHydrate(t *testing.T) {
 		types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
 		types.DestinationJobT{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
 	}
-	destJobs.Hydrate(jobs)
+	destJobs.Hydrate(preservedData)
 
 	for i := range destJobs {
 		require.NotNil(t, destJobs[i].JobMetadataArray[0].JobT, "JobT should not be nil")
