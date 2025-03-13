@@ -109,6 +109,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
 	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, "Router."+destType+".reportJobsdbPayload", "Router.reportJobsdbPayload")
+	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, "Router."+destType+".saveDestinationResponseOverride", "Router.saveDestinationResponseOverride")
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
@@ -141,11 +142,13 @@ func (rt *Handle) Setup(
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
+	orderingDisabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledWorkspaceIDs")
 	rt.eventOrderingDisabledForWorkspace = func(workspaceID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+		return slices.Contains(orderingDisabledWorkspaceIDs.Load(), workspaceID)
 	}
+	orderingDisabledDestinationIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledDestinationIDs")
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
 	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 		"destType":         rt.destType,

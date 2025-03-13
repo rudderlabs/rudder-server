@@ -344,7 +344,7 @@ func (l blogger) Warningf(fmt string, args ...interface{}) {
 }
 
 func keyPrefix(workspaceID, userID string) string {
-	return fmt.Sprintf("%s:%s:", workspaceID, userID)
+	return workspaceID + ":" + userID + ":"
 }
 
 func getMetadataFromBadgerItem(item *badger.Item) (*model.Metadata, error) {

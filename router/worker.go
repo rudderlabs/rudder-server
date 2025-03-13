@@ -514,46 +514,39 @@ func (w *worker) processDestinationJobs() {
 						respBodyArr := make([]string, 0)
 						respBodyArrs := make([]map[int64]string, 0)
 						for i, val := range result {
-							err := integrations.ValidatePostInfo(val)
-							if err != nil {
-								errorAt = routerutils.ERROR_AT_TF
-								respStatusCode, respBodyTemp = http.StatusInternalServerError, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-								respBodyArr = append(respBodyArr, respBodyTemp)
-								break
-							} else {
-								w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
-								errorAt = routerutils.ERROR_AT_DEL
-								if transformerProxy {
-									resp := w.proxyRequest(ctx, destinationJob, val)
-									for k, v := range resp.DontBatchDirectives {
-										dontBatchDirectives[k] = v
-									}
-									respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
-									// If this is the last iteration, use respStatusCodes & respBodyTemps as is
-									// If this is not the last iteration, mark all the jobs as failed.
-									if i < len(result)-1 && anyNonTerminalCode(respStatusCodes) {
-										for k := range respStatusCodes {
-											respStatusCodes[k] = http.StatusInternalServerError
-										}
-										respBodyArrs = []map[int64]string{respBodyTemps}
-										break
-									} else {
-										respBodyArrs = append(respBodyArrs, respBodyTemps)
-									}
-								} else {
-									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
-									rdlTime := time.Now()
-									resp := w.rt.netHandle.SendPost(sendCtx, val)
-									cancel()
-									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-									w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
-									if isSuccessStatus(respStatusCode) {
-										respBodyArr = append(respBodyArr, respBodyTemp)
-									} else {
-										respBodyArr = []string{respBodyTemp}
-										break
+							w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
+							errorAt = routerutils.ERROR_AT_DEL
+							if transformerProxy {
+								resp := w.proxyRequest(ctx, destinationJob, val)
+								for k, v := range resp.DontBatchDirectives {
+									dontBatchDirectives[k] = v
+								}
+								respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
+								// If this is the last iteration, use respStatusCodes & respBodyTemps as is
+								// If this is not the last iteration, mark all the jobs as failed.
+								if i < len(result)-1 && anyNonTerminalCode(respStatusCodes) {
+									for k := range respStatusCodes {
+										respStatusCodes[k] = http.StatusInternalServerError
 									}
+									respBodyArrs = []map[int64]string{respBodyTemps}
+									break
+								} else {
+									respBodyArrs = append(respBodyArrs, respBodyTemps)
+								}
+							} else {
+								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
+								rdlTime := time.Now()
+								resp := w.rt.netHandle.SendPost(sendCtx, val)
+								cancel()
+								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
+
+								if isSuccessStatus(respStatusCode) {
+									respBodyArr = append(respBodyArr, respBodyTemp)
+								} else {
+									respBodyArr = []string{respBodyTemp}
+									break
 								}
 							}
 						}
@@ -870,7 +863,7 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 	// We can override via env saveDestinationResponseOverride
 
 	for k, respStatusCode := range respStatusCodes {
-		if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", w.rt.destType, false) && !w.rt.saveDestinationResponse {
+		if isSuccessStatus(respStatusCode) && !w.rt.saveDestinationResponseOverride.Load() && !w.rt.saveDestinationResponse {
 			respBodys[k] = ""
 		}
 	}
