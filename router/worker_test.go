@@ -479,12 +479,12 @@ func TestTransform(t *testing.T) {
 		},
 	}
 	var limiterWg sync.WaitGroup
-	var ctx, cancel = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer limiterWg.Wait()
 	defer cancel()
 	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
 	worker.rt.limiter.stats.transform = partition.NewStats()
-	
+
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
