@@ -308,7 +308,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	destinationJobs := make([]types.DestinationJobT, 0)
+	destinationJobs := make([]types.DestinationJobT, 0, len(routerJobs))
 	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
 		return job.Destination.ID
 	})
