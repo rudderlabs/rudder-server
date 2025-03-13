@@ -308,13 +308,20 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
-		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-	)
-	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
+	destinationJobs := make([]types.DestinationJobT, 0, len(routerJobs))
+	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
+		return job.Destination.ID
+	})
+	for _, destinationIDRouterJobs := range destinationIDRouterJobsMap {
+		w.rt.routerTransformInputCountStat.Count(len(destinationIDRouterJobs))
+		destinationIDJobs := w.rt.transformer.Transform(
+			transformer.ROUTER_TRANSFORM,
+			&types.TransformMessageT{Data: destinationIDRouterJobs, DestType: strings.ToLower(w.rt.destType)},
+		)
+		w.rt.routerTransformOutputCountStat.Count(len(destinationIDJobs))
+		w.recordStatsForFailedTransforms("routerTransform", destinationIDJobs)
+		destinationJobs = append(destinationJobs, destinationIDJobs...)
+	}
 	return destinationJobs
 }
 
