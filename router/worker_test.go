@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -456,3 +457,150 @@ var _ = Describe("Proxy Request", func() {
 		})
 	})
 })
+
+func TestTransform(t *testing.T) {
+	initRouter()
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	worker := &worker{
+		rt: &Handle{
+			transformer:                    mockTransformer,
+			destType:                       "some_dest_type",
+			logger:                         logger.NOP,
+			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+		},
+	}
+	routerJobs := []types.RouterJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test1"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 1,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": "d2-test2"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 2,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test3"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 3,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d3",
+			},
+			Message: json.RawMessage(`{"event": "d3-test4"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 4,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test5"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 5,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": "d2-test6"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 6,
+			},
+		},
+	}
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[0], routerJobs[2], routerJobs[4]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": ["d1-test1", "d1-test3"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 1,
+				},
+				{
+					JobID: 3,
+				},
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": [ "d1-test5"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 5,
+				},
+			},
+		},
+	})
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[1], routerJobs[5]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": ["d2-test2", "d2-test6"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 2,
+				},
+				{
+					JobID: 6,
+				},
+			},
+		},
+	})
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[3]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d3",
+			},
+			Message: json.RawMessage(`{"event": ["d3-test4"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 4,
+				},
+			},
+		},
+	})
+	destinationJobs := worker.transform(routerJobs)
+	require.Equal(t, 4, len(destinationJobs))
+	destinationIDJobsMap := lo.GroupBy(destinationJobs, func(job types.DestinationJobT) string {
+		return job.Destination.ID
+	})
+	require.Equal(t, 3, len(destinationIDJobsMap))
+	require.Equal(t, 2, len(destinationIDJobsMap["d1"]))
+	require.Equal(t, 1, len(destinationIDJobsMap["d2"]))
+	require.Equal(t, 1, len(destinationIDJobsMap["d3"]))
+}

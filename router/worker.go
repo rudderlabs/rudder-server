@@ -277,12 +277,14 @@ func (w *worker) workLoop() {
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	// transform limiter with dynamic priority
 	start := time.Now()
-	limiter := w.rt.limiter.transform
-	limiterStats := w.rt.limiter.stats.transform
-	defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
-	defer func() {
-		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
-	}()
+	if w.rt.limiter.transform != nil {
+		limiter := w.rt.limiter.transform
+		limiterStats := w.rt.limiter.stats.transform
+		defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
+		defer func() {
+			limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
+		}()
+	}
 
 	traces := make(map[string]stats.TraceSpan)
 	defer func() {
@@ -308,13 +310,20 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
-		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-	)
-	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
+	destinationJobs := make([]types.DestinationJobT, 0)
+	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
+		return job.Destination.ID
+	})
+	for _, destinationIDRouterJobs := range destinationIDRouterJobsMap {
+		w.rt.routerTransformInputCountStat.Count(len(destinationIDRouterJobs))
+		destinationIDJobs := w.rt.transformer.Transform(
+			transformer.ROUTER_TRANSFORM,
+			&types.TransformMessageT{Data: destinationIDRouterJobs, DestType: strings.ToLower(w.rt.destType)},
+		)
+		w.rt.routerTransformOutputCountStat.Count(len(destinationIDJobs))
+		w.recordStatsForFailedTransforms("routerTransform", destinationIDJobs)
+		destinationJobs = append(destinationJobs, destinationIDJobs...)
+	}
 	return destinationJobs
 }
 
