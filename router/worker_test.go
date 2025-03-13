@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sync"
 	"testing"
 
 	"github.com/samber/lo"
@@ -13,6 +15,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -23,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -464,6 +468,7 @@ func TestTransform(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+
 	worker := &worker{
 		rt: &Handle{
 			transformer:                    mockTransformer,
@@ -473,6 +478,13 @@ func TestTransform(t *testing.T) {
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 		},
 	}
+	var limiterWg sync.WaitGroup
+	var ctx, cancel = context.WithCancel(context.Background())
+	defer limiterWg.Wait()
+	defer cancel()
+	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
+	worker.rt.limiter.stats.transform = partition.NewStats()
+	
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{

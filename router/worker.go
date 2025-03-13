@@ -277,14 +277,12 @@ func (w *worker) workLoop() {
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	// transform limiter with dynamic priority
 	start := time.Now()
-	if w.rt.limiter.transform != nil {
-		limiter := w.rt.limiter.transform
-		limiterStats := w.rt.limiter.stats.transform
-		defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
-		defer func() {
-			limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
-		}()
-	}
+	limiter := w.rt.limiter.transform
+	limiterStats := w.rt.limiter.stats.transform
+	defer limiter.BeginWithPriority("", LimiterPriorityValueFrom(limiterStats.Score(w.partition), 100))()
+	defer func() {
+		limiterStats.Update(w.partition, time.Since(start), len(routerJobs), 0)
+	}()
 
 	traces := make(map[string]stats.TraceSpan)
 	defer func() {
