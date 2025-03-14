@@ -107,6 +107,7 @@ func NewClient(config *ClientConfig) Client {
 			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),
 			httplb.WithIdleTransportTimeout(2*transport.IdleConnTimeout),
 			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
+			httplb.WithTransport("http", &HTTPLBTransport{Transport: transport}),
 		)
 	default:
 		return client
