@@ -1164,12 +1164,12 @@ func (proc *Handle) getTransformerEvents(
 		}
 
 		for _, message := range messages {
-			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
+			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() string {
 				if pu != reportingtypes.TRACKINGPLAN_VALIDATOR {
-					return []byte(`{}`)
+					return misc.EmptyPayloadString
 				}
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
-					return []byte(`{}`)
+					return misc.EmptyPayloadString
 				}
 
 				sampleEvent, err := jsonrs.Marshal(message)
@@ -1177,7 +1177,7 @@ func (proc *Handle) getTransformerEvents(
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
 					sampleEvent = []byte(`{}`)
 				}
-				return sampleEvent
+				return string(sampleEvent)
 			},
 				nil)
 		}
@@ -1235,7 +1235,7 @@ func (proc *Handle) updateMetricMaps(
 	statusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
 	event *types.TransformerResponse,
 	status, stage string,
-	payload func() json.RawMessage,
+	payload func() string,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 ) {
 	if !proc.isReportingEnabled() {
@@ -1465,16 +1465,16 @@ func (proc *Handle) getTransformationMetrics(
 				failedEvent,
 				state,
 				pu,
-				func() json.RawMessage {
+				func() string {
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
+						return misc.EmptyPayloadString
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
 						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
 						sampleEvent = []byte(`{}`)
 					}
-					return sampleEvent
+					return string(sampleEvent)
 				},
 				eventsByMessageID)
 		}
@@ -1622,7 +1622,7 @@ func getDiffMetrics(
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,
-				SampleEvent: []byte(`{}`),
+				SampleEvent: misc.EmptyPayloadString,
 				EventName:   eventName,
 				EventType:   eventType,
 			},
@@ -1977,14 +1977,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				transformerEvent,
 				jobsdb.Succeeded.State,
 				reportingtypes.GATEWAY,
-				func() json.RawMessage {
+				func() string {
 					if sourceIsTransient {
-						return []byte(`{}`)
+						return misc.EmptyPayloadString
 					}
 					if payload := event.payloadFunc(); payload != nil {
-						return payload
+						return string(payload)
 					}
-					return []byte("{}")
+					return misc.EmptyPayloadString
 				},
 				nil,
 			)
@@ -2027,7 +2027,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() string { return misc.EmptyPayloadString }, nil)
 		}
 	}
 
@@ -2999,7 +2999,7 @@ func (proc *Handle) transformSrcDest(
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() string { return misc.EmptyPayloadString }, nil)
 				}
 				reportingtypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
