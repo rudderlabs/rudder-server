@@ -168,7 +168,7 @@ type drainer struct {
 	reason string
 }
 
-func (d *drainer) Drain(_ *jobsdb.JobT) (bool, string) {
+func (d *drainer) Drain(_ time.Time, _, _ string) (bool, string) {
 	return d.drain, d.reason
 }
 
@@ -275,27 +275,27 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = false
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(2), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.NotNil(t, slot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
@@ -308,29 +308,29 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 			require.Equal(t, int64(0), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(2), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 			slotToRelease := slot
 			defer func() { slotToRelease.slot.Release() }()
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
@@ -344,7 +344,7 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err, "drain job should be accepted even if it's to be backed off")
 			require.Equal(
@@ -354,7 +354,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(
@@ -364,7 +364,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(
@@ -374,7 +374,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(
@@ -389,7 +389,7 @@ func TestBackoff(t *testing.T) {
 			defer func() { r.backgroundCtx = context.Background() }()
 			r.backgroundCtx, r.backgroundCancel = context.WithCancel(context.Background())
 			r.backgroundCancel()
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrContextCancelled)
 		})
@@ -404,7 +404,7 @@ func TestBackoff(t *testing.T) {
 					RetryTime:  time.Now().Add(1 * time.Hour),
 				},
 			}
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID}: {}})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID}: {}})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
@@ -428,6 +428,7 @@ func TestBackoff(t *testing.T) {
 				workers,
 				job,
 				destinationID,
+				"",
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.NoError(t, err)
@@ -439,7 +440,9 @@ func TestBackoff(t *testing.T) {
 				workers,
 				job,
 				destinationID,
-				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}})
+				"",
+				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
+			)
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
@@ -463,6 +466,7 @@ func TestBackoff(t *testing.T) {
 				workers,
 				job,
 				destinationID,
+				"",
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.NoError(t, err)
@@ -474,6 +478,7 @@ func TestBackoff(t *testing.T) {
 				workers,
 				job,
 				destinationID,
+				"",
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.Nil(t, slot)

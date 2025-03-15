@@ -10,15 +10,17 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 )
 
 type workerJobStatus struct {
-	userID   string
-	worker   *worker
-	job      *jobsdb.JobT
-	status   *jobsdb.JobStatusT
-	payload  json.RawMessage
-	statTags map[string]string
+	userID     string
+	worker     *worker
+	job        *jobsdb.JobT
+	status     *jobsdb.JobStatusT
+	payload    json.RawMessage
+	statTags   map[string]string
+	parameters routerutils.JobParameters
 }
 
 type HandleDestOAuthRespParams struct {

@@ -80,7 +80,9 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				DestinationID: destWithSources.Destination.ID,
 			}
 			if drain, reason := brt.drainer.Drain(
-				job,
+				job.CreatedAt,
+				destWithSources.Destination.ID,
+				gjson.GetBytes(job.Parameters, "source_job_run_id").String(),
 			); drain {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,

@@ -159,7 +159,7 @@ func (t transformerMetricLabels) ToStatsTag() stats.Tags {
 // Transform transforms router jobs to destination jobs
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
-	transformMessageCopy, jobs := transformMessage.Dehydrate()
+	transformMessageCopy, preservedData := transformMessage.Dehydrate()
 
 	// Call remote transformation
 	rawJSON, err := jsonrs.Marshal(&transformMessageCopy)
@@ -384,7 +384,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 	func() { httputil.CloseResponse(resp) }()
 
-	destinationJobs.Hydrate(jobs)
+	destinationJobs.Hydrate(preservedData)
 	return destinationJobs
 }
 
