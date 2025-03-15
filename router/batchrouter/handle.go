@@ -494,32 +494,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
 func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
-	schemaMap := make(map[string]map[string]interface{})
-	for _, job := range batchJobs.Jobs {
-		var payload map[string]interface{}
-		err := jsonrs.Unmarshal(job.EventPayload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		var ok bool
-		tableName, ok := payload["metadata"].(map[string]interface{})["table"].(string)
-		if !ok {
-			brt.logger.Errorf(`BRT: tableName not found in event metadata: %v`, payload["metadata"])
-			return nil
-		}
-		if _, ok = schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
-		}
-		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
-		for columnName, columnType := range columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
-				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				schemaMap[tableName][columnName] = columnType
-			}
-		}
-	}
+	schemaMap := generateSchemaMap(batchJobs)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
@@ -554,6 +529,30 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	}
 	brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service")
 	return
+}
+
+func generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]interface{} {
+	schemaMap := make(map[string]map[string]interface{})
+	for _, job := range batchJobs.Jobs {
+		metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+		tableName := metadata["table"].String()
+		if tableName == "" {
+			continue
+		}
+		if _, ok := schemaMap[tableName]; !ok {
+			schemaMap[tableName] = make(map[string]interface{})
+		}
+		columns := metadata["columns"].Map()
+		for columnName, columnType := range columns {
+			if _, ok := schemaMap[tableName][columnName]; !ok {
+				schemaMap[tableName][columnName] = columnType
+			} else if columnType.String() == "text" && schemaMap[tableName][columnName] == "string" {
+				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
+				schemaMap[tableName][columnName] = columnType
+			}
+		}
+	}
+	return schemaMap
 }
 
 // updateJobStatus updates the statuses for the provided batch of jobs in jobsDB
