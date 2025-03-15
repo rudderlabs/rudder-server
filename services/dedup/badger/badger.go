@@ -9,6 +9,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -27,9 +28,10 @@ type BadgerDB struct {
 	path     string
 	opts     badger.Options
 	once     sync.Once
-	wg       sync.WaitGroup
-	bgCtx    context.Context
-	cancel   context.CancelFunc
+
+	wg     sync.WaitGroup
+	bgCtx  context.Context
+	cancel context.CancelFunc
 }
 
 // DefaultPath returns the default path for the deduplication service's badger DB
@@ -66,43 +68,39 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 		path:   path,
 		window: dedupWindow,
 		opts:   badgerOpts,
-		wg:     sync.WaitGroup{},
 		bgCtx:  bgCtx,
 		cancel: cancel,
 	}
 	return &Dedup{
-		badgerDB: db,
-		cache:    make(map[string]bool),
+		badgerDB:    db,
+		uncommitted: make(map[string]struct{}),
 	}
 }
 
-func (d *BadgerDB) Get(key string) (bool, error) {
-	defer d.stats.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
-
-	var found bool
+func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
+	defer d.stats.NewTaggedStat("dedup_getbatch_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+	results := make(map[string]bool, len(keys))
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
-		if err != nil {
-			return err
-		}
-		if _, err = item.ValueCopy(nil); err == nil {
-			found = true
+		for _, key := range keys {
+			if _, err := txn.Get([]byte(key)); err != nil {
+				if errors.Is(err, badger.ErrKeyNotFound) {
+					continue
+				}
+				return err
+			}
+			results[key] = true
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-		return false, err
-	}
-	return found, nil
+	return results, err
 }
 
-func (d *BadgerDB) Set(kvs []types.KeyValue) error {
+func (d *BadgerDB) Set(keys []string) error {
 	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
 	wb := d.badgerDB.NewWriteBatch()
 	defer wb.Cancel()
-	for i := range kvs {
-		message := kvs[i]
-		e := badger.NewEntry([]byte(message.Key), []byte("")).WithTTL(d.window.Load())
+	for _, key := range keys {
+		e := badger.NewEntry([]byte(key), nil).WithTTL(d.window.Load())
 		if err := wb.SetEntry(e); err != nil {
 			return err
 		}
@@ -167,84 +165,78 @@ func (d *BadgerDB) gcLoop() {
 }
 
 type Dedup struct {
-	badgerDB *BadgerDB
-	cacheMu  sync.Mutex
-	cache    map[string]bool
+	badgerDB      *BadgerDB
+	uncommittedMu sync.RWMutex
+	uncommitted   map[string]struct{}
 }
 
-func (d *Dedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, error) {
-	err := d.badgerDB.init()
-	if err != nil {
-		return nil, err
+func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
+	if err := d.badgerDB.init(); err != nil {
+		return nil, fmt.Errorf("initializing badger db: %w", err)
 	}
+	result := make(map[types.BatchKey]bool, len(batchKeys))  // keys encountered for the first time
+	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
 
-	found := make(map[types.KeyValue]bool)
-	for _, kv := range kvs {
-		foundKey, err := d.Get(kv)
+	// figure out which keys need to be checked against the DB
+	batchKeysToCheck := make([]types.BatchKey, 0, len(batchKeys)) // keys to check in the DB
+	d.uncommittedMu.RLock()
+	for _, batchKey := range batchKeys {
+		// if the key is already seen in the batch, skip it
+		if _, seen := seenInBatch[batchKey.Key]; seen {
+			continue
+		}
+		// if the key is already in the uncommitted list , skip it
+		if _, uncommitted := d.uncommitted[batchKey.Key]; uncommitted {
+			seenInBatch[batchKey.Key] = struct{}{}
+			continue
+		}
+		seenInBatch[batchKey.Key] = struct{}{}
+		batchKeysToCheck = append(batchKeysToCheck, batchKey)
+	}
+	d.uncommittedMu.RUnlock()
+
+	if len(batchKeysToCheck) > 0 {
+		seenInDB, err := d.badgerDB.Get(lo.Map(batchKeysToCheck, func(bk types.BatchKey, _ int) string { return bk.Key }))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("getting keys from badger db: %w", err)
 		}
-		found[kv] = foundKey
-	}
-	return found, nil
-}
-
-func (d *Dedup) Get(kv types.KeyValue) (bool, error) {
-	err := d.badgerDB.init()
-	if err != nil {
-		return false, err
-	}
-
-	d.cacheMu.Lock()
-	_, found := d.cache[kv.Key]
-	d.cacheMu.Unlock()
-	if found {
-		return false, nil
-	}
-
-	found, err = d.badgerDB.Get(kv.Key)
-	if err != nil {
-		return false, err
-	}
-
-	if !found {
-		d.cacheMu.Lock()
-		defer d.cacheMu.Unlock()
-		// check again after acquiring lock to cater for race condition of another goroutine setting the key
-		if _, found = d.cache[kv.Key]; !found {
-			d.cache[kv.Key] = true
+		d.uncommittedMu.Lock()
+		defer d.uncommittedMu.Unlock()
+		for _, batchKey := range batchKeysToCheck {
+			if !seenInDB[batchKey.Key] {
+				if _, race := d.uncommitted[batchKey.Key]; !race { // if another goroutine managed to set this key, we should skip it
+					result[batchKey] = true
+					d.uncommitted[batchKey.Key] = struct{}{} // mark this key as uncommitted
+				}
+			}
 		}
 	}
-
-	return !found, nil
+	return result, nil
 }
 
 func (d *Dedup) Commit(keys []string) error {
-	err := d.badgerDB.init()
-	if err != nil {
-		return err
+	if err := d.badgerDB.init(); err != nil {
+		return fmt.Errorf("initializing badger db: %w", err)
 	}
-	kvs := make([]types.KeyValue, len(keys))
-	d.cacheMu.Lock()
+	kvs := make([]types.BatchKey, len(keys))
+	d.uncommittedMu.RLock()
 	for i, key := range keys {
-		_, ok := d.cache[key]
-		if !ok {
-			d.cacheMu.Unlock()
+		if _, ok := d.uncommitted[key]; !ok {
+			d.uncommittedMu.RUnlock()
 			return fmt.Errorf("key %v has not been previously set", key)
 		}
-		kvs[i] = types.KeyValue{Key: key}
+		kvs[i] = types.BatchKey{Key: key}
 	}
-	d.cacheMu.Unlock()
+	d.uncommittedMu.RUnlock()
 
-	err = d.badgerDB.Set(kvs)
-	if err != nil {
-		return err
+	if err := d.badgerDB.Set(keys); err != nil {
+		return fmt.Errorf("setting keys in badger db: %w", err)
 	}
 
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
+	d.uncommittedMu.Lock()
+	defer d.uncommittedMu.Unlock()
 	for _, kv := range kvs {
-		delete(d.cache, kv.Key)
+		delete(d.uncommitted, kv.Key)
 	}
 	return nil
 }
