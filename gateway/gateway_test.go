@@ -2401,6 +2401,299 @@ var _ = Describe("Gateway", func() {
 			}
 		})
 	})
+
+	Context("extractJobsFromInternalBatchPayload with - chainedProcessor", func() {
+		var gateway *Handle
+		BeforeEach(func() {
+			c.initializeAppFeatures()
+			gateway = &Handle{}
+			conf.Set("gateway.internalBatch.eventProcessor.enabled", true)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			Expect(err).To(BeNil())
+			waitForBackendConfigInit(gateway)
+		})
+
+		AfterEach(func() {
+			conf.Set("gateway.internalBatch.eventProcessor.enabled", false)
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{"receivedAt": "dummyReceivedAtFromPayload", "request_ip": "dummyIPFromPayload"}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(
+				gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				},
+			))
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"request_ip"`
+				} `json:"batch"`
+			}
+			jobForm := jobsWithStats[0].job
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("dummyReceivedAtFromPayload"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIPFromPayload"))
+		})
+
+		It("adds receivedAt and request_ip in the request payload if it's not already present", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
+
+			var job struct {
+				Batch []struct {
+					ReceivedAt string `json:"receivedAt"`
+					RequestIP  string `json:"request_ip"`
+				} `json:"batch"`
+			}
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].ReceivedAt).To(ContainSubstring("2024-01-01T01:01:01.000Z"))
+			Expect(job.Batch[0].RequestIP).To(ContainSubstring("dummyIP"))
+		})
+
+		It("adds messageID, rudderId in the request payload if it's not already present", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageID"`
+					RudderID  string `json:"rudderId"`
+				} `json:"batch"`
+			}
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].MessageID).To(Not(BeEmpty()))
+			Expect(job.Batch[0].RudderID).To(Not(BeEmpty()))
+		})
+
+		It("doesn't override if messageID already exists in payload", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{"messageId": "dummyMessageID"}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(
+				gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				},
+			))
+
+			var job struct {
+				Batch []struct {
+					MessageID string `json:"messageId"`
+				} `json:"batch"`
+			}
+			jobForm := jobsWithStats[0].job
+			err = jsonrs.Unmarshal(jobForm.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].MessageID).To(ContainSubstring("dummyMessageID"))
+		})
+
+		It("adds type in the request payload if RequestType Property is not one of batch, replay, retl, import", func() {
+			properties := stream.MessageProperties{
+				RequestType:   "dummyRequestType",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+			Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+				SourceID:    "sourceID",
+				WorkspaceID: "workspaceID",
+				ReqType:     "batch",
+			}))
+
+			var job struct {
+				Batch []struct {
+					Type string `json:"type"`
+				} `json:"batch"`
+			}
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+			Expect(err).To(BeNil())
+			Expect(job.Batch).To(HaveLen(1))
+			Expect(job.Batch[0].Type).To(ContainSubstring("dummyRequestType"))
+		})
+
+		It("does not change type if  RequestType Property is batch, replay, retl, import", func() {
+			requestTypes := []string{"batch", "replay", "retl", "import"}
+			for _, reqType := range requestTypes {
+				properties := stream.MessageProperties{
+					RequestType:   reqType,
+					RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+					WorkspaceID:   "workspaceID",
+					SourceID:      "sourceID",
+					ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+					RequestIP:     "dummyIP",
+					DestinationID: "destinationID",
+				}
+				msg := stream.Message{
+					Properties: properties,
+					Payload:    []byte(`{"type": "dummyType"}`),
+				}
+				messages := []stream.Message{msg}
+				payload, err := jsonrs.Marshal(messages)
+				Expect(err).To(BeNil())
+				req := &webRequestT{
+					reqType:        "batch",
+					authContext:    rCtxEnabled,
+					done:           make(chan<- string),
+					requestPayload: payload,
+				}
+				jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+				Expect(err).To(BeNil())
+				Expect(jobsWithStats).To(HaveLen(1))
+				Expect(jobsWithStats[0].stat).To(Equal(gwstats.SourceStat{
+					SourceID:    "sourceID",
+					WorkspaceID: "workspaceID",
+					ReqType:     "batch",
+				}))
+
+				var job struct {
+					Batch []struct {
+						Type string `json:"type"`
+					} `json:"batch"`
+				}
+				err = jsonrs.Unmarshal(jobsWithStats[0].job.EventPayload, &job)
+				Expect(err).To(BeNil())
+				Expect(job.Batch).To(HaveLen(1))
+				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))
+			}
+		})
+	})
 })
 
 func unauthorizedRequest(body io.Reader) *http.Request {
