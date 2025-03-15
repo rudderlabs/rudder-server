@@ -40,6 +40,25 @@ func (m *MockDedup) EXPECT() *MockDedupMockRecorder {
 	return m.recorder
 }
 
+// Allowed mocks base method.
+func (m *MockDedup) Allowed(keys ...types.BatchKey) (map[types.BatchKey]bool, error) {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range keys {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "Allowed", varargs...)
+	ret0, _ := ret[0].(map[types.BatchKey]bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Allowed indicates an expected call of Allowed.
+func (mr *MockDedupMockRecorder) Allowed(keys ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Allowed", reflect.TypeOf((*MockDedup)(nil).Allowed), keys...)
+}
+
 // Close mocks base method.
 func (m *MockDedup) Close() {
 	m.ctrl.T.Helper()
@@ -64,34 +83,4 @@ func (m *MockDedup) Commit(keys []string) error {
 func (mr *MockDedupMockRecorder) Commit(keys any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Commit", reflect.TypeOf((*MockDedup)(nil).Commit), keys)
-}
-
-// Get mocks base method.
-func (m *MockDedup) Get(kv types.KeyValue) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", kv)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Get indicates an expected call of Get.
-func (mr *MockDedupMockRecorder) Get(kv any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockDedup)(nil).Get), kv)
-}
-
-// GetBatch mocks base method.
-func (m *MockDedup) GetBatch(kvs []types.KeyValue) (map[types.KeyValue]bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBatch", kvs)
-	ret0, _ := ret[0].(map[types.KeyValue]bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetBatch indicates an expected call of GetBatch.
-func (mr *MockDedupMockRecorder) GetBatch(kvs any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatch", reflect.TypeOf((*MockDedup)(nil).GetBatch), kvs)
 }

@@ -47,7 +47,6 @@ require (
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gocql/gocql v1.14.4
 	github.com/golang-migrate/migrate/v4 v4.18.2
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
@@ -122,6 +121,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.0.0 // indirect
 	github.com/apache/arrow/go/v16 v16.0.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.1.0 // indirect
+	github.com/gocql/gocql v1.14.4 // indirect
 	github.com/minio/crc64nvme v1.0.1 // indirect
 	github.com/spf13/viper v1.19.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
