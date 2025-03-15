@@ -26,9 +26,26 @@ type AuthRequestContext struct {
 	ReplaySource    bool
 	SourceJobRunID  string
 	SourceTaskRunID string
-	Source          backendconfig.SourceT
+	// deprecated in favor of SourceDetails
+	Source backendconfig.SourceT
 	// DestinationID is optional param, destination id will be present for rETL Request
 	DestinationID string
+	SourceDetails struct {
+		ID               string
+		OriginalID       string
+		Name             string
+		SourceDefinition struct {
+			ID       string
+			Name     string
+			Category string
+			Type     string
+		}
+		Enabled     bool
+		WorkspaceID string
+		WriteKey    string
+		Config      map[string]interface{}
+		Transient   bool
+	}
 }
 
 func (arctx *AuthRequestContext) SourceTag() string {
