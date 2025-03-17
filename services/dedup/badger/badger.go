@@ -207,10 +207,13 @@ func (d *Dedup) Get(kv types.KeyValue) (bool, error) {
 		return false, err
 	}
 
-	d.cacheMu.Lock()
-	defer d.cacheMu.Unlock()
-	if !found { // still not in the cache, but it's in the DB so let's refresh the cache
-		d.cache[kv.Key] = true
+	if !found {
+		d.cacheMu.Lock()
+		defer d.cacheMu.Unlock()
+		// check again after acquiring lock to cater for race condition of another goroutine setting the key
+		if _, found = d.cache[kv.Key]; !found {
+			d.cache[kv.Key] = true
+		}
 	}
 
 	return !found, nil
