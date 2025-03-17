@@ -77,6 +77,9 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 			sampleResponse = ""
 		} else {
 			err = eventSampler.Put(hash)
+			if err != nil {
+				return sampleEvent, sampleResponse, err
+			}
 		}
 	}
 
