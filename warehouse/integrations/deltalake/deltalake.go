@@ -184,12 +184,15 @@ func (d *Deltalake) Setup(_ context.Context, warehouse model.Warehouse, uploader
 // connect connects to the warehouse
 func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	var (
-		host       = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
-		portString = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
-		path       = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
-		token      = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
-		catalog    = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
-		timeout    = d.connectTimeout
+		host              = d.Warehouse.GetStringDestinationConfig(d.conf, model.HostSetting)
+		portString        = d.Warehouse.GetStringDestinationConfig(d.conf, model.PortSetting)
+		path              = d.Warehouse.GetStringDestinationConfig(d.conf, model.PathSetting)
+		token             = d.Warehouse.GetStringDestinationConfig(d.conf, model.TokenSetting)
+		catalog           = d.Warehouse.GetStringDestinationConfig(d.conf, model.CatalogSetting)
+		timeout           = d.connectTimeout
+		useOauth          = d.Warehouse.GetBoolDestinationConfig(model.UseOauthSetting)
+		oauthClientID     = d.Warehouse.GetStringDestinationConfig(d.conf, model.OauthClientIDSetting)
+		oauthClientSecret = d.Warehouse.GetStringDestinationConfig(d.conf, model.OauthClientSecretSetting)
 	)
 
 	port, err := strconv.Atoi(portString)
@@ -198,12 +201,15 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 	}
 
 	data := sqlconnectconfig.Databricks{
-		Host:    host,
-		Port:    port,
-		Path:    path,
-		Token:   token,
-		Catalog: catalog,
-		Timeout: timeout,
+		Host:              host,
+		Port:              port,
+		Path:              path,
+		Token:             token,
+		Catalog:           catalog,
+		UseOAuth:          useOauth,
+		OAuthClientID:     oauthClientID,
+		OAuthClientSecret: oauthClientSecret,
+		Timeout:           timeout,
 		SessionParams: map[string]string{
 			"ansi_mode": "false",
 		},
