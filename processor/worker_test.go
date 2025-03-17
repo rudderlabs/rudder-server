@@ -205,6 +205,7 @@ func (m *mockWorkerHandle) config() workerHandleConfig {
 		subJobSize:            10,
 		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
 		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
+		numPartitions:         3,
 	}
 }
 
