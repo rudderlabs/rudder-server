@@ -151,12 +151,16 @@ func NewTransformer(conf *config.Config, log logger.Logger, stat stats.Stats, op
 		PickerType:    conf.GetStringVar("power_of_two", "Transformer.Client.httplb.pickerType"),
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.maxConnsPerHost")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(10, 1, "Transformer.Client.maxIdleConnsPerHost")
 	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
 
 	trans.httpClient = transformerclient.NewClient(transformerClientConfig)
-	trans.logger.Infon("Transformer client type", logger.NewStringField("type", transformerClientConfig.ClientType))
+	trans.logger.Infon("Transformer client",
+		logger.NewStringField("type", transformerClientConfig.ClientType),
+		logger.NewIntField("maxConnsPerHost", int64(transformerClientConfig.TransportConfig.MaxConnsPerHost)),
+		logger.NewIntField("maxIdleConnsPerHost", int64(transformerClientConfig.TransportConfig.MaxIdleConnsPerHost)),
+	)
 
 	for _, opt := range opts {
 		opt(&trans)
