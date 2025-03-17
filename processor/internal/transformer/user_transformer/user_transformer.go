@@ -61,6 +61,14 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 		logger.NewStringField("type", tcConf.ClientType),
 		logger.NewIntField("maxConnsPerHost", int64(tcConf.TransportConfig.MaxConnsPerHost)),
 		logger.NewIntField("maxIdleConnsPerHost", int64(tcConf.TransportConfig.MaxIdleConnsPerHost)),
+		logger.NewIntField("batchSize", int64(handle.config.batchSize.Load())),
+		logger.NewIntField("maxRetry", int64(handle.config.maxRetry.Load())),
+		logger.NewIntField("maxRetryBackoffInterval", int64(handle.config.maxRetryBackoffInterval.Load().Seconds())),
+		logger.NewIntField("timeoutDuration", int64(handle.config.timeoutDuration.Seconds())),
+		logger.NewIntField("maxConcurrency", int64(handle.config.maxConcurrency)),
+		logger.NewBoolField("failOnUserTransformTimeout", handle.config.failOnUserTransformTimeout.Load()),
+		logger.NewBoolField("failOnError", handle.config.failOnError.Load()),
+		logger.NewStringField("userTransformationURL", handle.config.userTransformationURL),
 	)
 
 	for _, opt := range opts {
