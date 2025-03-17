@@ -203,7 +203,7 @@ func (w *worker) workLoop() {
 				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
 				obskit.DestinationType(destination.DestinationDefinition.Name),
 			)
-			if oauth.IsOAuthDestination(destination.DestinationDefinition.Config) && !oauthV2Enabled {
+			if w.rt.isOAuthDestination && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -330,7 +330,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 		}
 	}
 
-	if w.rt.reloadableConfig.oauthV2Enabled.Load() && w.rt.isOAuthDestination {
+	if w.rt.isOAuthDestination && w.rt.reloadableConfig.oauthV2Enabled.Load() {
 		return w.transformJobsPerDestination(routerJobs)
 	}
 	return w.transformJobs(routerJobs)
