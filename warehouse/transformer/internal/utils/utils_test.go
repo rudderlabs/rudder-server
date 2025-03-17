@@ -132,10 +132,10 @@ func TestIsBlank(t *testing.T) {
 		{"FloatNonZero", 123.45, false},                             // non-zero float
 		{"BoolFalse", false, false},                                 // boolean false
 		{"BoolTrue", true, false},                                   // boolean true
-		{"EmptySlice", []int{}, false},                              // empty slice
-		{"NonEmptySlice", []int{1, 2, 3}, false},                    // non-empty slice
-		{"EmptyMap", map[string]int{}, false},                       // empty map
-		{"NonEmptyMap", map[string]int{"key": 1}, false},            // non-empty map
+		{"EmptySlice", []any{}, true},                               // empty slice
+		{"NonEmptySlice", []any{1, 2, 3}, false},                    // non-empty slice
+		{"EmptyMap", map[string]any{}, true},                        // empty map
+		{"NonEmptyMap", map[string]any{"key": 1}, false},            // non-empty map
 		{"EmptyStruct", struct{}{}, false},                          // empty struct
 		{"StructWithField", struct{ Field string }{"value"}, false}, // non-empty struct
 		{"StructWithMethod", Person{Name: "Alice", Age: 30}, false}, // struct with String method
