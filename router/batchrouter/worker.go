@@ -18,7 +18,6 @@ import (
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -174,12 +173,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					"reasons":     strings.Join(destDrainStat.Reasons, ", "),
 					"workspaceId": destDrainStat.Workspace,
 				}).Count(destDrainStat.Count)
-				rmetrics.DecreasePendingEvents(
-					"batch_rt",
-					destDrainStat.Workspace,
-					brt.destType,
-					float64(destDrainStat.Count),
-				)
+				w.brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(destDrainStat.Count))
 			}
 		}
 		// Mark the jobs as executing
