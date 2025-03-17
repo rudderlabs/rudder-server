@@ -99,7 +99,6 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 }
 
 func TestIsOAuthDestination(t *testing.T) {
-
 	testCases := []struct {
 		name     string
 		config   map[string]interface{}
