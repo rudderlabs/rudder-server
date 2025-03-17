@@ -1,6 +1,7 @@
 package dedup_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path"
@@ -9,7 +10,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -162,6 +165,49 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	}
 	err = d.Commit(messages)
 	require.NoError(t, err)
+}
+
+func Test_Dedup_Race(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	d, err := dedup.New(conf, stats.Default)
+	require.Nil(t, err)
+	defer d.Close()
+
+	// warm up by committing some keys
+	keys := lo.RepeatBy(10000, func(i int) string { return "warmup" + strconv.Itoa(i) })
+	allowed, err := d.Allowed(lo.Map(keys, func(k string, i int) dedup.BatchKey { return dedup.BatchKey{Index: i, Key: k} })...)
+	require.NoError(t, err)
+	require.NoError(t, d.Commit(lo.Map(lo.Keys(allowed), func(bk dedup.BatchKey, _ int) string { return bk.Key })))
+	for range 10000 {
+		key := uuid.New().String()
+		k := dedup.SingleKey(key)
+		concurrency := 20
+		g, _ := errgroup.WithContext(context.Background())
+		for range concurrency {
+			g.Go(func() error {
+				allowed, err := d.Allowed(dedup.SingleKey(key))
+				if err != nil {
+					return err
+				}
+				if allowed[k] {
+					return d.Commit([]string{key})
+				}
+				return nil
+			})
+		}
+		require.NoError(t, g.Wait())
+	}
 }
 
 func Benchmark_Dedup(b *testing.B) {
