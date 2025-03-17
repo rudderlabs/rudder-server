@@ -4,13 +4,18 @@ volumes:
   prometheus-data:
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
+    shm_size: 1g  # explicitly increase shared memory size
     env_file:
       - build/bench-docker.env
     ports:
       - "5432:5432"
   prometheus:
     image: prom/prometheus:v2.52.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=3h'
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus-data:/prometheus
@@ -94,8 +99,9 @@ services:
       REPLICAS:                  1
       CONCURRENCY:               ${RL_CONCURRENCY:-3000}
       MESSAGE_GENERATORS:        ${RL_MESSAGE_GENERATORS:-1500}
-      MAX_EVENTS_PER_SECOND:     ${RL_MAX_EVENTS_PER_SECOND:-3000}
-      SOURCES:                   2tJ69WBiVaaCO6DqELKNtrW0JLB
+      MAX_EVENTS_PER_SECOND:     ${RL_MAX_EVENTS_PER_SECOND:-6000}
+      SOURCES:                   2tJ69WBiVaaCO6DqELKNtrW0JLB,2tXF5TaThOMyUz0POvqutoXgLMn,2uRvqPSNiHfCSjZJ0OcuaJYvGjv
+      HOT_SOURCES:               33,33,34
       HTTP_ENDPOINT:             http://backend:8080/v1/batch
       USE_ONE_CLIENT_PER_SLOT:   ${RL_USE_ONE_CLIENT_PER_SLOT:-false}
       ENABLE_SOFT_MEMORY_LIMIT:  true
