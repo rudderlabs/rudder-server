@@ -132,3 +132,19 @@ generate-openapi-spec: install-tools
 sec: ## Run security checks
 	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
+
+.PHONY: bench-up
+bench-up:
+	docker-compose -f benchmark.yaml up -d --build
+
+.PHONY: bench-down
+bench-down:
+	docker-compose -f benchmark.yaml down
+
+.PHONY: rl-logs
+rl-logs:
+	docker logs rudder-load -f
+
+.PHONY: rs-logs
+rs-logs:
+	docker logs rudder-server-backend-1 -f

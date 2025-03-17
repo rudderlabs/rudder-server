@@ -1,0 +1,118 @@
+version: "3.8"
+volumes:
+  grafana-data:
+  prometheus-data:
+services:
+  db:
+    image: postgres:15-alpine
+    env_file:
+      - build/bench-docker.env
+    ports:
+      - "5432:5432"
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
+  grafana:
+    image: grafana/grafana:11.0.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+    ports:
+      - "3000:3000"
+    restart: always
+    volumes:
+      - grafana-data:/var/lib/grafana
+  backend:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    depends_on:
+      - db
+      - transformer
+      - prometheus
+      - grafana
+    entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
+    ports:
+      - "8080:8080"
+      - "7777:7777"
+    env_file:
+      - build/bench-docker.env
+    environment:
+      - JOBS_DB_HOST=db
+  #   Uncomment the following lines to mount workspaceConfig file
+  #   volumes:
+  #     - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
+  transformer:
+    image: fracasula/ut-custom:latest
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          cpus: '5.0' # Limits the container to max 5 CPUs
+          memory: 10G  # Limits the container to max 5GB of memory
+    environment:
+      # Node memory configuration variables
+      UT_MAX_SEMI_SPACE_SIZE: ${UT_MAX_SEMI_SPACE_SIZE:-}
+      UT_MAX_OLD_SPACE_SIZE: ${UT_MAX_OLD_SPACE_SIZE:-}
+      UT_MAX_HEAP_SIZE: ${UT_MAX_HEAP_SIZE:-}
+      # Application configuration variables
+      NUM_PROCS: ${UT_NUM_PROCS:-5}
+      MAX_THREADS: ${UT_MAX_THREADS:-8}
+      MIN_THREADS: ${UT_MIN_THREADS:-2}
+      WORKER_IDLE_TIMEOUT: ${UT_WORKER_IDLE_TIMEOUT:-1000}
+      CONCURRENT_TASKS_PER_WORKER: ${UT_CONCURRENT_TASKS_PER_WORKER:-1000}
+      TRANSFORMATION_METHOD: ${UT_TRANSFORMATION:-transformDirect}
+      POOLING: ${UT_POOLING:-true}
+      USE_ATOMICS: ${UT_USE_ATOMICS:-true}
+      USE_EXPRESS: ${UT_USE_EXPRESS:-false}
+      USE_HTTP2: ${UT_USE_HTTP2:-false}
+      IVM_MEMORY: ${UT_IVM_MEMORY:-512}
+  rudder-load:
+    image: ${RL_IMAGE:-fracasula/rudder-load:latest}
+    depends_on:
+      - db
+      - transformer
+      - backend
+    container_name: rudder-load
+    command: ["/rudder-load-producer"]
+    ports:
+      - "9103:9102"
+    deploy:
+      resources:
+        limits:
+          cpus: '5.0'
+          memory: 5G
+    environment:
+      MODE:                      ${RL_MODE:-http}
+      HOSTNAME:                  rudder-load-test-0
+      LOAD_RUN_ID:               "loadRunID1" # if empty, a random UUID will be generated
+      REPLICAS:                  1
+      CONCURRENCY:               ${RL_CONCURRENCY:-3000}
+      MESSAGE_GENERATORS:        ${RL_MESSAGE_GENERATORS:-1500}
+      MAX_EVENTS_PER_SECOND:     ${RL_MAX_EVENTS_PER_SECOND:-3000}
+      SOURCES:                   2tJ69WBiVaaCO6DqELKNtrW0JLB
+      HTTP_ENDPOINT:             http://backend:8080/v1/batch
+      USE_ONE_CLIENT_PER_SLOT:   ${RL_USE_ONE_CLIENT_PER_SLOT:-false}
+      ENABLE_SOFT_MEMORY_LIMIT:  true
+      SOFT_MEMORY_LIMIT:         5Gi
+      GOMEMLIMIT:                5000000000 # 5GB in bytes
+      GOMAXPROCS:                5
+      TOTAL_USERS:               10000
+      HOT_USER_GROUPS:           100
+      BATCH_SIZES:               ${RL_BATCH_SIZES:-10}
+      HOT_BATCH_SIZES:           100
+      EVENT_TYPES:               track
+      HOT_EVENT_TYPES:           100
+      VALIDATOR_TYPE:            user-transformer-hash-email
+      HTTP_COMPRESSION:          ${RL_COMPRESSION:-false}
+      HTTP_CONCURRENCY:          200000
+      HTTP_CONTENT_TYPE:         application/json
+      HTTP_MAX_CONNS_PER_HOST:   200000
+      HTTP_MAX_IDLE_CONN:        1h
+      HTTP_READ_TIMEOUT:         30s
+      HTTP_WRITE_TIMEOUT:        30s

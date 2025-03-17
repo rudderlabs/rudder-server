@@ -377,7 +377,7 @@ func (trans *handle) request(ctx context.Context, url string, labels types.Trans
 		http.StatusBadRequest,
 		http.StatusRequestEntityTooLarge:
 	default:
-		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
+		trans.logger.Errorf("Transformer returned status code for %q: %v", url, statusCode)
 	}
 
 	var transformerResponses []types.TransformerResponse
