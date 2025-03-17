@@ -20,7 +20,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -59,6 +58,7 @@ type worker struct {
 
 type workerJob struct {
 	job         *jobsdb.JobT
+	parameters  *routerutils.JobParameters
 	assignedAt  time.Time
 	drainReason string
 }
@@ -88,11 +88,7 @@ func (w *worker) workLoop() {
 
 			job := message.job
 			userID := job.UserID
-
-			var parameters routerutils.JobParameters
-			if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
-			}
+			parameters := message.parameters
 			abortReason := message.drainReason
 			abort := abortReason != ""
 			abortTag := abortReason
@@ -114,11 +110,12 @@ func (w *worker) workLoop() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", abortReason)
 				w.rt.responseQ <- workerJobStatus{
-					userID:  userID,
-					worker:  w,
-					job:     job,
-					status:  &status,
-					payload: job.EventPayload,
+					userID:     userID,
+					worker:     w,
+					job:        job,
+					status:     &status,
+					payload:    job.EventPayload,
+					parameters: *parameters,
 				}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    w.rt.destType,
@@ -162,7 +159,7 @@ func (w *worker) workLoop() {
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
+					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: *parameters}
 					continue
 				}
 			}
@@ -185,6 +182,7 @@ func (w *worker) workLoop() {
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
+				Parameters:         *parameters,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -670,7 +668,7 @@ func (w *worker) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags}
+				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags, parameters: destinationJobMetadata.Parameters}
 				errorCount++
 				continue
 			}
@@ -1000,12 +998,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		}
 		w.logger.Debugf("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
-			userID:   destinationJobMetadata.UserID,
-			worker:   w,
-			job:      destinationJobMetadata.JobT,
-			status:   status,
-			payload:  inputPayload,
-			statTags: destinationJob.StatTags,
+			userID:     destinationJobMetadata.UserID,
+			worker:     w,
+			job:        destinationJobMetadata.JobT,
+			status:     status,
+			payload:    inputPayload,
+			statTags:   destinationJob.StatTags,
+			parameters: destinationJobMetadata.Parameters,
 		}
 		return
 	}
@@ -1060,12 +1059,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	}
 	w.logger.Debugf("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
-		userID:   destinationJobMetadata.UserID,
-		worker:   w,
-		job:      destinationJobMetadata.JobT,
-		status:   status,
-		payload:  inputPayload,
-		statTags: destinationJob.StatTags,
+		userID:     destinationJobMetadata.UserID,
+		worker:     w,
+		job:        destinationJobMetadata.JobT,
+		status:     status,
+		payload:    inputPayload,
+		statTags:   destinationJob.StatTags,
+		parameters: destinationJobMetadata.Parameters,
 	}
 }
 
