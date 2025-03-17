@@ -82,6 +82,7 @@ type Handle struct {
 	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
+	processingWorkers            config.ValueLoader[int]
 	reportingEnabled             bool
 	jobQueryBatchSize            config.ValueLoader[int]
 	pollStatusLoopSleep          config.ValueLoader[time.Duration]
@@ -494,7 +495,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
 func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
-	schemaMap := generateSchemaMap(batchJobs)
+	schemaMap := brt.generateSchemaMap(batchJobs)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
@@ -531,28 +532,66 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	return
 }
 
-func generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]interface{} {
-	schemaMap := make(map[string]map[string]interface{})
+func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]string {
+	// First group jobs by table name
+	jobsByTable := make(map[string][]*jobsdb.JobT)
+	metaDataByJob := make(map[int64]map[string]gjson.Result)
 	for _, job := range batchJobs.Jobs {
 		metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
 		tableName := metadata["table"].String()
 		if tableName == "" {
 			continue
 		}
-		if _, ok := schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
-		}
-		columns := metadata["columns"].Map()
-		for columnName, columnType := range columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			} else if columnType.String() == "text" && schemaMap[tableName][columnName] == "string" {
-				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				schemaMap[tableName][columnName] = columnType
-			}
-		}
+		jobsByTable[tableName] = append(jobsByTable[tableName], job)
+		metaDataByJob[job.JobID] = metadata
 	}
-	return schemaMap
+
+	// Create channels for results
+	type tableResult struct {
+		tableName string
+		schema    map[string]string
+	}
+	resultChan := make(chan tableResult, len(jobsByTable))
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(brt.processingWorkers.Load())
+	// Process each table's jobs in parallel
+	for tableName, jobs := range jobsByTable {
+		g.Go(func() error {
+
+			// Process all jobs for this table
+			tableSchema := make(map[string]string)
+			for _, job := range jobs {
+				metadata := metaDataByJob[job.JobID]
+				columns := metadata["columns"].Map()
+				for columnName, columnType := range columns {
+					if existingType, ok := tableSchema[columnName]; !ok {
+						tableSchema[columnName] = columnType.String()
+					} else if columnType.String() == "text" && existingType == "string" {
+						tableSchema[columnName] = columnType.String()
+					}
+				}
+			}
+
+			// Send result through channel
+			resultChan <- tableResult{
+				tableName: tableName,
+				schema:    tableSchema,
+			}
+			return nil
+		})
+	}
+
+	go func() {
+		_ = g.Wait()
+		close(resultChan)
+	}()
+
+	finalSchema := make(map[string]map[string]string)
+	for result := range resultChan {
+		finalSchema[result.tableName] = result.schema
+	}
+
+	return finalSchema
 }
 
 // updateJobStatus updates the statuses for the provided batch of jobs in jobsDB
