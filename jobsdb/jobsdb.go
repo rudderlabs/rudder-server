@@ -519,7 +519,9 @@ type Handle struct {
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
 		MaxDSSize                      config.ValueLoader[int]
-		migration                      struct {
+		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
+
+		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
 			vacuumFullStatusTableThreshold             func() int64
 			vacuumAnalyzeStatusTableThreshold          func() int64
@@ -881,9 +883,17 @@ func (jd *Handle) init() {
 func (jd *Handle) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
+	var defaultLogCacheBranchInvalidation bool
+	switch jd.tablePrefix {
+	case "gw", "rt", "batch_rt":
+		defaultLogCacheBranchInvalidation = true
+	}
+	jd.noResultsCache = cache.NewNoResultsCache(
 		cacheParameterFilters,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
+		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
+			jd.config.GetReloadableBoolVar(defaultLogCacheBranchInvalidation, "JobsDB."+jd.tablePrefix+".logCacheBranchInvalidation", "JobsDB.logCacheBranchInvalidation"),
+			jd.logger),
 	)
 
 	jd.logger.Infon("Connected to DB")
@@ -965,6 +975,8 @@ func (jd *Handle) loadConfig() {
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
 	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, "JobsDB.maxDSSize")
+
+	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, "JobsDB.indexOptimizations")
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1457,6 +1469,11 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
+	jobStatusTablePrimaryKey := ""
+	if !jd.conf.indexOptimizations.Load() { // TODO: Remove this branch after next release
+		jobStatusTablePrimaryKey = `,PRIMARY KEY (job_id, job_state, id)`
+	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
 		job_id BIGINT,
@@ -1466,8 +1483,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB,
-		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)); err != nil {
+		parameters JSONB DEFAULT '{}'::JSONB%s);`, newDS.JobStatusTable, jobStatusTablePrimaryKey)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 	return nil
@@ -1497,9 +1513,20 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 		)); err != nil {
 		return fmt.Errorf("adding foreign key constraint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_id index: %w", err)
+	if jd.conf.indexOptimizations.Load() {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_id index: %w", err)
+		}
+		// index used for maxDSRetention during migration
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_js index: %w", err)
+		}
+	} else { // TODO: remove this branch after next release
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_id index: %w", err)
+		}
 	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("create view: %w", err)
 	}
@@ -1642,9 +1669,9 @@ func (jd *Handle) postDropDs(ds dataSetT) {
 
 func (jd *Handle) dropAllDS(l lock.LockToken) error {
 	var err error
-	dList, err := jd.doRefreshDSList(l)
+	dList, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 	if err != nil {
-		return fmt.Errorf("refreshDSList: %w", err)
+		return fmt.Errorf("getDSList: %w", err)
 	}
 	for _, ds := range dList {
 		if err = jd.dropDS(ds); err != nil {
@@ -1660,13 +1687,19 @@ func (jd *Handle) dropAllDS(l lock.LockToken) error {
 }
 
 func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
+	tags := &statTags{CustomValFilters: []string{jd.tablePrefix}}
 	defer jd.getTimerStat(
 		"store_jobs",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+		tags,
 	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
 		jd.invalidateCacheForJobs(ds, jobList)
+	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		jd.stats.NewTaggedStat("jobsdb_stored_jobs", stats.CountType, statTags).Count(len(jobList))
+		jd.stats.NewTaggedStat("jobsdb_stored_bytes", stats.CountType, statTags).Count(lo.SumBy(jobList, func(j *JobT) int { return len(j.EventPayload) }))
 	})
 
 	return jd.doStoreJobsInTx(ctx, tx, ds, jobList)
@@ -1777,7 +1810,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 
 		for _, key := range cacheParameterFilters {
 			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, fmt.Sprintf("%s:%s", key, val))
+			params = append(params, key+":"+val)
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 
@@ -1804,6 +1837,8 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
@@ -2293,7 +2328,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			// (a) no jobs are returned by the query or
 			// (b) the state is not present in the resultset and limits have not been reached
 			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
-				cacheTx.Commit()
+				if allEntriesCommitted := cacheTx.Commit(); !allEntriesCommitted {
+					tags := &statTags{
+						StateFilters:     []string{state},
+						CustomValFilters: params.CustomValFilters,
+						WorkspaceID:      params.WorkspaceID,
+						ParameterFilters: params.ParameterFilters,
+					}
+					statTags := tags.getStatsTags(jd.tablePrefix)
+					jd.stats.NewTaggedStat("jobsdb_cache_commit_misses", stats.CountType, statTags).Increment()
+				}
 			}
 		}
 	}
@@ -2814,6 +2858,21 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 			}
 		}
 	})
+	tx.AddSuccessListener(func() {
+		statTags := tags.getStatsTags(jd.tablePrefix)
+		statusCounters := make(map[string]lo.Tuple2[int, int], 0)
+		for i := range statusList {
+			t := statusCounters[statusList[i].JobState]
+			t.A++                                   // job count
+			t.B += len(statusList[i].ErrorResponse) // bytes count
+			statusCounters[statusList[i].JobState] = t
+		}
+		for state, count := range statusCounters {
+			statTags["jobState"] = state
+			jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(count.A)
+			jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(count.B)
+		}
+	})
 
 	return nil
 }
@@ -3113,11 +3172,10 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
-	defer jd.getTimerStat(
-		"jobsdb_get_jobs_time",
-		tags,
-	).RecordDuration()()
+	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -3193,16 +3251,20 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		}
 	}
 
-	statTags := tags.getStatsTags(jd.tablePrefix)
-	statTags["query"] = "get"
-	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
-
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID
 		mtoken.afterJobID = &retryAfterJobID
 	}
 
+	statTags := tags.getStatsTags(jd.tablePrefix)
+	statTags["query"] = "get"
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount) // number of actual ds tables that we queried
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)    // number of ds tables that we skipped querying due to noResultsCache
+	if len(res.Jobs) == 0 {
+		jd.stats.NewTaggedStat("jobsdb_queried_no_jobs", stats.CountType, statTags).Increment() // number of times that we queried and got no jobs
+	}
+	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))                                                         // number of jobs that we queried
+	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
 	return res, nil
 }
 
@@ -3222,6 +3284,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
 	}
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))

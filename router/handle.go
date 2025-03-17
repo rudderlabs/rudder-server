@@ -75,6 +75,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
+	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
@@ -195,6 +196,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		slot        *workerSlot
 		job         *jobsdb.JobT
 		drainReason string
+		parameters  routerutils.JobParameters
 	}
 
 	var statusList []*jobsdb.JobStatusT
@@ -219,7 +221,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
-			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason})
+			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason, parameters: &reservedJob.parameters})
 		}
 		pickupCount += len(reservedJobs)
 		reservedJobs = nil
@@ -245,7 +247,12 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			firstJob = job
 		}
 		lastJob = job
-		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
+		var parameters routerutils.JobParameters
+		if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
+			rt.logger.Errorf("Error occurred while unmarshalling job parameters. Panicking. Err: %v", err)
+			panic(err)
+		}
+		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters.DestinationID, parameters.SourceJobRunID, blockedOrderKeys)
 		if err == nil {
 			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
 			if traceParent != "" {
@@ -253,8 +260,8 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 						"workspaceId":   job.WorkspaceId,
-						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
-						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
+						"sourceId":      parameters.SourceID,
+						"destinationId": parameters.DestinationID,
 						"destType":      rt.destType,
 					}))
 					traces[traceParent] = span
@@ -276,7 +283,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				WorkspaceId:   job.WorkspaceId,
 			}
 			statusList = append(statusList, &status)
-			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason})
+			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason, parameters: parameters})
 			if shouldFlush() {
 				flush()
 			}
@@ -335,11 +342,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	var routerAbortedJobs []*jobsdb.JobT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, workerJobStatus := range *workerJobStatuses {
-		var parameters routerutils.JobParameters
-		err := jsonrs.Unmarshal(workerJobStatus.job.Parameters, &parameters)
-		if err != nil {
-			rt.logger.Error("Unmarshal of job parameters failed. ", string(workerJobStatus.job.Parameters))
-		}
+		parameters := workerJobStatus.parameters
 		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
 		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
@@ -351,7 +354,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + workerJobStatus.status.JobState + ":" + workerJobStatus.status.ErrorCode + ":" + eventName + ":" + eventType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
@@ -555,35 +558,28 @@ type workerJobSlot struct {
 	drainReason string
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, destinationID, sourceJobRunID string, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
-
-	var parameters routerutils.JobParameters
-	if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
-		return nil, types.ErrParamsUnmarshal
-	}
-
 	orderKey := eventorder.BarrierKey{
 		UserID:        job.UserID,
-		DestinationID: parameters.DestinationID,
+		DestinationID: destinationID,
 		WorkspaceID:   job.WorkspaceId,
 	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
 	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
 		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
-			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
+			rt.eventOrderingDisabledForDestination(destinationID)) {
 		eventOrderingDisabled = true
 		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
 			"destType":      rt.destType,
-			"destinationId": parameters.DestinationID,
+			"destinationId": destinationID,
 			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
-	abortedJob, abortReason := rt.drainOrRetryLimitReached(job) // if job's aborted, then send it to its worker right away
+	abortedJob, abortReason := rt.drainOrRetryLimitReached(job.CreatedAt, destinationID, sourceJobRunID, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
@@ -600,7 +596,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			slot.Release()
 			return nil, types.ErrJobBackoff
 		}
-		if rt.shouldThrottle(ctx, job, parameters) {
+		if rt.shouldThrottle(ctx, job, destinationID) {
 			slot.Release()
 			return nil, types.ErrDestinationThrottled
 		}
@@ -638,7 +634,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if !abortedJob && rt.shouldThrottle(ctx, job, parameters) {
+	if !abortedJob && rt.shouldThrottle(ctx, job, destinationID) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -649,12 +645,12 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 }
 
 // checks if job is configured to drain or if it's retry limit is reached
-func (rt *Handle) drainOrRetryLimitReached(job *jobsdb.JobT) (bool, string) {
-	drain, reason := rt.drainer.Drain(job)
+func (rt *Handle) drainOrRetryLimitReached(createdAt time.Time, destID, sourceJobRunID string, jobStatus *jobsdb.JobStatusT) (bool, string) {
+	drain, reason := rt.drainer.Drain(createdAt, destID, sourceJobRunID)
 	if drain {
 		return true, reason
 	}
-	retryLimitReached := rt.retryLimitReached(&job.LastJobStatus)
+	retryLimitReached := rt.retryLimitReached(jobStatus)
 	if retryLimitReached {
 		return true, "retry limit reached"
 	}
@@ -694,20 +690,20 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, destinationID string) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
 		rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
-			rt.destType, parameters.DestinationID,
+			rt.destType, destinationID,
 		)
 		return false
 	}
 
-	throttler := rt.throttlerFactory.Get(rt.destType, parameters.DestinationID)
+	throttler := rt.throttlerFactory.Get(rt.destType, destinationID)
 	throttlingCost := rt.getThrottlingCost(job)
 
-	limited, err := throttler.CheckLimitReached(ctx, parameters.DestinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(ctx, destinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		rt.throttlingErrorStat.Count(1)

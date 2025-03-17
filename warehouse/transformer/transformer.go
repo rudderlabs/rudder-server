@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 
@@ -43,6 +43,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Warehouse.maxLoggedEvents")
+	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
 	return t
 }
 
@@ -71,22 +72,47 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 		t.statsFactory.NewTaggedStat("warehouse_dest_transform_output_failed_events", stats.HistogramType, tags).Observe(float64(len(res.FailedEvents)))
 	}()
 
-	for _, clientEvent := range clientEvents {
-		r, err := t.processWarehouseMessage(c, &clientEvent)
-		if err != nil {
-			res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(&clientEvent, err))
-			continue
-		}
+	results := make(chan types.TransformerResponse, len(clientEvents))
+	done := make(chan struct{})
 
-		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
-			clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
-			return types.TransformerResponse{
-				Output:     item,
-				Metadata:   clientEvent.Metadata,
-				StatusCode: http.StatusOK,
+	g := errgroup.Group{}
+	g.SetLimit(t.config.concurrentTransformations.Load())
+
+	go func() {
+		defer close(done)
+		for r := range results {
+			if r.Error != "" {
+				res.FailedEvents = append(res.FailedEvents, r)
+			} else {
+				res.Events = append(res.Events, r)
 			}
-		})...)
+		}
+	}()
+
+	for i := range clientEvents {
+		event := clientEvents[i]
+		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+
+		g.Go(func() error {
+			r, err := t.processWarehouseMessage(c, &event)
+			if err != nil {
+				results <- transformerResponseFromErr(&event, err)
+				return nil
+			}
+			for _, item := range r {
+				results <- types.TransformerResponse{
+					Output:     item,
+					Metadata:   event.Metadata,
+					StatusCode: http.StatusOK,
+				}
+			}
+			return nil
+		})
 	}
+
+	_ = g.Wait()
+	close(results)
+	<-done
 	return
 }
 

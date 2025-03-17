@@ -20,7 +20,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -59,6 +58,7 @@ type worker struct {
 
 type workerJob struct {
 	job         *jobsdb.JobT
+	parameters  *routerutils.JobParameters
 	assignedAt  time.Time
 	drainReason string
 }
@@ -88,11 +88,7 @@ func (w *worker) workLoop() {
 
 			job := message.job
 			userID := job.UserID
-
-			var parameters routerutils.JobParameters
-			if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
-			}
+			parameters := message.parameters
 			abortReason := message.drainReason
 			abort := abortReason != ""
 			abortTag := abortReason
@@ -114,11 +110,12 @@ func (w *worker) workLoop() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", abortReason)
 				w.rt.responseQ <- workerJobStatus{
-					userID:  userID,
-					worker:  w,
-					job:     job,
-					status:  &status,
-					payload: job.EventPayload,
+					userID:     userID,
+					worker:     w,
+					job:        job,
+					status:     &status,
+					payload:    job.EventPayload,
+					parameters: *parameters,
 				}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    w.rt.destType,
@@ -162,7 +159,7 @@ func (w *worker) workLoop() {
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
+					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: *parameters}
 					continue
 				}
 			}
@@ -185,6 +182,7 @@ func (w *worker) workLoop() {
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
+				Parameters:         *parameters,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -534,46 +532,39 @@ func (w *worker) processDestinationJobs() {
 						respBodyArr := make([]string, 0)
 						respBodyArrs := make([]map[int64]string, 0)
 						for i, val := range result {
-							err := integrations.ValidatePostInfo(val)
-							if err != nil {
-								errorAt = routerutils.ERROR_AT_TF
-								respStatusCode, respBodyTemp = http.StatusInternalServerError, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
-								respBodyArr = append(respBodyArr, respBodyTemp)
-								break
-							} else {
-								w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
-								errorAt = routerutils.ERROR_AT_DEL
-								if transformerProxy {
-									resp := w.proxyRequest(ctx, destinationJob, val)
-									for k, v := range resp.DontBatchDirectives {
-										dontBatchDirectives[k] = v
-									}
-									respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
-									// If this is the last iteration, use respStatusCodes & respBodyTemps as is
-									// If this is not the last iteration, mark all the jobs as failed.
-									if i < len(result)-1 && anyNonTerminalCode(respStatusCodes) {
-										for k := range respStatusCodes {
-											respStatusCodes[k] = http.StatusInternalServerError
-										}
-										respBodyArrs = []map[int64]string{respBodyTemps}
-										break
-									} else {
-										respBodyArrs = append(respBodyArrs, respBodyTemps)
-									}
-								} else {
-									sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
-									rdlTime := time.Now()
-									resp := w.rt.netHandle.SendPost(sendCtx, val)
-									cancel()
-									respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
-									w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
-									if isSuccessStatus(respStatusCode) {
-										respBodyArr = append(respBodyArr, respBodyTemp)
-									} else {
-										respBodyArr = []string{respBodyTemp}
-										break
+							w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
+							errorAt = routerutils.ERROR_AT_DEL
+							if transformerProxy {
+								resp := w.proxyRequest(ctx, destinationJob, val)
+								for k, v := range resp.DontBatchDirectives {
+									dontBatchDirectives[k] = v
+								}
+								respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
+								// If this is the last iteration, use respStatusCodes & respBodyTemps as is
+								// If this is not the last iteration, mark all the jobs as failed.
+								if i < len(result)-1 && anyNonTerminalCode(respStatusCodes) {
+									for k := range respStatusCodes {
+										respStatusCodes[k] = http.StatusInternalServerError
 									}
+									respBodyArrs = []map[int64]string{respBodyTemps}
+									break
+								} else {
+									respBodyArrs = append(respBodyArrs, respBodyTemps)
+								}
+							} else {
+								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
+								rdlTime := time.Now()
+								resp := w.rt.netHandle.SendPost(sendCtx, val)
+								cancel()
+								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
+
+								if isSuccessStatus(respStatusCode) {
+									respBodyArr = append(respBodyArr, respBodyTemp)
+								} else {
+									respBodyArr = []string{respBodyTemp}
+									break
 								}
 							}
 						}
@@ -697,7 +688,7 @@ func (w *worker) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags}
+				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags, parameters: destinationJobMetadata.Parameters}
 				errorCount++
 				continue
 			}
@@ -889,7 +880,7 @@ func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT,
 	// We can override via env saveDestinationResponseOverride
 
 	for k, respStatusCode := range respStatusCodes {
-		if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", w.rt.destType, false) && !w.rt.saveDestinationResponse {
+		if isSuccessStatus(respStatusCode) && !w.rt.saveDestinationResponseOverride.Load() && !w.rt.saveDestinationResponse {
 			respBodys[k] = ""
 		}
 	}
@@ -1026,12 +1017,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		}
 		w.logger.Debugf("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
-			userID:   destinationJobMetadata.UserID,
-			worker:   w,
-			job:      destinationJobMetadata.JobT,
-			status:   status,
-			payload:  inputPayload,
-			statTags: destinationJob.StatTags,
+			userID:     destinationJobMetadata.UserID,
+			worker:     w,
+			job:        destinationJobMetadata.JobT,
+			status:     status,
+			payload:    inputPayload,
+			statTags:   destinationJob.StatTags,
+			parameters: destinationJobMetadata.Parameters,
 		}
 		return
 	}
@@ -1086,12 +1078,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	}
 	w.logger.Debugf("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
-		userID:   destinationJobMetadata.UserID,
-		worker:   w,
-		job:      destinationJobMetadata.JobT,
-		status:   status,
-		payload:  inputPayload,
-		statTags: destinationJob.StatTags,
+		userID:     destinationJobMetadata.UserID,
+		worker:     w,
+		job:        destinationJobMetadata.JobT,
+		status:     status,
+		payload:    inputPayload,
+		statTags:   destinationJob.StatTags,
+		parameters: destinationJobMetadata.Parameters,
 	}
 }
 
