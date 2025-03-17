@@ -376,7 +376,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				Status:         workerJobStatus.status.JobState,
 				StatusCode:     errorCode,
 				SampleResponse: string(workerJobStatus.status.ErrorResponse),
-				SampleEvent:    string(sampleEvent),
+				SampleEvent:    sampleEvent,
 				EventName:      eventName,
 				EventType:      eventType,
 				StatTags:       workerJobStatus.statTags,

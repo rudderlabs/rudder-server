@@ -650,7 +650,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 				Status:         status.JobState,
 				StatusCode:     errorCode,
 				SampleResponse: string(status.ErrorResponse),
-				SampleEvent:    string(sampleEvent),
+				SampleEvent:    sampleEvent,
 				EventName:      eventName,
 				EventType:      eventType,
 			}

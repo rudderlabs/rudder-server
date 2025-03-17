@@ -288,7 +288,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.ErrorDetails.Code,
 			metric.StatusDetail.ErrorDetails.Message,
 			sampleResponse,
-			sampleEvent,
+			getStringifiedSampleEvent(sampleEvent),
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {

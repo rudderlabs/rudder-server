@@ -225,7 +225,7 @@ func TestGetAggregationBucket(t *testing.T) {
 }
 
 func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
-	inputSampleEvent := `{"event":"1"}`
+	inputSampleEvent := []byte(`{"event":"1"}`)
 	inputSampleResponse := "response"
 	metric := types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
@@ -268,9 +268,9 @@ func TestFloorFactor(t *testing.T) {
 }
 
 func TestGetSampleWithEventSampling(t *testing.T) {
-	sampleEvent := `{"event":"2"}`
+	sampleEvent := []byte(`{"event":"2"}`)
 	sampleResponse := "sample response"
-	emptySampleEvent := `{}`
+	emptySampleEvent := []byte(`{}`)
 	emptySampleResponse := ""
 
 	tests := []struct {
@@ -293,6 +293,23 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 			wantMetric: types.PUReportedMetric{
 				StatusDetail: &types.StatusDetail{
 					SampleEvent: emptySampleEvent,
+				},
+			},
+			shouldGet: true,
+			shouldPut: true,
+		},
+		{
+			name: "Nil sample event and empty sample response",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: "",
+				},
+			},
+			wantMetric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: "",
 				},
 			},
 		},
@@ -358,12 +375,46 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 			},
 			wantMetric: types.PUReportedMetric{
 				StatusDetail: &types.StatusDetail{
-					SampleEvent:    emptySampleEvent,
+					SampleEvent:    nil,
 					SampleResponse: emptySampleResponse,
 				},
 			},
 			shouldGet: true,
 			found:     true,
+		},
+		{
+			name: "Sample is found with nil sample event",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: sampleResponse,
+				},
+			},
+			wantMetric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: emptySampleResponse,
+				},
+			},
+			shouldGet: true,
+			found:     true,
+		},
+		{
+			name: "Sample is not found with nil sample event",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: sampleResponse,
+				},
+			},
+			wantMetric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent:    nil,
+					SampleResponse: sampleResponse,
+				},
+			},
+			shouldGet: true,
+			shouldPut: true,
 		},
 	}
 

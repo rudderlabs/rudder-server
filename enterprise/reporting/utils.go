@@ -1,12 +1,12 @@
 package reporting
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -45,7 +45,14 @@ func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	return bucketStart, bucketEnd
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent, sampleResponse string, err error) {
+func getStringifiedSampleEvent(rawSampleEvent json.RawMessage) string {
+	if rawSampleEvent == nil {
+		return `{}`
+	}
+	return string(rawSampleEvent)
+}
+
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
 	sampleEvent = metric.StatusDetail.SampleEvent
 	sampleResponse = metric.StatusDetail.SampleResponse
 
@@ -53,7 +60,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		return sampleEvent, sampleResponse, nil
 	}
 
-	isValidSample := (sampleEvent != misc.EmptyPayloadString || sampleResponse != "")
+	isValidSample := (sampleEvent != nil || sampleResponse != "")
 
 	if isValidSample {
 		sampleEventBucket, _ := getAggregationBucketMinute(reportedAt, eventSamplingDuration)
@@ -66,7 +73,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		}
 
 		if found {
-			sampleEvent = misc.EmptyPayloadString
+			sampleEvent = nil
 			sampleResponse = ""
 		} else {
 			err = eventSampler.Put(hash)
@@ -80,7 +87,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	for _, col := range piiColumns {
 		switch col {
 		case "sample_event":
-			metric.StatusDetail.SampleEvent = misc.EmptyPayloadString
+			metric.StatusDetail.SampleEvent = nil
 		case "sample_response":
 			metric.StatusDetail.SampleResponse = ""
 		case "event_name":

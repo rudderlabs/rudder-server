@@ -51,8 +51,6 @@ const (
 	NOTIMEZONEFORMATPARSE = "2006-01-02T15:04:05"
 )
 
-var EmptyPayloadString = `{}`
-
 const (
 	RudderAsyncDestinationLogs    = "rudder-async-destination-logs"
 	RudderArchives                = "rudder-archives"

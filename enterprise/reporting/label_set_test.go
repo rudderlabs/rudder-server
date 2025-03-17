@@ -26,7 +26,7 @@ func createMetricObject(eventName, errorMessage string) types.PUReportedMetric {
 			Count:          3,
 			StatusCode:     0,
 			SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
-			SampleEvent:    `{"some-sample-event-key": "some-sample-event-value"}`,
+			SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
 			EventName:      eventName,
 			EventType:      "some-event-type",
 		},

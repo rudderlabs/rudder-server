@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -4986,7 +4987,7 @@ var _ = Describe("Static Function Tests", func() {
 						Count:          5,
 						StatusCode:     0,
 						SampleResponse: "",
-						SampleEvent:    `{}`,
+						SampleEvent:    nil,
 					},
 				},
 				{
@@ -5008,7 +5009,7 @@ var _ = Describe("Static Function Tests", func() {
 						Count:          7,
 						StatusCode:     0,
 						SampleResponse: "",
-						SampleEvent:    `{}`,
+						SampleEvent:    nil,
 					},
 				},
 			}
@@ -5244,7 +5245,7 @@ var _ = Describe("Static Function Tests", func() {
 			countMap := make(map[string]int64)
 			countMetadataMap := make(map[string]MetricMetadata)
 			// update metric maps
-			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingtypes.TRACKINGPLAN_VALIDATOR, func() string { return `{}` }, nil)
+			proc.updateMetricMaps(countMetadataMap, countMap, connectionDetailsMap, statusDetailsMap, inputEvent, jobsdb.Succeeded.State, reportingtypes.TRACKINGPLAN_VALIDATOR, func() json.RawMessage { return nil }, nil)
 
 			Expect(len(countMetadataMap)).To(Equal(1))
 			Expect(len(countMap)).To(Equal(1))
