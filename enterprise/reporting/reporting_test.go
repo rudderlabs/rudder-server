@@ -61,7 +61,7 @@ var _ = Describe("Reporting", func() {
 					Count:          3,
 					StatusCode:     0,
 					SampleResponse: "",
-					SampleEvent:    []byte(`{}`),
+					SampleEvent:    nil,
 					EventName:      "",
 					EventType:      "",
 				},
