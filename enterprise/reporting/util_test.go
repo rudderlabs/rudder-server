@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -225,7 +226,7 @@ func TestGetAggregationBucket(t *testing.T) {
 }
 
 func TestGetSampleWithEventSamplingWithNilEventSampler(t *testing.T) {
-	inputSampleEvent := []byte(`{"event":"1"}`)
+	inputSampleEvent := json.RawMessage(`{"event":"1"}`)
 	inputSampleResponse := "response"
 	metric := types.PUReportedMetric{
 		StatusDetail: &types.StatusDetail{
@@ -268,9 +269,9 @@ func TestFloorFactor(t *testing.T) {
 }
 
 func TestGetSampleWithEventSampling(t *testing.T) {
-	sampleEvent := []byte(`{"event":"2"}`)
+	sampleEvent := json.RawMessage(`{"event":"2"}`)
 	sampleResponse := "sample response"
-	emptySampleEvent := []byte(`{}`)
+	emptySampleEvent := json.RawMessage(`{}`)
 	emptySampleResponse := ""
 
 	tests := []struct {
@@ -283,21 +284,6 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 		shouldPut  bool
 		putError   error
 	}{
-		{
-			name: "Empty sample event",
-			metric: types.PUReportedMetric{
-				StatusDetail: &types.StatusDetail{
-					SampleEvent: emptySampleEvent,
-				},
-			},
-			wantMetric: types.PUReportedMetric{
-				StatusDetail: &types.StatusDetail{
-					SampleEvent: emptySampleEvent,
-				},
-			},
-			shouldGet: true,
-			shouldPut: true,
-		},
 		{
 			name: "Nil sample event and empty sample response",
 			metric: types.PUReportedMetric{
@@ -312,6 +298,21 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 					SampleResponse: "",
 				},
 			},
+		},
+		{
+			name: "Empty sample event",
+			metric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent: emptySampleEvent,
+				},
+			},
+			wantMetric: types.PUReportedMetric{
+				StatusDetail: &types.StatusDetail{
+					SampleEvent: emptySampleEvent,
+				},
+			},
+			shouldGet: true,
+			shouldPut: true,
 		},
 		{
 			name: "Event Sampler returns get error",
@@ -437,6 +438,37 @@ func TestGetSampleWithEventSampling(t *testing.T) {
 			}
 			require.Equal(t, tt.wantMetric.StatusDetail.SampleEvent, sampleEvent)
 			require.Equal(t, tt.wantMetric.StatusDetail.SampleResponse, sampleResponse)
+		})
+	}
+}
+
+func TestGetStringifiedSampleEvent(t *testing.T) {
+	cases := []struct {
+		name        string
+		sampleEvent json.RawMessage
+		expected    string
+	}{
+		{
+			name:        "sample event is nil",
+			sampleEvent: nil,
+			expected:    "{}",
+		},
+		{
+			name:        "sample event is not nil",
+			sampleEvent: json.RawMessage(`{"event":"2"}`),
+			expected:    `{"event":"2"}`,
+		},
+		{
+			name:        "sample event is empty",
+			sampleEvent: json.RawMessage(`{}`),
+			expected:    `{}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			result := getStringifiedSampleEvent(c.sampleEvent)
+			require.Equal(t, c.expected, result)
 		})
 	}
 }

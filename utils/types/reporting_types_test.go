@@ -1,6 +1,7 @@
 package types_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 				"statusCode": 400,
 				"violationCount": 12,
 				"sampleResponse": "error email not valid",
-				"sampleEvent": "{\"key\": \"value-1\"}",
+				"sampleEvent": {"key": "value-1"},
 				"eventName": "SomeEventName1",
 				"eventType": "SomeEventType"
 			},
@@ -52,7 +53,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 				"statusCode": 400,
 				"violationCount": 12,
 				"sampleResponse": "error email not valid",
-				"sampleEvent": "{\"key\": \"value-1\"}",
+				"sampleEvent": {"key": "value-1"},
 				"eventName": "SomeEventName2",
 				"eventType": "SomeEventType"
 			}
@@ -96,7 +97,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 				Count:          20,
 				StatusCode:     400,
 				SampleResponse: "error email not valid",
-				SampleEvent:    `{"key": "value-1"}`,
+				SampleEvent:    json.RawMessage(`{"key": "value-1"}`),
 				EventName:      "SomeEventName1",
 				EventType:      "SomeEventType",
 				ErrorType:      "this is errorType",
@@ -116,7 +117,7 @@ func TestMetricJSONMarshaling(t *testing.T) {
 				Count:          20,
 				StatusCode:     400,
 				SampleResponse: "error email not valid",
-				SampleEvent:    `{"key": "value-1"}`,
+				SampleEvent:    json.RawMessage(`{"key": "value-1"}`),
 				EventName:      "SomeEventName2",
 				EventType:      "SomeEventType",
 				ErrorType:      "this is errorType",
