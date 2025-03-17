@@ -691,7 +691,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
+			key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + jobState + ":" + strconv.Itoa(errorCode) + ":" + parameters.EventName + ":" + parameters.EventType
 			if _, ok := connectionDetailsMap[key]; !ok {
 				cd = &types.ConnectionDetails{
 					SourceID:                parameters.SourceID,

@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.44.0](https://github.com/rudderlabs/rudder-server/compare/v1.43.0...v1.44.0) (2025-03-03)
+
+
+### Features
+
+* add OAuth authentication support for Databricks destination ([#5554](https://github.com/rudderlabs/rudder-server/issues/5554)) ([67775ab](https://github.com/rudderlabs/rudder-server/commit/67775aba3680f95a3888cf8ecfca1000f48e7d27))
+* gRPC API to expire the warehouse schema of a destination ([#5508](https://github.com/rudderlabs/rudder-server/issues/5508)) ([f365c7c](https://github.com/rudderlabs/rudder-server/commit/f365c7c12b7c4a9c5e8abef296db7483ae496fc3))
+* increase shm size for postgres in docker compose ([#5541](https://github.com/rudderlabs/rudder-server/issues/5541)) ([58e5a17](https://github.com/rudderlabs/rudder-server/commit/58e5a17bd1a2b5f4e5daa79c4449d68d8e1aaac5))
+* isolate server ut communication ([#5430](https://github.com/rudderlabs/rudder-server/issues/5430)) ([63505f6](https://github.com/rudderlabs/rudder-server/commit/63505f63b2130a444e92cccf22a5d48aa489c30c))
+* make json library configurable and introduce sonnet as an option ([#5513](https://github.com/rudderlabs/rudder-server/issues/5513)) ([f3e5d1a](https://github.com/rudderlabs/rudder-server/commit/f3e5d1a820939f2ac4ccbb202d5b48537d4390d6))
+
+
+### Bug Fixes
+
+* error handling for async destinations ([#5542](https://github.com/rudderlabs/rudder-server/issues/5542)) ([5e63145](https://github.com/rudderlabs/rudder-server/commit/5e63145bf32a9beba96021766c2a471b4a02e509))
+* handle schema change for unsafe quotes ([#5519](https://github.com/rudderlabs/rudder-server/issues/5519)) ([4527b82](https://github.com/rudderlabs/rudder-server/commit/4527b82ab9eeca6fe130a77be268c290d681424b))
+* refreshing of datalake expired schemas causing inifinite loop ([#5530](https://github.com/rudderlabs/rudder-server/issues/5530)) ([0f11362](https://github.com/rudderlabs/rudder-server/commit/0f113623703ecb4ffcfa36dd6c28a002d83f7188))
+* retry sending reporting metrics for 4xx status code ([#5537](https://github.com/rudderlabs/rudder-server/issues/5537)) ([2cbda67](https://github.com/rudderlabs/rudder-server/commit/2cbda676c80ef4b05b7bae9f8e389673d05f91cb))
+* snowpipe backoff missing for validation error ([#5504](https://github.com/rudderlabs/rudder-server/issues/5504)) ([e889a4f](https://github.com/rudderlabs/rudder-server/commit/e889a4f85b5d9eee2524182bfaa95071e5ad4904))
+* unmarshaller json configuration not respected ([#5526](https://github.com/rudderlabs/rudder-server/issues/5526)) ([9f8d6ad](https://github.com/rudderlabs/rudder-server/commit/9f8d6adad0b61315d768db52f20c339a4dc34a30))
+
+
+### Miscellaneous
+
+* add stats for warehouse process API ([#5543](https://github.com/rudderlabs/rudder-server/issues/5543)) ([80890cf](https://github.com/rudderlabs/rudder-server/commit/80890cf78ec12c486d12ae4eea846daf64d66924))
+* additional logs for schema fetching and deltalake ([#5551](https://github.com/rudderlabs/rudder-server/issues/5551)) ([49b5238](https://github.com/rudderlabs/rudder-server/commit/49b5238c85748c7e0be7d13d7b4213bf4f41f73a))
+* **deps:** bump github.com/docker/docker from 27.5.1+incompatible to 28.0.0+incompatible ([#5536](https://github.com/rudderlabs/rudder-server/issues/5536)) ([277ec25](https://github.com/rudderlabs/rudder-server/commit/277ec2562646a2f3b88a34d8e260134b740c2d93))
+* **deps:** bump github.com/go-jose/go-jose/v4 from 4.0.4 to 4.0.5 in the go_modules group ([#5544](https://github.com/rudderlabs/rudder-server/issues/5544)) ([adfb33c](https://github.com/rudderlabs/rudder-server/commit/adfb33c7d88fbd5d855cd447d9ce81570fe09553))
+* **deps:** bump the go-deps group across 1 directory with 2 updates ([#5531](https://github.com/rudderlabs/rudder-server/issues/5531)) ([98abb11](https://github.com/rudderlabs/rudder-server/commit/98abb1101c8af22f800d2dcfc7eb653922a7d84d))
+* **deps:** bump the go-deps group across 1 directory with 2 updates ([#5553](https://github.com/rudderlabs/rudder-server/issues/5553)) ([99167ca](https://github.com/rudderlabs/rudder-server/commit/99167ca58d4f65a0090d224cdf9c7b2daec4fd7c))
+* **deps:** bump the go-deps group with 2 updates ([#5540](https://github.com/rudderlabs/rudder-server/issues/5540)) ([63ae5ac](https://github.com/rudderlabs/rudder-server/commit/63ae5acc2328908f198f42929ba6e548408b2f79))
+* drop unused columns ([#5546](https://github.com/rudderlabs/rudder-server/issues/5546)) ([9acd978](https://github.com/rudderlabs/rudder-server/commit/9acd978344aa69d2b3c98932778b36ff03d666a1))
+* mssql and azure synapse cleanup and enable integration tests ([#5556](https://github.com/rudderlabs/rudder-server/issues/5556)) ([a1b19ba](https://github.com/rudderlabs/rudder-server/commit/a1b19ba0df7059d55ae3ada4ef13c6faa00d6f82))
+* skip previously failed tables ([#5533](https://github.com/rudderlabs/rudder-server/issues/5533)) ([08e2936](https://github.com/rudderlabs/rudder-server/commit/08e2936a5304ce19ea5933927c5f2ded85828d07))
+* update event delivery time buckets ([#5548](https://github.com/rudderlabs/rudder-server/issues/5548)) ([85b457a](https://github.com/rudderlabs/rudder-server/commit/85b457af9d4c6ad71bdcd21dab9922ab84ae78c2))
+* varchar handling for mssql and azure synapse ([#5557](https://github.com/rudderlabs/rudder-server/issues/5557)) ([4309aa9](https://github.com/rudderlabs/rudder-server/commit/4309aa9f04abddfc06765b0e636abe6b59f1efe1))
+
 ## [1.43.1](https://github.com/rudderlabs/rudder-server/compare/v1.43.0...v1.43.1) (2025-02-26)
 
 

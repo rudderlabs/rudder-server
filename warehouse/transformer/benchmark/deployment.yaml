@@ -1,0 +1,171 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rudder-warehouse-benchmarks
+  namespace: <K8S_NAMESPACE>
+  labels:
+    app: rudder-warehouse-benchmarks
+
+spec:
+  template:
+    metadata:
+      labels:
+        app: rudder-warehouse-benchmarks
+      annotations:
+        prometheus.io/rudder-warehouse-benchmarks: "true"
+        prometheus.io/port: "9102"
+        profiles.grafana.com/cpu.port: "7777"
+        profiles.grafana.com/cpu.scrape: "true"
+        profiles.grafana.com/goroutine.port: "7777"
+        profiles.grafana.com/goroutine.scrape: "true"
+        profiles.grafana.com/memory.port: "7777"
+        profiles.grafana.com/memory.scrape: "true"
+    spec:
+      containers:
+        - name: rudder-warehouse-benchmarks
+          image: "<DOCKER_USER>/rudder-warehouse-benchmarks:latest"
+          imagePullPolicy: Always
+          command: ["./warehouse-transformer-benchmark"]
+          ports:
+            - name: profiling
+              containerPort: 7777
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsUser: 10001
+            runAsGroup: 10001
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          resources:
+            limits:
+              cpu: "8"
+              memory: "512Mi"
+            requests:
+              cpu: "8"
+              memory: "512Mi"
+
+          env:
+            - name: DEST_TRANSFORM_URL
+              value: "http://wtrans-rudderstack-transformer:9090"
+            - name: SAMPLE_EVENT
+              value: |
+                {
+                  "message": {
+                    "anonymousId": "anonymousId",
+                    "channel": "web",
+                    "context": {
+                      "ip": "1.2.3.4",
+                      "traits": {
+                        "email": "rhedricks@example.com",
+                        "logins": 2,
+                        "name": "Richard Hendricks"
+                      }
+                    },
+                    "messageId": "messageId",
+                    "originalTimestamp": "2021-09-01T00:00:00.000Z",
+                    "receivedAt": "2021-09-01T00:00:00.000Z",
+                    "request_ip": "5.6.7.8",
+                    "sentAt": "2021-09-01T00:00:00.000Z",
+                    "timestamp": "2021-09-01T00:00:00.000Z",
+                    "traits": {
+                      "product_id": "9578257311",
+                      "review_id": "86ac1cd43"
+                    },
+                    "type": "identify",
+                    "userId": "userId",
+                    "userProperties": {
+                      "rating": 3,
+                      "review_body": "OK for the price. It works but the material feels flimsy."
+                    }
+                  },
+                  "metadata": {
+                    "sourceId": "sourceID",
+                    "sourceName": "",
+                    "originalSourceId": "",
+                    "workspaceId": "",
+                    "namespace": "",
+                    "instanceId": "",
+                    "sourceType": "sourceType",
+                    "sourceCategory": "",
+                    "trackingPlanId": "",
+                    "trackingPlanVersion": 0,
+                    "sourceTpConfig": null,
+                    "mergedTpConfig": null,
+                    "destinationId": "destinationID",
+                    "jobId": 0,
+                    "sourceJobId": "",
+                    "sourceJobRunId": "",
+                    "sourceTaskRunId": "",
+                    "recordId": "recordID",
+                    "destinationType": "POSTGRES",
+                    "destinationName": "",
+                    "messageId": "messageId",
+                    "oauthAccessToken": "",
+                    "traceparent": "",
+                    "messageIds": null,
+                    "rudderId": "",
+                    "receivedAt": "2021-09-01T00:00:00.000Z",
+                    "eventName": "",
+                    "eventType": "identify",
+                    "sourceDefinitionId": "",
+                    "destinationDefinitionId": "",
+                    "transformationId": "",
+                    "transformationVersionId": ""
+                  },
+                  "destination": {
+                    "ID": "",
+                    "Name": "POSTGRES",
+                    "DestinationDefinition": {
+                      "ID": "",
+                      "Name": "POSTGRES",
+                      "DisplayName": "",
+                      "Config": null,
+                      "ResponseRules": null
+                    },
+                    "Config": {
+                      "allowUsersContextTraits": true
+                    },
+                    "Enabled": false,
+                    "WorkspaceID": "",
+                    "Transformations": null,
+                    "IsProcessorEnabled": false,
+                    "RevisionID": ""
+                  },
+                  "connection": {
+                    "sourceId": "",
+                    "destinationId": "",
+                    "enabled": false,
+                    "config": null,
+                    "processorEnabled": false
+                  },
+                  "libraries": null,
+                  "credentials": null
+                }
+            - name: EVENTS_IN_BATCH
+              value: "200"
+            - name: BATCH_SIZE
+              value: "200"
+            - name: NUM_OF_ITERATIONS
+              value: "10000"
+            - name: MODE
+              value: "<MODE>"
+      nodeSelector:
+        karpenter.sh/provisioner-name: arm
+      tolerations:
+        - effect: NoExecute
+          key: node.kubernetes.io/unreachable
+          operator: Exists
+          tolerationSeconds: 20
+        - effect: NoExecute
+          key: node.kubernetes.io/not-ready
+          operator: Exists
+          tolerationSeconds: 20
+        - effect: NoSchedule
+          key: type
+          value: arm
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+  backoffLimit: 0
+

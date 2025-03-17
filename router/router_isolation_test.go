@@ -169,7 +169,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Reset()
 	defer logger.Reset()
 	defer config.Reset()
-	config.Set("LOG_LEVEL", "ERROR")
+	config.Set("LOG_LEVEL", "WARN")
 	logger.Reset()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -387,8 +387,9 @@ func (rtIsolationMethods) generateJobs(jobs []*rtIsolationJobSpec, url string, b
 			Parameters: []byte(fmt.Sprintf(`{
 				"source_id": %[1]q,
 				"destination_id": %[1]q,
-				"receivedAt": %[2]q
-			}`, job.workspaceID, time.Now().Format(misc.RFC3339Milli))),
+				"receivedAt": %[2]q,
+				"workspaceId": %[3]q
+			}`, job.workspaceID, time.Now().Format(misc.RFC3339Milli), job.workspaceID)),
 			CustomVal:    "WEBHOOK",
 			EventPayload: payload,
 			CreatedAt:    time.Now(),

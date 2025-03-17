@@ -104,13 +104,11 @@ func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 
 // checkValidJobState Function to check validity of states
 func checkValidJobState(jd assertInterface, stateFilters []string) {
-	jobStateMap := make(map[string]jobStateT)
-	for _, js := range jobStates {
-		jobStateMap[js.State] = js
-	}
+	jobStateMap := lo.SliceToMap(jobStates, func(js jobStateT) (string, struct{}) { return js.State, struct{}{} })
 	for _, st := range stateFilters {
-		_, ok := jobStateMap[st]
-		jd.assert(ok, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
+		if _, ok := jobStateMap[st]; !ok {
+			jd.assert(false, fmt.Sprintf("state %s is not found in jobStates: %v", st, jobStates))
+		}
 	}
 }
 
@@ -140,6 +138,7 @@ type statTags struct {
 	ParameterFilters []ParameterFilterT
 	StateFilters     []string
 	WorkspaceID      string
+	MoreToken        bool
 }
 
 func (jd *Handle) getTimerStat(stat string, tags *statTags) stats.Measurement {
@@ -172,6 +171,9 @@ func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
 
 		for _, paramTag := range tags.ParameterFilters {
 			statTagsMap[paramTag.Name] = paramTag.Value
+		}
+		if tags.MoreToken {
+			statTagsMap["moreToken"] = "true"
 		}
 	}
 
