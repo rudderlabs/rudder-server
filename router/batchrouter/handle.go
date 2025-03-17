@@ -557,7 +557,6 @@ func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[stri
 	// Process each table's jobs in parallel
 	for tableName, jobs := range jobsByTable {
 		g.Go(func() error {
-
 			// Process all jobs for this table
 			tableSchema := make(map[string]string)
 			for _, job := range jobs {
