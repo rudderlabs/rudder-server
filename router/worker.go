@@ -203,7 +203,7 @@ func (w *worker) workLoop() {
 				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
 				obskit.DestinationType(destination.DestinationDefinition.Name),
 			)
-			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
+			if w.rt.isOAuthDestination && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -272,6 +272,29 @@ func (w *worker) workLoop() {
 	}
 }
 
+func (w *worker) transformJobs(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
+	destinationJobs := w.rt.transformer.Transform(
+		transformer.ROUTER_TRANSFORM,
+		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
+	)
+	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
+	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
+	return destinationJobs
+}
+
+func (w *worker) transformJobsPerDestination(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	destinationJobs := make([]types.DestinationJobT, 0, len(routerJobs))
+	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
+		return job.Destination.ID
+	})
+	for _, destinationIDRouterJobs := range destinationIDRouterJobsMap {
+		destinationJobs = append(destinationJobs, w.transformJobs(destinationIDRouterJobs)...)
+	}
+
+	return destinationJobs
+}
+
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	// transform limiter with dynamic priority
 	start := time.Now()
@@ -306,14 +329,11 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
-		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-	)
-	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
-	return destinationJobs
+
+	if w.rt.isOAuthDestination && w.rt.reloadableConfig.oauthV2Enabled.Load() {
+		return w.transformJobsPerDestination(routerJobs)
+	}
+	return w.transformJobs(routerJobs)
 }
 
 func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -792,8 +812,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
-	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	if authType != oauth.OAuth {
+	if !oauth.IsOAuthDestination(destinationJob.Destination.DestinationDefinition.Config) {
 		return proxyRequestResponse
 	}
 	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {

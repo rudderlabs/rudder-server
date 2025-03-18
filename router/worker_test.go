@@ -4,14 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sync"
 	"testing"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -22,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -456,3 +461,240 @@ var _ = Describe("Proxy Request", func() {
 		})
 	})
 })
+
+func TestTransformForOAuthV2Destination(t *testing.T) {
+	initRouter()
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+
+	worker := &worker{
+		rt: &Handle{
+			transformer:                    mockTransformer,
+			destType:                       "some_dest_type",
+			logger:                         logger.NOP,
+			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+			isOAuthDestination:             true,
+			reloadableConfig: &reloadableConfig{
+				oauthV2Enabled: config.GetReloadableBoolVar(true),
+			},
+		},
+	}
+	var limiterWg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer limiterWg.Wait()
+	defer cancel()
+	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
+	worker.rt.limiter.stats.transform = partition.NewStats()
+
+	routerJobs := []types.RouterJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test1"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 1,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": "d2-test2"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 2,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test3"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 3,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d3",
+			},
+			Message: json.RawMessage(`{"event": "d3-test4"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 4,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test5"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 5,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": "d2-test6"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 6,
+			},
+		},
+	}
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[0], routerJobs[2], routerJobs[4]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": ["d1-test1", "d1-test3"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 1,
+				},
+				{
+					JobID: 3,
+				},
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": [ "d1-test5"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 5,
+				},
+			},
+		},
+	})
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[1], routerJobs[5]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": ["d2-test2", "d2-test6"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 2,
+				},
+				{
+					JobID: 6,
+				},
+			},
+		},
+	})
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     []types.RouterJobT{routerJobs[3]},
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d3",
+			},
+			Message: json.RawMessage(`{"event": ["d3-test4"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 4,
+				},
+			},
+		},
+	})
+	destinationJobs := worker.transform(routerJobs)
+	require.Equal(t, 4, len(destinationJobs))
+	destinationIDJobsMap := lo.GroupBy(destinationJobs, func(job types.DestinationJobT) string {
+		return job.Destination.ID
+	})
+	require.Equal(t, 3, len(destinationIDJobsMap))
+	require.Equal(t, 2, len(destinationIDJobsMap["d1"]))
+	require.Equal(t, 1, len(destinationIDJobsMap["d2"]))
+	require.Equal(t, 1, len(destinationIDJobsMap["d3"]))
+}
+
+func TestTransformForNonOAuthDestination(t *testing.T) {
+	initRouter()
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+
+	worker := &worker{
+		rt: &Handle{
+			transformer:                    mockTransformer,
+			destType:                       "some_dest_type",
+			logger:                         logger.NOP,
+			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
+			isOAuthDestination:             false,
+			reloadableConfig: &reloadableConfig{
+				oauthV2Enabled: config.GetReloadableBoolVar(true),
+			},
+		},
+	}
+	var limiterWg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer limiterWg.Wait()
+	defer cancel()
+	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
+	worker.rt.limiter.stats.transform = partition.NewStats()
+
+	routerJobs := []types.RouterJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": "d1-test1"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 1,
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": "d2-test2"}`),
+			JobMetadata: types.JobMetadataT{
+				JobID: 2,
+			},
+		},
+	}
+	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
+		Data:     routerJobs,
+		DestType: worker.rt.destType,
+	}).Return([]types.DestinationJobT{
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Message: json.RawMessage(`{"event": ["d1-test1"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 1,
+				},
+			},
+		},
+		{
+			Destination: backendconfig.DestinationT{
+				ID: "d2",
+			},
+			Message: json.RawMessage(`{"event": [ "d2-test2"]}`),
+			JobMetadataArray: []types.JobMetadataT{
+				{
+					JobID: 2,
+				},
+			},
+		},
+	})
+
+	worker.transform(routerJobs)
+}

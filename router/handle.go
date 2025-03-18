@@ -89,6 +89,7 @@ type Handle struct {
 	netHandle                      NetHandle
 	customDestinationManager       customDestinationManager.DestinationManager
 	transformer                    transformer.Transformer
+	isOAuthDestination             bool
 	oauth                          oauth.Authorizer
 	destinationsMapMu              sync.RWMutex
 	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
