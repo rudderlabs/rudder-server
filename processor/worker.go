@@ -77,14 +77,18 @@ func (w *worker) Work() bool {
 	jobsByPartition := w.partitionJobsByUserID(jobs.Jobs, w.handle.config().numPartitions)
 
 	// Send jobs to their respective partitions for processing
+	var wg sync.WaitGroup
 	for partition, partitionJobs := range jobsByPartition {
-		subJob := subJob{
-			subJobs:       partitionJobs,
-			hasMore:       false,
-			rsourcesStats: rsourcesStats,
-		}
-		w.workers[partition].channel.preprocess <- subJob
+		wg.Add(1)
+		go func(partition int, jobs []*jobsdb.JobT) {
+			defer wg.Done()
+			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
+			for _, subJob := range subJobs {
+				w.workers[partition].channel.preprocess <- subJob
+			}
+		}(partition, partitionJobs)
 	}
+	wg.Wait()
 
 	// Handle rate limiting if needed
 	if !jobs.LimitsReached {
@@ -134,7 +138,6 @@ func newWorker(partition string, h workerHandle) *partitionWorker {
 	// Initialize lifecycle context
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 
-	// Initialize channels with appropriate buffer sizes
 	bufSize := h.config().pipelineBufferedItems
 	w.channel.preprocess = make(chan subJob, bufSize)
 	w.channel.preTransform = make(chan *preTransformationMessage, bufSize)
