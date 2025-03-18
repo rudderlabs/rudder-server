@@ -23,7 +23,7 @@ type worker struct {
 	g         *errgroup.Group
 }
 
-// newProcessorWorker creates a new worker
+// newProcessorWorker creates a new worker for the specified partition
 func newProcessorWorker(partition string, h workerHandle) *worker {
 	w := &worker{
 		partition: partition,
@@ -32,59 +32,65 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 		handle:    h,
 	}
 	w.g, _ = errgroup.WithContext(context.Background())
-	w.workers = make([]*partitionWorker, h.config().numPartitions)
-	for i := range h.config().numPartitions {
-		worker := newWorker(partition, h)
-		w.workers[i] = worker
+
+	// Create workers for each partition
+	numPartitions := h.config().numPartitions
+	w.workers = make([]*partitionWorker, numPartitions)
+	for i := 0; i < numPartitions; i++ {
+		w.workers[i] = newWorker(partition, h)
 	}
 
 	return w
 }
 
+// Work processes jobs for the specified partition
+// Returns true if work was done, false otherwise
 func (w *worker) Work() bool {
+	// If pipelining is disabled, use the legacy job handling path
 	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
-	jobs := w.handle.getJobs(w.partition)
 
+	// Get jobs for this partition
+	jobs := w.handle.getJobs(w.partition)
 	start := time.Now()
-	afterGetJobs := time.Now()
+
+	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
 		return false
 	}
+
+	// Mark jobs as executing
 	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
-		w.logger.Error(err)
+		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
 	}
 
+	// Record throughput metrics
 	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
 
+	// Initialize rsources stats
 	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
 	rsourcesStats.BeginProcessing(jobs.Jobs)
 
-	// First split jobs by murmur hash into partitions
-	jobsByPartition := make(map[int][]*jobsdb.JobT)
-	for _, job := range jobs.Jobs {
-		hash := misc.GetMurmurHash(job.UserID)
-		// Ensure positive partition by using absolute value
-		partition := int(hash % uint64(w.handle.config().numPartitions))
-		jobsByPartition[partition] = append(jobsByPartition[partition], job)
-	}
+	// Distribute jobs across partitions based on UserID
+	jobsByPartition := w.partitionJobsByUserID(jobs.Jobs, w.handle.config().numPartitions)
 
-	// For each partition, create a single subjob and send to workers
+	// Send jobs to their respective partitions for processing
 	for partition, partitionJobs := range jobsByPartition {
 		subJob := subJob{
 			subJobs:       partitionJobs,
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
 		}
-
 		w.workers[partition].channel.preprocess <- subJob
 	}
 
+	// Handle rate limiting if needed
 	if !jobs.LimitsReached {
 		readLoopSleep := w.handle.config().readLoopSleep
-		if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
+		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
+			// Sleep for the remaining time
 			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
 				return true
 			}
@@ -94,6 +100,18 @@ func (w *worker) Work() bool {
 	return true
 }
 
+// partitionJobsByUserID splits jobs into partitions based on the UserID hash
+func (w *worker) partitionJobsByUserID(jobs []*jobsdb.JobT, numPartitions int) map[int][]*jobsdb.JobT {
+	jobsByPartition := make(map[int][]*jobsdb.JobT)
+	for _, job := range jobs {
+		hash := misc.GetMurmurHash(job.UserID)
+		partition := int(hash % uint64(numPartitions))
+		jobsByPartition[partition] = append(jobsByPartition[partition], job)
+	}
+	return jobsByPartition
+}
+
+// SleepDurations returns the min and max sleep durations for the worker
 func (w *worker) SleepDurations() (min, max time.Duration) {
 	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
 }
@@ -105,23 +123,34 @@ func (w *worker) Stop() {
 	}
 }
 
-// newWorker creates a new worker
+// newWorker creates a new partition worker
 func newWorker(partition string, h workerHandle) *partitionWorker {
 	w := &partitionWorker{
 		handle:    h,
 		logger:    h.logger().Child(partition),
 		partition: partition,
 	}
+
+	// Initialize lifecycle context
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
-	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
-	w.channel.preTransform = make(chan *preTransformationMessage, w.handle.config().pipelineBufferedItems)
-	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
-	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess.Load()/w.handle.config().subJobSize+1))
+
+	// Initialize channels with appropriate buffer sizes
+	bufSize := h.config().pipelineBufferedItems
+	w.channel.preprocess = make(chan subJob, bufSize)
+	w.channel.preTransform = make(chan *preTransformationMessage, bufSize)
+	w.channel.transform = make(chan *transformationMessage, bufSize)
+
+	// Store channel needs a larger buffer to accommodate all processed events
+	storeBufferSize := (bufSize + 1) * (h.config().maxEventsToProcess.Load()/h.config().subJobSize + 1)
+	w.channel.store = make(chan *storeMessage, storeBufferSize)
+
+	// Start processing goroutines
 	w.start()
+
 	return w
 }
 
-// worker picks jobs from jobsdb for the appropriate partition and performs all processing steps for them
+// partitionWorker picks jobs from jobsdb for the appropriate partition and performs all processing steps:
 //  1. preprocess
 //  2. transform
 //  3. store
@@ -143,13 +172,9 @@ type partitionWorker struct {
 	}
 }
 
-// start starts the various worker goroutines
+// start launches the various worker goroutines for the pipelined processing
 func (w *partitionWorker) start() {
-	if !w.handle.config().enablePipelining {
-		return
-	}
-
-	// wait for context to be cancelled
+	// Setup context cancellation handler
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
@@ -157,60 +182,70 @@ func (w *partitionWorker) start() {
 		<-w.lifecycle.ctx.Done()
 	})
 
-	// preprocess jobs
+	// Preprocessing goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.preTransform)
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
+
 		for jobs := range w.channel.preprocess {
 			val, err := w.handle.processJobsForDest(w.partition, jobs)
 			if err != nil {
+				w.logger.Errorf("Error preprocessing jobs: %v", err)
 				panic(err)
 			}
 			w.channel.preTransform <- val
 		}
 	})
 
+	// Pre-transformation goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.transform)
 		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
+
 		for processedMessage := range w.channel.preTransform {
 			val, err := w.handle.generateTransformationMessage(processedMessage)
 			if err != nil {
+				w.logger.Errorf("Error generating transformation message: %v", err)
 				panic(err)
 			}
 			w.channel.transform <- val
 		}
 	})
 
-	// transform jobs
+	// Transformation goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.store)
 		defer w.logger.Debugf("transform routine stopped for worker: %s", w.partition)
+
 		for msg := range w.channel.transform {
 			w.channel.store <- w.handle.transformations(w.partition, msg)
 		}
 	})
 
-	// store jobs
+	// Storage goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
-		var mergedJob *storeMessage
-		firstSubJob := true
 		defer w.lifecycle.wg.Done()
 		defer w.logger.Debugf("store routine stopped for worker: %s", w.partition)
-		for subJob := range w.channel.store {
 
+		var mergedJob *storeMessage
+		firstSubJob := true
+
+		for subJob := range w.channel.store {
+			// If this is the first subjob and it doesn't have more parts,
+			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
 				w.handle.Store(w.partition, subJob)
 				continue
 			}
 
+			// Initialize the merged job with the first subjob
 			if firstSubJob {
 				mergedJob = &storeMessage{
 					rsourcesStats:         subJob.rsourcesStats,
@@ -221,8 +256,11 @@ func (w *partitionWorker) start() {
 				}
 				firstSubJob = false
 			}
+
+			// Merge this subjob with the accumulated one
 			mergedJob.merge(subJob)
 
+			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
 				w.handle.Store(w.partition, mergedJob)
 				firstSubJob = true
@@ -231,7 +269,7 @@ func (w *partitionWorker) start() {
 	})
 }
 
-// Stop stops the worker and waits until all its goroutines have stopped
+// Stop gracefully terminates the worker by canceling its context and waiting for goroutines to finish
 func (w *partitionWorker) Stop() {
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
