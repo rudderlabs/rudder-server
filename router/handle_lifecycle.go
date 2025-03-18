@@ -67,7 +67,6 @@ func (rt *Handle) Setup(
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destType = destType
-
 	rt.drainer = routerutils.NewDrainer(
 		config,
 		func(destinationID string) (*routerutils.DestinationWithSources, bool) {
@@ -125,7 +124,7 @@ func (rt *Handle) Setup(
 		backendConfig, rt.reloadableConfig.oauthV2Enabled,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 	)
-
+	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
 	rt.isBackendConfigInitialized = false

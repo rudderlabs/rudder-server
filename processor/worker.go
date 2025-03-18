@@ -45,7 +45,6 @@ func (w *worker) Work() bool {
 	if !w.handle.config().enablePipelining {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
-	w.logger.Info("Number of partitions: ", w.handle.config().numPartitions)
 	jobs := w.handle.getJobs(w.partition)
 
 	start := time.Now()

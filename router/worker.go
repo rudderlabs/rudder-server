@@ -20,7 +20,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/transformer"
@@ -59,6 +58,7 @@ type worker struct {
 
 type workerJob struct {
 	job         *jobsdb.JobT
+	parameters  *routerutils.JobParameters
 	assignedAt  time.Time
 	drainReason string
 }
@@ -88,11 +88,7 @@ func (w *worker) workLoop() {
 
 			job := message.job
 			userID := job.UserID
-
-			var parameters routerutils.JobParameters
-			if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-				panic(fmt.Errorf("unmarshalling of job parameters failed for job %d (%s): %w", job.JobID, string(job.Parameters), err))
-			}
+			parameters := message.parameters
 			abortReason := message.drainReason
 			abort := abortReason != ""
 			abortTag := abortReason
@@ -114,11 +110,12 @@ func (w *worker) workLoop() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", abortReason)
 				w.rt.responseQ <- workerJobStatus{
-					userID:  userID,
-					worker:  w,
-					job:     job,
-					status:  &status,
-					payload: job.EventPayload,
+					userID:     userID,
+					worker:     w,
+					job:        job,
+					status:     &status,
+					payload:    job.EventPayload,
+					parameters: *parameters,
 				}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    w.rt.destType,
@@ -162,7 +159,7 @@ func (w *worker) workLoop() {
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status}
+					w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: *parameters}
 					continue
 				}
 			}
@@ -185,6 +182,7 @@ func (w *worker) workLoop() {
 				WorkerAssignedTime: message.assignedAt,
 				DontBatch:          dontBatch,
 				TraceParent:        parameters.TraceParent,
+				Parameters:         *parameters,
 			}
 
 			w.rt.destinationsMapMu.RLock()
@@ -205,7 +203,7 @@ func (w *worker) workLoop() {
 				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
 				obskit.DestinationType(destination.DestinationDefinition.Name),
 			)
-			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); authType == oauth.OAuth && !oauthV2Enabled {
+			if w.rt.isOAuthDestination && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -274,6 +272,29 @@ func (w *worker) workLoop() {
 	}
 }
 
+func (w *worker) transformJobs(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
+	destinationJobs := w.rt.transformer.Transform(
+		transformer.ROUTER_TRANSFORM,
+		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
+	)
+	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
+	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
+	return destinationJobs
+}
+
+func (w *worker) transformJobsPerDestination(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	destinationJobs := make([]types.DestinationJobT, 0, len(routerJobs))
+	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
+		return job.Destination.ID
+	})
+	for _, destinationIDRouterJobs := range destinationIDRouterJobsMap {
+		destinationJobs = append(destinationJobs, w.transformJobs(destinationIDRouterJobs)...)
+	}
+
+	return destinationJobs
+}
+
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	// transform limiter with dynamic priority
 	start := time.Now()
@@ -308,14 +329,11 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
-		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-	)
-	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
-	return destinationJobs
+
+	if w.rt.isOAuthDestination && w.rt.reloadableConfig.oauthV2Enabled.Load() {
+		return w.transformJobsPerDestination(routerJobs)
+	}
+	return w.transformJobs(routerJobs)
 }
 
 func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -670,7 +688,7 @@ func (w *worker) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags}
+				w.rt.responseQ <- workerJobStatus{userID: destinationJobMetadata.UserID, worker: w, job: destinationJobMetadata.JobT, status: &status, statTags: destinationJob.StatTags, parameters: destinationJobMetadata.Parameters}
 				errorCount++
 				continue
 			}
@@ -794,8 +812,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
-	authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
-	if authType != oauth.OAuth {
+	if !oauth.IsOAuthDestination(destinationJob.Destination.DestinationDefinition.Config) {
 		return proxyRequestResponse
 	}
 	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
@@ -1000,12 +1017,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		}
 		w.logger.Debugf("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
-			userID:   destinationJobMetadata.UserID,
-			worker:   w,
-			job:      destinationJobMetadata.JobT,
-			status:   status,
-			payload:  inputPayload,
-			statTags: destinationJob.StatTags,
+			userID:     destinationJobMetadata.UserID,
+			worker:     w,
+			job:        destinationJobMetadata.JobT,
+			status:     status,
+			payload:    inputPayload,
+			statTags:   destinationJob.StatTags,
+			parameters: destinationJobMetadata.Parameters,
 		}
 		return
 	}
@@ -1060,12 +1078,13 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	}
 	w.logger.Debugf("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
-		userID:   destinationJobMetadata.UserID,
-		worker:   w,
-		job:      destinationJobMetadata.JobT,
-		status:   status,
-		payload:  inputPayload,
-		statTags: destinationJob.StatTags,
+		userID:     destinationJobMetadata.UserID,
+		worker:     w,
+		job:        destinationJobMetadata.JobT,
+		status:     status,
+		payload:    inputPayload,
+		statTags:   destinationJob.StatTags,
+		parameters: destinationJobMetadata.Parameters,
 	}
 }
 
