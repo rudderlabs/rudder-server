@@ -3358,6 +3358,10 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	s := time.Now()
 
 	unprocessedList := proc.getJobs(partition)
+	proc.logger.Infof("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
+	proc.statsFactory.NewTaggedStat("processor_jobs_picked_up_from_gw", stats.CountType, stats.Tags{
+		"partition": partition,
+	}).Count(len(unprocessedList.Jobs))
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
