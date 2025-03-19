@@ -135,7 +135,7 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
-		numPartitions                   int
+		pipelinesPerPartition           int
 		pingerSleep                     config.ValueLoader[time.Duration]
 		readLoopSleep                   config.ValueLoader[time.Duration]
 		maxLoopSleep                    config.ValueLoader[time.Duration]
@@ -806,7 +806,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
 	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
-	proc.config.numPartitions = config.GetIntVar(1, 1, "Processor.numPartitions")
+	proc.config.pipelinesPerPartition = config.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")

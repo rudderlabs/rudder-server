@@ -43,45 +43,21 @@ import (
 
 func TestProcessorIsolation(t *testing.T) {
 	const (
-		workspaces       = 10
-		jobsPerWorkspace = 100
+		workspaces            = 10
+		jobsPerWorkspace      = 100
+		pipelinesPerPartition = 3
 	)
-	t.Run("no isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeNone, workspaces, jobsPerWorkspace, 1)
-		ProcIsolationScenario(t, spec)
-	})
 
-	t.Run("workspace isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace, 1)
-		ProcIsolationScenario(t, spec)
-	})
-
-	t.Run("source isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeSource, workspaces, jobsPerWorkspace, 1)
-		ProcIsolationScenario(t, spec)
-	})
-}
-
-func TestProcessorIsolationWithWorkers(t *testing.T) {
-	const (
-		workspaces       = 10
-		jobsPerWorkspace = 100
-		numPartitions    = 3
-	)
-	t.Run("no isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeNone, workspaces, jobsPerWorkspace, numPartitions)
-		ProcIsolationScenario(t, spec)
-	})
-
-	t.Run("workspace isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace, numPartitions)
-		ProcIsolationScenario(t, spec)
-	})
-
-	t.Run("source isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeSource, workspaces, jobsPerWorkspace, numPartitions)
-		ProcIsolationScenario(t, spec)
-	})
+	for _, isolationMode := range []isolation.Mode{isolation.ModeNone, isolation.ModeWorkspace, isolation.ModeSource} {
+		t.Run(fmt.Sprintf("%s isolation", isolationMode), func(t *testing.T) {
+			t.Run("1 worker", func(t *testing.T) {
+				ProcIsolationScenario(t, NewProcIsolationScenarioSpec(isolationMode, workspaces, jobsPerWorkspace, 1))
+			})
+			t.Run(fmt.Sprintf("%d workers", pipelinesPerPartition), func(t *testing.T) {
+				ProcIsolationScenario(t, NewProcIsolationScenarioSpec(isolationMode, workspaces, jobsPerWorkspace, pipelinesPerPartition))
+			})
+		})
+	}
 }
 
 // go test \
@@ -165,14 +141,14 @@ func BenchmarkProcessorIsolationModes(b *testing.B) {
 // - isolationMode is the isolation mode to use.
 // - workspaces is the number of workspaces to use.
 // - eventsPerWorkspace is the number of events to send per workspace.
-func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace, numPartitions int) *ProcIsolationScenarioSpec {
+func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace, pipelinesPerPartition int) *ProcIsolationScenarioSpec {
 	var s ProcIsolationScenarioSpec
 	s.isolationMode = isolationMode
 	s.marshallerLib = jsonrs.DefaultLib
 	s.unmarshallerLib = jsonrs.DefaultLib
 	s.jobs = make([]*procIsolationJobSpec, workspaces*eventsPerWorkspace)
 	s.received = map[int]struct{}{}
-	s.numPartitions = numPartitions
+	s.pipelinesPerPartition = pipelinesPerPartition
 
 	var idx int
 	for u := 0; u < workspaces; u++ {
@@ -265,7 +241,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
 
-	config.Set("Processor.numPartitions", spec.numPartitions)
+	config.Set("Processor.pipelinesPerPartition", spec.pipelinesPerPartition)
 	config.Set("Processor.isolationMode", string(spec.isolationMode))
 
 	config.Set("JobsDB.enableWriterQueue", false)
@@ -381,14 +357,14 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 }
 
 type ProcIsolationScenarioSpec struct {
-	isolationMode   isolation.Mode
-	marshallerLib   string
-	numPartitions   int
-	unmarshallerLib string
-	workspaces      []string
-	batchSize       int
-	jobs            []*procIsolationJobSpec
-	received        map[int]struct{}
+	isolationMode         isolation.Mode
+	marshallerLib         string
+	pipelinesPerPartition int
+	unmarshallerLib       string
+	workspaces            []string
+	batchSize             int
+	jobs                  []*procIsolationJobSpec
+	received              map[int]struct{}
 }
 
 type procIsolationJobSpec struct {

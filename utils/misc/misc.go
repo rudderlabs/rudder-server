@@ -949,7 +949,7 @@ func SanitizeString(input string) string {
 
 // GetMurmurHash returns murmur3 hash of the input string with a default seed of 0
 func GetMurmurHash(input string) uint64 {
-	return murmur3.Sum64WithSeed([]byte(input), 0)
+	return GetMurmurHashWithSeed(input, 0)
 }
 
 // GetMurmurHashWithSeed returns murmur3 hash of the input string with the provided seed

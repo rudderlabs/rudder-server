@@ -7,6 +7,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -34,9 +36,9 @@ func newProcessorWorker(partition string, h workerHandle) *worker {
 	w.g, _ = errgroup.WithContext(context.Background())
 
 	// Create workers for each partition
-	numPartitions := h.config().numPartitions
-	w.workers = make([]*partitionWorker, numPartitions)
-	for i := 0; i < numPartitions; i++ {
+	pipelinesPerPartition := h.config().pipelinesPerPartition
+	w.workers = make([]*partitionWorker, pipelinesPerPartition)
+	for i := 0; i < pipelinesPerPartition; i++ {
 		w.workers[i] = newWorker(partition, h)
 	}
 
@@ -51,9 +53,9 @@ func (w *worker) Work() bool {
 		return w.handle.handlePendingGatewayJobs(w.partition)
 	}
 
+	start := time.Now()
 	// Get jobs for this partition
 	jobs := w.handle.getJobs(w.partition)
-	start := time.Now()
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
@@ -74,7 +76,9 @@ func (w *worker) Work() bool {
 	rsourcesStats.BeginProcessing(jobs.Jobs)
 
 	// Distribute jobs across partitions based on UserID
-	jobsByPartition := w.partitionJobsByUserID(jobs.Jobs, w.handle.config().numPartitions)
+	jobsByPartition := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) int {
+		return int(misc.GetMurmurHash(job.UserID) % uint64(w.handle.config().pipelinesPerPartition))
+	})
 
 	// Send jobs to their respective partitions for processing
 	var wg sync.WaitGroup
@@ -102,17 +106,6 @@ func (w *worker) Work() bool {
 	}
 
 	return true
-}
-
-// partitionJobsByUserID splits jobs into partitions based on the UserID hash
-func (w *worker) partitionJobsByUserID(jobs []*jobsdb.JobT, numPartitions int) map[int][]*jobsdb.JobT {
-	jobsByPartition := make(map[int][]*jobsdb.JobT)
-	for _, job := range jobs {
-		hash := misc.GetMurmurHash(job.UserID)
-		partition := int(hash % uint64(numPartitions))
-		jobsByPartition[partition] = append(jobsByPartition[partition], job)
-	}
-	return jobsByPartition
 }
 
 // SleepDurations returns the min and max sleep durations for the worker
