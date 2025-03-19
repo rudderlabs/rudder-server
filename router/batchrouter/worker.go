@@ -216,7 +216,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				defer brt.limiter.upload.Begin("")()
 				switch {
 				case IsObjectStorageDestination(brt.destType):
-					destUploadStat := stats.Default.NewTaggedStat("batch_router.dest_upload_time", stats.TimerType, stats.Tags{
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
 						"destType": brt.destType,
 					})
 					destUploadStart := time.Now()
@@ -235,7 +235,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				case IsWarehouseDestination(brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
-					destUploadStat := stats.Default.NewTaggedStat("batch_router.dest_upload_time", stats.TimerType, stats.Tags{
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
 						"destType":          brt.destType,
 						"objectStorageType": objectStorageType,
 					})
@@ -258,7 +258,7 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					}
 					destUploadStat.Since(destUploadStart)
 				case asynccommon.IsAsyncDestination(brt.destType):
-					destUploadStat := stats.Default.NewTaggedStat("batch_router.dest_upload_time", stats.TimerType, stats.Tags{
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
 						"destType": brt.destType,
 					})
 					destUploadStart := time.Now()

@@ -82,7 +82,7 @@ type Handle struct {
 	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
-	processingWorkers            config.ValueLoader[int]
+	schemaGenerationWorkers      config.ValueLoader[int]
 	reportingEnabled             bool
 	jobQueryBatchSize            config.ValueLoader[int]
 	pollStatusLoopSleep          config.ValueLoader[time.Duration]
@@ -546,14 +546,10 @@ func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[stri
 		metaDataByJob[job.JobID] = metadata
 	}
 
-	// Create channels for results
-	type tableResult struct {
-		tableName string
-		schema    map[string]string
-	}
-	resultChan := make(chan tableResult, len(jobsByTable))
-	g, _ := errgroup.WithContext(context.Background())
-	g.SetLimit(brt.processingWorkers.Load())
+	g := errgroup.Group{}
+	g.SetLimit(brt.schemaGenerationWorkers.Load())
+	finalSchema := make(map[string]map[string]string, len(jobsByTable))
+	var finalSchemaMu sync.Mutex
 	// Process each table's jobs in parallel
 	for tableName, jobs := range jobsByTable {
 		g.Go(func() error {
@@ -570,25 +566,13 @@ func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[stri
 					}
 				}
 			}
-
-			// Send result through channel
-			resultChan <- tableResult{
-				tableName: tableName,
-				schema:    tableSchema,
-			}
+			finalSchemaMu.Lock()
+			finalSchema[tableName] = tableSchema
+			finalSchemaMu.Unlock()
 			return nil
 		})
 	}
-
-	go func() {
-		_ = g.Wait()
-		close(resultChan)
-	}()
-
-	finalSchema := make(map[string]map[string]string)
-	for result := range resultChan {
-		finalSchema[result.tableName] = result.schema
-	}
+	_ = g.Wait()
 
 	return finalSchema
 }

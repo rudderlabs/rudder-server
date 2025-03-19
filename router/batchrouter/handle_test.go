@@ -416,7 +416,7 @@ func TestGenerateSchemaMap(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			brt := &Handle{
-				processingWorkers: config.GetReloadableIntVar(4, 1, "BatchRouter.processingWorkers"),
+				schemaGenerationWorkers: config.GetReloadableIntVar(4, 1, "BatchRouter.processingWorkers"),
 			}
 
 			jobs := tc.setupJobs()
