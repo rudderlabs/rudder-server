@@ -155,6 +155,10 @@ func IsBlank(value interface{}) bool {
 		return v == ""
 	case fmt.Stringer:
 		return v.String() == ""
+	case map[string]any:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
 	default:
 		return false
 	}
