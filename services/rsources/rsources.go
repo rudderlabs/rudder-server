@@ -28,7 +28,7 @@ type JobTargetKey struct {
 }
 
 func (k JobTargetKey) String() string {
-	return fmt.Sprintf("%s:%s:%s", k.TaskRunID, k.SourceID, k.DestinationID)
+	return k.TaskRunID + ":" + k.SourceID + ":" + k.DestinationID
 }
 
 type Stats struct {

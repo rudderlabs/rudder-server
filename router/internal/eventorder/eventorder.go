@@ -114,7 +114,7 @@ type BarrierKey struct {
 }
 
 func (bk *BarrierKey) String() string {
-	return fmt.Sprintf("%s:%s:%s", bk.WorkspaceID, bk.DestinationID, bk.UserID)
+	return bk.WorkspaceID + ":" + bk.DestinationID + ":" + bk.UserID
 }
 
 // Enter the barrier for this key and jobID. If there is not already a barrier for this key

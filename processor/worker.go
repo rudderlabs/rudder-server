@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // newProcessorWorker creates a new worker
@@ -149,7 +148,6 @@ func (w *worker) Work() (worked bool) {
 
 	start := time.Now()
 	jobs := w.handle.getJobs(w.partition)
-	afterGetJobs := time.Now()
 	if len(jobs.Jobs) == 0 {
 		return
 	}
@@ -185,15 +183,6 @@ func (w *worker) Work() (worked bool) {
 	subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
 	for _, subJob := range subJobs {
 		w.channel.preprocess <- subJob
-	}
-
-	if !jobs.LimitsReached {
-		readLoopSleep := w.handle.config().readLoopSleep
-		if elapsed := time.Since(afterGetJobs); elapsed < readLoopSleep.Load() {
-			if err := misc.SleepCtx(w.lifecycle.ctx, readLoopSleep.Load()-elapsed); err != nil {
-				return
-			}
-		}
 	}
 
 	return

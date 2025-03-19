@@ -620,7 +620,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 		workspaceID := status.WorkspaceId
 		eventName := parameters.EventName
 		eventType := parameters.EventType
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, status.JobState, status.ErrorCode, eventName, eventType)
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + status.JobState + ":" + status.ErrorCode + ":" + eventName + ":" + eventType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{

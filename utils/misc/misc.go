@@ -24,7 +24,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unicode"
 
 	"github.com/araddon/dateparse"
 	"github.com/cenkalti/backoff"
@@ -692,50 +691,6 @@ func GetParsedTimestamp(input interface{}) (time.Time, bool) {
 		}
 	}
 	return parsedTimestamp, valid
-}
-
-func isValidTag(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, c := range s {
-		switch {
-		case strings.ContainsRune("!#$%&()*+-./:<=>?@[]^_{|}~ ", c):
-			// Backslash and quote chars are reserved, but
-			// otherwise any punctuation chars are allowed
-			// in a tag name.
-		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
-			return false
-		}
-	}
-	return true
-}
-
-func parseTag(tag string) (string, string) {
-	if idx := strings.Index(tag, ","); idx != -1 {
-		return tag[:idx], tag[idx+1:]
-	}
-	return tag, ""
-}
-
-// GetMandatoryJSONFieldNames returns all the json field names defined against the json tag for each field.
-func GetMandatoryJSONFieldNames(st interface{}) []string {
-	v := reflect.TypeOf(st)
-	mandatoryJSONFieldNames := make([]string, 0, v.NumField())
-	for i := 0; i < v.NumField(); i++ {
-		jsonTag, ok := v.Field(i).Tag.Lookup("json")
-		if !ok {
-			continue
-		}
-		name, tags := parseTag(jsonTag)
-		if !strings.Contains(tags, "optional") {
-			if !isValidTag(name) {
-				name = v.Field(i).Name
-			}
-			mandatoryJSONFieldNames = append(mandatoryJSONFieldNames, name)
-		}
-	}
-	return mandatoryJSONFieldNames
 }
 
 // GetTagName gets the tag name using a uuid and name

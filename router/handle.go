@@ -75,6 +75,7 @@ type Handle struct {
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
+	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
@@ -186,7 +187,6 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.pipelineDelayStats(partition, nil, nil)
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
 		limiterEnd() // exit the limiter before sleeping
-		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep.Load())
 		return 0, false
 	}
 
@@ -244,7 +244,8 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			firstJob = job
 		}
 		lastJob = job
-		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, blockedOrderKeys)
+		destinationID := gjson.GetBytes(job.Parameters, "destination_id").String()
+		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, destinationID, blockedOrderKeys)
 		if err == nil {
 			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
 			if traceParent != "" {
@@ -253,7 +254,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 					_, span := rt.tracer.Start(ctx, "rt.pickup", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
 						"workspaceId":   job.WorkspaceId,
 						"sourceId":      gjson.GetBytes(job.Parameters, "source_id").String(),
-						"destinationId": gjson.GetBytes(job.Parameters, "destination_id").String(),
+						"destinationId": destinationID,
 						"destType":      rt.destType,
 					}))
 					traces[traceParent] = span
@@ -350,7 +351,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
 		}
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, workerJobStatus.status.JobState, workerJobStatus.status.ErrorCode, eventName, eventType)
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + workerJobStatus.status.JobState + ":" + workerJobStatus.status.ErrorCode + ":" + eventName + ":" + eventType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
@@ -554,31 +555,24 @@ type workerJobSlot struct {
 	drainReason string
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, destinationID string, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
-
-	var parameters routerutils.JobParameters
-	if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
-		return nil, types.ErrParamsUnmarshal
-	}
-
 	orderKey := eventorder.BarrierKey{
 		UserID:        job.UserID,
-		DestinationID: parameters.DestinationID,
+		DestinationID: destinationID,
 		WorkspaceID:   job.WorkspaceId,
 	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
 	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
 		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
-			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
+			rt.eventOrderingDisabledForDestination(destinationID)) {
 		eventOrderingDisabled = true
 		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
 			"destType":      rt.destType,
-			"destinationId": parameters.DestinationID,
+			"destinationId": destinationID,
 			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
@@ -599,7 +593,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			slot.Release()
 			return nil, types.ErrJobBackoff
 		}
-		if rt.shouldThrottle(ctx, job, parameters) {
+		if rt.shouldThrottle(ctx, job, destinationID) {
 			slot.Release()
 			return nil, types.ErrDestinationThrottled
 		}
@@ -637,7 +631,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		return nil, types.ErrBarrierExists
 	}
 	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if !abortedJob && rt.shouldThrottle(ctx, job, parameters) {
+	if !abortedJob && rt.shouldThrottle(ctx, job, destinationID) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -693,20 +687,20 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, parameters routerutils.JobParameters) (limited bool) {
+func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, destinationID string) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
 		rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
-			rt.destType, parameters.DestinationID,
+			rt.destType, destinationID,
 		)
 		return false
 	}
 
-	throttler := rt.throttlerFactory.Get(rt.destType, parameters.DestinationID)
+	throttler := rt.throttlerFactory.Get(rt.destType, destinationID)
 	throttlingCost := rt.getThrottlingCost(job)
 
-	limited, err := throttler.CheckLimitReached(ctx, parameters.DestinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(ctx, destinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		rt.throttlingErrorStat.Count(1)

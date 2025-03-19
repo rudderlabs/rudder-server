@@ -409,6 +409,9 @@ type JobT struct {
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
+
+	ctx     context.Context
+	ctxOnce sync.Once
 }
 
 func (job *JobT) String() string {
@@ -426,6 +429,34 @@ func (job *JobT) sanitizeJSON() error {
 		return err
 	}
 	return nil
+}
+
+type traceContainer struct {
+	TraceParent string `json:"traceparent"`
+}
+
+func (job *JobT) Ctx() context.Context {
+	job.ctxOnce.Do(func() {
+		if job.Parameters == nil {
+			job.ctx = context.Background()
+			return
+		}
+
+		var c traceContainer
+		err := jsonrs.Unmarshal(job.Parameters, &c)
+		if err != nil {
+			job.ctx = context.Background()
+			return
+		}
+
+		if c.TraceParent == "" {
+			job.ctx = context.Background()
+			return
+		}
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), c.TraceParent)
+		job.ctx = ctx
+	})
+	return job.ctx
 }
 
 // The struct fields need to be exposed to JSON package
@@ -1810,7 +1841,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 
 		for _, key := range cacheParameterFilters {
 			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, fmt.Sprintf("%s:%s", key, val))
+			params = append(params, key+":"+val)
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 
