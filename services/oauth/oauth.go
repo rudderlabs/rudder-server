@@ -168,6 +168,11 @@ func GetAuthType(config map[string]interface{}) AuthType {
 	return AuthType(authType)
 }
 
+func IsOAuthDestination(config map[string]interface{}) bool {
+	authType := GetAuthType(config)
+	return authType == OAuth
+}
+
 // This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler(provider tokenProvider, options ...func(*OAuthErrResHandler)) *OAuthErrResHandler {
 	oAuthErrResHandler := &OAuthErrResHandler{

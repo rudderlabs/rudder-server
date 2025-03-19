@@ -83,6 +83,6 @@ linters-settings:
             desc: 'use "slices" instead'
           - pkg: "github.com/json-iterator/go"
             desc: 'use "jsonrs" instead'
-          - pkg: "github.com/sugawarayuuta/sonnet"
+          - pkg: "github.com/rudderlabs/sonnet"
             desc: 'use "jsonrs" instead'
 

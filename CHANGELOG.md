@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.45.1](https://github.com/rudderlabs/rudder-server/compare/v1.45.0...v1.45.1) (2025-03-19)
+
+
+### Bug Fixes
+
+* sonnet panic while unmarshalling float64 types ([#5616](https://github.com/rudderlabs/rudder-server/issues/5616)) ([1b94c95](https://github.com/rudderlabs/rudder-server/commit/1b94c95fc674699bdfa32676c6fbe32d329ee3f0))
+
+## [1.45.0](https://github.com/rudderlabs/rudder-server/compare/v1.44.0...v1.45.0) (2025-03-18)
+
+
+### Bug Fixes
+
+* group jobs by dest id to transformer from router ([#5598](https://github.com/rudderlabs/rudder-server/issues/5598)) ([6f58ad5](https://github.com/rudderlabs/rudder-server/commit/6f58ad592dc2f576c6cb3ae054757a6fc68dd161))
+* **jobsdb:** cache not getting updating after 10 consecutive uncommitted transactions ([#5585](https://github.com/rudderlabs/rudder-server/issues/5585)) ([b1901c7](https://github.com/rudderlabs/rudder-server/commit/b1901c7f83b7ff9f00af2b62e1f1cfb6563259b2))
+* **jobsdb:** clearDB option fails with error ([#5570](https://github.com/rudderlabs/rudder-server/issues/5570)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** clearDB option fails with error ([#5570](https://github.com/rudderlabs/rudder-server/issues/5570)) ([f3f6156](https://github.com/rudderlabs/rudder-server/commit/f3f615610c1cdbde2cde20f6008b2869d2abab47))
+* race condition in dedup service causing panic ([#5606](https://github.com/rudderlabs/rudder-server/issues/5606)) ([db466d5](https://github.com/rudderlabs/rudder-server/commit/db466d597bc2e5e4a7799bc76d6a0dacfbb8865b))
+* warehouse transformations for empty array and map ([#5603](https://github.com/rudderlabs/rudder-server/issues/5603)) ([456a62c](https://github.com/rudderlabs/rudder-server/commit/456a62cd596b4c68ddcd57291123cb831599ec60))
+
+
+### Miscellaneous
+
+* [Snyk] Security upgrade alpine from 3.21.0 to 3.21.3 ([#5534](https://github.com/rudderlabs/rudder-server/issues/5534)) ([2172462](https://github.com/rudderlabs/rudder-server/commit/21724621ef0061aba9a90687d3c58e41a98533e3))
+* add columns in snowflake using IF NOT EXISTS ([#5581](https://github.com/rudderlabs/rudder-server/issues/5581)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* add columns in snowflake using IF NOT EXISTS ([#5581](https://github.com/rudderlabs/rudder-server/issues/5581)) ([ff6e02e](https://github.com/rudderlabs/rudder-server/commit/ff6e02e7fde39e4309c4496bdfcc4de210ae746d))
+* add pattern based matching for version deprecation errors ([#5558](https://github.com/rudderlabs/rudder-server/issues/5558)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* change release to 1.45.0 ([b508bf0](https://github.com/rudderlabs/rudder-server/commit/b508bf0c2d05d66b251e3ff682dbd13bf0d31243))
+* change release to 1.45.0 ([#5610](https://github.com/rudderlabs/rudder-server/issues/5610)) ([1fca839](https://github.com/rudderlabs/rudder-server/commit/1fca839521bcb0d28f606052f76fde3e9fd8dc6c))
+* cpu performance improvements ([#5591](https://github.com/rudderlabs/rudder-server/issues/5591)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* cpu performance improvements ([#5591](https://github.com/rudderlabs/rudder-server/issues/5591)) ([404af70](https://github.com/rudderlabs/rudder-server/commit/404af701595a7d4aeab6e0d76dfd161b95f74780))
+* **deps:** bump the frequent group across 1 directory with 3 updates ([#5586](https://github.com/rudderlabs/rudder-server/issues/5586)) ([e802ed3](https://github.com/rudderlabs/rudder-server/commit/e802ed3a29dc6394f58e69578681f4c0dba07bb5))
+* **deps:** bump the go-deps group across 1 directory with 15 updates ([#5601](https://github.com/rudderlabs/rudder-server/issues/5601)) ([53965c5](https://github.com/rudderlabs/rudder-server/commit/53965c599beec5834ad61d345b62d9d9a9965c69))
+* **jobsdb:** add metrics for job and payload throughput ([#5568](https://github.com/rudderlabs/rudder-server/issues/5568)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** add metrics for job and payload throughput ([#5568](https://github.com/rudderlabs/rudder-server/issues/5568)) ([6acc27a](https://github.com/rudderlabs/rudder-server/commit/6acc27af1942571f910d194b5c50acd2de9ffb35))
+* **jobsdb:** benchmarking scenarios ([#5571](https://github.com/rudderlabs/rudder-server/issues/5571)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** benchmarking scenarios ([#5571](https://github.com/rudderlabs/rudder-server/issues/5571)) ([1e65912](https://github.com/rudderlabs/rudder-server/commit/1e659125d84c3759c4f1ff64eed15839c395d288))
+* **jobsdb:** finer granularity metrics when querying jobs ([#5582](https://github.com/rudderlabs/rudder-server/issues/5582)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** finer granularity metrics when querying jobs ([#5582](https://github.com/rudderlabs/rudder-server/issues/5582)) ([43f1015](https://github.com/rudderlabs/rudder-server/commit/43f10159717626b688d771da7a7e7f24f266d8fb))
+* **jobsdb:** improve checkValidJobState performance ([#5590](https://github.com/rudderlabs/rudder-server/issues/5590)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** improve checkValidJobState performance ([#5590](https://github.com/rudderlabs/rudder-server/issues/5590)) ([d9c1231](https://github.com/rudderlabs/rudder-server/commit/d9c12311c0b4243a13fa50e5f26316feba19cd93))
+* **jobsdb:** leaf invalidations should be logged at debug level ([#5589](https://github.com/rudderlabs/rudder-server/issues/5589)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** leaf invalidations should be logged at debug level ([#5589](https://github.com/rudderlabs/rudder-server/issues/5589)) ([7d66042](https://github.com/rudderlabs/rudder-server/commit/7d6604289f18c2780fcaf13eafe90ddd3e8a89a7))
+* **jobsdb:** optimize job status table indexes ([#5584](https://github.com/rudderlabs/rudder-server/issues/5584)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **jobsdb:** optimize job status table indexes ([#5584](https://github.com/rudderlabs/rudder-server/issues/5584)) ([b52d8a9](https://github.com/rudderlabs/rudder-server/commit/b52d8a91a56b7e81095638b96a02ba21ab1d9180))
+* optimise drain function ([#5596](https://github.com/rudderlabs/rudder-server/issues/5596)) ([3357429](https://github.com/rudderlabs/rudder-server/commit/33574291523296f4c28b7c7a35bd477a83de51ea))
+* **router:** finding worker slots efficiently ([#5593](https://github.com/rudderlabs/rudder-server/issues/5593)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **router:** finding worker slots efficiently ([#5593](https://github.com/rudderlabs/rudder-server/issues/5593)) ([b1cc1f4](https://github.com/rudderlabs/rudder-server/commit/b1cc1f4abdc26d02260b7f74b7ba0656b8ab9fc4))
+* **router:** remove validation for post parameters ([#5592](https://github.com/rudderlabs/rudder-server/issues/5592)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* **router:** remove validation for post parameters ([#5592](https://github.com/rudderlabs/rudder-server/issues/5592)) ([ff55671](https://github.com/rudderlabs/rudder-server/commit/ff55671d03ffcf38fa15fbd56569080f82150148))
+* warehouse transformer benchmarking tool ([#5583](https://github.com/rudderlabs/rudder-server/issues/5583)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* warehouse transformer benchmarking tool ([#5583](https://github.com/rudderlabs/rudder-server/issues/5583)) ([35f590b](https://github.com/rudderlabs/rudder-server/commit/35f590b86ccc0f3f6b61c8327b9f2fe6faba22b1))
+* warehouse transformer optimizations for concurrency ([#5588](https://github.com/rudderlabs/rudder-server/issues/5588)) ([37de858](https://github.com/rudderlabs/rudder-server/commit/37de8580acecc53a4bab205e702691360b021209))
+* warehouse transformer optimizations for concurrency ([#5588](https://github.com/rudderlabs/rudder-server/issues/5588)) ([c234fad](https://github.com/rudderlabs/rudder-server/commit/c234fad4cc87ac40e72f29db29039e828062f1f2))
+
 ## [1.44.0](https://github.com/rudderlabs/rudder-server/compare/v1.43.0...v1.44.0) (2025-03-03)
 
 

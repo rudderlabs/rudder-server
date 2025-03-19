@@ -45,7 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -3271,10 +3271,13 @@ var _ = Describe("Processor", Ordered, func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-			c.MockDedup.EXPECT().GetBatch(gomock.Any()).Return(map[dedupTypes.KeyValue]bool{
-				{Key: "message-some-id", JobID: 1010, WorkspaceID: ""}: true,
-				{Key: "message-some-id", JobID: 2010, WorkspaceID: ""}: true,
-			}, nil).After(callUnprocessed).AnyTimes()
+			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
+				return map[dedup.BatchKey]bool{
+					{Index: 0, Key: "message-some-id"}: true, // only first message with the same message id should be allowed
+					// {Index: 1, Key: "message-some-id"}: false,
+					// {Index: 2, Key: "message-some-id"}: false,
+				}, nil
+			}).After(callUnprocessed).AnyTimes()
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
@@ -3283,7 +3286,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
-			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(3)).Times(1)
+			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(1)).Times(1)
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
