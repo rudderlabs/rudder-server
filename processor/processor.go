@@ -3323,6 +3323,22 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	proc.stats.statDBReadEvents(partition).Observe(float64(unprocessedList.EventsCount))
 	proc.stats.statDBReadPayloadBytes(partition).Observe(float64(totalPayloadBytes))
 
+	for _, job := range unprocessedList.Jobs {
+		ctx := job.Ctx()
+		tags := stats.SpanWithTags(map[string]string{
+			"user_id":   job.UserID,
+			"partition": partition,
+		})
+
+		_, span := proc.tracer.Start(
+			ctx, "proc.getJobs", stats.SpanKindConsumer,
+			stats.SpanWithTimestamp(s),
+			tags,
+		)
+		span.AddEvent("job_created", stats.SpanWithTimestamp(job.CreatedAt))
+		span.End()
+	}
+
 	return unprocessedList
 }
 
@@ -3332,6 +3348,19 @@ func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
+		ctx := job.Ctx()
+		tags := stats.SpanWithTags(map[string]string{
+			"user_id":   job.UserID,
+			"partition": partition,
+		})
+
+		_, span := proc.tracer.Start(
+			ctx, "proc.markExecuting", stats.SpanKindConsumer,
+			stats.SpanWithTimestamp(start),
+			tags,
+		)
+		defer span.End()
+
 		statusList[i] = &jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
