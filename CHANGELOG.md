@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.1](https://github.com/rudderlabs/rudder-server/compare/v1.45.0...v1.45.1) (2025-03-19)
+
+
+### Bug Fixes
+
+* sonnet panic while unmarshalling float64 types ([#5616](https://github.com/rudderlabs/rudder-server/issues/5616)) ([1b94c95](https://github.com/rudderlabs/rudder-server/commit/1b94c95fc674699bdfa32676c6fbe32d329ee3f0))
+
 ## [1.45.0](https://github.com/rudderlabs/rudder-server/compare/v1.44.0...v1.45.0) (2025-03-18)
 
 

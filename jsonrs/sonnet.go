@@ -4,10 +4,11 @@ import (
 	"io"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/sugawarayuuta/sonnet"
+
+	"github.com/rudderlabs/sonnet"
 )
 
-// sonnetJSON is the JSON implementation of github.com/sugawarayuuta/sonnet.
+// sonnetJSON is the JSON implementation of github.com/rudderlabs/sonnet.
 type sonnetJSON struct{}
 
 func (j *sonnetJSON) Marshal(v any) ([]byte, error) {
