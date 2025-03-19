@@ -44,7 +44,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -1775,7 +1774,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		messageID     string
 		userId        string
 		eventParams   types.EventParams
-		dedupKey      dedupTypes.KeyValue
+		dedupKey      dedup.BatchKey
 		requestIP     string
 		recievedAt    time.Time
 		parameters    json.RawMessage
@@ -1787,7 +1786,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 	}
 
 	var jobsWithMetaData []jobWithMetaData
-	var dedupKeysWithWorkspaceID []dedupTypes.KeyValue
+	var dedupBatchKeys []dedup.BatchKey
+	var dedupBatchKeysIdx int
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
 		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
@@ -1862,12 +1862,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				}
 				return payloadBytes
 			})
-			dedupKey := dedupTypes.KeyValue{
-				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
-				WorkspaceID: batchEvent.WorkspaceId,
-				JobID:       batchEvent.JobID,
+			dedupBatchKey := dedup.BatchKey{
+				Index: dedupBatchKeysIdx,
+				Key:   messageId + eventParams.SourceJobRunId,
 			}
-
+			dedupBatchKeysIdx++
 			jobsWithMetaData = append(jobsWithMetaData, jobWithMetaData{
 				jobID:         batchEvent.JobID,
 				userId:        batchEvent.UserID,
@@ -1875,7 +1874,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				singularEvent: singularEvent,
 				messageID:     messageId,
 				eventParams:   eventParams,
-				dedupKey:      dedupKey,
+				dedupKey:      dedupBatchKey,
 				requestIP:     requestIP,
 				recievedAt:    receivedAt,
 				parameters:    parameters,
@@ -1885,14 +1884,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				customVal:     batchEvent.CustomVal,
 				payloadFunc:   payloadFunc,
 			})
-			dedupKeysWithWorkspaceID = append(dedupKeysWithWorkspaceID, dedupKey)
+			dedupBatchKeys = append(dedupBatchKeys, dedupBatchKey)
 		}
 	}
 
-	var keyMap map[dedupTypes.KeyValue]bool
+	var allowedBatchKeys map[dedup.BatchKey]bool
 	var err error
 	if proc.config.enableDedup {
-		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
+		allowedBatchKeys, err = proc.dedup.Allowed(dedupBatchKeys...)
 		if err != nil {
 			return nil, err
 		}
@@ -1904,14 +1903,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		}
 
 		if proc.config.enableDedup {
-			dedupKey := event.dedupKey
-			ok := keyMap[dedupKey]
-			if !ok {
-				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey.Key)
+			if !allowedBatchKeys[event.dedupKey] {
+				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
-			dedupKeys[dedupKey.Key] = struct{}{}
+			dedupKeys[event.dedupKey.Key] = struct{}{}
 		}
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
