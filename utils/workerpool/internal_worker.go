@@ -39,6 +39,8 @@ type internalWorker struct {
 	}
 }
 
+var noWorkCountThreshold = 10
+
 // start starts the various worker goroutines
 func (w *internalWorker) start() {
 	// ping loop
@@ -49,10 +51,17 @@ func (w *internalWorker) start() {
 			close(w.ping)
 		}()
 		defer w.logger.Debugf("ping loop stopped for worker: %s", w.partition)
+
+		noWorkCount := 0
 		for {
 			w.logger.Debugf("worker %q listening for ping", w.partition)
 			w.setIdleSince(time.Time{})
 			if w.delegate.Work() {
+				noWorkCount = 0
+				continue
+			}
+			noWorkCount++
+			if noWorkCount < noWorkCountThreshold {
 				continue
 			}
 

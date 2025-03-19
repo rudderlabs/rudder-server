@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/crash"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // newPartitionWorker creates a worker that is responsible for picking up jobs for a single partition (none, workspace, destination).
@@ -71,11 +70,6 @@ func (pw *partitionWorker) Work() bool {
 	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
 	worked := pw.pickupCount > 0
-	if worked && !pw.limitsReached { // sleep only if we worked and we didn't reach the limits
-		if sleepFor := pw.rt.reloadableConfig.readSleep.Load() - time.Since(start); sleepFor > 0 {
-			_ = misc.SleepCtx(pw.ctx, sleepFor)
-		}
-	}
 	return worked
 }
 
