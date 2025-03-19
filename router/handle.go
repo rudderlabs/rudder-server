@@ -187,7 +187,6 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		rt.pipelineDelayStats(partition, nil, nil)
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
 		limiterEnd() // exit the limiter before sleeping
-		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep.Load())
 		return 0, false
 	}
 
