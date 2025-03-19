@@ -21,7 +21,6 @@ import (
 )
 
 type BadgerDB struct {
-	stats    stats.Stats
 	logger   loggerForBadger
 	badgerDB *badger.DB
 	window   config.ValueLoader[time.Duration]
@@ -32,6 +31,13 @@ type BadgerDB struct {
 	wg     sync.WaitGroup
 	bgCtx  context.Context
 	cancel context.CancelFunc
+	stats  struct {
+		getTimer stats.Timer
+		setTimer stats.Timer
+		lsmSize  stats.Gauge
+		vlogSize stats.Gauge
+		totSize  stats.Gauge
+	}
 }
 
 // DefaultPath returns the default path for the deduplication service's badger DB
@@ -44,7 +50,7 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
+func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	log := logger.NewLogger().Child("Dedup")
 	badgerOpts := badger.
@@ -63,7 +69,6 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 
 	bgCtx, cancel := context.WithCancel(context.Background())
 	db := &BadgerDB{
-		stats:  stats,
 		logger: loggerForBadger{log},
 		path:   path,
 		window: dedupWindow,
@@ -71,6 +76,12 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 		bgCtx:  bgCtx,
 		cancel: cancel,
 	}
+	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
+	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
+	db.stats.lsmSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "lsm"})
+	db.stats.vlogSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "vlog"})
+	db.stats.totSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "total"})
+
 	return &Dedup{
 		badgerDB:    db,
 		uncommitted: make(map[string]struct{}),
@@ -78,7 +89,7 @@ func NewBadgerDB(conf *config.Config, stats stats.Stats, path string) *Dedup {
 }
 
 func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
-	defer d.stats.NewTaggedStat("dedup_getbatch_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+	defer d.stats.getTimer.RecordDuration()()
 	results := make(map[string]bool, len(keys))
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
 		for _, key := range keys {
@@ -96,7 +107,7 @@ func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
 }
 
 func (d *BadgerDB) Set(keys []string) error {
-	defer d.stats.NewTaggedStat("dedup_commit_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"}).RecordDuration()()
+	defer d.stats.setTimer.RecordDuration()()
 	wb := d.badgerDB.NewWriteBatch()
 	defer wb.Cancel()
 	for _, key := range keys {
@@ -157,10 +168,9 @@ func (d *BadgerDB) gcLoop() {
 			d.logger.Errorf("Error while getting badgerDB usage: %v", err)
 			continue
 		}
-		statName := "dedup"
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "lsm"}).Gauge(lsmSize)
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "vlog"}).Gauge(vlogSize)
-		d.stats.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": statName, "type": "total"}).Gauge(totSize)
+		d.stats.lsmSize.Gauge(lsmSize)
+		d.stats.vlogSize.Gauge(vlogSize)
+		d.stats.totSize.Gauge(totSize)
 	}
 }
 

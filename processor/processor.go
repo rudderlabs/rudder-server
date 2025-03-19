@@ -1899,7 +1899,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 
 		if proc.config.enableDedup {
 			if !allowedBatchKeys[event.dedupKey] {
-				proc.logger.Debugf("Dropping event with duplicate key: %s", event.dedupKey.Key)
+				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
