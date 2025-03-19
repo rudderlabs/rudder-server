@@ -3,126 +3,15 @@ package processor
 import (
 	"context"
 	"sync"
-	"time"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type worker struct {
-	partition string
-	workers   []*partitionWorker
-	logger    logger.Logger
-	stats     *processorStats
-	handle    workerHandle
-	g         *errgroup.Group
-}
-
-// newProcessorWorker creates a new worker for the specified partition
-func newProcessorWorker(partition string, h workerHandle) *worker {
-	w := &worker{
-		partition: partition,
-		logger:    h.logger().Child(partition),
-		stats:     h.stats(),
-		handle:    h,
-	}
-	w.g, _ = errgroup.WithContext(context.Background())
-
-	// Create workers for each partition
-	pipelinesPerPartition := h.config().pipelinesPerPartition
-	w.workers = make([]*partitionWorker, pipelinesPerPartition)
-	for i := 0; i < pipelinesPerPartition; i++ {
-		w.workers[i] = newWorker(partition, h)
-	}
-
-	return w
-}
-
-// Work processes jobs for the specified partition
-// Returns true if work was done, false otherwise
-func (w *worker) Work() bool {
-	// If pipelining is disabled, use the legacy job handling path
-	if !w.handle.config().enablePipelining {
-		return w.handle.handlePendingGatewayJobs(w.partition)
-	}
-
-	start := time.Now()
-	// Get jobs for this partition
-	jobs := w.handle.getJobs(w.partition)
-
-	// If no jobs were found, return false
-	if len(jobs.Jobs) == 0 {
-		return false
-	}
-
-	// Mark jobs as executing
-	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
-		w.logger.Error("Error marking jobs as executing", "error", err)
-		panic(err)
-	}
-
-	// Record throughput metrics
-	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
-
-	// Initialize rsources stats
-	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
-	rsourcesStats.BeginProcessing(jobs.Jobs)
-
-	// Distribute jobs across partitions based on UserID
-	jobsByPartition := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) int {
-		return int(misc.GetMurmurHash(job.UserID) % uint64(w.handle.config().pipelinesPerPartition))
-	})
-
-	// Send jobs to their respective partitions for processing
-	var wg sync.WaitGroup
-	for partition, partitionJobs := range jobsByPartition {
-		wg.Add(1)
-		go func(partition int, jobs []*jobsdb.JobT) {
-			defer wg.Done()
-			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
-			for _, subJob := range subJobs {
-				w.workers[partition].channel.preprocess <- subJob
-			}
-		}(partition, partitionJobs)
-	}
-	wg.Wait()
-
-	// Handle rate limiting if needed
-	if !jobs.LimitsReached {
-		readLoopSleep := w.handle.config().readLoopSleep
-		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
-			// Sleep for the remaining time
-			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
-				return true
-			}
-		}
-	}
-
-	return true
-}
-
-// SleepDurations returns the min and max sleep durations for the worker
-func (w *worker) SleepDurations() (min, max time.Duration) {
-	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
-}
-
-// Stop stops the worker and waits until all its goroutines have stopped
-func (w *worker) Stop() {
-	for _, worker := range w.workers {
-		worker.Stop()
-	}
-}
-
 // newWorker creates a new partition worker
-func newWorker(partition string, h workerHandle) *partitionWorker {
-	w := &partitionWorker{
+func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
+	w := &pipelineWorker{
 		handle:    h,
 		logger:    h.logger().Child(partition),
 		partition: partition,
@@ -146,11 +35,11 @@ func newWorker(partition string, h workerHandle) *partitionWorker {
 	return w
 }
 
-// partitionWorker picks jobs from jobsdb for the appropriate partition and performs all processing steps:
+// pipelineWorker picks jobs from jobsdb for the appropriate partition and performs all processing steps:
 //  1. preprocess
 //  2. transform
 //  3. store
-type partitionWorker struct {
+type pipelineWorker struct {
 	partition string
 	handle    workerHandle
 	logger    logger.Logger
@@ -169,7 +58,7 @@ type partitionWorker struct {
 }
 
 // start launches the various worker goroutines for the pipelined processing
-func (w *partitionWorker) start() {
+func (w *pipelineWorker) start() {
 	// Setup context cancellation handler
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
@@ -266,7 +155,7 @@ func (w *partitionWorker) start() {
 }
 
 // Stop gracefully terminates the worker by canceling its context and waiting for goroutines to finish
-func (w *partitionWorker) Stop() {
+func (w *pipelineWorker) Stop() {
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
 }
