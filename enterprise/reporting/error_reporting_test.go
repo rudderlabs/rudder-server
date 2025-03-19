@@ -315,6 +315,102 @@ func TestExtractErrorDetails(t *testing.T) {
 				errorCode: "deprecation",
 			},
 		},
+		{
+			caseDescription: "should match standalone strong deprecation term 'end of life'",
+			inputErrMsg:     "This feature is end of life",
+			output: depTcOutput{
+				errorMsg:  "This feature is end of life",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match standalone strong deprecation term 'end-of-support'",
+			inputErrMsg:     "API version 1.0 is end-of-support",
+			output: depTcOutput{
+				errorMsg:  "API version is end of support",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match standalone strong deprecation term 'no longer supported'",
+			inputErrMsg:     "Legacy API is no longer supported",
+			output: depTcOutput{
+				errorMsg:  "Legacy API is no longer supported",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated version' combination",
+			inputErrMsg:     "This version is deprecated",
+			output: depTcOutput{
+				errorMsg:  "This version is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated api' combination",
+			inputErrMsg:     "The API is deprecated",
+			output: depTcOutput{
+				errorMsg:  "The API is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated endpoint' combination",
+			inputErrMsg:     "This endpoint is deprecated",
+			output: depTcOutput{
+				errorMsg:  "This endpoint is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated library' combination",
+			inputErrMsg:     "The library is deprecated",
+			output: depTcOutput{
+				errorMsg:  "The library is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated component' combination",
+			inputErrMsg:     "This component is deprecated",
+			output: depTcOutput{
+				errorMsg:  "This component is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated module' combination",
+			inputErrMsg:     "The module is deprecated",
+			output: depTcOutput{
+				errorMsg:  "The module is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated functionality' combination",
+			inputErrMsg:     "This functionality is deprecated",
+			output: depTcOutput{
+				errorMsg:  "This functionality is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated feature' combination",
+			inputErrMsg:     "The feature is deprecated",
+			output: depTcOutput{
+				errorMsg:  "The feature is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should match 'deprecated product' combination",
+			inputErrMsg:     "This product is deprecated",
+			output: depTcOutput{
+				errorMsg:  "This product is deprecated",
+				errorCode: "deprecation",
+			},
+		},
 	}
 
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
@@ -395,7 +491,7 @@ var tcs = []getValTc{
 		expected: "Request failed  with status: 502",
 	},
 	{
-		inputStr: `{"response":"{\"status\":400,\"destinationResponse\":{\"response\":\"\u003c!DOCTYPE html\u003e\\n\u003chtml lang=en\u003e\\n  \u003cmeta charset=utf-8\u003e\\n  \u003cmeta name=viewport content=\\\"initial-scale=1, minimum-scale=1, width=device-width\\\"\u003e\\n  \u003ctitle\u003eError 400 (Bad Request)!!1\u003c/title\u003e\\n  \u003cstyle\u003e\\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* \u003e body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\\n  \u003c/style\u003e\\n  \u003ca href=//www.google.com/\u003e\u003cspan id=logo aria-label=Google\u003e\u003c/span\u003e\u003c/a\u003e\\n  \u003cp\u003e\u003cb\u003e400.\u003c/b\u003e \u003cins\u003eThat’s an error.\u003c/ins\u003e\\n  \u003cp\u003eYour client has issued a malformed or illegal request.  \u003cins\u003eThat’s all we know.\u003c/ins\u003e\\n\",\"status\":400,\"rudderJobMetadata\":{\"jobId\":597438246,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"2E2b60bs1ybmIKuGvaVxtLT5lYo\",\"destinationId\":\"2E5xYQkj5OVrA3CWexvRLV4b7RH\",\"workspaceId\":\"1sUXvPs0hYgjBxSfjG4gqnRFNoP\",\"secret\":null}},\"message\":\"[GA4 Response Handler] Request failed for destination ga4 with status: 400\",\"statTags\":{\"errorCategory\":\"network\",\"errorType\":\"aborted\",\"destType\":\"GA4\",\"module\":\"destination\",\"implementation\":\"native\",\"feature\":\"dataDelivery\",\"destinationId\":\"2E5xYQkj5OVrA3CWexvRLV4b7RH\",\"workspaceId\":\"1sUXvPs0hYgjBxSfjG4gqnRFNoP\"}}","firstAttemptedAt":"2023-03-30T17:11:25.524Z","content-type":"application/json"}`,
+		inputStr: `{"response":"{\"status\":400,\"destinationResponse\":{\"response\":\"\u003c!DOCTYPE html\u003e\\n\u003chtml lang=en\u003e\\n  \u003cmeta charset=utf-8\u003e\\n  \u003cmeta name=viewport content=\\\"initial-scale=1, minimum-scale=1, width=device-width\\\"\u003e\\n  \u003ctitle\u003eError 400 (Bad Request)!!1\u003c/title\u003e\\n  \u003cstyle\u003e\\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* \u003e body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\\n  \u003c/style\u003e\\n  \u003ca href=//www.google.com/\u003e\u003cspan id=logo aria-label=Google\u003e\u003c/span\u003e\u003c/a\u003e\\n  \u003cp\u003e\u003cb\u003e400.\u003c/b\u003e \u003cins\u003eThat's an error.\u003c/ins\u003e\\n  \u003cp\u003eYour client has issued a malformed or illegal request.  \u003cins\u003eThat's all we know.\u003c/ins\u003e\\n\",\"status\":400,\"rudderJobMetadata\":{\"jobId\":597438246,\"attemptNum\":0,\"userId\":\"\",\"sourceId\":\"2E2b60bs1ybmIKuGvaVxtLT5lYo\",\"destinationId\":\"2E5xYQkj5OVrA3CWexvRLV4b7RH\",\"workspaceId\":\"1sUXvPs0hYgjBxSfjG4gqnRFNoP\",\"secret\":null}},\"message\":\"[GA4 Response Handler] Request failed for destination ga4 with status: 400\",\"statTags\":{\"errorCategory\":\"network\",\"errorType\":\"aborted\",\"destType\":\"GA4\",\"module\":\"destination\",\"implementation\":\"native\",\"feature\":\"dataDelivery\",\"destinationId\":\"2E5xYQkj5OVrA3CWexvRLV4b7RH\",\"workspaceId\":\"1sUXvPs0hYgjBxSfjG4gqnRFNoP\"}}","firstAttemptedAt":"2023-03-30T17:11:25.524Z","content-type":"application/json"}`,
 		expected: "[GA4 Response Handler] Request failed for destination ga4 with status: 400",
 	},
 	{
@@ -415,11 +511,11 @@ var tcs = []getValTc{
 		expected: `You're creating a duplicate record. We recommend you use an existing record instead.`,
 	},
 	{
-		inputStr: `{"response":"\u003c!--\n  ~ Copyright (C) 2010-2021 Evergage, Inc.\n  ~ All rights reserved.\n  --\u003e\n\n\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n    \u003cmeta charset=\"UTF-8\"\u003e\n    \u003ctitle\u003eSalesforce Personalization\u003c/title\u003e\n    \u003clink rel=\"icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003clink rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003cstyle\u003e\n        body { font-family: Salesforce Sans,Arial,sans-serif; text-align: center; padding: 50px; background-color:#fff; }\n        h1 { font-size: 1.25rem; color: #080707; text-align: center; margin-top: -0.5rem; }\n        p { font-size: 0.8125rem; color: #3E3E3C; text-align:center; }\n    \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n    \u003cdiv align=”center”\u003e\n        \u003cimg src=\"/PageNotAvailable.svg\" /\u003e\n    \u003c/div\u003e\n    \u003cdiv align=”center”\u003e\n        \u003ch1\u003eThe page you want isn’t available.\u003c/h1\u003e\n        \u003cp\u003eTo find the page you want, use the main navigation.\u003c/p\u003e\n    \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e","firstAttemptedAt":"2024-09-02T06:57:13.829Z","content-type":"text/html"}`,
-		expected: "The page you want isn’t available.\r\n\r\n To find the page you want, use the main navigation.\r\n\r\n ",
+		inputStr: `{"response":"\u003c!--\n  ~ Copyright (C) 2010-2021 Evergage, Inc.\n  ~ All rights reserved.\n  --\u003e\n\n\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n    \u003cmeta charset=\"UTF-8\"\u003e\n    \u003ctitle\u003eSalesforce Personalization\u003c/title\u003e\n    \u003clink rel=\"icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003clink rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003cstyle\u003e\n        body { font-family: Salesforce Sans,Arial,sans-serif; text-align: center; padding: 50px; background-color:#fff; }\n        h1 { font-size: 1.25rem; color: #080707; text-align: center; margin-top: -0.5rem; }\n        p { font-size: 0.8125rem; color: #3E3E3C; text-align:center; }\n    \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n    \u003cdiv align=”center”\u003e\n        \u003cimg src=\"/PageNotAvailable.svg\" /\u003e\n    \u003c/div\u003e\n    \u003cdiv align=”center”\u003e\n        \u003ch1\u003eThe page you want isn't available.\u003c/h1\u003e\n        \u003cp\u003eTo find the page you want, use the main navigation.\u003c/p\u003e\n    \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e","firstAttemptedAt":"2024-09-02T06:57:13.829Z","content-type":"text/html"}`,
+		expected: "The page you want isn't available.\r\n\r\n To find the page you want, use the main navigation.\r\n\r\n ",
 	},
 	{
-		inputStr: `{"response":"{\"status\":\"fail\",\"processed\":0,\"unprocessed\":[{\"status\":\"fail\",\"code\":513,\"error\":\"Event Name is incorrect. ErrorCode: 513 - Trying to raise a restricted system event. Skipped record number : 1\",\"record\":{\"evtData\":{\"initial_referrer\":\"https://www.google.com/\",\"initial_referring_domain\":\"www.google.com\",\"path\":\"/busca/\",\"referrer\":\"https://www.extrabom.com.br/busca/?q=Bombril\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"referring_domain\":\"www.extrabom.com.br\",\"search\":\"?q=X14\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"tab_url\":\"https://www.extrabom.com.br/busca/?q=X14\u0026anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"title\":\"X14 - Busca - Extrabom\",\"url\":\"https://www.extrabom.com.br/busca/?q=X14\"},\"evtName\":\"Web Page Viewed\",\"identity\":\"69298\",\"type\":\"event\"}}]}","firstAttemptedAt":"2024-09-02T00:40:06.451Z","content-type":"application/json"}`,
+		inputStr: `{"response":"{\"status\":\"fail\",\"processed\":0,\"unprocessed\":[{\"status\":\"fail\",\"code\":513,\"error\":\"Event Name is incorrect. ErrorCode: 513 - Trying to raise a restricted system event. Skipped record number : 1\",\"record\":{\"evtData\":{\"initial_referrer\":\"https://www.google.com/\",\"initial_referring_domain\":\"www.google.com\",\"path\":\"/busca/\",\"referrer\":\"https://www.extrabom.com.br/busca/?q=Bombril&anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"referring_domain\":\"www.extrabom.com.br\",\"search\":\"?q=X14&anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"tab_url\":\"https://www.extrabom.com.br/busca/?q=X14&anonymous=347f65ea66096fd7db4e1bd88211a83dfbe263b78da6a5de0261d160c54100ba\",\"title\":\"X14 - Busca - Extrabom\",\"url\":\"https://www.extrabom.com.br/busca/?q=X14\"},\"evtName\":\"Web Page Viewed\",\"identity\":\"69298\",\"type\":\"event\"}}]}","firstAttemptedAt":"2024-09-02T00:40:06.451Z","content-type":"application/json"}`,
 		expected: "Event Name is incorrect. ErrorCode: 513 - Trying to raise a restricted system event. Skipped record number : 1",
 	},
 	{

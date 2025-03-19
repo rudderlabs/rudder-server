@@ -56,20 +56,19 @@ var (
 
 	// Status-related terms
 	statusPatterns = []string{
-		"not active", "inactive", "no longer active",
+		"not active", "inactive", "no longer active", "invalid",
 		"not supported", "unsupported", "no longer supported",
-		"not valid", "invalid", "no longer valid",
+		"not valid", "no longer valid", "old", "retired",
 		"not available", "unavailable", "no longer available",
 		"disabled", "expired", "removed", "discontinued",
 		"deprecated", "deprecation", "obsolete", "obsolescence",
-		"outdated", "end of life", "end-of-support", "legacy",
-		"retired", "old", "no longer", "upgrade required",
-		"upgrade recommended",
+		"outdated", "end of life", "end of support",
+		"legacy", "no longer", "upgrade required", "upgrade recommended",
 	}
 
 	// Standalone strong terms (that don't need to be combined)
 	standaloneStrongTerms = []string{
-		"end of life", "end-of-support", "no longer supported",
+		"end of life", "end of support", "no longer supported",
 	}
 
 	// Pre-computed strong deprecation terms
@@ -77,21 +76,18 @@ var (
 )
 
 type ExtractorHandle struct {
-	log                              logger.Logger
-	ErrorMessageKeys                 []string // the keys where in we may have error message
-	versionDeprecationThresholdScore config.ValueLoader[int]
+	log              logger.Logger
+	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	versionDepThreshold := config.GetReloadableIntVar(1, 1, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
 	extractor := &ExtractorHandle{
-		ErrorMessageKeys:                 defaultErrorMessageKeys,
-		log:                              log.Child("ErrorDetailExtractor"),
-		versionDeprecationThresholdScore: versionDepThreshold,
+		ErrorMessageKeys: defaultErrorMessageKeys,
+		log:              log.Child("ErrorDetailExtractor"),
 	}
 	return extractor
 }
@@ -351,16 +347,16 @@ func getErrorCodeFromStatTags(statTags map[string]string) string {
 
 func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
 	// Convert to lowercase for case-insensitive matching
-	lowerErrorMsg := strings.ToLower(errorMessage)
+	cleanedError := strings.Replace(strings.ToLower(errorMessage), "-", " ", -1)
 
 	// Check for version-status combinations
 	for _, vPattern := range versionPatterns {
-		if !strings.Contains(lowerErrorMsg, vPattern) {
+		if !strings.Contains(cleanedError, vPattern) {
 			continue
 		}
 
 		for _, sPattern := range statusPatterns {
-			if strings.Contains(lowerErrorMsg, sPattern) {
+			if strings.Contains(cleanedError, sPattern) {
 				// Found a version pattern and a status pattern
 				return true
 			}
@@ -369,7 +365,7 @@ func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool 
 
 	// Check for strong deprecation terms (using pre-computed list)
 	for _, term := range strongDeprecationTerms {
-		if strings.Contains(lowerErrorMsg, term) {
+		if strings.Contains(cleanedError, term) {
 			return true
 		}
 	}
