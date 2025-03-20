@@ -108,7 +108,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -165,7 +165,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"users": {
 					"user_id":     "string",
 					"received_at": "datetime",
@@ -222,7 +222,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -268,7 +268,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":                  "string",
 						"user_id":             "string",
@@ -395,7 +395,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationRevisionID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -560,7 +560,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -632,7 +632,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -705,7 +705,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -777,7 +777,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -829,7 +829,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "int",
@@ -895,7 +895,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"tracks": {
 					"id":          "string",
 					"user_id":     "string",
@@ -948,7 +948,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1029,7 +1029,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1110,7 +1110,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1191,7 +1191,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1275,7 +1275,7 @@ func TestUploads(t *testing.T) {
 				SourceJobID:           uuid.NewString(),
 				SourceJobRunID:        uuid.NewString(),
 				SourceTaskRunID:       uuid.NewString(),
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1359,7 +1359,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1443,7 +1443,7 @@ func TestUploads(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",
@@ -1533,7 +1533,7 @@ func TestUploads(t *testing.T) {
 			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 			UseRudderStorage:      false,
 			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]any{
+			Schema: map[string]map[string]string{
 				"rudder_identity_mappings": {
 					"rudder_id":            "string",
 					"updated_at":           "datetime",
@@ -1608,7 +1608,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 				LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
 				UseRudderStorage:      false,
 				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]any{
+				Schema: map[string]map[string]string{
 					"tracks": {
 						"id":          "string",
 						"user_id":     "string",

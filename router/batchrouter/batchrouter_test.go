@@ -494,9 +494,10 @@ func TestPostToWarehouse(t *testing.T) {
 			t.Cleanup(ts.Close)
 
 			job := Handle{
-				netHandle:       ts.Client(),
-				logger:          logger.NOP,
-				warehouseClient: client.NewWarehouse(ts.URL, stats.NOP),
+				netHandle:               ts.Client(),
+				logger:                  logger.NOP,
+				warehouseClient:         client.NewWarehouse(ts.URL, stats.NOP),
+				schemaGenerationWorkers: config.GetReloadableIntVar(4, 1, "BatchRouter.processingWorkers"),
 			}
 			batchJobs := BatchedJobs{
 				Jobs: []*jobsdb.JobT{
