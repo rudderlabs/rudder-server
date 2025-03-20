@@ -310,16 +310,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
+		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Reporting:             reporting,
+		BackendConfig:         backendconfig.DefaultBackendConfig,
+		RouterDB:              batchRouterDB,
+		ProcErrorDB:           errDBForWrite,
+		TransientSources:      transientSources,
+		RsourcesService:       rsourcesService,
+		Debugger:              destinationHandle,
+		AdaptiveLimit:         adaptiveLimit,
+		PendingEventsRegistry: pendingEventsRegistry,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 
