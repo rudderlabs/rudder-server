@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -17,13 +18,13 @@ import (
 
 type partitionWorker struct {
 	partition string
-	workers   []*pipelineWorker
+	pipelines []*pipelineWorker
 	logger    logger.Logger
 	stats     *processorStats
 	handle    workerHandle
 }
 
-// newProcessorWorker creates a new worker for the specified partition
+// newPartitionWorker creates a new worker for the specified partition
 func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
 	w := &partitionWorker{
 		partition: partition,
@@ -31,11 +32,11 @@ func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
 		stats:     h.stats(),
 		handle:    h,
 	}
-	// Create workers for each partition
+	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
-	w.workers = make([]*pipelineWorker, pipelinesPerPartition)
+	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.workers[i] = newPipelineWorker(partition, h)
+		w.pipelines[i] = newPipelineWorker(partition, h)
 	}
 
 	return w
@@ -86,7 +87,7 @@ func (w *partitionWorker) Work() bool {
 				select {
 				case <-gCtx.Done():
 					return gCtx.Err()
-				case w.workers[partition].channel.preprocess <- subJob:
+				case w.pipelines[partition].channel.preprocess <- subJob:
 					// Job successfully sent to worker
 				}
 			}
@@ -120,7 +121,13 @@ func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
 
 // Stop stops the worker and waits until all its goroutines have stopped
 func (w *partitionWorker) Stop() {
-	for _, worker := range w.workers {
-		worker.Stop()
+	var wg sync.WaitGroup
+	for _, pipeline := range w.pipelines {
+		wg.Add(1)
+		go func(p *pipelineWorker) {
+			defer wg.Done()
+			p.Stop()
+		}(pipeline)
 	}
+	wg.Wait() // Wait for all stop operations to complete
 }

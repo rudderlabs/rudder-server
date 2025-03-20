@@ -35,10 +35,11 @@ func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
 	return w
 }
 
-// pipelineWorker picks jobs from jobsdb for the appropriate partition and performs all processing steps:
+// pipelineWorker performs all processing steps of a partition's pipeline:
 //  1. preprocess
-//  2. transform
-//  3. store
+//  2. preTransform
+//  3. transform
+//  4. store
 type pipelineWorker struct {
 	partition string
 	handle    workerHandle
