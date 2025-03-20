@@ -7,7 +7,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func newInternalWorker(partition string, logger logger.Logger, delegate Worker) *internalWorker {
@@ -45,7 +44,6 @@ func (w *internalWorker) start() {
 	// ping loop
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
-		var exponentialSleep misc.ExponentialNumber[time.Duration]
 		defer w.lifecycle.wg.Done()
 		defer func() {
 			close(w.ping)
@@ -53,24 +51,18 @@ func (w *internalWorker) start() {
 		defer w.logger.Debugf("ping loop stopped for worker: %s", w.partition)
 		for {
 			w.logger.Debugf("worker %q listening for ping", w.partition)
+			w.setIdleSince(time.Time{})
+			if w.delegate.Work() {
+				continue
+			}
+
+			w.setIdleSince(time.Now())
+
 			select {
 			case <-w.lifecycle.ctx.Done():
 				return
 			case <-w.ping:
 				w.logger.Debugf("worker %q received ping", w.partition)
-			}
-
-			w.setIdleSince(time.Time{})
-			if w.delegate.Work() {
-				w.logger.Debugf("worker %q produced work", w.partition)
-				exponentialSleep.Reset()
-			} else {
-				w.logger.Debugf("worker %q didn't produce any work", w.partition)
-				if err := misc.SleepCtx(w.lifecycle.ctx, exponentialSleep.Next(w.delegate.SleepDurations())); err != nil {
-					w.logger.Debugf("worker %q sleep interrupted: %v", w.partition, err)
-					return
-				}
-				w.setIdleSince(time.Now())
 			}
 		}
 	})
