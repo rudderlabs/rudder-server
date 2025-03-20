@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,7 +67,7 @@ func TestWarehouse(t *testing.T) {
 			SourceJobID:           "<source-job-id>",
 			SourceJobRunID:        "<source-job-run-id>",
 			TimeWindow:            time.Date(1, 1, 1, 0, 40, 0, 0, time.UTC),
-			Schema: map[string]map[string]interface{}{
+			Schema: map[string]map[string]string{
 				"product_track": {
 					"context_destination_id":   "string",
 					"context_destination_type": "string",
@@ -172,32 +171,6 @@ func TestWarehouse(t *testing.T) {
 			"destinationID": "destinationId",
 			"workspaceId":   "workspaceId",
 			"status":        "request_creation_failure",
-			"statusCode":    "0",
-		}).LastValue())
-	})
-
-	t.Run("failure: json marshal", func(t *testing.T) {
-		t.Parallel()
-
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-
-		c := client.NewWarehouse("", statsStore)
-		err = c.Process(context.Background(), client.StagingFile{
-			SourceID:      "sourceId",
-			DestinationID: "destinationId",
-			WorkspaceID:   "workspaceId",
-			Schema: map[string]map[string]interface{}{
-				"foo": {"bar": math.Inf(1)},
-			},
-		})
-
-		require.ErrorContains(t, err, "unsupported value: +Inf")
-		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{
-			"sourceId":      "sourceId",
-			"destinationID": "destinationId",
-			"workspaceId":   "workspaceId",
-			"status":        "marshal_failure",
 			"statusCode":    "0",
 		}).LastValue())
 	})
