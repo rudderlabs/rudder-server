@@ -21,20 +21,19 @@ type partitionWorker struct {
 	logger    logger.Logger
 	stats     *processorStats
 	handle    workerHandle
-	g         *errgroup.Group
 	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // newProcessorWorker creates a new worker for the specified partition
-func newPartitionWorker(ctx context.Context, partition string, h workerHandle) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
 	w := &partitionWorker{
 		partition: partition,
 		logger:    h.logger().Child(partition),
 		stats:     h.stats(),
 		handle:    h,
 	}
-	w.g, w.ctx = errgroup.WithContext(ctx)
-
+	w.ctx, w.cancel = context.WithCancel(context.Background())
 	// Create workers for each partition
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.workers = make([]*pipelineWorker, pipelinesPerPartition)
@@ -67,9 +66,6 @@ func (w *partitionWorker) Work() bool {
 		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
 	}
-
-	// Record throughput metrics
-	w.handle.stats().DBReadThroughput(w.partition).Count(throughputPerSecond(jobs.EventsCount, time.Since(start)))
 
 	// Initialize rsources stats
 	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
@@ -129,6 +125,7 @@ func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
 
 // Stop stops the worker and waits until all its goroutines have stopped
 func (w *partitionWorker) Stop() {
+	w.cancel()
 	for _, worker := range w.workers {
 		worker.Stop()
 	}

@@ -56,7 +56,7 @@ func TestWorkerPool(t *testing.T) {
 		defer poolCancel()
 
 		// create a worker pool
-		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newPartitionWorker(poolCtx, partition, wh) }, logger.NOP)
+		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) }, logger.NOP)
 
 		// start pinging for work for 100 partitions
 		var wg sync.WaitGroup
@@ -132,7 +132,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
-		func(partition string) workerpool.Worker { return newPartitionWorker(poolCtx, partition, wh) },
+		func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) },
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
 		workerpool.WithIdleTimeout(200*time.Millisecond))
@@ -239,9 +239,6 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 
 func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{
-		DBReadThroughput: func(partition string) stats.Measurement {
-			return stats.Default.NewStat("db_read_throughput", stats.CountType)
-		},
 		statDBReadOutOfOrder: func(partition string) stats.Measurement {
 			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
 		},

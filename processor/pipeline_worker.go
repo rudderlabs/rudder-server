@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
-// newWorker creates a new partition worker
+// newPipelineWorker new worker which manages a single pipeline of a partition
 func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
 	w := &pipelineWorker{
 		handle:    h,
