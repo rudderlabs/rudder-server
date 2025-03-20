@@ -135,6 +135,7 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
+		pipelinesPerPartition           int
 		pingerSleep                     config.ValueLoader[time.Duration]
 		readLoopSleep                   config.ValueLoader[time.Duration]
 		maxLoopSleep                    config.ValueLoader[time.Duration]
@@ -214,10 +215,8 @@ type processorStats struct {
 	statDBWriteBatchEvents        func(partition string) stats.Measurement
 	statDestNumOutputEvents       func(partition string) stats.Measurement
 	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
-	DBReadThroughput              func(partition string) stats.Measurement
 	processJobThroughput          func(partition string) stats.Measurement
 	transformationsThroughput     func(partition string) stats.Measurement
-	DBWriteThroughput             func(partition string) stats.Measurement
 	trackedUsersReportGeneration  func(partition string) stats.Measurement
 }
 
@@ -601,11 +600,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.DBReadThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_throughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.processJobThroughput = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_processJob_thoughput", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -616,11 +610,7 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.DBWriteThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_throughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
+
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_seconds", stats.TimerType, stats.Tags{
 			"partition": partition,
@@ -737,7 +727,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, h) }, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {
@@ -809,6 +799,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
 	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.pipelinesPerPartition = config.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
@@ -2658,10 +2649,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		}
 	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
-	dbWriteTime := time.Since(beforeStoreStatus)
-	// DB write throughput per second.
-	dbWriteThroughput := throughputPerSecond(len(destJobs)+len(batchDestJobs), dbWriteTime)
-	proc.stats.DBWriteThroughput(partition).Count(dbWriteThroughput)
 	proc.stats.statDBWriteJobsTime(partition).SendTiming(writeJobsTime)
 	proc.stats.statDBWriteStatusTime(partition).Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))

@@ -43,23 +43,21 @@ import (
 
 func TestProcessorIsolation(t *testing.T) {
 	const (
-		workspaces       = 10
-		jobsPerWorkspace = 100
+		workspaces            = 10
+		jobsPerWorkspace      = 100
+		pipelinesPerPartition = 3
 	)
-	t.Run("no isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeNone, workspaces, jobsPerWorkspace)
-		ProcIsolationScenario(t, spec)
-	})
 
-	t.Run("workspace isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace)
-		ProcIsolationScenario(t, spec)
-	})
-
-	t.Run("source isolation", func(t *testing.T) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeSource, workspaces, jobsPerWorkspace)
-		ProcIsolationScenario(t, spec)
-	})
+	for _, isolationMode := range []isolation.Mode{isolation.ModeNone, isolation.ModeWorkspace, isolation.ModeSource} {
+		t.Run(fmt.Sprintf("%s isolation", isolationMode), func(t *testing.T) {
+			t.Run("1 worker", func(t *testing.T) {
+				ProcIsolationScenario(t, NewProcIsolationScenarioSpec(isolationMode, workspaces, jobsPerWorkspace, 1))
+			})
+			t.Run(fmt.Sprintf("%d workers", pipelinesPerPartition), func(t *testing.T) {
+				ProcIsolationScenario(t, NewProcIsolationScenarioSpec(isolationMode, workspaces, jobsPerWorkspace, pipelinesPerPartition))
+			})
+		})
+	}
 }
 
 // go test \
@@ -120,7 +118,7 @@ func BenchmarkProcessorIsolationModes(b *testing.B) {
 			b.Run(title, func(b *testing.B) {
 				stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "start"}).Increment()
 				defer stats.Default.NewTaggedStat("benchmark", stats.CountType, stats.Tags{"title": title, "action": "end"}).Increment()
-				spec := NewProcIsolationScenarioSpec(mode, workspaces, totalJobs/workspaces)
+				spec := NewProcIsolationScenarioSpec(mode, workspaces, totalJobs/workspaces, 1)
 				overallDuration := ProcIsolationScenario(b, spec)
 				b.ReportMetric(overallDuration.Seconds(), "overall_duration_sec")
 			})
@@ -143,13 +141,14 @@ func BenchmarkProcessorIsolationModes(b *testing.B) {
 // - isolationMode is the isolation mode to use.
 // - workspaces is the number of workspaces to use.
 // - eventsPerWorkspace is the number of events to send per workspace.
-func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace int) *ProcIsolationScenarioSpec {
+func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, eventsPerWorkspace, pipelinesPerPartition int) *ProcIsolationScenarioSpec {
 	var s ProcIsolationScenarioSpec
 	s.isolationMode = isolationMode
 	s.marshallerLib = jsonrs.DefaultLib
 	s.unmarshallerLib = jsonrs.DefaultLib
 	s.jobs = make([]*procIsolationJobSpec, workspaces*eventsPerWorkspace)
 	s.received = map[int]struct{}{}
+	s.pipelinesPerPartition = pipelinesPerPartition
 
 	var idx int
 	for u := 0; u < workspaces; u++ {
@@ -242,6 +241,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
 
+	config.Set("Processor.pipelinesPerPartition", spec.pipelinesPerPartition)
 	config.Set("Processor.isolationMode", string(spec.isolationMode))
 
 	config.Set("JobsDB.enableWriterQueue", false)
@@ -357,13 +357,14 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 }
 
 type ProcIsolationScenarioSpec struct {
-	isolationMode   isolation.Mode
-	marshallerLib   string
-	unmarshallerLib string
-	workspaces      []string
-	batchSize       int
-	jobs            []*procIsolationJobSpec
-	received        map[int]struct{}
+	isolationMode         isolation.Mode
+	marshallerLib         string
+	pipelinesPerPartition int
+	unmarshallerLib       string
+	workspaces            []string
+	batchSize             int
+	jobs                  []*procIsolationJobSpec
+	received              map[int]struct{}
 }
 
 type procIsolationJobSpec struct {
@@ -445,7 +446,7 @@ func BenchmarkProcessorJSONLibraries(b *testing.B) {
 	)
 
 	scenario := func(b *testing.B, marshaller, unmarshaller string) {
-		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace)
+		spec := NewProcIsolationScenarioSpec(isolation.ModeWorkspace, workspaces, jobsPerWorkspace, 1)
 		spec.batchSize = batchSize
 		spec.marshallerLib = marshaller
 		spec.unmarshallerLib = unmarshaller
