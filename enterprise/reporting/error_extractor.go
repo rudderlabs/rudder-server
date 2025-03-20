@@ -15,6 +15,21 @@ import (
 	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
+// Generate strong deprecation terms by combining "deprecated" with version patterns
+func generateStrongDeprecationTerms(keyPatterns, phrasePatterns []string) []string {
+	result := make([]string, 0, len(keyPatterns)+len(phrasePatterns))
+
+	// Add all standalone strong terms
+	result = append(result, phrasePatterns...)
+
+	// Add "deprecated X" for each version pattern
+	for _, v := range keyPatterns {
+		result = append(result, "deprecated "+v)
+	}
+
+	return result
+}
+
 const (
 	responseKey = "response"
 	errorKey    = "error"
@@ -33,68 +48,46 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
-	deprecationKeywords     = map[string]int{
-		"deprecated":               2,
-		"deprecation":              2,
-		"version":                  1,
-		"obsolete":                 1,
-		"outdated":                 1,
-		"end of life":              4,
-		"legacy":                   1,
-		"discontinued":             1,
-		"retired":                  2,
-		"no longer supported":      3,
-		"old version":              1,
-		"deprecated software":      2,
-		"upgrade required":         2,
-		"obsolete version":         1,
-		"unsupported version":      2,
-		"deprecated feature":       2,
-		"version no longer valid":  2,
-		"deprecated library":       2,
-		"version upgrade":          2,
-		"deprecated component":     2,
-		"upgrade recommended":      2,
-		"end-of-support":           3,
-		"discontinued product":     1,
-		"deprecated functionality": 2,
-		"version obsolescence":     1,
-		"deprecated module":        2,
+	// Version-related terms
+	versionPatterns = []string{
+		"version", "api", "endpoint", "library", "component",
+		"module", "functionality", "feature", "product",
 	}
-	// Version indicators
-	versionPatterns = []string{"version", "api", "endpoint"}
 
-	// status indicators
+	// Status-related terms
 	statusPatterns = []string{
-		"not.*active", "inactive", "no longer.*active",
-		"not.*supported", "unsupported", "no longer.*supported",
-		"not.*valid", "invalid", "no longer.*valid",
-		"not.*available", "unavailable", "no longer.*available",
+		"not active", "inactive", "no longer active", "invalid",
+		"not supported", "unsupported", "no longer supported",
+		"not valid", "no longer valid", "old", "retired",
+		"not available", "unavailable", "no longer available",
 		"disabled", "expired", "removed", "discontinued",
-		"deprecated", "obsolete",
+		"deprecated", "deprecation", "obsolete", "obsolescence",
+		"outdated", "end of life", "end of support",
+		"legacy", "no longer", "upgrade required", "upgrade recommended",
 	}
+
+	// Standalone strong terms (that don't need to be combined)
+	standaloneStrongTerms = []string{
+		"end of life", "end of support", "no longer supported",
+	}
+
+	// Pre-computed strong deprecation terms
+	strongDeprecationTerms = generateStrongDeprecationTerms(versionPatterns, standaloneStrongTerms)
 )
 
-var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ int, key string) string {
-	return strings.ToLower(key)
-})
-
 type ExtractorHandle struct {
-	log                              logger.Logger
-	ErrorMessageKeys                 []string // the keys where in we may have error message
-	versionDeprecationThresholdScore config.ValueLoader[int]
+	log              logger.Logger
+	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	versionDepThreshold := config.GetReloadableIntVar(1, 1, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
 	extractor := &ExtractorHandle{
-		ErrorMessageKeys:                 defaultErrorMessageKeys,
-		log:                              log.Child("ErrorDetailExtractor"),
-		versionDeprecationThresholdScore: versionDepThreshold,
+		ErrorMessageKeys: defaultErrorMessageKeys,
+		log:              log.Child("ErrorDetailExtractor"),
 	}
 	return extractor
 }
@@ -353,39 +346,31 @@ func getErrorCodeFromStatTags(statTags map[string]string) string {
 }
 
 func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
-	var score int
-
 	// Convert to lowercase for case-insensitive matching
-	errorMessage = strings.ToLower(errorMessage)
+	cleanedError := strings.Replace(strings.ToLower(errorMessage), "-", " ", -1)
 
-	// 1. Check for direct keyword matches
-	for keyword, s := range lowercasedDeprecationKeywords {
-		if strings.Contains(errorMessage, keyword) {
-			score += s
+	// Check for version-status combinations
+	for _, vPattern := range versionPatterns {
+		if !strings.Contains(cleanedError, vPattern) {
+			continue
 		}
-	}
 
-	// 2. Check for version-related patterns with negative context
-	if score <= ext.versionDeprecationThresholdScore.Load() {
-		// Check for version + status combinations
-		for _, vPattern := range versionPatterns {
-			for _, sPattern := range statusPatterns {
-				// Check both orders (version then status, status then version)
-				pattern1 := fmt.Sprintf("%s.*%s", vPattern, sPattern)
-				if matched, _ := regexp.MatchString(pattern1, errorMessage); matched {
-					score += 3
-					break
-				}
-				pattern2 := fmt.Sprintf("%s.*%s", sPattern, vPattern)
-				if matched, _ := regexp.MatchString(pattern2, errorMessage); matched {
-					score += 3
-					break
-				}
+		for _, sPattern := range statusPatterns {
+			if strings.Contains(cleanedError, sPattern) {
+				// Found a version pattern and a status pattern
+				return true
 			}
 		}
 	}
 
-	return score > ext.versionDeprecationThresholdScore.Load()
+	// Check for strong deprecation terms (using pre-computed list)
+	for _, term := range strongDeprecationTerms {
+		if strings.Contains(cleanedError, term) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
