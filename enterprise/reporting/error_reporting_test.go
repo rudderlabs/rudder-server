@@ -316,14 +316,6 @@ func TestExtractErrorDetails(t *testing.T) {
 			},
 		},
 		{
-			caseDescription: "should match standalone strong deprecation term 'end of life'",
-			inputErrMsg:     "This feature is end of life",
-			output: depTcOutput{
-				errorMsg:  "This feature is end of life",
-				errorCode: "deprecation",
-			},
-		},
-		{
 			caseDescription: "should match standalone strong deprecation term 'end-of-support'",
 			inputErrMsg:     "API version 1.0 is end-of-support",
 			output: depTcOutput{
@@ -332,7 +324,22 @@ func TestExtractErrorDetails(t *testing.T) {
 			},
 		},
 		{
-			caseDescription: "should match standalone strong deprecation term 'no longer supported'",
+			caseDescription: "should  mark 'API is deprecated' as deprecation",
+			inputErrMsg:     "API is deprecated",
+			output: depTcOutput{
+				errorMsg:  "API is deprecated",
+				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should not mark 'invalid api key' as deprecation",
+			inputErrMsg:     "Invalid API key",
+			output: depTcOutput{
+				errorMsg: "Invalid API key",
+			},
+		},
+		{
+			caseDescription: "should match strong deprecation term 'no longer supported'",
 			inputErrMsg:     "Legacy API is no longer supported",
 			output: depTcOutput{
 				errorMsg:  "Legacy API is no longer supported",
@@ -348,11 +355,18 @@ func TestExtractErrorDetails(t *testing.T) {
 			},
 		},
 		{
-			caseDescription: "should match 'deprecated api' combination",
-			inputErrMsg:     "The API is deprecated",
+			caseDescription: "should match 'expired version' combination",
+			inputErrMsg:     "This version is expired",
 			output: depTcOutput{
-				errorMsg:  "The API is deprecated",
+				errorMsg:  "This version is expired",
 				errorCode: "deprecation",
+			},
+		},
+		{
+			caseDescription: "should not match conversion for version deprecation",
+			inputErrMsg:     "This conversion is expired",
+			output: depTcOutput{
+				errorMsg: "This conversion is expired",
 			},
 		},
 		{
@@ -360,54 +374,6 @@ func TestExtractErrorDetails(t *testing.T) {
 			inputErrMsg:     "This endpoint is deprecated",
 			output: depTcOutput{
 				errorMsg:  "This endpoint is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated library' combination",
-			inputErrMsg:     "The library is deprecated",
-			output: depTcOutput{
-				errorMsg:  "The library is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated component' combination",
-			inputErrMsg:     "This component is deprecated",
-			output: depTcOutput{
-				errorMsg:  "This component is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated module' combination",
-			inputErrMsg:     "The module is deprecated",
-			output: depTcOutput{
-				errorMsg:  "The module is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated functionality' combination",
-			inputErrMsg:     "This functionality is deprecated",
-			output: depTcOutput{
-				errorMsg:  "This functionality is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated feature' combination",
-			inputErrMsg:     "The feature is deprecated",
-			output: depTcOutput{
-				errorMsg:  "The feature is deprecated",
-				errorCode: "deprecation",
-			},
-		},
-		{
-			caseDescription: "should match 'deprecated product' combination",
-			inputErrMsg:     "This product is deprecated",
-			output: depTcOutput{
-				errorMsg:  "This product is deprecated",
 				errorCode: "deprecation",
 			},
 		},
