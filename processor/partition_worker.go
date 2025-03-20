@@ -21,8 +21,6 @@ type partitionWorker struct {
 	logger    logger.Logger
 	stats     *processorStats
 	handle    workerHandle
-	ctx       context.Context
-	cancel    context.CancelFunc
 }
 
 // newProcessorWorker creates a new worker for the specified partition
@@ -33,11 +31,10 @@ func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
 		stats:     h.stats(),
 		handle:    h,
 	}
-	w.ctx, w.cancel = context.WithCancel(context.Background())
 	// Create workers for each partition
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.workers = make([]*pipelineWorker, pipelinesPerPartition)
-	for i := 0; i < pipelinesPerPartition; i++ {
+	for i := range pipelinesPerPartition {
 		w.workers[i] = newPipelineWorker(partition, h)
 	}
 
@@ -67,22 +64,21 @@ func (w *partitionWorker) Work() bool {
 		panic(err)
 	}
 
-	// Initialize rsources stats
-	rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
-	rsourcesStats.BeginProcessing(jobs.Jobs)
-
 	// Distribute jobs across partitions based on UserID
 	jobsByPipeline := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) int {
 		return int(misc.GetMurmurHash(job.UserID) % uint64(w.handle.config().pipelinesPerPartition))
 	})
 
 	// Create an errGroup to handle cancellation and manage goroutines
-	g, gCtx := errgroup.WithContext(w.ctx)
+	g, gCtx := errgroup.WithContext(context.Background())
 
 	// Send jobs to their respective partitions for processing
 	for pipelineIdx, pipelineJobs := range jobsByPipeline {
 		partition := pipelineIdx
 		jobs := pipelineJobs
+		// Initialize rsources stats
+		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
+		rsourcesStats.BeginProcessing(jobs)
 
 		g.Go(func() error {
 			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
@@ -109,12 +105,11 @@ func (w *partitionWorker) Work() bool {
 		readLoopSleep := w.handle.config().readLoopSleep
 		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
 			// Sleep for the remaining time, respecting context cancellation
-			if err := misc.SleepCtx(w.ctx, readLoopSleep.Load()-elapsed); err != nil {
-				return true
+			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
+				panic(err)
 			}
 		}
 	}
-
 	return true
 }
 
@@ -125,7 +120,6 @@ func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
 
 // Stop stops the worker and waits until all its goroutines have stopped
 func (w *partitionWorker) Stop() {
-	w.cancel()
 	for _, worker := range w.workers {
 		worker.Stop()
 	}
