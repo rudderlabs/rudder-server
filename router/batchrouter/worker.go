@@ -75,9 +75,11 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 
 		jobsBySource := make(map[string][]*jobsdb.JobT)
 		for _, job := range destinationJobs.jobs {
+			sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+			destinationID := destWithSources.Destination.ID
 			jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
-				SourceID:      gjson.GetBytes(job.Parameters, "source_id").String(),
-				DestinationID: destWithSources.Destination.ID,
+				SourceID:      sourceID,
+				DestinationID: destinationID,
 			}
 			if drain, reason := brt.drainer.Drain(
 				job.CreatedAt,
@@ -101,19 +103,18 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
 				drainList = append(drainList, &status)
 				drainJobList = append(drainJobList, job)
-				if _, ok := drainStatsbyDest[destWithSources.Destination.ID]; !ok {
-					drainStatsbyDest[destWithSources.Destination.ID] = &routerutils.DrainStats{
+				if _, ok := drainStatsbyDest[destinationID]; !ok {
+					drainStatsbyDest[destinationID] = &routerutils.DrainStats{
 						Count:     0,
 						Reasons:   []string{},
 						Workspace: job.WorkspaceId,
 					}
 				}
-				drainStatsbyDest[destWithSources.Destination.ID].Count = drainStatsbyDest[destWithSources.Destination.ID].Count + 1
-				if !slices.Contains(drainStatsbyDest[destWithSources.Destination.ID].Reasons, reason) {
-					drainStatsbyDest[destWithSources.Destination.ID].Reasons = append(drainStatsbyDest[destWithSources.Destination.ID].Reasons, reason)
+				drainStatsbyDest[destinationID].Count = drainStatsbyDest[destinationID].Count + 1
+				if !slices.Contains(drainStatsbyDest[destinationID].Reasons, reason) {
+					drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, reason)
 				}
 			} else {
-				sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
 				if _, ok := jobsBySource[sourceID]; !ok {
 					jobsBySource[sourceID] = []*jobsdb.JobT{}
 				}
@@ -215,7 +216,9 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				defer brt.limiter.upload.Begin("")()
 				switch {
 				case IsObjectStorageDestination(brt.destType):
-					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
+						"destType": brt.destType,
+					})
 					destUploadStart := time.Now()
 					output := brt.upload(brt.destType, &batchedJobs, false)
 					brt.recordDeliveryStatus(*batchedJobs.Connection, output, false)
@@ -232,7 +235,10 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 				case IsWarehouseDestination(brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
-					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
+						"destType":          brt.destType,
+						"objectStorageType": objectStorageType,
+					})
 					destUploadStart := time.Now()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchedJobs)
 					for _, batchJob := range splitBatchJobs {
@@ -252,7 +258,9 @@ func (w *worker) processJobAsync(jobsWg *sync.WaitGroup, destinationJobs *Destin
 					}
 					destUploadStat.Since(destUploadStart)
 				case asynccommon.IsAsyncDestination(brt.destType):
-					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, stats.Tags{
+						"destType": brt.destType,
+					})
 					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchedJobs)
 					destUploadStat.Since(destUploadStart)

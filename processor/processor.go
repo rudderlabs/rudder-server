@@ -123,10 +123,11 @@ type Handle struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
-		read       kitsync.Limiter
-		preprocess kitsync.Limiter
-		transform  kitsync.Limiter
-		store      kitsync.Limiter
+		read         kitsync.Limiter
+		preprocess   kitsync.Limiter
+		pretransform kitsync.Limiter
+		transform    kitsync.Limiter
+		store        kitsync.Limiter
 	}
 	config struct {
 		isolationMode                   isolation.Mode
@@ -692,6 +693,10 @@ func (proc *Handle) Start(ctx context.Context) error {
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.pretransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_pretransform",
+		config.GetInt("Processor.Limiter.pretransform.limit", 50),
+		s,
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
@@ -2061,6 +2066,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
+	if proc.limiter.pretransform != nil {
+		defer proc.limiter.pretransform.BeginWithPriority("", proc.getLimiterPriority(preTrans.partition))()
+	}
+
 	g, groupCtx := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
