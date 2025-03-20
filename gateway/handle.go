@@ -45,6 +45,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type MessageValidator interface {
+	Validate(payload []byte, message *stream.MessageProperties) (bool, error)
+}
+
 type Handle struct {
 	// dependencies
 
@@ -124,6 +128,9 @@ type Handle struct {
 	internalHttpHandlers map[string]http.Handler
 
 	streamMsgValidator func(message *stream.Message) error
+
+	// internal batch validator
+	msgValidator MessageValidator
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -783,7 +790,21 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
-		err := gw.streamMsgValidator(&msg)
+
+		if gw.config.GetReloadableBoolVar(false, "gateway.enableMsgValidator").Load() {
+			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
+			if err != nil || !ok {
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("invalid message in request",
+					loggerFields...)
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				return nil, errors.New(response.NotRudderEvent)
+			}
+		}
+
+		err = gw.streamMsgValidator(&msg)
 		if err != nil {
 			loggerFields := msg.Properties.LoggerFields()
 			loggerFields = append(loggerFields, obskit.Error(err))

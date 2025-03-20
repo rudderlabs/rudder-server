@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	validator "github.com/rudderlabs/rudder-server/gateway/validation"
+
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"golang.org/x/sync/errgroup"
@@ -144,6 +146,8 @@ func (gw *Handle) Setup(
 		streamMsgValidator = stream.NewMessageValidator()
 	}
 	gw.streamMsgValidator = streamMsgValidator
+
+	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
