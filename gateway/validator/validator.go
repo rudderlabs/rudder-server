@@ -12,7 +12,7 @@ type PayloadValidator interface {
 	ValidatorName() string
 }
 
-// ValidatorMediator centralizes the orchestration of multiple payload validation processes.
+// ValidatorMediator centralizes the orchestration of multiple payload validator processes.
 type ValidatorMediator struct {
 	log        logger.Logger
 	validators []PayloadValidator
