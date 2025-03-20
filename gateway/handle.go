@@ -794,11 +794,15 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if gw.config.GetReloadableBoolVar(false, "gateway.enableMsgValidator").Load() {
 			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
 			if err != nil || !ok {
+				errMsg := "validations failed"
+				if err != nil {
+					errMsg = err.Error()
+				}
 				loggerFields := msg.Properties.LoggerFields()
 				loggerFields = append(loggerFields, obskit.Error(err))
 				gw.logger.Errorn("invalid message in request",
 					loggerFields...)
-				stat.RequestEventsFailed(1, err.Error())
+				stat.RequestEventsFailed(1, errMsg)
 				stat.Report(gw.stats)
 				return nil, errors.New(response.NotRudderEvent)
 			}

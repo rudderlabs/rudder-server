@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	validator "github.com/rudderlabs/rudder-server/gateway/validation"
+	"github.com/rudderlabs/rudder-server/gateway/validator"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
