@@ -51,3 +51,34 @@ services:
       - ETCD_ADVERTISE_CLIENT_URLS=http://mode-provider:2379
     ports:
       - "2379:2379"
+  zipkin:
+    image: openzipkin/zipkin:latest
+    restart: unless-stopped
+    ports:
+      - "9411:9411"
+    environment:
+      - STORAGE_TYPE=mem
+  redpanda:
+    image: redpandadata/redpanda:latest
+    container_name: redpanda
+    ports:
+      - "9092:9092"  # Kafka API
+    environment:
+      - REDPANDA_RPC_SERVER_LISTEN_ADDR=0.0.0.0
+      - REDPANDA_ADVERTISED_KAFKA_ADDR=localhost:9092
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=0.0.0.0:9092
+      - --advertise-kafka-addr=localhost:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+      - --schema-registry-addr=0.0.0.0:8081
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=localhost:33145
