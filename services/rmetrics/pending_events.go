@@ -21,7 +21,7 @@ type (
 type PendingEventsRegistry interface {
 	// IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 	IncreasePendingEvents(tablePrefix, workspace, destType string, value float64)
-	// DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
+	// DecreasePendingEvents decrements three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 	DecreasePendingEvents(tablePrefix, workspace, destType string, value float64)
 	// PendingEvents gets the measurement for pending events metric
 	PendingEvents(tablePrefix, workspace, destType string) metric.Gauge
@@ -70,7 +70,7 @@ func (pem *pendingEventsRegistry) IncreasePendingEvents(tablePrefix, workspace, 
 	pem.registry.MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
 }
 
-// DecreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
+// DecreasePendingEvents decrements three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
 func (pem *pendingEventsRegistry) DecreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
 	pem.registryMu.RLock()
 	defer pem.registryMu.RUnlock()
@@ -112,6 +112,7 @@ func (pem *pendingEventsRegistry) Reset() {
 	pem.registryMu.Lock()
 	defer pem.registryMu.Unlock()
 	pem.registry = metric.NewRegistry()
+	pem.published = false
 	metric.Instance.Reset()
 }
 

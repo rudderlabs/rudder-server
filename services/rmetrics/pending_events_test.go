@@ -42,6 +42,19 @@ func TestPendingEventsRegistry(t *testing.T) {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
+
+		r.IncreasePendingEvents(tablePrefix, workspace, destType, 1)
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+			require.FailNow(t, "unexpected metric in published metrics")
+			return false
+		})
+		r.Publish()
+		metricsCount = 0
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+			metricsCount++
+			return true
+		})
+		require.Equal(t, 5, metricsCount, "a publish after a reset should publish any pending events recorded after reset")
 	})
 
 	t.Run("published", func(t *testing.T) {
@@ -62,5 +75,17 @@ func TestPendingEventsRegistry(t *testing.T) {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
+		r.IncreasePendingEvents(tablePrefix, workspace, destType, 1)
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+			require.FailNow(t, "unexpected metric in published metrics")
+			return false
+		})
+		r.Publish()
+		metricsCount = 0
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+			metricsCount++
+			return true
+		})
+		require.Equal(t, 5, metricsCount, "a publish after a reset should publish any pending events recorded after reset")
 	})
 }
