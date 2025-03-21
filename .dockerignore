@@ -3,3 +3,6 @@
 .vscode
 .dockerignore
 cmd/benchmark/Dockerfile
+build/bench-docker.env
+benchmark.yaml
+prometheus.yml
