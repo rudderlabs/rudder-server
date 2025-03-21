@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
 

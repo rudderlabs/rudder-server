@@ -4,7 +4,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

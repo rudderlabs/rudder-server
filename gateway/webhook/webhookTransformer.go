@@ -12,12 +12,13 @@ import (
 	"strings"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
@@ -41,7 +42,7 @@ type V1TransformerEvent struct {
 }
 
 func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v1TransformerEvent := V1TransformerEvent{
 		EventRequest: eventRequest,
@@ -79,7 +80,7 @@ type V2TransformerEvent struct {
 }
 
 func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v2TransformerEvent := V2TransformerEvent{
 		EventRequest: eventRequest,

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // RegularRequestHandler is an empty struct to capture non-import specific request handling functionality

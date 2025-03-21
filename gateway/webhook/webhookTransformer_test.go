@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
