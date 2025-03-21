@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
@@ -102,6 +101,7 @@ type Handle struct {
 	writeErrorDB               jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
+	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
@@ -391,6 +391,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) error {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -416,6 +417,8 @@ func (proc *Handle) Setup(
 	proc.eventSchemaDB = eventSchemaDB
 	proc.transformerClients = transformer.NewClients(proc.conf, proc.logger, proc.statsFactory)
 	proc.archivalDB = archivalDB
+
+	proc.pendingEventsRegistry = pendingEventsRegistry
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -774,7 +777,7 @@ func (proc *Handle) Shutdown() {
 	if proc.dedup != nil {
 		proc.dedup.Close()
 	}
-	metric.Instance.Reset()
+	proc.pendingEventsRegistry.Reset()
 }
 
 func (proc *Handle) loadConfig() {
@@ -3511,7 +3514,7 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]map[string]int) {
 	for workspace := range stats {
 		for destType := range stats[workspace] {
-			rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
+			proc.pendingEventsRegistry.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
 		}
 	}
 }
@@ -3521,15 +3524,17 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
-	return misc.RetryWithNotify(ctx,
+	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
 		jobdDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			metric.Instance.Reset()
+			startTime := time.Now()
+			proc.pendingEventsRegistry.Reset()
+			defer proc.pendingEventsRegistry.Publish()
 			g, ctx := errgroup.WithContext(ctx)
 			for tablePrefix, db := range dbs {
 				g.Go(func() error {
-					if err := db.GetPileUpCounts(ctx); err != nil {
+					if err := db.GetPileUpCounts(ctx, startTime, proc.pendingEventsRegistry.IncreasePendingEvents); err != nil {
 						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
 					}
 					return nil
@@ -3540,4 +3545,8 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
+	if err != nil && ctx.Err() == nil { // ignore context cancellation
+		return err
+	}
+	return nil
 }

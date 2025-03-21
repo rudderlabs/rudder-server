@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -51,6 +52,7 @@ func (rt *Handle) Setup(
 	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
@@ -67,6 +69,9 @@ func (rt *Handle) Setup(
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destType = destType
+
+	rt.pendingEventsRegistry = pendingEventsRegistry
+
 	rt.drainer = routerutils.NewDrainer(
 		config,
 		func(destinationID string) (*routerutils.DestinationWithSources, bool) {

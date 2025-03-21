@@ -32,6 +32,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -269,6 +270,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
+	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
+
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -288,6 +291,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		pendingEventsRegistry,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.NewFactory(config, statsFactory)
@@ -306,16 +310,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
+		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Reporting:             reporting,
+		BackendConfig:         backendconfig.DefaultBackendConfig,
+		RouterDB:              batchRouterDB,
+		ProcErrorDB:           errDBForWrite,
+		TransientSources:      transientSources,
+		RsourcesService:       rsourcesService,
+		Debugger:              destinationHandle,
+		AdaptiveLimit:         adaptiveLimit,
+		PendingEventsRegistry: pendingEventsRegistry,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

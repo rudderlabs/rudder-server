@@ -35,6 +35,7 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -271,6 +272,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}
 	}()
 
+	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
+
 	proc := processor.New(
 		ctx,
 		&options.ClearDB,
@@ -290,6 +293,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory)
@@ -308,16 +312,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
+		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Reporting:             reporting,
+		BackendConfig:         backendconfig.DefaultBackendConfig,
+		RouterDB:              batchRouterDB,
+		ProcErrorDB:           errDBForWrite,
+		TransientSources:      transientSources,
+		RsourcesService:       rsourcesService,
+		Debugger:              destinationHandle,
+		AdaptiveLimit:         adaptiveLimit,
+		PendingEventsRegistry: pendingEventsRegistry,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

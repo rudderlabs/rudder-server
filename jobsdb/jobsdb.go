@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -294,7 +295,7 @@ type JobsDB interface {
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(ctx context.Context) (err error)
+	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
 	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
 	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
@@ -488,6 +489,7 @@ type Handle struct {
 	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
+	migrateDSPaused  atomic.Bool
 	TriggerMigrateDS func() <-chan time.Time
 	TriggerRefreshDS func() <-chan time.Time
 
@@ -1849,7 +1851,10 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
+func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
+	// pause migration to avoid any read locks being blocked during pileup count
+	jd.migrateDSPaused.Store(true)
+	defer jd.migrateDSPaused.Store(false)
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
 		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
@@ -1860,35 +1865,28 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	queryString := `with joined as (
-		select
-		  j.custom_val as customVal,
-		  j.workspace_id as workspace
-		from
-		  %[1]q j
-		  left join "v_last_%[2]s" s on j.job_id = s.job_id
-		where (
-		  s.job_state not in ('aborted', 'succeeded', 'migrated')
-		  or s.job_id is null
-		)
-	  )
-	  select
-		count(*),
-		customVal,
-		workspace
-	  from
-		joined
-	  group by
-		customVal,
-		workspace;`
+	queryString := `WITH pending AS (
+	SELECT
+		j.workspace_id AS workspace_id,
+		j.custom_val AS custom_val
+	FROM
+		%[1]q j
+		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
+	WHERE 
+		s.job_id is null OR s.job_state = ANY($2) 
+)
+SELECT
+	workspace_id,
+	custom_val,
+	COUNT(*)
+FROM pending GROUP BY workspace_id, custom_val`
 
 	g, ctx := errgroup.WithContext(ctx)
-	defaultConcurrency := 10
-	conc := jd.config.GetInt("jobsdb.pileupcount.parallelism", 10)
+	const defaultConcurrency = 4
+	conc := jd.config.GetIntVar(defaultConcurrency, 1, "JobsDB.pileupCountConcurrency", "jobsdb.pileupcount.parallelism")
 	if conc < 1 || conc > defaultConcurrency {
-		jd.logger.Warnn(
-			"parallelism out of safe bounds. Using default value",
-			logger.NewIntField("parallelism", int64(conc)),
+		jd.logger.Warnn("GetPileUpCounts concurrency out of safe bounds, using default value",
+			logger.NewIntField("concurrency", int64(conc)),
 			logger.NewIntField("default", int64(defaultConcurrency)),
 		)
 		conc = defaultConcurrency
@@ -1897,35 +1895,29 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	for _, ds := range dsList {
 		ds := ds
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(
-				ctx,
-				fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
-			)
+			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+				cutoffTime,
+				pq.Array([]string{Executing.State, Failed.State, Importing.State, Waiting.State}))
 			if err != nil {
-				return fmt.Errorf("query on %s: %w", ds.JobTable, err)
+				return fmt.Errorf("getting pileup counts for %q: %w", ds.JobTable, err)
 			}
 			defer func() {
 				_ = rows.Close()
 			}()
 			for rows.Next() {
-				var count sql.NullInt64
-				var customVal string
-				var workspace string
-				err := rows.Scan(&count, &customVal, &workspace)
-				if err != nil {
-					return fmt.Errorf("rows.Scan(...) on %s: %w", ds.JobTable, err)
+				var (
+					workspace, customVal sql.NullString
+					count                sql.NullInt64
+				)
+				if err := rows.Scan(&workspace, &customVal, &count); err != nil {
+					return fmt.Errorf("scanning pileup counts rows for %q: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					rmetrics.IncreasePendingEvents(
-						jd.tablePrefix,
-						workspace,
-						customVal,
-						float64(count.Int64),
-					)
+					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, float64(count.Int64))
 				}
 			}
 			if err = rows.Err(); err != nil {
-				return fmt.Errorf("rows.Err() on %s: %w", ds.JobTable, err)
+				return fmt.Errorf("iterating pileup counts for %q: %w", ds.JobTable, err)
 			}
 			return nil
 		})

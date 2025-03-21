@@ -55,22 +55,23 @@ type Handle struct {
 	destType string
 	// dependencies
 
-	conf               *config.Config
-	logger             logger.Logger
-	netHandle          *http.Client
-	jobsDB             jobsdb.JobsDB
-	errorDB            jobsdb.JobsDB
-	reporting          types.Reporting
-	backendConfig      backendconfig.BackendConfig
-	fileManagerFactory filemanager.Factory
-	transientSources   transientsource.Service
-	rsourcesService    rsources.JobService
-	warehouseClient    *client.Warehouse
-	debugger           destinationdebugger.DestinationDebugger
-	Diagnostics        diagnostics.DiagnosticsI
-	adaptiveLimit      func(int64) int64
-	isolationStrategy  isolation.Strategy
-	now                func() time.Time
+	conf                  *config.Config
+	logger                logger.Logger
+	netHandle             *http.Client
+	jobsDB                jobsdb.JobsDB
+	errorDB               jobsdb.JobsDB
+	reporting             types.Reporting
+	backendConfig         backendconfig.BackendConfig
+	fileManagerFactory    filemanager.Factory
+	transientSources      transientsource.Service
+	rsourcesService       rsources.JobService
+	warehouseClient       *client.Warehouse
+	debugger              destinationdebugger.DestinationDebugger
+	Diagnostics           diagnostics.DiagnosticsI
+	pendingEventsRegistry rmetrics.PendingEventsRegistry
+	adaptiveLimit         func(int64) int64
+	isolationStrategy     isolation.Strategy
+	now                   func() time.Time
 
 	// configuration
 
@@ -760,12 +761,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	}
 
 	for workspace, jobCount := range batchRouterWorkspaceJobStatusCount {
-		rmetrics.DecreasePendingEvents(
-			"batch_rt",
-			workspace,
-			brt.destType,
-			float64(jobCount),
-		)
+		brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(jobCount))
 	}
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
