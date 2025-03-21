@@ -659,13 +659,9 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
-	bqTable := func(name string) string {
-		return fmt.Sprintf("`%s`.`%s`", bq.namespace, name)
-	}
-
 	deduplicationQuery, err := bq.deduplicationQuery(
 		warehouseutils.UsersTable,
-		bq.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable),
+		bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
 	)
 	if err != nil {
 		log.Warnn("Deduplication query for users table", obskit.Error(err))
@@ -687,7 +683,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		strings.Join(firstValProps, ","),
 		strings.Join(userColNames, ","),
 		deduplicationQuery,
-		bqTable(stagingUsersTableName),
+		fmt.Sprintf("`%s`.`%s`", bq.namespace, stagingUsersTableName),
 	)
 
 	log.Infon("Loading data")
