@@ -24,7 +24,7 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.66.2
+	cloud.google.com/go/bigquery v1.67.0
 	cloud.google.com/go/pubsub v1.48.0
 	cloud.google.com/go/storage v1.51.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
