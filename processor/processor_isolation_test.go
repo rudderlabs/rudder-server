@@ -347,8 +347,9 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	require.Equal(t, len(spec.jobs), totalJobsCount)
 	overallDuration = maxJobTime.Sub(gwMinJobTime)
 
+	r := rmetrics.NewPendingEventsRegistry(rmetrics.WithPublished())
 	require.Eventually(t, func() bool {
-		return rmetrics.PendingEvents("rt", rmetrics.All, rmetrics.All).IntValue() == 0
+		return r.PendingEvents("rt", rmetrics.All, rmetrics.All).IntValue() == 0
 	}, 300*time.Second, 1*time.Second, "all rt jobs should be aborted")
 	t.Log("shutting down rudder-server")
 	cancel()
