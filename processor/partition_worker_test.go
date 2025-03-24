@@ -228,8 +228,8 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 		if err != nil {
 			return false
 		}
-		m.Store(partition, m.transformations(partition,
-			dest,
+		m.Store(partition, m.destinationtransformations(partition,
+			m.usertransformations(partition, dest),
 		))
 	}
 	return len(jobs.Jobs) > 0
@@ -339,17 +339,15 @@ func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMe
 	}, nil
 }
 
-func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {
-	if m.limiters.transform != nil {
-		defer m.limiters.transform.Begin("")()
+func (m *mockWorkerHandle) usertransformations(partition string, in *transformationMessage) *userTransformData {
+	return &userTransformData{
+		totalEvents:         in.totalEvents,
+		hasMore:             in.hasMore,
+		trackedUsersReports: in.trackedUsersReports,
 	}
-	m.statsMu.Lock()
-	defer m.statsMu.Unlock()
-	s := m.partitionStats[partition]
-	s.transformed += in.totalEvents
-	m.partitionStats[partition] = s
-	m.log.Infof("transformations partition: %s stats: %+v", partition, s)
+}
 
+func (m *mockWorkerHandle) destinationtransformations(partition string, in *userTransformData) *storeMessage {
 	return &storeMessage{
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,

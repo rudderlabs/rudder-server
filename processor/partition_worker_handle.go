@@ -25,7 +25,8 @@ type workerHandle interface {
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error)
 	generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error)
-	transformations(partition string, in *transformationMessage) *storeMessage
+	usertransformations(partition string, in *transformationMessage) *userTransformData
+	destinationtransformations(partition string, in *userTransformData) *storeMessage
 	Store(partition string, in *storeMessage)
 }
 
