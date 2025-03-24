@@ -730,7 +730,9 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, h, proc.tracer)
+		}, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {
@@ -1783,12 +1785,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 	var dedupBatchKeys []dedup.BatchKey
 	var dedupBatchKeysIdx int
 	for _, batchEvent := range jobList {
-		var eventParams types.EventParams
-		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
-			return nil, err
-		}
-
 		var span stats.TraceSpan
+		eventParams := batchEvent.EventParameters
 		traceParent := eventParams.TraceParent
 		if traceParent == "" {
 			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
@@ -1871,7 +1869,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				workspaceID:   batchEvent.WorkspaceId,
 				singularEvent: singularEvent,
 				messageID:     messageId,
-				eventParams:   eventParams,
+				eventParams:   *eventParams,
 				dedupKey:      dedupBatchKey,
 				requestIP:     requestIP,
 				recievedAt:    receivedAt,

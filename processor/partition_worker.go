@@ -6,12 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -20,15 +21,17 @@ type partitionWorker struct {
 	partition string
 	pipelines []*pipelineWorker
 	logger    logger.Logger
+	tracer    stats.Tracer
 	stats     *processorStats
 	handle    workerHandle
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *partitionWorker {
 	w := &partitionWorker{
 		partition: partition,
 		logger:    h.logger().Child(partition),
+		tracer:    t,
 		stats:     h.stats(),
 		handle:    h,
 	}
@@ -57,6 +60,27 @@ func (w *partitionWorker) Work() bool {
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
 		return false
+	}
+
+	// Recording spans for getJobs
+	for _, job := range jobs.Jobs {
+		if err := jsonrs.Unmarshal(job.Parameters, &job.EventParameters); err != nil {
+			w.logger.Errorn("Failed to unmarshal parameters object", logger.NewIntField("jobId", job.JobID))
+			panic(err)
+		}
+		if job.EventParameters.TraceParent == "" {
+			continue
+		}
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), job.EventParameters.TraceParent)
+		_, span := w.tracer.Start(ctx, "partitionWorker.getJobs", stats.SpanKindInternal,
+			stats.SpanWithTimestamp(start),
+			stats.SpanWithTags(stats.Tags{
+				"workspaceId": job.WorkspaceId,
+				"sourceId":    job.EventParameters.SourceId,
+				"partition":   w.partition,
+			}),
+		)
+		span.End()
 	}
 
 	// Mark jobs as executing
