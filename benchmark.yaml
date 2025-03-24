@@ -10,6 +10,11 @@ services:
       - build/bench-docker.env
     ports:
       - "5432:5432"
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    restart: always
   prometheus:
     image: prom/prometheus:v2.52.0
     command:
@@ -40,6 +45,7 @@ services:
       - transformer
       - prometheus
       - grafana
+      - zipkin
     entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
     ports:
       - "8080:8080"
