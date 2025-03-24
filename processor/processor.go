@@ -1794,10 +1794,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-				"workspaceId": batchEvent.WorkspaceId,
-				"sourceId":    eventParams.SourceId,
-			}))
+			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer,
+				stats.SpanWithTimestamp(start),
+				stats.SpanWithTags(stats.Tags{
+					"workspaceId": batchEvent.WorkspaceId,
+					"sourceId":    eventParams.SourceId,
+					"partition":   partition,
+				}),
+			)
 			spans = append(spans, span)
 		}
 
