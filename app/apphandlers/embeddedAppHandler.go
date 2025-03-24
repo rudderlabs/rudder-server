@@ -359,7 +359,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),

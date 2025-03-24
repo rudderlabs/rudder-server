@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
@@ -23,7 +22,6 @@ import (
 	drain_config "github.com/rudderlabs/rudder-server/internal/drain-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -132,11 +130,11 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if err != nil {
 		return err
 	}
-	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
-		FeaturesRetryMaxAttempts: 10,
-	})
+	// _ = transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
+	// 	PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
+	// 	TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+	// 	FeaturesRetryMaxAttempts: 10,
+	// })
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
 		a.log.Errorw("drain config manager setup failed while starting gateway", "error", err)
@@ -149,7 +147,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	streamMsgValidator := stream.NewMessageValidator()
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, errDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gatewayDB, errDB, rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigHttpHandler,

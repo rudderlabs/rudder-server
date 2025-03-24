@@ -8,11 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
-
-	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/requesttojson"
@@ -20,68 +17,19 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type sourceTransformAdapter interface {
-	getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error)
-	getTransformerURL(sourceType string) (string, error)
-	getAdapterVersion() string
-}
-
-// ----- v1 adapter ---------
-
-type v1Adapter struct{}
-
-type V1TransformerEvent struct {
-	EventRequest json.RawMessage       `json:"event"`
-	Source       backendconfig.SourceT `json:"source"`
-}
-
-func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
-
-	v1TransformerEvent := V1TransformerEvent{
-		EventRequest: eventRequest,
-		Source: backendconfig.SourceT{
-			ID:               source.ID,
-			OriginalID:       source.OriginalID,
-			Name:             source.Name,
-			SourceDefinition: source.SourceDefinition,
-			Config:           source.Config,
-			Enabled:          source.Enabled,
-			WorkspaceID:      source.WorkspaceID,
-			WriteKey:         source.WriteKey,
-			Transient:        source.Transient,
-		},
-	}
-
-	return jsonrs.Marshal(v1TransformerEvent)
-}
-
-func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V1, sourceType)
-}
-
-func (v1 *v1Adapter) getAdapterVersion() string {
-	return transformer.V1
-}
-
-// ----- v2 adapter -----
-
-type v2Adapter struct{}
-
-type V2TransformerEvent struct {
+type TransformerEvent struct {
 	EventRequest json.RawMessage       `json:"request"`
 	Source       backendconfig.SourceT `json:"source"`
 }
 
-func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
+func getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
 	source := authCtx.Source
 
-	v2TransformerEvent := V2TransformerEvent{
+	transformerEvent := TransformerEvent{
 		EventRequest: eventRequest,
 		Source: backendconfig.SourceT{
 			ID:               source.ID,
@@ -96,59 +44,15 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 		},
 	}
 
-	return jsonrs.Marshal(v2TransformerEvent)
+	return jsonrs.Marshal(transformerEvent)
 }
 
-func (v2 *v2Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V2, sourceType)
-}
-
-func (v2 *v2Adapter) getAdapterVersion() string {
-	return transformer.V2
-}
-
-// ------------------------------
-
-func newSourceTransformAdapter(version string) sourceTransformAdapter {
-	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
-	if version == transformer.V2 {
-		return &v2Adapter{}
-	}
-	return &v1Adapter{}
-}
-
-// --- utilities -----
-
-func getTransformerURL(version, sourceType string) (string, error) {
+func getTransformerURL(sourceType string) (string, error) {
 	baseURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	return url.JoinPath(baseURL, version, "sources", strings.ToLower(sourceType))
+	return url.JoinPath(baseURL, "v2", "sources", strings.ToLower(sourceType))
 }
 
-func prepareTransformerEventRequestV1(req *http.Request, sourceType string, sourceListForParsingParams []string) ([]byte, error) {
-	defer func() {
-		if req.Body != nil {
-			_ = req.Body.Close()
-		}
-	}()
-
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, errors.New(response.RequestBodyReadFailed)
-	}
-
-	if len(body) == 0 {
-		body = []byte("{}") // If body is empty, set it to an empty JSON object
-	}
-
-	if slices.Contains(sourceListForParsingParams, strings.ToLower(sourceType)) {
-		queryParams := req.URL.Query()
-		return sjson.SetBytes(body, "query_parameters", queryParams)
-	}
-
-	return body, nil
-}
-
-func prepareTransformerEventRequestV2(req *http.Request) ([]byte, error) {
+func prepareTransformerRequestBody(req *http.Request) ([]byte, error) {
 	requestJson, err := requesttojson.RequestToJSON(req, "{}")
 	if err != nil {
 		return nil, err

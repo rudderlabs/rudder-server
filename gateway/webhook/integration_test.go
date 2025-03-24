@@ -179,7 +179,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		application,
 		backendconfigtest.NewStaticLibrary(bcs),
 		gatewayDB, errDB,
-		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
+		rateLimiter, versionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService(),
 		streamMsgValidator,
 		gateway.WithNow(func() time.Time {
 			return testSetup.Context.Now

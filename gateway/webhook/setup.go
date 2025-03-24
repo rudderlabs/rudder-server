@@ -21,7 +21,6 @@ import (
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
@@ -47,7 +46,7 @@ func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
 	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
@@ -90,14 +89,6 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 			bt := batchWebhookTransformerT{
 				webhook: webhook,
 				stats:   newWebhookStats(stat),
-				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
-					select {
-					case <-ctx.Done():
-						return nil, ctx.Err()
-					case <-transformerFeaturesService.Wait():
-						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion()), nil
-					}
-				},
 			}
 			for _, opt := range opts {
 				opt(&bt)

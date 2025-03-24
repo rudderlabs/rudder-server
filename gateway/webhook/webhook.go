@@ -27,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 type webhookT struct {
@@ -91,9 +90,8 @@ type webhookStatsT struct {
 }
 
 type batchWebhookTransformerT struct {
-	webhook                *HandleT
-	stats                  *webhookStatsT
-	sourceTransformAdapter func(ctx context.Context) (sourceTransformAdapter, error)
+	webhook *HandleT
+	stats   *webhookStatsT
 }
 
 type batchTransformerOption func(bt *batchWebhookTransformerT)
@@ -281,22 +279,7 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
 
-		// If unable to fetch features from transformer, send GatewayTimeout to all requests
-		// TODO: Remove timeout from here after timeout handler is added in gateway
-		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
-		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
-		if err != nil {
-			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
-			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(err.Error()))
-			for _, req := range breq.batchRequest {
-				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
-			}
-			cancel()
-			continue
-		}
-		cancel()
-
-		transformerURL, err := sourceTransformAdapter.getTransformerURL(breq.sourceType)
+		transformerURL, err := getTransformerURL(breq.sourceType)
 		if err != nil {
 			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
 			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(response.ServiceUnavailable))
@@ -310,13 +293,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			var payload []byte
-			var eventRequest []byte
 
-			if sourceTransformAdapter.getAdapterVersion() == transformer.V1 {
-				eventRequest, err = prepareTransformerEventRequestV1(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
-			} else {
-				eventRequest, err = prepareTransformerEventRequestV2(req.request)
-			}
+			eventRequest, err := prepareTransformerRequestBody(req.request)
 
 			if err == nil && !json.Valid(eventRequest) {
 				err = errors.New(response.InvalidJSON)
@@ -325,7 +303,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				err = errors.New(response.RequestBodyTooLarge)
 			}
 			if err == nil {
-				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
+				payload, err = getTransformerEvent(req.authContext, eventRequest)
 			}
 
 			if err != nil {

@@ -35,7 +35,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -55,7 +54,7 @@ func (gw *Handle) Setup(
 	config *config.Config, logger logger.Logger, stat stats.Stats,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
-	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService,
+	rsourcesService rsources.JobService,
 	sourcehandle sourcedebugger.SourceDebugger, streamMsgValidator func(message *stream.Message) error,
 	opts ...OptFunc,
 ) error {
@@ -123,7 +122,7 @@ func (gw *Handle) Setup(
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
 	gw.irh = &ImportRequestHandler{Handle: gw}
 	gw.rrh = &RegularRequestHandler{Handle: gw}
-	gw.webhook = webhook.Setup(gw, transformerFeaturesService, gw.stats)
+	gw.webhook = webhook.Setup(gw, gw.stats)
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {
 		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)

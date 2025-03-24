@@ -30,8 +30,6 @@ import (
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -61,30 +59,6 @@ func initWebhook() {
 	})
 }
 
-type mockSourceTransformAdapter struct {
-	url string
-}
-
-func (v0 *mockSourceTransformAdapter) getTransformerEvent(_ *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
-	return body, nil
-}
-
-func (v0 *mockSourceTransformAdapter) getTransformerURL(string) (string, error) {
-	return v0.url, nil
-}
-
-func (v0 *mockSourceTransformAdapter) getAdapterVersion() string {
-	return transformer.V0
-}
-
-func getMockSourceTransformAdapterFunc(url string) func(ctx context.Context) (sourceTransformAdapter, error) {
-	return func(ctx context.Context) (sourceTransformAdapter, error) {
-		mst := &mockSourceTransformAdapter{}
-		mst.url = url
-		return mst, nil
-	}
-}
-
 func TestWebhookMaxRequestSize(t *testing.T) {
 	initWebhook()
 
@@ -94,15 +68,9 @@ func TestWebhookMaxRequestSize(t *testing.T) {
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
 
-	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
-
 	maxReqSizeInKB := 1
 
-	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = func(ctx context.Context) (sourceTransformAdapter, error) {
-			return &mockSourceTransformAdapter{}, nil
-		}
-	})
+	webhookHandler := Setup(mockGW, stats.NOP)
 	webhookHandler.config.maxReqSize = config.SingleValueLoader(maxReqSizeInKB)
 	t.Cleanup(func() {
 		_ = webhookHandler.Shutdown()
@@ -129,9 +97,7 @@ func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
-	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).Times(1)
-	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP)
+	webhookHandler := Setup(mockGW, stats.NOP)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
@@ -156,13 +122,8 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, sampleError, http.StatusBadRequest)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+
+	webhookHandler := Setup(mockGW, stats.NOP)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
@@ -188,26 +149,8 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
-			_ = jsonrs.Unmarshal(body, &requests)
-			var responses []transformerResponse
-			// return payload of length = len(requests) + 1
-			for i := 0; i < len(requests)+1; i++ {
-				responses = append(responses, transformerResponse{
-					Err:        sampleError,
-					StatusCode: http.StatusBadRequest,
-				})
-			}
-			respBody, _ := jsonrs.Marshal(responses)
-			_, _ = w.Write(respBody)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+
+	webhookHandler := Setup(mockGW, stats.NOP)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
@@ -232,25 +175,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
-			_ = jsonrs.Unmarshal(body, &requests)
-			var responses []transformerResponse
-			for i := 0; i < len(requests); i++ {
-				responses = append(responses, transformerResponse{
-					Err:        sampleError,
-					StatusCode: http.StatusBadRequest,
-				})
-			}
-			respBody, _ := jsonrs.Marshal(responses)
-			_, _ = w.Write(respBody)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+	webhookHandler := Setup(mockGW, stats.NOP)
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
@@ -275,25 +200,8 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
-			_ = jsonrs.Unmarshal(body, &requests)
-			var responses []transformerResponse
-			for i := 0; i < len(requests); i++ {
-				responses = append(responses, transformerResponse{
-					OutputToSource: outputToWebhook,
-					StatusCode:     http.StatusOK,
-				})
-			}
-			respBody, _ := jsonrs.Marshal(responses)
-			_, _ = w.Write(respBody)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+
+	webhookHandler := Setup(mockGW, stats.NOP)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
@@ -317,25 +225,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
 	outputToGateway := map[string]interface{}{"text": "hello world"}
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
-			_ = jsonrs.Unmarshal(body, &requests)
-			var responses []transformerResponse
-			for i := 0; i < len(requests); i++ {
-				responses = append(responses, transformerResponse{
-					Output:     outputToGateway,
-					StatusCode: http.StatusOK,
-				})
-			}
-			respBody, _ := jsonrs.Marshal(responses)
-			_, _ = w.Write(respBody)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+	webhookHandler := Setup(mockGW, stats.NOP)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
@@ -363,26 +253,8 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	transformerServer := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() { _ = r.Body.Close() }()
-			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
-			_ = jsonrs.Unmarshal(body, &requests)
-			var responses []transformerResponse
-			for i := 0; i < len(requests); i++ {
-				responses = append(responses, transformerResponse{
-					Output:         outputToGateway,
-					OutputToSource: outputToWebhook,
-					StatusCode:     http.StatusOK,
-				})
-			}
-			respBody, _ := jsonrs.Marshal(responses)
-			_, _ = w.Write(respBody)
-		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
-		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
-	})
+
+	webhookHandler := Setup(mockGW, stats.NOP)
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
 	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
@@ -412,7 +284,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 	mockGW := mockWebhook.NewMockGateway(ctrl)
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
+	webhookHandler := Setup(mockGW, statsStore)
 	reqs := []*webhookT{
 		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
 		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2"}},
@@ -485,102 +357,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.EqualValues(t, m.LastValue(), 1)
 }
 
-func TestPrepareTransformerEventRequestV1(t *testing.T) {
-	type requestOpts struct {
-		method  string
-		target  string
-		body    io.Reader
-		params  map[string]string
-		headers map[string]string
-	}
-
-	createRequest := func(reqOpts requestOpts) *http.Request {
-		r := httptest.NewRequest(reqOpts.method, reqOpts.target, reqOpts.body)
-		for k, v := range reqOpts.headers {
-			r.Header.Set(k, v)
-		}
-
-		q := r.URL.Query()
-		for k, v := range reqOpts.params {
-			q.Add(k, v)
-		}
-		r.URL.RawQuery = q.Encode()
-		return r
-	}
-
-	testCases := []struct {
-		name               string
-		req                *http.Request
-		sourceType         string
-		includeQueryParams bool
-		wantError          bool
-		expectedResponse   string
-	}{
-		{
-			name:             "Empty request body with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com"}),
-			sourceType:       "webhook",
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Empty request body with query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			sourceType:       "webhook",
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Some payload with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			sourceType:       "webhook",
-			expectedResponse: `{"key":"value"}`,
-		},
-		{
-			name:             "Empty request body with query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			sourceType:       "shopify",
-			expectedResponse: `{"query_parameters":{"key":["value"]}}`,
-		},
-		{
-			name:             "Error reading request body for Shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: iotest.ErrReader(errors.New("some error"))}),
-			sourceType:       "Shopify",
-			wantError:        true,
-			expectedResponse: "",
-		},
-		{
-			name:             "Some payload with no query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			sourceType:       "shopify",
-			expectedResponse: `{"key":"value","query_parameters":{}}`,
-		},
-		{
-			name:             "Some payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
-			sourceType:       "Adjust",
-			expectedResponse: `{"key1":"value1","query_parameters":{"key2":["value2"]}}`,
-		},
-		{
-			name:             "No payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key2": "value2"}}),
-			sourceType:       "adjust",
-			expectedResponse: `{"query_parameters":{"key2":["value2"]}}`,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareTransformerEventRequestV1(tc.req, tc.sourceType, []string{"adjust", "shopify"})
-			if tc.wantError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedResponse, string(result))
-		})
-	}
-}
-
-func TestPrepareTransformerEventRequestV2(t *testing.T) {
+func TestPrepareTransformerRequest(t *testing.T) {
 	type requestOpts struct {
 		method  string
 		target  string
@@ -655,7 +432,7 @@ func TestPrepareTransformerEventRequestV2(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareTransformerEventRequestV2(tc.req)
+			result, err := prepareTransformerRequestBody(tc.req)
 			if tc.wantError {
 				require.Error(t, err)
 				return
