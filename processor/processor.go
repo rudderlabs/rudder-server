@@ -1164,16 +1164,16 @@ func (proc *Handle) getTransformerEvents(
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
 				if pu != reportingtypes.TRACKINGPLAN_VALIDATOR {
-					return []byte(`{}`)
+					return nil
 				}
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
-					return []byte(`{}`)
+					return nil
 				}
 
 				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-					sampleEvent = []byte(`{}`)
+					sampleEvent = nil
 				}
 				return sampleEvent
 			},
@@ -1465,12 +1465,12 @@ func (proc *Handle) getTransformationMetrics(
 				pu,
 				func() json.RawMessage {
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
+						return nil
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
 						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
+						sampleEvent = nil
 					}
 					return sampleEvent
 				},
@@ -1620,7 +1620,7 @@ func getDiffMetrics(
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,
-				SampleEvent: []byte(`{}`),
+				SampleEvent: nil,
 				EventName:   eventName,
 				EventType:   eventType,
 			},
@@ -1975,12 +1975,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				reportingtypes.GATEWAY,
 				func() json.RawMessage {
 					if sourceIsTransient {
-						return []byte(`{}`)
+						return nil
 					}
 					if payload := event.payloadFunc(); payload != nil {
 						return payload
 					}
-					return []byte("{}")
+					return nil
 				},
 				nil,
 			)
@@ -2023,7 +2023,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return nil }, nil)
 		}
 	}
 
@@ -2995,7 +2995,7 @@ func (proc *Handle) transformSrcDest(
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
 				}
 				reportingtypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
