@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/traces"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -55,7 +57,7 @@ func TestWorkerPool(t *testing.T) {
 
 		// create a worker pool
 		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+			return newPartitionWorker(partition, wh, &traces.NOP{})
 		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
@@ -133,7 +135,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
 		func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+			return newPartitionWorker(partition, wh, &traces.NOP{})
 		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),

@@ -15,25 +15,26 @@ import (
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/traces"
 )
 
 type partitionWorker struct {
-	partition string
-	pipelines []*pipelineWorker
-	logger    logger.Logger
-	tracer    stats.Tracer
-	stats     *processorStats
-	handle    workerHandle
+	partition    string
+	pipelines    []*pipelineWorker
+	logger       logger.Logger
+	spanRecorder traces.SpanRecorder
+	stats        *processorStats
+	handle       workerHandle
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, spanRecorder traces.SpanRecorder) *partitionWorker {
 	w := &partitionWorker{
-		partition: partition,
-		logger:    h.logger().Child(partition),
-		tracer:    t,
-		stats:     h.stats(),
-		handle:    h,
+		partition:    partition,
+		logger:       h.logger().Child(partition),
+		spanRecorder: spanRecorder,
+		stats:        h.stats(),
+		handle:       h,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
@@ -62,7 +63,11 @@ func (w *partitionWorker) Work() bool {
 		return false
 	}
 
-	// Recording spans for getJobs
+	// Recording spans for getJobs.
+	// WARNING: more than one message might be coming from the same HTTP request, let's make sure we don't start too
+	// many spans. One span per traceID should suffice.
+	seen := make(map[string]struct{})
+	contexts := make([]context.Context, 0)
 	for _, job := range jobs.Jobs {
 		if err := jsonrs.Unmarshal(job.Parameters, &job.EventParameters); err != nil {
 			w.logger.Errorn("Failed to unmarshal parameters object", logger.NewIntField("jobId", job.JobID))
@@ -71,23 +76,31 @@ func (w *partitionWorker) Work() bool {
 		if job.EventParameters.TraceParent == "" {
 			continue
 		}
+		if _, ok := seen[job.EventParameters.TraceParent]; ok {
+			continue
+		}
+		seen[job.EventParameters.TraceParent] = struct{}{}
 		ctx := stats.InjectTraceParentIntoContext(context.Background(), job.EventParameters.TraceParent)
-		_, span := w.tracer.Start(ctx, "partitionWorker.getJobs", stats.SpanKindInternal,
-			stats.SpanWithTimestamp(start),
-			stats.SpanWithTags(stats.Tags{
-				"workspaceId": job.WorkspaceId,
-				"sourceId":    job.EventParameters.SourceId,
-				"partition":   w.partition,
-			}),
-		)
-		span.End()
+		contexts = append(contexts, ctx)
 	}
+	go w.spanRecorder.RecordSpans(contexts, "partitionWorker.getJobs", stats.SpanKindInternal, start,
+		traces.WithTags(stats.Tags{
+			"partition": w.partition,
+		}),
+	)
 
 	// Mark jobs as executing
-	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
+	start = time.Now()
+	err := w.handle.markExecuting(w.partition, jobs.Jobs)
+	if err != nil {
 		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
 	}
+	go w.spanRecorder.RecordSpans(contexts, "partitionWorker.markExecuting", stats.SpanKindInternal, start,
+		traces.WithTags(stats.Tags{
+			"partition": w.partition,
+		}),
+	)
 
 	// Distribute jobs across partitions based on UserID
 	jobsByPipeline := lo.GroupBy(jobs.Jobs, func(job *jobsdb.JobT) int {
@@ -108,11 +121,17 @@ func (w *partitionWorker) Work() bool {
 		g.Go(func() error {
 			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
 			for _, subJob := range subJobs {
+				start := time.Now()
 				select {
 				case <-gCtx.Done():
 					return gCtx.Err()
 				case w.pipelines[partition].channel.preprocess <- subJob:
 					// Job successfully sent to worker
+					w.spanRecorder.RecordJobsSpans(context.Background(), subJob.subJobs, "partitionWorker.preprocess",
+						stats.SpanKindInternal, start,
+						traces.WithTags(stats.Tags{
+							"partition": w.partition,
+						}))
 				}
 			}
 			return nil

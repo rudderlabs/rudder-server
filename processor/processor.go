@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/traces"
+
 	"github.com/google/uuid"
 
 	"github.com/samber/lo"
@@ -731,7 +733,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, h, proc.tracer)
+			return newPartitionWorker(partition, h, traces.NewSpanRecorder(proc.tracer))
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
