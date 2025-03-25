@@ -2322,7 +2322,6 @@ type userTransformData struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
-	traces        map[string]stats.Tags
 }
 
 func (proc *Handle) usertransformations(partition string, in *transformationMessage) *userTransformData {
@@ -2332,7 +2331,7 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
 
-	ctx, task := trace.NewTask(context.Background(), "transformations")
+	ctx, task := trace.NewTask(context.Background(), "user_transformations")
 	defer task.End()
 
 	chOut := make(chan intermediateTransformData, 1)
@@ -2363,7 +2362,7 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 				"destType":      event.Metadata.DestinationType,
 			}
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
+			_, span := proc.tracer.Start(ctx, "proc.user_transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
 
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
@@ -2407,31 +2406,8 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 		start:                        in.start,
 		hasMore:                      in.hasMore,
 		rsourcesStats:                in.rsourcesStats,
-		traces:                       traces,
+		trackedUsersReports:          in.trackedUsersReports,
 	}
-}
-
-type storeMessage struct {
-	trackedUsersReports []*trackedusers.UsersReport
-	statusList          []*jobsdb.JobStatusT
-	destJobs            []*jobsdb.JobT
-	batchDestJobs       []*jobsdb.JobT
-	droppedJobs         []*jobsdb.JobT
-
-	procErrorJobsByDestID map[string][]*jobsdb.JobT
-	procErrorJobs         []*jobsdb.JobT
-	routerDestIDs         []string
-
-	reportMetrics  []*reportingtypes.PUReportedMetric
-	sourceDupStats map[dupStatKey]int
-	dedupKeys      map[string]struct{}
-
-	totalEvents int
-	start       time.Time
-
-	hasMore       bool
-	rsourcesStats rsources.StatsCollector
-	traces        map[string]stats.Tags
 }
 
 func (proc *Handle) destinationtransformations(partition string, in *userTransformData) *storeMessage {
@@ -2447,8 +2423,36 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 
 	destProcStart := time.Now()
 	chOut := make(chan transformSrcDestOutput, 1)
-	ctx, task := trace.NewTask(context.Background(), "transformations")
+	ctx, task := trace.NewTask(context.Background(), "destination_transformations")
 	defer task.End()
+
+	spans := make([]stats.TraceSpan, 0, len(in.intermediateTransformDataMap))
+	defer func() {
+		for _, span := range spans {
+			span.End()
+		}
+	}()
+
+	traces := make(map[string]stats.Tags)
+	for _, intermediateTransformData := range in.intermediateTransformDataMap {
+		if intermediateTransformData.commonMetaData.TraceParent == "" {
+			proc.logger.Debugn("Missing traceParent in transformations", logger.NewIntField("jobId", intermediateTransformData.commonMetaData.JobID))
+			continue
+		}
+		if _, ok := traces[intermediateTransformData.commonMetaData.TraceParent]; ok {
+			continue
+		}
+		tags := stats.Tags{
+			"workspaceId":   intermediateTransformData.commonMetaData.WorkspaceID,
+			"sourceId":      intermediateTransformData.commonMetaData.SourceID,
+			"destinationId": intermediateTransformData.commonMetaData.DestinationID,
+			"destType":      intermediateTransformData.commonMetaData.DestinationType,
+		}
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), intermediateTransformData.commonMetaData.TraceParent)
+		_, span := proc.tracer.Start(ctx, "proc.destination_transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
+		spans = append(spans, span)
+		traces[intermediateTransformData.commonMetaData.TraceParent] = tags
+	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(in.intermediateTransformDataMap))
@@ -2501,8 +2505,31 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 		in.start,
 		in.hasMore,
 		in.rsourcesStats,
-		in.traces,
+		traces,
 	}
+}
+
+type storeMessage struct {
+	trackedUsersReports []*trackedusers.UsersReport
+	statusList          []*jobsdb.JobStatusT
+	destJobs            []*jobsdb.JobT
+	batchDestJobs       []*jobsdb.JobT
+	droppedJobs         []*jobsdb.JobT
+
+	procErrorJobsByDestID map[string][]*jobsdb.JobT
+	procErrorJobs         []*jobsdb.JobT
+	routerDestIDs         []string
+
+	reportMetrics  []*reportingtypes.PUReportedMetric
+	sourceDupStats map[dupStatKey]int
+	dedupKeys      map[string]struct{}
+
+	totalEvents int
+	start       time.Time
+
+	hasMore       bool
+	rsourcesStats rsources.StatsCollector
+	traces        map[string]stats.Tags
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
