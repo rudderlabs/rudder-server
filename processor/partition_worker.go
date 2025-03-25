@@ -40,7 +40,7 @@ func newPartitionWorker(partition string, h workerHandle, spanRecorder traces.Sp
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newPipelineWorker(partition, h)
+		w.pipelines[i] = newPipelineWorker(partition, h, spanRecorder)
 	}
 
 	return w

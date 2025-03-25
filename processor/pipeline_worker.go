@@ -3,18 +3,22 @@ package processor
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/traces"
 )
 
 // newPipelineWorker new worker which manages a single pipeline of a partition
-func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
+func newPipelineWorker(partition string, h workerHandle, spanRecorder traces.SpanRecorder) *pipelineWorker {
 	w := &pipelineWorker{
-		handle:    h,
-		logger:    h.logger().Child(partition),
-		partition: partition,
+		handle:       h,
+		logger:       h.logger().Child(partition),
+		spanRecorder: spanRecorder,
+		partition:    partition,
 	}
 
 	// Initialize lifecycle context
@@ -41,9 +45,10 @@ func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
 //  3. transform
 //  4. store
 type pipelineWorker struct {
-	partition string
-	handle    workerHandle
-	logger    logger.Logger
+	partition    string
+	handle       workerHandle
+	logger       logger.Logger
+	spanRecorder traces.SpanRecorder
 
 	lifecycle struct { // worker lifecycle related fields
 		ctx    context.Context    // worker context
@@ -93,12 +98,24 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
 
 		for processedMessage := range w.channel.preTransform {
+			start := time.Now()
 			val, err := w.handle.generateTransformationMessage(processedMessage)
 			if err != nil {
 				w.logger.Errorf("Error generating transformation message: %v", err)
 				panic(err)
 			}
+			go w.spanRecorder.RecordJobsSpans(context.Background(),
+				processedMessage.subJobs.subJobs, "pipelineWorker.generateTransformationMessage",
+				stats.SpanKindInternal, start,
+				traces.WithTags(stats.Tags{
+					"partition": w.partition,
+				}))
 			w.channel.transform <- val
+			go w.spanRecorder.RecordJobsSpans(context.Background(),
+				processedMessage.subJobs.subJobs, "pipelineWorker.preTransform", stats.SpanKindInternal, start,
+				traces.WithTags(stats.Tags{
+					"partition": w.partition,
+				}))
 		}
 	})
 
