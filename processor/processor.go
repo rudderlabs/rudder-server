@@ -2322,6 +2322,7 @@ type userTransformData struct {
 
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+	traces        map[string]stats.Tags
 }
 
 func (proc *Handle) usertransformations(partition string, in *transformationMessage) *userTransformData {
@@ -2407,6 +2408,7 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 		hasMore:                      in.hasMore,
 		rsourcesStats:                in.rsourcesStats,
 		trackedUsersReports:          in.trackedUsersReports,
+		traces:                       traces,
 	}
 }
 
@@ -2426,32 +2428,16 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 	ctx, task := trace.NewTask(context.Background(), "destination_transformations")
 	defer task.End()
 
-	spans := make([]stats.TraceSpan, 0, len(in.intermediateTransformDataMap))
+	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {
 			span.End()
 		}
 	}()
-
-	traces := make(map[string]stats.Tags)
-	for _, intermediateTransformData := range in.intermediateTransformDataMap {
-		if intermediateTransformData.commonMetaData.TraceParent == "" {
-			proc.logger.Debugn("Missing traceParent in transformations", logger.NewIntField("jobId", intermediateTransformData.commonMetaData.JobID))
-			continue
-		}
-		if _, ok := traces[intermediateTransformData.commonMetaData.TraceParent]; ok {
-			continue
-		}
-		tags := stats.Tags{
-			"workspaceId":   intermediateTransformData.commonMetaData.WorkspaceID,
-			"sourceId":      intermediateTransformData.commonMetaData.SourceID,
-			"destinationId": intermediateTransformData.commonMetaData.DestinationID,
-			"destType":      intermediateTransformData.commonMetaData.DestinationType,
-		}
-		ctx := stats.InjectTraceParentIntoContext(context.Background(), intermediateTransformData.commonMetaData.TraceParent)
+	for traceParent, tags := range in.traces {
+		ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 		_, span := proc.tracer.Start(ctx, "proc.destination_transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
 		spans = append(spans, span)
-		traces[intermediateTransformData.commonMetaData.TraceParent] = tags
 	}
 
 	wg := sync.WaitGroup{}
@@ -2505,7 +2491,7 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 		in.start,
 		in.hasMore,
 		in.rsourcesStats,
-		traces,
+		in.traces,
 	}
 }
 
@@ -2791,6 +2777,7 @@ type intermediateTransformData struct {
 	inCountMetadataMap    map[string]MetricMetadata
 	eventsByMessageID     map[string]types.SingularEventWithReceivedAt
 	srcAndDestKey         string
+	response              types.Response
 }
 
 func (proc *Handle) transformSrcDestPreprocess(
@@ -2803,6 +2790,12 @@ func (proc *Handle) transformSrcDestPreprocess(
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) intermediateTransformData {
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
+
+	if len(eventList) == 0 {
+		return intermediateTransformData{
+			eventsToTransform: eventList,
+		}
+	}
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	sourceName := eventList[0].Metadata.SourceName
@@ -3038,6 +3031,7 @@ func (proc *Handle) transformSrcDestPreprocess(
 		inCountMetadataMap:    inCountMetadataMap,
 		eventsByMessageID:     eventsByMessageID,
 		srcAndDestKey:         srcAndDestKey,
+		response:              response,
 	}
 }
 
@@ -3057,23 +3051,13 @@ func (proc *Handle) transformSrcDestPostprocess(
 		}
 	}
 
+	response := data.response
 	eventsByMessageID := data.eventsByMessageID
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	sourceName := data.eventsToTransform[0].Metadata.SourceName
 	destination := &data.eventsToTransform[0].Destination
 	workspaceID := data.eventsToTransform[0].Metadata.WorkspaceID
 	destType := destination.DestinationDefinition.Name
-
-	if len(data.eventsToTransform) == 0 {
-		return transformSrcDestOutput{
-			destJobs:        []*jobsdb.JobT{},
-			batchDestJobs:   []*jobsdb.JobT{},
-			errorsPerDestID: data.procErrorJobsByDestID,
-			reportMetrics:   data.reportMetrics,
-			routerDestIDs:   make(map[string]struct{}),
-			droppedJobs:     data.droppedJobs,
-		}
-	}
 
 	destJobs := make([]*jobsdb.JobT, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
@@ -3100,7 +3084,6 @@ func (proc *Handle) transformSrcDestPostprocess(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(data.eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
 			s := time.Now()
-			var response types.Response
 			if !proc.config.enableTransformationV2 {
 				response = proc.transformer.Transform(ctx, data.eventsToTransform, proc.config.transformBatchSize.Load())
 			} else {
@@ -3112,7 +3095,7 @@ func (proc *Handle) transformSrcDestPostprocess(
 			destTransformationStat.transformTime.Since(s)
 			transformAt = "processor"
 
-			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
+			proc.logger.Infof("Dest Transform output size %d", len(response.Events))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
@@ -3172,91 +3155,92 @@ func (proc *Handle) transformSrcDestPostprocess(
 				data.reportMetrics = append(data.reportMetrics, diffMetrics...)
 			}
 			// REPORTING - PROCESSOR metrics - END
-
-			trace.WithRegion(ctx, "MarshalForDB", func() {
-				// Save the JSON in DB. This is what the router uses
-				for i := range response.Events {
-					destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
-					// Should be a valid JSON since it's our transformation, but we handle it anyway
-					if err != nil {
-						continue
-					}
-
-					// Need to replace UUID his with messageID from client
-					id := misc.FastUUID()
-					// read source_id from metadata that is replayed back from transformer
-					// in case of custom transformations metadata of first event is returned along with all events in session
-					// source_id will be same for all events belong to same user in a session
-					metadata := response.Events[i].Metadata
-
-					sourceID := metadata.SourceID
-					destID := metadata.DestinationID
-					rudderID := metadata.RudderID
-					receivedAt := metadata.ReceivedAt
-					messageId := metadata.MessageID
-					jobId := metadata.JobID
-					sourceTaskRunId := metadata.SourceTaskRunID
-					recordId := metadata.RecordID
-					sourceJobId := metadata.SourceJobID
-					sourceJobRunId := metadata.SourceJobRunID
-					eventName := metadata.EventName
-					eventType := metadata.EventType
-					sourceDefID := metadata.SourceDefinitionID
-					destDefID := metadata.DestinationDefinitionID
-					sourceCategory := metadata.SourceCategory
-					workspaceId := metadata.WorkspaceID
-					// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
-					// This is done to respect findWorker logic in router.
-					if rudderID == "" {
-						rudderID = "random-" + id.String()
-					}
-
-					params := ParametersT{
-						SourceID:                sourceID,
-						SourceName:              sourceName,
-						DestinationID:           destID,
-						ReceivedAt:              receivedAt,
-						TransformAt:             transformAt,
-						MessageID:               messageId,
-						GatewayJobID:            jobId,
-						SourceTaskRunID:         sourceTaskRunId,
-						SourceJobID:             sourceJobId,
-						SourceJobRunID:          sourceJobRunId,
-						EventName:               eventName,
-						EventType:               eventType,
-						SourceCategory:          sourceCategory,
-						SourceDefinitionID:      sourceDefID,
-						DestinationDefinitionID: destDefID,
-						RecordID:                recordId,
-						WorkspaceId:             workspaceId,
-						TraceParent:             metadata.TraceParent,
-					}
-					marshalledParams, err := jsonrs.Marshal(params)
-					if err != nil {
-						proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
-						panic(err)
-					}
-
-					newJob := jobsdb.JobT{
-						UUID:         id,
-						UserID:       rudderID,
-						Parameters:   marshalledParams,
-						CreatedAt:    time.Now(),
-						ExpireAt:     time.Now(),
-						CustomVal:    destType,
-						EventPayload: destEventJSON,
-						WorkspaceId:  workspaceId,
-					}
-					if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
-						batchDestJobs = append(batchDestJobs, &newJob)
-					} else {
-						destJobs = append(destJobs, &newJob)
-						routerDestIDs[destID] = struct{}{}
-					}
-				}
-			})
 		})
 	}
+
+	trace.WithRegion(ctx, "MarshalForDB", func() {
+		// Save the JSON in DB. This is what the router uses
+		for i := range response.Events {
+			destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
+			proc.logger.Infof(string(destEventJSON))
+			// Should be a valid JSON since it's our transformation, but we handle it anyway
+			if err != nil {
+				continue
+			}
+
+			// Need to replace UUID his with messageID from client
+			id := misc.FastUUID()
+			// read source_id from metadata that is replayed back from transformer
+			// in case of custom transformations metadata of first event is returned along with all events in session
+			// source_id will be same for all events belong to same user in a session
+			metadata := response.Events[i].Metadata
+
+			sourceID := metadata.SourceID
+			destID := metadata.DestinationID
+			rudderID := metadata.RudderID
+			receivedAt := metadata.ReceivedAt
+			messageId := metadata.MessageID
+			jobId := metadata.JobID
+			sourceTaskRunId := metadata.SourceTaskRunID
+			recordId := metadata.RecordID
+			sourceJobId := metadata.SourceJobID
+			sourceJobRunId := metadata.SourceJobRunID
+			eventName := metadata.EventName
+			eventType := metadata.EventType
+			sourceDefID := metadata.SourceDefinitionID
+			destDefID := metadata.DestinationDefinitionID
+			sourceCategory := metadata.SourceCategory
+			workspaceId := metadata.WorkspaceID
+			// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
+			// This is done to respect findWorker logic in router.
+			if rudderID == "" {
+				rudderID = "random-" + id.String()
+			}
+
+			params := ParametersT{
+				SourceID:                sourceID,
+				SourceName:              sourceName,
+				DestinationID:           destID,
+				ReceivedAt:              receivedAt,
+				TransformAt:             transformAt,
+				MessageID:               messageId,
+				GatewayJobID:            jobId,
+				SourceTaskRunID:         sourceTaskRunId,
+				SourceJobID:             sourceJobId,
+				SourceJobRunID:          sourceJobRunId,
+				EventName:               eventName,
+				EventType:               eventType,
+				SourceCategory:          sourceCategory,
+				SourceDefinitionID:      sourceDefID,
+				DestinationDefinitionID: destDefID,
+				RecordID:                recordId,
+				WorkspaceId:             workspaceId,
+				TraceParent:             metadata.TraceParent,
+			}
+			marshalledParams, err := jsonrs.Marshal(params)
+			if err != nil {
+				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				panic(err)
+			}
+
+			newJob := jobsdb.JobT{
+				UUID:         id,
+				UserID:       rudderID,
+				Parameters:   marshalledParams,
+				CreatedAt:    time.Now(),
+				ExpireAt:     time.Now(),
+				CustomVal:    destType,
+				EventPayload: destEventJSON,
+				WorkspaceId:  workspaceId,
+			}
+			if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
+				batchDestJobs = append(batchDestJobs, &newJob)
+			} else {
+				destJobs = append(destJobs, &newJob)
+				routerDestIDs[destID] = struct{}{}
+			}
+		}
+	})
 
 	return transformSrcDestOutput{
 		destJobs:        destJobs,

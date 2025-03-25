@@ -27,13 +27,14 @@ func TestWorkerPool(t *testing.T) {
 			log:        logger.NOP,
 			loopEvents: 100,
 			partitionStats: map[string]struct {
-				queried      int
-				marked       int
-				processed    int
-				transformed  int
-				stored       int
-				subBatches   int
-				trackedUsers int
+				queried              int
+				marked               int
+				processed            int
+				userTransform        int
+				destinationTransform int
+				stored               int
+				subBatches           int
+				trackedUsers         int
 			}{},
 			limitsReached:                limitsReached,
 			shouldProcessMultipleSubJobs: shouldProcessMultipleSubJobs,
@@ -47,7 +48,8 @@ func TestWorkerPool(t *testing.T) {
 			wh.limiters.query = kitsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
 			wh.limiters.process = kitsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
 			wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
-			wh.limiters.transform = kitsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
+			wh.limiters.usertransform = kitsync.NewLimiter(poolCtx, &limiterWg, "usertransform", 2, stats.Default)
+			wh.limiters.destinationtransform = kitsync.NewLimiter(poolCtx, &limiterWg, "destinationtransform", 2, stats.Default)
 			defer limiterWg.Wait()
 		}
 
@@ -116,13 +118,14 @@ func TestWorkerPoolIdle(t *testing.T) {
 		log:        logger.NewLogger(),
 		loopEvents: 0,
 		partitionStats: map[string]struct {
-			queried      int
-			marked       int
-			processed    int
-			transformed  int
-			stored       int
-			subBatches   int
-			trackedUsers int
+			queried              int
+			marked               int
+			processed            int
+			userTransform        int
+			destinationTransform int
+			stored               int
+			subBatches           int
+			trackedUsers         int
 		}{},
 	}
 	poolCtx, poolCancel := context.WithCancel(context.Background())
@@ -155,20 +158,22 @@ type mockWorkerHandle struct {
 	statsMu        sync.RWMutex
 	log            logger.Logger
 	partitionStats map[string]struct {
-		queried      int
-		marked       int
-		processed    int
-		transformed  int
-		stored       int
-		subBatches   int
-		trackedUsers int
+		queried              int
+		marked               int
+		processed            int
+		userTransform        int
+		destinationTransform int
+		stored               int
+		subBatches           int
+		trackedUsers         int
 	}
 
 	limiters struct {
-		query     kitsync.Limiter
-		process   kitsync.Limiter
-		transform kitsync.Limiter
-		store     kitsync.Limiter
+		query                kitsync.Limiter
+		process              kitsync.Limiter
+		store                kitsync.Limiter
+		usertransform        kitsync.Limiter
+		destinationtransform kitsync.Limiter
 	}
 
 	limitsReached                bool
@@ -185,8 +190,8 @@ func (m *mockWorkerHandle) validate(t *testing.T) {
 	for partition, s := range m.partitionStats {
 		require.Equalf(t, s.queried, s.marked, "Partition %s: Queried %d, Marked %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.marked, s.processed, "Partition %s: Marked %d, Processed %d", partition, s.queried, s.marked)
-		require.Equalf(t, s.processed, s.transformed, "Partition %s: Processed %d, Transformed %d", partition, s.queried, s.marked)
-		require.Equalf(t, s.transformed, s.stored, "Partition %s: Transformed %d, Stored %d", partition, s.queried, s.marked)
+		require.Equalf(t, s.processed, s.userTransform, "Partition %s: Processed %d, User Transform %d", partition, s.queried, s.marked)
+		require.Equalf(t, s.userTransform, s.destinationTransform, "Partition %s: User Transform %d, Destination Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.subBatches, s.trackedUsers, "Partition %s: Tracked Users %d, Subjobs %d", partition, s.trackedUsers, s.subBatches)
 	}
 }
@@ -340,6 +345,16 @@ func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMe
 }
 
 func (m *mockWorkerHandle) usertransformations(partition string, in *transformationMessage) *userTransformData {
+	if m.limiters.usertransform != nil {
+		defer m.limiters.usertransform.Begin("")()
+	}
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	s := m.partitionStats[partition]
+	s.userTransform += in.totalEvents
+	m.partitionStats[partition] = s
+	m.log.Infof("usertransformations partition: %s stats: %+v", partition, s)
+
 	return &userTransformData{
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
@@ -348,6 +363,16 @@ func (m *mockWorkerHandle) usertransformations(partition string, in *transformat
 }
 
 func (m *mockWorkerHandle) destinationtransformations(partition string, in *userTransformData) *storeMessage {
+	if m.limiters.destinationtransform != nil {
+		defer m.limiters.destinationtransform.Begin("")()
+	}
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	s := m.partitionStats[partition]
+	s.destinationTransform += in.totalEvents
+	m.partitionStats[partition] = s
+	m.log.Infof("destinationtransformations partition: %s stats: %+v", partition, s)
+
 	return &storeMessage{
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
