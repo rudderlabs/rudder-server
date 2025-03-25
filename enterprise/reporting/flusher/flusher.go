@@ -269,7 +269,7 @@ func (f *Flusher) getRange(ctx context.Context, currentUTC time.Time) (start, en
 		end = endLimit
 	}
 
-	if end.Sub(start) == f.flushWindow.Load() || end == nextHour {
+	if end.Sub(start) == f.flushWindow.Load() || end.Equal(nextHour) {
 		return start, end, true, nil
 	}
 

@@ -615,7 +615,7 @@ var _ = Describe("Gateway", func() {
 		// common tests for all web handlers
 		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if !(handlerType == "batch" || handlerType == "import") {
+				if handlerType != "batch" && handlerType != "import" {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
@@ -1315,7 +1315,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with 500 if jobsdb store returns an error", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if !(handlerType == "batch" || handlerType == "import") {
+				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
 					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
