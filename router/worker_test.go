@@ -30,6 +30,7 @@ import (
 	mocksRouter "github.com/rudderlabs/rudder-server/mocks/router"
 	mocksTransformer "github.com/rudderlabs/rudder-server/mocks/router/transformer"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -212,7 +213,20 @@ var _ = Describe("Proxy Request", func() {
 					}
 				})
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
+			router.Setup(
+				gaDestinationDefinition,
+				logger.NOP,
+				conf,
+				c.mockBackendConfig,
+				c.mockRouterJobsDB,
+				c.mockProcErrorsDB,
+				transientsource.NewEmptyService(),
+				rsources.NewNoOpService(),
+				transformerFeaturesService.NewNoOpService(),
+				destinationdebugger.NewNoOpService(),
+				throttler.NewNoOpThrottlerFactory(),
+				rmetrics.NewPendingEventsRegistry(),
+			)
 			router.transformer = mockTransformer
 
 			<-router.backendConfigInitialized
@@ -303,7 +317,20 @@ var _ = Describe("Proxy Request", func() {
 					}
 				})
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
+			router.Setup(
+				gaDestinationDefinition,
+				logger.NOP,
+				conf,
+				c.mockBackendConfig,
+				c.mockRouterJobsDB,
+				c.mockProcErrorsDB,
+				transientsource.NewEmptyService(),
+				rsources.NewNoOpService(),
+				transformerFeaturesService.NewNoOpService(),
+				destinationdebugger.NewNoOpService(),
+				throttler.NewNoOpThrottlerFactory(),
+				rmetrics.NewPendingEventsRegistry(),
+			)
 			router.transformer = mockTransformer
 
 			<-router.backendConfigInitialized
@@ -401,7 +428,20 @@ var _ = Describe("Proxy Request", func() {
 					}
 				})
 
-			router.Setup(gaDestinationDefinition, logger.NOP, conf, c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, transientsource.NewEmptyService(), rsources.NewNoOpService(), transformerFeaturesService.NewNoOpService(), destinationdebugger.NewNoOpService(), throttler.NewNoOpThrottlerFactory())
+			router.Setup(
+				gaDestinationDefinition,
+				logger.NOP,
+				conf,
+				c.mockBackendConfig,
+				c.mockRouterJobsDB,
+				c.mockProcErrorsDB,
+				transientsource.NewEmptyService(),
+				rsources.NewNoOpService(),
+				transformerFeaturesService.NewNoOpService(),
+				destinationdebugger.NewNoOpService(),
+				throttler.NewNoOpThrottlerFactory(),
+				rmetrics.NewPendingEventsRegistry(),
+			)
 			router.transformer = mockTransformer
 
 			<-router.backendConfigInitialized

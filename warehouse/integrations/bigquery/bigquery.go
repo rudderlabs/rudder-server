@@ -221,6 +221,34 @@ func (bq *BigQuery) CreateTable(ctx context.Context, tableName string, columnMap
 // createTableView creates a view for the table to deduplicate the data
 // If custom partition is enabled, it creates a view with the partition column and type. Otherwise, it creates a view with ingestion-time partitioning
 func (bq *BigQuery) createTableView(ctx context.Context, tableName string, columnMap model.TableSchema) error {
+	if bq.warehouse.GetBoolDestinationConfig(model.SkipViewsSetting) {
+		return nil
+	}
+
+	deduplicationQuery, err := bq.deduplicationQuery(tableName, columnMap)
+	if err != nil {
+		return fmt.Errorf("deduplication query: %w", err)
+	}
+
+	viewName := tableName + "_view"
+	query := fmt.Sprintf("CREATE OR REPLACE VIEW `%s`.`%s` AS %s;", bq.namespace, viewName, deduplicationQuery)
+
+	bq.logger.Infon("Creating view", logger.NewStringField("view", viewName), logger.NewStringField("query", query))
+	job, err := bq.db.Query(query).Run(ctx)
+	if err != nil {
+		return fmt.Errorf("creating or replacing view: %w", err)
+	}
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("waiting for view creation job: %w", err)
+	}
+	if status.Err() != nil {
+		return fmt.Errorf("view creation job error: %w", status.Err())
+	}
+	return nil
+}
+
+func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSchema) (string, error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -241,11 +269,11 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		partitionFilter = "_PARTITIONTIME"
 	} else {
 		if err := bq.checkValidPartitionColumn(partitionColumn); err != nil {
-			return fmt.Errorf("check valid partition column: %w", err)
+			return "", fmt.Errorf("check valid partition column: %w", err)
 		}
 		bqPartitionType, err := bq.bigqueryPartitionType(partitionType)
 		if err != nil {
-			return fmt.Errorf("bigquery partition type: %w", err)
+			return "", fmt.Errorf("bigquery partition type: %w", err)
 		}
 
 		if partitionColumn == "_PARTITIONTIME" {
@@ -254,13 +282,13 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		} else {
 			_, ok := columnMap[partitionColumn]
 			if ok {
-				bq.logger.Infon("Creating view: Partition column found in schema",
+				bq.logger.Infon("Deduplication query: Partition column found in schema",
 					logger.NewStringField("partitionColumn", partitionColumn),
 				)
 				granularity = string(bqPartitionType)
 				partitionFilter = `TIMESTAMP_TRUNC(` + partitionColumn + `, ` + granularity + `, 'UTC')`
 			} else {
-				bq.logger.Warnn("Creating view: Partition column not found in schema",
+				bq.logger.Warnn("Deduplication query: Partition column not found in schema",
 					logger.NewStringField("partitionColumn", partitionColumn),
 				)
 				granularity = "DAY"
@@ -268,12 +296,6 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 			}
 		}
 	}
-
-	bq.logger.Infon("Creating view",
-		logger.NewStringField("view", tableName+"_view"),
-		logger.NewStringField("partitionColumn", partitionColumn),
-		logger.NewStringField("partitionKey", partitionKey),
-	)
 
 	// assuming it has field named id upon which dedup is done in view
 	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
@@ -289,11 +311,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 				AND TIMESTAMP_TRUNC(CURRENT_TIMESTAMP(), ` + granularity + `, 'UTC')
 		)
 		WHERE __row_number = 1`
-	metaData := &bigquery.TableMetadata{
-		ViewQuery: viewQuery,
-	}
-
-	return bq.db.Dataset(bq.namespace).Table(tableName+"_view").Create(ctx, metaData)
+	return viewQuery, nil
 }
 
 func (bq *BigQuery) DropTable(ctx context.Context, tableName string) error {
@@ -641,27 +659,20 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
-	bqTable := func(name string) string {
-		return fmt.Sprintf("`%s`.`%s`", bq.namespace, name)
-	}
-
-	bqUsersView := bqTable(warehouseutils.UsersView)
-	viewExists, _ := bq.tableExists(ctx, warehouseutils.UsersView)
-	if !viewExists {
-		log.Infon("Creating view",
-			logger.NewStringField("view", warehouseutils.UsersView),
-		)
-		if err := bq.createTableView(ctx, warehouseutils.UsersTable, userColMap); err != nil {
-			log.Warnn("Creating view failed",
-				obskit.Error(err),
-			)
-		}
+	deduplicationQuery, err := bq.deduplicationQuery(
+		warehouseutils.UsersTable,
+		bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
+	)
+	if err != nil {
+		log.Warnn("Deduplication query for users table", obskit.Error(err))
+		errorMap[warehouseutils.UsersTable] = fmt.Errorf("deduplication query for users table: %w", err)
+		return
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
 			SELECT id, %[1]s FROM (
 				(
-					SELECT id, %[2]s FROM %[3]s WHERE (
+					SELECT id, %[2]s FROM (%[3]s) WHERE (
 						id in (SELECT id FROM %[4]s)
 					)
 				) UNION ALL (
@@ -671,8 +682,8 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		)`,
 		strings.Join(firstValProps, ","),
 		strings.Join(userColNames, ","),
-		bqUsersView,
-		bqTable(stagingUsersTableName),
+		deduplicationQuery,
+		fmt.Sprintf("`%s`.`%s`", bq.namespace, stagingUsersTableName),
 	)
 
 	log.Infon("Loading data")

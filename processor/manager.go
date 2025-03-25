@@ -16,6 +16,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -46,6 +47,7 @@ type LifecycleManager struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
 	trackedUsersReporter       trackedusers.UsersReporter
+	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -74,6 +76,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.transDebugger,
 		proc.enrichers,
 		proc.trackedUsersReporter,
+		proc.pendingEventsRegistry,
 	); err != nil {
 		return err
 	}
@@ -83,9 +86,15 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
-		return err
-	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
+			proc.Handle.logger.Errorf("Error counting pending events: %v", err)
+		}
+	}()
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -117,6 +126,7 @@ func New(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -147,6 +157,7 @@ func New(
 		transDebugger:              transDebugger,
 		enrichers:                  enrichers,
 		trackedUsersReporter:       trackedUsersReporter,
+		pendingEventsRegistry:      pendingEventsRegistry,
 	}
 	for _, opt := range opts {
 		opt(proc)
