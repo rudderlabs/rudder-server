@@ -3175,13 +3175,17 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
+	startMigrationLock := time.Now()
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
+	jd.getTimerStat("jobsdb_get_jobs_migration_lock_time", tags).SendTiming(time.Since(startMigrationLock))
 	defer jd.dsMigrationLock.RUnlock()
+	startDsListLock := time.Now()
 	if !jd.dsListLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
+	jd.getTimerStat("jobsdb_get_jobs_ds_list_lock_time", tags).SendTiming(time.Since(startDsListLock))
 	dsRangeList := jd.getDSRangeList()
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
