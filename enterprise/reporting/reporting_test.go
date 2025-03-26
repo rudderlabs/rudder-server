@@ -82,7 +82,7 @@ func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
 	Expect(expectedMetric.SourceTaskRunID).To(Equal(actualMetric.SourceTaskRunID))
 	Expect(expectedMetric.InPU).To(Equal(actualMetric.InPU))
 	Expect(expectedMetric.PU).To(Equal(actualMetric.PU))
-	Expect(expectedMetric.TerminalPU).To(Equal(actualMetric))
+	Expect(expectedMetric.TerminalPU).To(Equal(actualMetric.TerminalPU))
 	Expect(expectedMetric.InitialPU).To(Equal(actualMetric.InitialPU))
 	Expect(expectedMetric.StatusDetail.Status).To(Equal(actualMetric.StatusDetail.Status))
 	Expect(expectedMetric.StatusDetail.StatusCode).To(Equal(actualMetric.StatusDetail.StatusCode))
