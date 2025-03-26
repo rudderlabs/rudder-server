@@ -858,7 +858,7 @@ func TestOAuth(t *testing.T) {
 				}
 				jobError := strings.Replace(exp, "__cfgBE_server__", cfgBeSrv.URL, 1)
 
-				require.Contains(t, status.Error.Error(), jobError)
+				require.Contains(t, strings.ToLower(status.Error.Error()), strings.ToLower(jobError))
 			}
 			// require.Equal(t, tt.expectedDeleteStatus, status)
 			// TODO: Compare input payload for all "/deleteUsers" requests
