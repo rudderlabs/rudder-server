@@ -39,16 +39,11 @@ var _ = struct {
 
 func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *Transformer {
 	t := &Transformer{
-		logger:         logger.Child("warehouse-transformer"),
-		statsFactory:   statsFactory,
-		now:            timeutil.Now,
-		uuidGenerator:  uuid.NewString,
-		loggedFileName: generateLogFileName(),
+		logger:        logger.Child("warehouse-transformer"),
+		statsFactory:  statsFactory,
+		now:           timeutil.Now,
+		uuidGenerator: uuid.NewString,
 	}
-
-	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
-	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.HistogramType)
-	t.stats.comparisonTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
 
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")

@@ -1,20 +1,13 @@
 package transformer
 
 import (
-	"compress/gzip"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -643,100 +636,6 @@ func getTrackMetadata(destinationType, sourceCategory string) types.Metadata {
 	metadata := getMetadata("track", destinationType)
 	metadata.SourceCategory = sourceCategory
 	return metadata
-}
-
-func TestTransformer_CompareAndLog(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt.gz")
-	require.NoError(t, err)
-	require.NoError(t, tmpFile.Close())
-
-	maxLoggedEvents := 10
-
-	c := config.New()
-	c.Set("Warehouse.maxLoggedEvents", maxLoggedEvents)
-
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-
-	trans := New(c, logger.NOP, statsStore)
-	trans.loggedFileName = tmpFile.Name()
-
-	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
-	for index := 0; index < 50; index++ {
-		eventsByMessageID[strconv.Itoa(index)] = types.SingularEventWithReceivedAt{
-			SingularEvent: map[string]interface{}{
-				"event": "track" + strconv.Itoa(index),
-			},
-		}
-	}
-
-	events := []types.TransformerEvent{
-		{
-			Message: types.SingularEventT{
-				"event":      "track",
-				"context":    "context",
-				"properties": "properties",
-			},
-		},
-	}
-
-	for i := 0; i < 1000; i++ {
-		pResponse := types.Response{
-			Events: lo.RepeatBy(50, func(index int) types.TransformerResponse {
-				return types.TransformerResponse{
-					Output: types.SingularEventT{
-						"event": "track" + strconv.Itoa(index+i),
-					},
-					Metadata: types.Metadata{
-						MessageID:       strconv.Itoa(index + i),
-						SourceID:        "sourceID",
-						DestinationID:   "destinationID",
-						SourceType:      "sourceType",
-						DestinationType: "destinationType",
-					},
-				}
-			}),
-		}
-		wResponse := types.Response{
-			Events: lo.RepeatBy(50, func(index int) types.TransformerResponse {
-				return types.TransformerResponse{
-					Output: types.SingularEventT{
-						"event": "track" + strconv.Itoa(index+i+1),
-					},
-					Metadata: types.Metadata{
-						MessageID:            strconv.Itoa(index + i + 1),
-						SourceID:             "sourceID",
-						DestinationID:        "destinationID",
-						SourceType:           "sourceType",
-						DestinationType:      "destinationType",
-						SourceDefinitionType: "sourceDefinitionType",
-					},
-				}
-			}),
-		}
-
-		trans.CompareAndLog(events, pResponse, wResponse)
-	}
-
-	f, err := os.OpenFile(tmpFile.Name(), os.O_RDWR, 0o644)
-	require.NoError(t, err)
-	gzipReader, err := gzip.NewReader(f)
-	require.NoError(t, err)
-	data, err := io.ReadAll(gzipReader)
-	require.NoError(t, err)
-	require.NoError(t, gzipReader.Close())
-	require.NoError(t, f.Close())
-
-	differingEvents := strings.Split(strings.Trim(string(data), "\n"), "\n")
-	differingEvents = lo.Filter(differingEvents, func(item string, index int) bool {
-		return strings.Contains(item, "message") // Filtering raw events as the file contains sample diff as well
-	})
-	require.Len(t, differingEvents, maxLoggedEvents)
-
-	for i := 0; i < maxLoggedEvents; i++ {
-		require.Contains(t, differingEvents[i], "track")
-	}
-	require.EqualValues(t, []float64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
 }
 
 func TestTransformer_GetColumns(t *testing.T) {

@@ -80,17 +80,12 @@ type trackedUsersReporter interface {
 	GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIdFilter map[string]bool) []*trackedusers.UsersReport
 }
 
-type warehouseTransformer interface {
-	transformer.DestinationClient
-	CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response)
-}
-
 // Handle is a handle to the processor module
 type Handle struct {
 	conf                 *config.Config
 	tracer               stats.Tracer
 	backendConfig        backendconfig.BackendConfig
-	warehouseTransformer warehouseTransformer
+	warehouseTransformer transformer.DestinationClient
 	transformerClients   transformer.TransformerClients
 
 	gatewayDB                  jobsdb.JobsDB
@@ -2972,8 +2967,11 @@ func (proc *Handle) destTransform(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(data.eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
 			s := time.Now()
-			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
-			proc.handleWarehouseTransformations(ctx, data.eventsToTransform, response, data.commonMetaData)
+			if _, ok := whutils.WarehouseDestinationMap[data.commonMetaData.DestinationType]; ok && proc.config.enableWarehouseTransformations.Load() {
+				response = proc.warehouseTransformer.Transform(ctx, data.eventsToTransform)
+			} else {
+				response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
+			}
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3133,26 +3131,6 @@ func (proc *Handle) destTransform(
 		routerDestIDs:   routerDestIDs,
 		droppedJobs:     data.droppedJobs,
 	}
-}
-
-func (proc *Handle) handleWarehouseTransformations(
-	ctx context.Context,
-	eventsToTransform []types.TransformerEvent,
-	pResponse types.Response,
-	commonMetaData *types.Metadata,
-) {
-	if len(eventsToTransform) == 0 {
-		return
-	}
-	if _, ok := whutils.WarehouseDestinationMap[commonMetaData.DestinationType]; !ok {
-		return
-	}
-	if !proc.config.enableWarehouseTransformations.Load() {
-		return
-	}
-
-	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform)
-	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse)
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
