@@ -18,11 +18,6 @@ type (
 		logger       logger.Logger
 		statsFactory stats.Stats
 
-		stats struct {
-			comparisionTime  stats.Timer
-			matchedEvents    stats.Histogram
-			mismatchedEvents stats.Histogram
-		}
 		config struct {
 			enableIDResolution           config.ValueLoader[bool]
 			populateSrcDestInfoInContext config.ValueLoader[bool]
@@ -30,11 +25,6 @@ type (
 			maxLoggedEvents              config.ValueLoader[int]
 			concurrentTransformations    config.ValueLoader[int]
 		}
-
-		loggedEvents   int64
-		loggedEventsMu sync.Mutex
-
-		loggedFileName string
 	}
 
 	cache struct {
