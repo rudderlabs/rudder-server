@@ -950,13 +950,13 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 
 	Context("RudderTyper", func() {
 		It("Tracking plan id and version from DgSourceTrackingPlanConfig", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(types.Response{})
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
+			mockTransformerClients.EXPECT().TrackingPlan().Times(1).Return(types.Response{})
 
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			Expect(err).To(BeNil())
 
-			processor := NewHandle(config.Default, mockTransformer)
+			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
 			Setup(processor, c, false, false)
@@ -1027,13 +1027,13 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			}
 		})
 		It("Tracking plan version override from context.ruddertyper", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Validate(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(types.Response{})
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
+			mockTransformerClients.EXPECT().TrackingPlan().Times(1).Return(types.Response{})
 
 			isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 			Expect(err).To(BeNil())
 
-			processor := NewHandle(config.Default, mockTransformer)
+			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
 			Setup(processor, c, false, false)
@@ -1266,7 +1266,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					WorkspaceId: sampleWorkspaceID,
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -1292,7 +1292,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1439,7 +1439,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					WorkspaceId: sampleWorkspaceID,
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
@@ -1465,7 +1465,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1635,7 +1635,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
@@ -1652,7 +1652,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Expect(jobs).To(HaveLen(2))
 				})
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1794,7 +1794,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
@@ -1811,7 +1811,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Expect(jobs).To(HaveLen(2))
 				})
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1953,7 +1953,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Parameters: createBatchParameters(SourceIDTransient),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
@@ -1964,7 +1964,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2138,9 +2138,9 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
@@ -2152,27 +2152,8 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					PayloadSizeLimit: processor.payloadLimit.Load(),
 				}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
-			transformExpectations := map[string]transformExpectation{
-				DestinationIDEnabledA: {
-					events:                    3,
-					messageIds:                "message-1,message-3,message-4",
-					receiveMetadata:           true,
-					destinationDefinitionName: "enabled-destination-a-definition-name",
-				},
-			}
-
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1).After(callUnprocessed).
-				DoAndReturn(assertDestinationTransform(
-					messages,
-					SourceIDEnabledNoUT,
-					DestinationIDEnabledA,
-					transformExpectations[DestinationIDEnabledA],
-				))
+			mockTransformerClients.EXPECT().Destination().Times(1).After(callUnprocessed)
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
@@ -2422,9 +2403,9 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
@@ -2446,11 +2427,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			}
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1).After(callUnprocessed).
+			mockTransformerClients.EXPECT().Destination().Times(1).After(callUnprocessed).
 				DoAndReturn(assertDestinationTransform(
 					messages,
 					SourceIDEnabledNoUT,
@@ -2603,9 +2580,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("Initialization", func() {
 		It("should initialize (no jobs to recover)", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -2637,9 +2614,9 @@ var _ = Describe("Processor", Ordered, func() {
 		})
 
 		It("should recover after crash", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
@@ -2677,9 +2654,9 @@ var _ = Describe("Processor", Ordered, func() {
 		})
 
 		It("should only send proper stats, if not pending jobs are returned", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			err := processor.Setup(
 				c.mockBackendConfig,
@@ -2846,9 +2823,9 @@ var _ = Describe("Processor", Ordered, func() {
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
@@ -2868,11 +2845,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1).After(callUnprocessed).
+			mockTransformerClients.EXPECT().Destination().Times(1).After(callUnprocessed).
 				DoAndReturn(assertDestinationTransform(
 					messages,
 					SourceIDEnabledNoUT,
@@ -3096,9 +3069,9 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3116,7 +3089,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one call to user transform for destination B
-			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
+			callUserTransform := mockTransformerClients.EXPECT().User().Times(1).After(callUnprocessed).
 				DoAndReturn(func(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 					defer GinkgoRecover()
 
@@ -3135,7 +3108,7 @@ var _ = Describe("Processor", Ordered, func() {
 				})
 
 			// We expect one transform call to destination B, after user transform for destination B.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformerClients.EXPECT().Destination().Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
@@ -3272,7 +3245,7 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().Allowed(gomock.Any()).DoAndReturn(func(keys ...dedup.BatchKey) (map[dedup.BatchKey]bool, error) {
@@ -3285,7 +3258,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
+			mockTransformerClients.EXPECT().Destination().Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -3304,7 +3277,7 @@ var _ = Describe("Processor", Ordered, func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, true, false)
 
@@ -3443,9 +3416,9 @@ var _ = Describe("Processor", Ordered, func() {
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(
 				gomock.Any(),
 				jobsdb.GetQueryParams{
@@ -3465,11 +3438,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one transform call to destination A, after callUnprocessed.
-			mockTransformer.EXPECT().Transform(
-				gomock.Any(),
-				gomock.Any(),
-				gomock.Any(),
-			).Times(1).After(callUnprocessed).
+			mockTransformerClients.EXPECT().Destination().Times(1).After(callUnprocessed).
 				DoAndReturn(assertDestinationTransform(
 					messages,
 					SourceIDEnabledNoUT,
@@ -3693,9 +3662,9 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3713,7 +3682,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			// We expect one call to user transform for destination B
-			callUserTransform := mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).After(callUnprocessed).
+			callUserTransform := mockTransformerClients.EXPECT().User().Times(1).After(callUnprocessed).
 				DoAndReturn(func(ctx context.Context, clientEvents []types.TransformerEvent, batchSize int) types.Response {
 					defer GinkgoRecover()
 
@@ -3732,7 +3701,7 @@ var _ = Describe("Processor", Ordered, func() {
 				})
 
 			// We expect one transform call to destination B, after user transform for destination B.
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformerClients.EXPECT().Destination().Times(1).
 				After(callUserTransform).DoAndReturn(assertDestinationTransform(messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB]))
 
 			assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
@@ -3889,9 +3858,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -3900,7 +3869,7 @@ var _ = Describe("Processor", Ordered, func() {
 				PayloadSizeLimit: processor.payloadLimit.Load(),
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			mockTransformerClients.EXPECT().Destination().Times(1).
 				Return(types.Response{
 					Events:       []types.TransformerResponse{},
 					FailedEvents: transformerResponses,
@@ -3979,17 +3948,6 @@ var _ = Describe("Processor", Ordered, func() {
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 			}
-
-			transformerResponses := []types.TransformerResponse{
-				{
-					Metadata: types.Metadata{
-						MessageIDs: []string{"message-1", "message-2"},
-					},
-					StatusCode: 400,
-					Error:      "error-combined",
-				},
-			}
-
 			assertErrStoreJob := func(job *jobsdb.JobT) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
@@ -4026,9 +3984,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -4038,11 +3996,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().UserTransform(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Return(types.Response{
-					Events:       []types.TransformerResponse{},
-					FailedEvents: transformerResponses,
-				})
+			mockTransformerClients.EXPECT().User().Times(1)
 
 			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
@@ -4113,9 +4067,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -4125,7 +4079,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any()).Times(0)
+			mockTransformerClients.EXPECT().Destination().Times(0)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -4195,9 +4149,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
 				CustomValFilters: gatewayCustomVal,
@@ -4207,7 +4161,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
-			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any()).Times(0)
+			mockTransformerClients.EXPECT().Destination().Times(0)
 
 			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -4265,10 +4219,10 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
 			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4326,9 +4280,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("ProcessorLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -4452,9 +4406,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -4536,7 +4490,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformer(c.mockCtrl)))
+			processor := prepareHandle(NewHandle(config.Default, mocksTransformer.NewMockTransformerClients(c.mockCtrl)))
 
 			Setup(processor, c, false, false)
 
@@ -4701,9 +4655,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, false)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -4793,9 +4747,9 @@ var _ = Describe("Processor", Ordered, func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformerClients := mocksTransformer.NewMockTransformerClients(c.mockCtrl)
 
-			processor := prepareHandle(NewHandle(config.Default, mockTransformer))
+			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			Setup(processor, c, false, true)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
