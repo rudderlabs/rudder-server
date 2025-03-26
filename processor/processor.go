@@ -65,8 +65,8 @@ const (
 	sourceCategoryWebhook = "webhook"
 )
 
-func NewHandle(c *config.Config, transformer transformer.Transformer) *Handle {
-	h := &Handle{transformer: transformer, conf: c}
+func NewHandle(c *config.Config, transformerClients transformer.TransformerClients) *Handle {
+	h := &Handle{transformerClients: transformerClients, conf: c}
 	h.loadConfig()
 	return h
 }
@@ -90,9 +90,8 @@ type Handle struct {
 	conf                 *config.Config
 	tracer               stats.Tracer
 	backendConfig        backendconfig.BackendConfig
-	transformer          transformer.Transformer
 	warehouseTransformer warehouseTransformer
-	transformerClients   *transformer.Clients
+	transformerClients   transformer.TransformerClients
 
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
@@ -164,7 +163,6 @@ type Handle struct {
 		eventAuditEnabled               map[string]bool
 		credentialsMap                  map[string][]types.Credential
 		nonEventStreamSources           map[string]bool
-		enableTransformationV2          bool
 		enableWarehouseTransformations  config.ValueLoader[bool]
 		enableUpdatedEventNameReporting config.ValueLoader[bool]
 	}
@@ -810,7 +808,6 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
-	proc.config.enableTransformationV2 = config.GetBoolVar(false, "Processor.enableTransformationV2")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -2791,11 +2788,7 @@ func (proc *Handle) transformSrcDest(
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
-			if !proc.config.enableTransformationV2 {
-				response = proc.transformer.UserTransform(ctx, eventList, proc.config.userTransformBatchSize.Load())
-			} else {
-				response = proc.transformerClients.User().Transform(ctx, eventList)
-			}
+			response = proc.transformerClients.User().Transform(ctx, eventList)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
 
@@ -2958,11 +2951,7 @@ func (proc *Handle) transformSrcDest(
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
-			if !proc.config.enableTransformationV2 {
-				response = proc.transformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
-			} else {
-				response = proc.transformerClients.Destination().Transform(ctx, eventsToTransform)
-			}
+			response = proc.transformerClients.Destination().Transform(ctx, eventsToTransform)
 			proc.handleWarehouseTransformations(ctx, eventsToTransform, response, commonMetaData, eventsByMessageID)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)

@@ -96,11 +96,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 
 		validationStart := time.Now()
 		var response types.Response
-		if !proc.config.enableTransformationV2 {
-			response = proc.transformer.Validate(context.TODO(), eventList, proc.config.userTransformBatchSize.Load())
-		} else {
-			response = proc.transformerClients.TrackingPlan().Validate(context.TODO(), eventList)
-		}
+		response = proc.transformerClients.TrackingPlan().Validate(context.TODO(), eventList)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
