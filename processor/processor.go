@@ -81,7 +81,7 @@ type trackedUsersReporter interface {
 }
 
 type warehouseTransformer interface {
-	transformer.DestinationTransformer
+	transformer.DestinationClient
 	CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response, metadata *types.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt)
 }
 
@@ -3130,7 +3130,7 @@ func (proc *Handle) handleWarehouseTransformations(
 		return
 	}
 
-	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform, proc.config.transformBatchSize.Load())
+	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform)
 	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse, commonMetaData, eventsByMessageID)
 }
 

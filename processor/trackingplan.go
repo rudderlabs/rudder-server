@@ -95,8 +95,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		commonMetaData := makeCommonMetadataFromTransformerEvent(&transformerEvent)
 
 		validationStart := time.Now()
-		var response types.Response
-		response = proc.transformerClients.TrackingPlan().Validate(context.TODO(), eventList)
+		response := proc.transformerClients.TrackingPlan().Validate(context.TODO(), eventList)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
