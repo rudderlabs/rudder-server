@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -77,10 +78,42 @@ func NewBadgerEventSampler(
 		WithBlockCacheSize(conf.GetInt64Var(0, 1, "BadgerDB.EventSampler.blockCacheSize", "BadgerDB.blockCacheSize")).
 		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.EventSampler.detectConflicts", "BadgerDB.detectConflicts"))
 
-	ctx, cancel := context.WithCancel(ctx)
+	// cleanup the badger db directory if the badger version file value changes
+	{
+		badgerVersionFileValue := fmt.Sprintf("%d-%d-%d", opts.MemTableSize, opts.BlockSize, opts.BaseTableSize)
+		badgerVersionFilePath := path.Join(dbPath, ".rudder-version")
+		createDirWithVersionFile := func() error {
+			if err := os.MkdirAll(opts.Dir, 0o755); err != nil {
+				return fmt.Errorf("creating badger db directory: %w", err)
+			}
+			if err := os.WriteFile(badgerVersionFilePath, []byte(badgerVersionFileValue), 0o644); err != nil {
+				return fmt.Errorf("writing badger version file: %w", err)
+			}
+			return nil
+		}
+		// create the directory if it doesn't exist
+		if _, err := os.Stat(opts.Dir); errors.Is(err, os.ErrNotExist) {
+			if err := createDirWithVersionFile(); err != nil {
+				return nil, err
+			}
+		}
+		// check if the version file exists
+		if previous, _ := os.ReadFile(badgerVersionFilePath); string(previous) != badgerVersionFileValue {
+			if err := os.RemoveAll(opts.Dir); err != nil {
+				return nil, fmt.Errorf("removing badger db directory: %w", err)
+			}
+			if err := createDirWithVersionFile(); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	db, err := badger.Open(opts)
+	if err != nil {
+		return nil, err
+	}
 
+	ctx, cancel := context.WithCancel(ctx)
 	es := &BadgerEventSampler{
 		db:     db,
 		dbPath: dbPath,
@@ -92,11 +125,6 @@ func NewBadgerEventSampler(
 		wg:     sync.WaitGroup{},
 		sc:     NewStatsCollector(BadgerTypeEventSampler, module, stats),
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
 	es.wg.Add(1)
 	rruntime.Go(func() {
 		defer es.wg.Done()

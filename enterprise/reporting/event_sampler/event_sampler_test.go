@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -80,6 +81,64 @@ func TestBadger(t *testing.T) {
 			return !val1
 		}, 1*time.Second, 50*time.Millisecond)
 	})
+}
+
+func TestBadgerDirCleanup(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	dbPath := t.TempDir()
+	conf := config.New()
+	conf.Set("BadgerDB.memTableSize", 1*bytesize.MB)
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+	badger, err := NewEventSampler(context.Background(),
+		config.SingleValueLoader(time.Hour),
+		config.SingleValueLoader(string(BadgerTypeEventSampler)),
+		config.SingleValueLoader(100),
+		"module",
+		conf,
+		logger.NOP,
+		stats.NOP)
+	require.NoError(t, err)
+	found, err := badger.Get("a")
+	require.NoError(t, err)
+	require.False(t, found)
+	err = badger.Put("a")
+	require.NoError(t, err)
+	found, err = badger.Get("a")
+	require.NoError(t, err)
+	require.True(t, found)
+	badger.Close()
+
+	// start badger again with same config
+	badger, err = NewEventSampler(context.Background(),
+		config.SingleValueLoader(time.Hour),
+		config.SingleValueLoader(string(BadgerTypeEventSampler)),
+		config.SingleValueLoader(100),
+		"module",
+		conf,
+		logger.NOP,
+		stats.NOP)
+	require.NoError(t, err)
+	found, err = badger.Get("a")
+	require.NoError(t, err)
+	require.True(t, found, "since directory was not cleaned up the previous key should be found")
+	badger.Close()
+
+	// start badger again with different config
+	conf.Set("BadgerDB.memTableSize", 2*bytesize.MB)
+	badger, err = NewEventSampler(context.Background(),
+		config.SingleValueLoader(time.Hour),
+		config.SingleValueLoader(string(BadgerTypeEventSampler)),
+		config.SingleValueLoader(100),
+		"module",
+		conf,
+		logger.NOP,
+		stats.NOP)
+	require.NoError(t, err)
+	found, err = badger.Get("a")
+	require.NoError(t, err)
+	require.False(t, found, "since directory was cleaned up the previous key should not be found")
+	badger.Close()
 }
 
 func TestInMemoryCache(t *testing.T) {
