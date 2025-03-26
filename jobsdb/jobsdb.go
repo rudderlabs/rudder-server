@@ -887,7 +887,7 @@ func (jd *Handle) workersAndAuxSetup() {
 
 	var defaultLogCacheBranchInvalidation bool
 	switch jd.tablePrefix {
-	case "gw", "rt", "batch_rt":
+	case "gw", "rt", "batch_rt", "arc":
 		defaultLogCacheBranchInvalidation = true
 	}
 	jd.noResultsCache = cache.NewNoResultsCache(
