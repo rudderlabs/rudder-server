@@ -80,7 +80,7 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -181,7 +181,7 @@ jobs:
       - run: go version
       - run: go mod download
       - name: Login to DockerHub
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
