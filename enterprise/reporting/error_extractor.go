@@ -3,6 +3,7 @@ package reporting
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/samber/lo"
@@ -14,21 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 )
-
-// Generate strong deprecation terms by combining "deprecated" with version patterns
-func generateStrongDeprecationTerms(keyPatterns, phrasePatterns []string) []string {
-	result := make([]string, 0, len(keyPatterns)+len(phrasePatterns))
-
-	// Add all standalone strong terms
-	result = append(result, phrasePatterns...)
-
-	// Add "deprecated X" for each version pattern
-	for _, v := range keyPatterns {
-		result = append(result, "deprecated "+v)
-	}
-
-	return result
-}
 
 const (
 	responseKey = "response"
@@ -48,31 +34,59 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
-	// Version-related terms
-	versionPatterns = []string{
-		"version", "api", "endpoint", "library", "component",
-		"module", "functionality", "feature", "product",
+	deprecationKeywordSets  = map[string][][]string{
+		"version": {
+			{"action required", "api"},
+			{"api", "removed"},
+			{"api", "retired"},
+			{"deprecated"},
+			{"discontinued"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"expiring"},
+			{"expired"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+			{"not active"},
+			{"outdated"},
+			{"phased out"},
+			{"please upgrade"},
+			{"scheduled", "deprecation"},
+			{"sunset"},
+			{"support ending"},
+			{"unsupported"},
+			{"not supported"},
+			{"upgrade", "required"},
+		},
+		"endpoint": {
+			{"deprecated"},
+			{"removed"},
+			{"unsupported"},
+			{"unavailable"},
+			{"obsolete"},
+			{"outdated"},
+			{"not supported"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"expiring"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+		},
+		"api": {
+			{"deprecated"},
+			{"no longer supported"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+		},
 	}
-
-	// Status-related terms
-	statusPatterns = []string{
-		"not active", "inactive", "no longer active", "invalid",
-		"not supported", "unsupported", "no longer supported",
-		"not valid", "no longer valid", "old", "retired",
-		"not available", "unavailable", "no longer available",
-		"disabled", "expired", "removed", "discontinued",
-		"deprecated", "deprecation", "obsolete", "obsolescence",
-		"outdated", "end of life", "end of support",
-		"legacy", "no longer", "upgrade required", "upgrade recommended",
-	}
-
-	// Standalone strong terms (that don't need to be combined)
-	standaloneStrongTerms = []string{
-		"end of life", "end of support", "no longer supported",
-	}
-
-	// Pre-computed strong deprecation terms
-	strongDeprecationTerms = generateStrongDeprecationTerms(versionPatterns, standaloneStrongTerms)
 )
 
 type ExtractorHandle struct {
@@ -345,31 +359,29 @@ func getErrorCodeFromStatTags(statTags map[string]string) string {
 	return strings.Join(errorCodeParts, ":")
 }
 
-func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
-	// Convert to lowercase for case-insensitive matching
-	cleanedError := strings.Replace(strings.ToLower(errorMessage), "-", " ", -1)
+func containsDeprecationKey(errorMessage, key string) bool {
+	return strings.HasPrefix(errorMessage, key) || strings.Contains(errorMessage, " "+key)
+}
 
-	// Check for version-status combinations
-	for _, vPattern := range versionPatterns {
-		if !strings.Contains(cleanedError, vPattern) {
+func containsAllKeywords(errorMessage string, keywordSets [][]string) bool {
+	return slices.ContainsFunc(keywordSets, func(keywordSet []string) bool {
+		return !slices.ContainsFunc(keywordSet, func(keyword string) bool {
+			return !containsDeprecationKey(errorMessage, keyword)
+		})
+	})
+}
+
+func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
+	// Normalize error message
+	cleanedError := strings.ReplaceAll(strings.ToLower(errorMessage), "-", " ")
+	for key, keywordSets := range deprecationKeywordSets {
+		if !containsDeprecationKey(cleanedError, key) {
 			continue
 		}
-
-		for _, sPattern := range statusPatterns {
-			if strings.Contains(cleanedError, sPattern) {
-				// Found a version pattern and a status pattern
-				return true
-			}
-		}
-	}
-
-	// Check for strong deprecation terms (using pre-computed list)
-	for _, term := range strongDeprecationTerms {
-		if strings.Contains(cleanedError, term) {
+		if containsAllKeywords(cleanedError, keywordSets) {
 			return true
 		}
 	}
-
 	return false
 }
 
