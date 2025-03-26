@@ -59,6 +59,7 @@ type Handle struct {
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	debugger                   destinationdebugger.DestinationDebugger
+	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	adaptiveLimit              func(int64) int64
 
 	// configuration
@@ -490,12 +491,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		}
 		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 		for workspace, jobCount := range routerWorkspaceJobStatusCount {
-			rmetrics.DecreasePendingEvents(
-				"rt",
-				workspace,
-				rt.destType,
-				float64(jobCount),
-			)
+			rt.pendingEventsRegistry.DecreasePendingEvents("rt", workspace, rt.destType, float64(jobCount))
 		}
 	}
 

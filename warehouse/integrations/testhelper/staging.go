@@ -217,7 +217,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 	defer func() { _ = reader.Close() }()
 
 	scanner := bufio.NewScanner(reader)
-	schemaMap := make(map[string]map[string]interface{})
+	schemaMap := make(map[string]map[string]string)
 
 	stagingEvents := make([]StagingEvent, 0)
 
@@ -235,7 +235,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		tableName := event.Metadata.Table
 
 		if _, ok := schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
+			schemaMap[tableName] = make(map[string]string)
 		}
 		for columnName, columnType := range event.Metadata.Columns {
 			if _, ok := schemaMap[tableName][columnName]; !ok {

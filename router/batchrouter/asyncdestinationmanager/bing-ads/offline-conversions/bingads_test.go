@@ -25,13 +25,14 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	mocksoauthservice "github.com/rudderlabs/rudder-server/mocks/services/oauth"
+
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -486,9 +487,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 		It("TestNewManagerInternal", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
-			oauthService := mocksoauthservice.NewMockAuthorizer(ctrl)
-			oauthService.EXPECT().FetchToken(gomock.Any()).Return(200, &oauth.AuthResponse{
-				Account: oauth.AccountSecret{
+			oauthV2Service := MockAuthorizer.NewMockAuthorizer(ctrl)
+			oauthV2Service.EXPECT().FetchToken(gomock.Any()).Return(200, &v2.AuthResponse{
+				Account: v2.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
 							{
@@ -498,9 +499,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 							"ExpirationDate": "2023-01-31T23:59:59.999Z"
 							}`),
 				},
-			})
-			oauthService.EXPECT().RefreshToken(gomock.Any()).Return(200, &oauth.AuthResponse{
-				Account: oauth.AccountSecret{
+			}, nil)
+			oauthV2Service.EXPECT().RefreshToken(gomock.Any()).Return(200, &v2.AuthResponse{
+				Account: v2.AccountSecret{
 					ExpirationDate: "",
 					Secret: []byte(`
 							{
@@ -510,9 +511,9 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 							"ExpirationDate": "2023-01-31T23:59:59.999Z"
 							}`),
 				},
-			})
+			}, nil)
 
-			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthService, nil)
+			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
 			Expect(err).To(BeNil())
 			Expect(bingAdsUploader).ToNot(BeNil())
 		})
