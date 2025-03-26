@@ -1223,8 +1223,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			{"[\"electronics\",\"audio\",\"wireless\"]", "[true,false,true]", "[10.5,20.3,30.7]", "[1,2,3,4]", "SGVsbG8sIFdvcmxkIQ==", "true", destination.ID, "SNOWPIPE_STREAMING", "14.5.67.21", "14.5.67.21", source.ID, source.SourceDefinition.Name, "2024-11-12T00:00:00Z", "2024-11-12T15:30:00Z", "3", "10.5", "cm", "5", "PT1H30M", tableName, eventName, "299.99", "37.7749", "-122.4194", "5", "12345", "[[1,2],[3,4]]", "[{\"id\":1,\"name\":\"Accessory 1\"},{\"id\":2,\"name\":\"Accessory 2\"}]", "false", "789", "Inner Text", "2020-02-02T00:23:09Z", ts, "2020-02-02T00:23:09Z", "Wireless Headphones", "2020-02-02T00:23:09Z", "https://example.com/product/12345", "5", ts},
 		}, produceReviewedRecordsFromDB)
 		tracksRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_IP, CONTEXT_PASSED_IP, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ID, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
-		require.Equal(t, tracksRecords(source, destination), tracksRecordsFromDB)
-
+		require.ElementsMatch(t, tracksRecords(source, destination), tracksRecordsFromDB)
 		cancel()
 		require.NoError(t, <-done)
 	})

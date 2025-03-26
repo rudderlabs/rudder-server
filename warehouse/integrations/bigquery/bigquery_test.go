@@ -28,6 +28,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -334,6 +335,11 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "2023051204")
 					}
+					require.Equal(t, lo.Map(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) string {
+						return item.Name
+					}),
+						[]string{"_groups_view", "aliases_view", "identifies_view", "pages_view", "product_track_view", "rudder_identity_mappings_view", "rudder_identity_merge_rules_view", "screens_view", "tracks_view", "users_view"},
+					)
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "timestamp",
@@ -395,6 +401,11 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "2023051204")
 					}
+					require.Equal(t, lo.Map(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) string {
+						return item.Name
+					}),
+						[]string{"_groups_view", "aliases_view", "identifies_view", "pages_view", "product_track_view", "rudder_identity_mappings_view", "rudder_identity_merge_rules_view", "screens_view", "tracks_view", "users_view"},
+					)
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
@@ -456,10 +467,12 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "20230512")
 					}
+					require.Empty(t, listViews(t, ctx, db, namespace))
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
 					"partitionType":   "day",
+					"skipViews":       true,
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
@@ -538,6 +551,11 @@ func TestIntegration(t *testing.T) {
 					for _, partition := range filteredPartitions {
 						require.Equal(t, partition.B, "20230512")
 					}
+					require.Equal(t, lo.Map(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) string {
+						return item.Name
+					}),
+						[]string{"rudder_identity_mappings_view", "rudder_identity_merge_rules_view"}, // since tables are already created in preLoading, we don't create it again
+					)
 				},
 				configOverride: map[string]any{
 					"partitionColumn": "received_at",
@@ -1184,6 +1202,87 @@ func TestIntegration(t *testing.T) {
 		})
 	})
 
+	t.Run("Create table", func(t *testing.T) {
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		db, err := bigquery.NewClient(ctx,
+			credentials.ProjectID,
+			option.WithCredentialsJSON([]byte(credentials.Credentials)),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		t.Cleanup(func() {
+			dropSchema(t, db, namespace)
+		})
+
+		schemaInWarehouse := model.TableSchema{
+			"id":          "string",
+			"received_at": "datetime",
+			"test_string": "string",
+		}
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: "test_source_id",
+			},
+			Destination: backendconfig.DestinationT{
+				ID: "test_destination_id",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"project":     credentials.ProjectID,
+					"location":    credentials.Location,
+					"bucketName":  credentials.BucketName,
+					"credentials": credentials.Credentials,
+					"namespace":   namespace,
+				},
+			},
+			WorkspaceID: "test_workspace_id",
+			Namespace:   namespace,
+		}
+
+		t.Run("Views enabled", func(t *testing.T) {
+			tableName, viewName := "view_enabled", "view_enabled_view"
+			mockUploader := mockuploader.NewMockUploader(gomock.NewController(t))
+
+			w := th.Clone(t, warehouse)
+			w.Destination.Config[model.SkipViewsSetting.String()] = false
+
+			bq := whbigquery.New(config.New(), logger.NOP)
+			require.NoError(t, bq.Setup(ctx, w, mockUploader))
+			require.NoError(t, bq.CreateSchema(ctx))
+			require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse))
+			require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse), "Running twice should not error out")
+			require.Len(t, lo.Filter(listTables(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) bool {
+				return item.Name == tableName
+			}), 1)
+			require.Len(t, lo.Filter(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) bool {
+				return item.Name == viewName
+			}), 1)
+		})
+		t.Run("Views disabled", func(t *testing.T) {
+			tableName, viewName := "view_disabled", "view_disabled_view"
+			mockUploader := mockuploader.NewMockUploader(gomock.NewController(t))
+
+			w := th.Clone(t, warehouse)
+			w.Destination.Config[model.SkipViewsSetting.String()] = true
+
+			bq := whbigquery.New(config.New(), logger.NOP)
+			require.NoError(t, bq.Setup(ctx, w, mockUploader))
+			require.NoError(t, bq.CreateSchema(ctx))
+			require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse))
+			require.NoError(t, bq.CreateTable(ctx, tableName, schemaInWarehouse), "Running twice should not error out")
+			require.Len(t, lo.Filter(listTables(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) bool {
+				return item.Name == tableName
+			}), 1)
+			require.Empty(t, lo.Filter(listViews(t, ctx, db, namespace), func(item *bigquery.TableMetadata, index int) bool {
+				return item.Name == viewName
+			}))
+		})
+	})
+
 	t.Run("Fetch schema", func(t *testing.T) {
 		ctx := context.Background()
 		namespace := whth.RandSchema(destType)
@@ -1448,6 +1547,21 @@ func listTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespac
 	t.Helper()
 	t.Log("Listing tables in namespace", namespace)
 
+	return list(t, ctx, db, namespace, func(item *bigquery.TableMetadata) bool {
+		return item.Type == "TABLE"
+	})
+}
+
+func listViews(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string) []*bigquery.TableMetadata {
+	t.Helper()
+	t.Log("Listing views in namespace", namespace)
+
+	return list(t, ctx, db, namespace, func(item *bigquery.TableMetadata) bool {
+		return item.Type == "VIEW"
+	})
+}
+
+func list(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string, filter func(item *bigquery.TableMetadata) bool) []*bigquery.TableMetadata {
 	it := db.Dataset(namespace).Tables(ctx)
 
 	var tables []*bigquery.TableMetadata
@@ -1462,7 +1576,7 @@ func listTables(t testing.TB, ctx context.Context, db *bigquery.Client, namespac
 	}
 
 	return lo.Filter(tables, func(item *bigquery.TableMetadata, index int) bool {
-		return item.Type == "TABLE"
+		return filter(item)
 	})
 }
 

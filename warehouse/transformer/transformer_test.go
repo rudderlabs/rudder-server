@@ -557,6 +557,26 @@ func TestTransformer(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:         "Empty array and object",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4", "empty_array":[],"empty_object":{},"nil":null}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output:     trackEventDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

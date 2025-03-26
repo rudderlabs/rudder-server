@@ -7,16 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
@@ -56,7 +54,7 @@ func TestWorkerPool(t *testing.T) {
 		defer poolCancel()
 
 		// create a worker pool
-		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, wh) }, logger.NOP)
+		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) }, logger.NOP)
 
 		// start pinging for work for 100 partitions
 		var wg sync.WaitGroup
@@ -132,7 +130,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
-		func(partition string) workerpool.Worker { return newProcessorWorker(partition, wh) },
+		func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) },
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
 		workerpool.WithIdleTimeout(200*time.Millisecond))
@@ -205,6 +203,7 @@ func (m *mockWorkerHandle) config() workerHandleConfig {
 		subJobSize:            10,
 		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
 		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
+		pipelinesPerPartition: 3,
 	}
 }
 
@@ -238,9 +237,6 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 
 func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{
-		DBReadThroughput: func(partition string) stats.Measurement {
-			return stats.Default.NewStat("db_read_throughput", stats.CountType)
-		},
 		statDBReadOutOfOrder: func(partition string) stats.Measurement {
 			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
 		},

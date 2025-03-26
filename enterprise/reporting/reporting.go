@@ -250,12 +250,12 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
     SELECT 
         %s, MAX(reported_at),
         COALESCE(
-            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
+            (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE (sample_event != '{}' AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
             ''
         ) AS sample_response,
         COALESCE(
-            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE (sample_event != '{}'::jsonb AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
-            '{}'::jsonb
+            (ARRAY_AGG(sample_event ORDER BY id DESC) FILTER (WHERE (sample_event != '{}' AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
+            '{}'
         ) AS sample_event,
         SUM(count),
         SUM(violation_count)
@@ -278,6 +278,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 	var metricReports []*types.ReportByStatus
 	for rows.Next() {
 		metricReport := types.ReportByStatus{StatusDetail: &types.StatusDetail{}}
+		var sampleEvent string
 		err = rows.Scan(
 			&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID,
 			&metricReport.ConnectionDetails.SourceDefinitionID,
@@ -299,12 +300,13 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
 			&metricReport.ReportedAt,
-			&metricReport.StatusDetail.SampleResponse, &metricReport.StatusDetail.SampleEvent,
+			&metricReport.StatusDetail.SampleResponse, &sampleEvent,
 			&metricReport.StatusDetail.Count, &metricReport.StatusDetail.ViolationCount,
 		)
 		if err != nil {
 			panic(err)
 		}
+		metricReport.StatusDetail.SampleEvent = []byte(sampleEvent)
 		metricReports = append(metricReports, &metricReport)
 	}
 	if err := rows.Err(); err != nil {
@@ -715,7 +717,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
 			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
 			metric.StatusDetail.StatusCode,
-			sampleResponse, string(sampleEvent),
+			sampleResponse, getStringifiedSampleEvent(sampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,
 			metric.StatusDetail.ErrorType,
 		)

@@ -98,6 +98,30 @@ func (cpRespProducer *cpResponseProducer) mockCpRequests() *chi.Mux {
 	return srvMux
 }
 
+func TestIsOAuthDestination(t *testing.T) {
+	testCases := []struct {
+		name     string
+		config   map[string]interface{}
+		expected bool
+	}{
+		{
+			name:     "should return true if destination is OAuth",
+			config:   map[string]interface{}{"auth": map[string]interface{}{"type": "OAuth"}},
+			expected: true,
+		},
+		{
+			name:     "should return false if destination is not OAuth",
+			config:   map[string]interface{}{},
+			expected: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, oauth.IsOAuthDestination(tc.config))
+		})
+	}
+}
+
 func TestMultipleRequestsForOAuth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)

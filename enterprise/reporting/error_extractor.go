@@ -3,6 +3,7 @@ package reporting
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/samber/lo"
@@ -33,68 +34,68 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
-	deprecationKeywords     = map[string]int{
-		"deprecated":               2,
-		"deprecation":              2,
-		"version":                  1,
-		"obsolete":                 1,
-		"outdated":                 1,
-		"end of life":              4,
-		"legacy":                   1,
-		"discontinued":             1,
-		"retired":                  2,
-		"no longer supported":      3,
-		"old version":              1,
-		"deprecated software":      2,
-		"upgrade required":         2,
-		"obsolete version":         1,
-		"unsupported version":      2,
-		"deprecated feature":       2,
-		"version no longer valid":  2,
-		"deprecated library":       2,
-		"version upgrade":          2,
-		"deprecated component":     2,
-		"upgrade recommended":      2,
-		"end-of-support":           3,
-		"discontinued product":     1,
-		"deprecated functionality": 2,
-		"version obsolescence":     1,
-		"deprecated module":        2,
-	}
-	// Version indicators
-	versionPatterns = []string{"version", "api", "endpoint"}
-
-	// status indicators
-	statusPatterns = []string{
-		"not.*active", "inactive", "no longer.*active",
-		"not.*supported", "unsupported", "no longer.*supported",
-		"not.*valid", "invalid", "no longer.*valid",
-		"not.*available", "unavailable", "no longer.*available",
-		"disabled", "expired", "removed", "discontinued",
-		"deprecated", "obsolete",
+	deprecationKeywordSets  = [][]string{
+		{"version", "action required", "api"},
+		{"version", "api", "removed"},
+		{"version", "api", "retired"},
+		{"version", "deprecated"},
+		{"version", "discontinued"},
+		{"version", "end of life"},
+		{"version", "end of service"},
+		{"version", "end of support"},
+		{"version", "expiring"},
+		{"version", "expired"},
+		{"version", "maintenance mode"},
+		{"version", "no longer available"},
+		{"version", "no longer supported"},
+		{"version", "not active"},
+		{"version", "outdated"},
+		{"version", "phased out"},
+		{"version", "please upgrade"},
+		{"version", "scheduled", "deprecation"},
+		{"version", "sunset"},
+		{"version", "support ending"},
+		{"version", "unsupported"},
+		{"version", "not supported"},
+		{"version", "upgrade", "required"},
+		{"endpoint", "deprecated"},
+		{"endpoint", "removed"},
+		{"endpoint", "unsupported"},
+		{"endpoint", "unavailable"},
+		{"endpoint", "obsolete"},
+		{"endpoint", "outdated"},
+		{"endpoint", "not supported"},
+		{"endpoint", "end of life"},
+		{"endpoint", "end of service"},
+		{"endpoint", "end of support"},
+		{"endpoint", "expiring"},
+		{"endpoint", "maintenance mode"},
+		{"endpoint", "no longer available"},
+		{"endpoint", "no longer supported"},
+		{"api", "deprecated"},
+		{"api", "no longer supported"},
+		{"api", "end of life"},
+		{"api", "end of service"},
+		{"api", "end of support"},
+		{"api", "maintenance mode"},
+		{"api", "no longer available"},
+		{"api", "no longer supported"},
 	}
 )
 
-var lowercasedDeprecationKeywords = lo.MapKeys(deprecationKeywords, func(_ int, key string) string {
-	return strings.ToLower(key)
-})
-
 type ExtractorHandle struct {
-	log                              logger.Logger
-	ErrorMessageKeys                 []string // the keys where in we may have error message
-	versionDeprecationThresholdScore config.ValueLoader[int]
+	log              logger.Logger
+	ErrorMessageKeys []string // the keys where in we may have error message
 }
 
 func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
-	versionDepThreshold := config.GetReloadableIntVar(1, 1, "Reporting.ErrorDetail.versionDeprecationThresholdScore")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 
 	extractor := &ExtractorHandle{
-		ErrorMessageKeys:                 defaultErrorMessageKeys,
-		log:                              log.Child("ErrorDetailExtractor"),
-		versionDeprecationThresholdScore: versionDepThreshold,
+		ErrorMessageKeys: defaultErrorMessageKeys,
+		log:              log.Child("ErrorDetailExtractor"),
 	}
 	return extractor
 }
@@ -352,40 +353,18 @@ func getErrorCodeFromStatTags(statTags map[string]string) string {
 	return strings.Join(errorCodeParts, ":")
 }
 
+func containsDeprecationKey(errorMessage, key string) bool {
+	return strings.HasPrefix(errorMessage, key) || strings.Contains(errorMessage, " "+key)
+}
+
 func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
-	var score int
-
-	// Convert to lowercase for case-insensitive matching
-	errorMessage = strings.ToLower(errorMessage)
-
-	// 1. Check for direct keyword matches
-	for keyword, s := range lowercasedDeprecationKeywords {
-		if strings.Contains(errorMessage, keyword) {
-			score += s
-		}
-	}
-
-	// 2. Check for version-related patterns with negative context
-	if score <= ext.versionDeprecationThresholdScore.Load() {
-		// Check for version + status combinations
-		for _, vPattern := range versionPatterns {
-			for _, sPattern := range statusPatterns {
-				// Check both orders (version then status, status then version)
-				pattern1 := fmt.Sprintf("%s.*%s", vPattern, sPattern)
-				if matched, _ := regexp.MatchString(pattern1, errorMessage); matched {
-					score += 3
-					break
-				}
-				pattern2 := fmt.Sprintf("%s.*%s", sPattern, vPattern)
-				if matched, _ := regexp.MatchString(pattern2, errorMessage); matched {
-					score += 3
-					break
-				}
-			}
-		}
-	}
-
-	return score > ext.versionDeprecationThresholdScore.Load()
+	// Normalize error message
+	cleanedError := strings.ReplaceAll(strings.ToLower(errorMessage), "-", " ")
+	return slices.ContainsFunc(deprecationKeywordSets, func(keywordSet []string) bool {
+		return !slices.ContainsFunc(keywordSet, func(keyword string) bool {
+			return !containsDeprecationKey(cleanedError, keyword)
+		})
+	})
 }
 
 func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {

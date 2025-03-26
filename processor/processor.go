@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
@@ -44,7 +43,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -103,6 +101,7 @@ type Handle struct {
 	writeErrorDB               jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
+	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
 	dedup                      dedup.Dedup
@@ -124,10 +123,11 @@ type Handle struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
-		read       kitsync.Limiter
-		preprocess kitsync.Limiter
-		transform  kitsync.Limiter
-		store      kitsync.Limiter
+		read         kitsync.Limiter
+		preprocess   kitsync.Limiter
+		pretransform kitsync.Limiter
+		transform    kitsync.Limiter
+		store        kitsync.Limiter
 	}
 	config struct {
 		isolationMode                   isolation.Mode
@@ -135,6 +135,7 @@ type Handle struct {
 		enablePipelining                bool
 		pipelineBufferedItems           int
 		subJobSize                      int
+		pipelinesPerPartition           int
 		pingerSleep                     config.ValueLoader[time.Duration]
 		readLoopSleep                   config.ValueLoader[time.Duration]
 		maxLoopSleep                    config.ValueLoader[time.Duration]
@@ -214,10 +215,8 @@ type processorStats struct {
 	statDBWriteBatchEvents        func(partition string) stats.Measurement
 	statDestNumOutputEvents       func(partition string) stats.Measurement
 	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
-	DBReadThroughput              func(partition string) stats.Measurement
 	processJobThroughput          func(partition string) stats.Measurement
 	transformationsThroughput     func(partition string) stats.Measurement
-	DBWriteThroughput             func(partition string) stats.Measurement
 	trackedUsersReportGeneration  func(partition string) stats.Measurement
 }
 
@@ -392,6 +391,7 @@ func (proc *Handle) Setup(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) error {
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
@@ -417,6 +417,8 @@ func (proc *Handle) Setup(
 	proc.eventSchemaDB = eventSchemaDB
 	proc.transformerClients = transformer.NewClients(proc.conf, proc.logger, proc.statsFactory)
 	proc.archivalDB = archivalDB
+
+	proc.pendingEventsRegistry = pendingEventsRegistry
 
 	proc.transientSources = transientSources
 	proc.fileuploader = fileuploader
@@ -601,11 +603,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.DBReadThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_throughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.processJobThroughput = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_processJob_thoughput", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -616,11 +613,7 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.DBWriteThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_throughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
+
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_seconds", stats.TimerType, stats.Tags{
 			"partition": partition,
@@ -693,6 +686,10 @@ func (proc *Handle) Start(ctx context.Context) error {
 		config.GetInt("Processor.Limiter.preprocess.limit", 50),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.pretransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_pretransform",
+		config.GetInt("Processor.Limiter.pretransform.limit", 50),
+		s,
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
 		config.GetInt("Processor.Limiter.transform.limit", 50),
 		s,
@@ -733,7 +730,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newProcessorWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, h) }, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {
@@ -780,7 +777,7 @@ func (proc *Handle) Shutdown() {
 	if proc.dedup != nil {
 		proc.dedup.Close()
 	}
-	metric.Instance.Reset()
+	proc.pendingEventsRegistry.Reset()
 }
 
 func (proc *Handle) loadConfig() {
@@ -805,6 +802,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
 	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
 	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.pipelinesPerPartition = config.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
 	// Enable dedup of incoming events by default
 	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
 	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
@@ -1166,16 +1164,16 @@ func (proc *Handle) getTransformerEvents(
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
 				if pu != reportingtypes.TRACKINGPLAN_VALIDATOR {
-					return []byte(`{}`)
+					return nil
 				}
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
-					return []byte(`{}`)
+					return nil
 				}
 
 				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-					sampleEvent = []byte(`{}`)
+					sampleEvent = nil
 				}
 				return sampleEvent
 			},
@@ -1467,12 +1465,12 @@ func (proc *Handle) getTransformationMetrics(
 				pu,
 				func() json.RawMessage {
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
+						return nil
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
 						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
+						sampleEvent = nil
 					}
 					return sampleEvent
 				},
@@ -1622,7 +1620,7 @@ func getDiffMetrics(
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,
-				SampleEvent: []byte(`{}`),
+				SampleEvent: nil,
 				EventName:   eventName,
 				EventType:   eventType,
 			},
@@ -1770,7 +1768,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		messageID     string
 		userId        string
 		eventParams   types.EventParams
-		dedupKey      dedupTypes.KeyValue
+		dedupKey      dedup.BatchKey
 		requestIP     string
 		recievedAt    time.Time
 		parameters    json.RawMessage
@@ -1782,7 +1780,8 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 	}
 
 	var jobsWithMetaData []jobWithMetaData
-	var dedupKeysWithWorkspaceID []dedupTypes.KeyValue
+	var dedupBatchKeys []dedup.BatchKey
+	var dedupBatchKeysIdx int
 	for _, batchEvent := range jobList {
 		var eventParams types.EventParams
 		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
@@ -1857,12 +1856,11 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				}
 				return payloadBytes
 			})
-			dedupKey := dedupTypes.KeyValue{
-				Key:         fmt.Sprintf("%v%v", messageId, eventParams.SourceJobRunId),
-				WorkspaceID: batchEvent.WorkspaceId,
-				JobID:       batchEvent.JobID,
+			dedupBatchKey := dedup.BatchKey{
+				Index: dedupBatchKeysIdx,
+				Key:   messageId + eventParams.SourceJobRunId,
 			}
-
+			dedupBatchKeysIdx++
 			jobsWithMetaData = append(jobsWithMetaData, jobWithMetaData{
 				jobID:         batchEvent.JobID,
 				userId:        batchEvent.UserID,
@@ -1870,7 +1868,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				singularEvent: singularEvent,
 				messageID:     messageId,
 				eventParams:   eventParams,
-				dedupKey:      dedupKey,
+				dedupKey:      dedupBatchKey,
 				requestIP:     requestIP,
 				recievedAt:    receivedAt,
 				parameters:    parameters,
@@ -1880,14 +1878,14 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				customVal:     batchEvent.CustomVal,
 				payloadFunc:   payloadFunc,
 			})
-			dedupKeysWithWorkspaceID = append(dedupKeysWithWorkspaceID, dedupKey)
+			dedupBatchKeys = append(dedupBatchKeys, dedupBatchKey)
 		}
 	}
 
-	var keyMap map[dedupTypes.KeyValue]bool
+	var allowedBatchKeys map[dedup.BatchKey]bool
 	var err error
 	if proc.config.enableDedup {
-		keyMap, err = proc.dedup.GetBatch(dedupKeysWithWorkspaceID)
+		allowedBatchKeys, err = proc.dedup.Allowed(dedupBatchKeys...)
 		if err != nil {
 			return nil, err
 		}
@@ -1899,14 +1897,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		}
 
 		if proc.config.enableDedup {
-			dedupKey := event.dedupKey
-			ok := keyMap[dedupKey]
-			if !ok {
-				proc.logger.Debugf("Dropping event with duplicate dedupKey: %s", dedupKey.Key)
+			if !allowedBatchKeys[event.dedupKey] {
+				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
-			dedupKeys[dedupKey.Key] = struct{}{}
+			dedupKeys[event.dedupKey.Key] = struct{}{}
 		}
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
@@ -1979,12 +1975,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				reportingtypes.GATEWAY,
 				func() json.RawMessage {
 					if sourceIsTransient {
-						return []byte(`{}`)
+						return nil
 					}
 					if payload := event.payloadFunc(); payload != nil {
 						return payload
 					}
-					return []byte("{}")
+					return nil
 				},
 				nil,
 			)
@@ -2027,7 +2023,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return nil }, nil)
 		}
 	}
 
@@ -2064,6 +2060,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
+	if proc.limiter.pretransform != nil {
+		defer proc.limiter.pretransform.BeginWithPriority("", proc.getLimiterPriority(preTrans.partition))()
+	}
+
 	g, groupCtx := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
@@ -2652,10 +2652,6 @@ func (proc *Handle) Store(partition string, in *storeMessage) {
 		}
 	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
-	dbWriteTime := time.Since(beforeStoreStatus)
-	// DB write throughput per second.
-	dbWriteThroughput := throughputPerSecond(len(destJobs)+len(batchDestJobs), dbWriteTime)
-	proc.stats.DBWriteThroughput(partition).Count(dbWriteThroughput)
 	proc.stats.statDBWriteJobsTime(partition).SendTiming(writeJobsTime)
 	proc.stats.statDBWriteStatusTime(partition).Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
@@ -2999,7 +2995,7 @@ func (proc *Handle) transformSrcDest(
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
 				}
 				reportingtypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
@@ -3518,7 +3514,7 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]map[string]int) {
 	for workspace := range stats {
 		for destType := range stats[workspace] {
-			rmetrics.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
+			proc.pendingEventsRegistry.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
 		}
 	}
 }
@@ -3528,15 +3524,17 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
 	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
-	return misc.RetryWithNotify(ctx,
+	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
 		jobdDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			metric.Instance.Reset()
+			startTime := time.Now()
+			proc.pendingEventsRegistry.Reset()
+			defer proc.pendingEventsRegistry.Publish()
 			g, ctx := errgroup.WithContext(ctx)
 			for tablePrefix, db := range dbs {
 				g.Go(func() error {
-					if err := db.GetPileUpCounts(ctx); err != nil {
+					if err := db.GetPileUpCounts(ctx, startTime, proc.pendingEventsRegistry.IncreasePendingEvents); err != nil {
 						return fmt.Errorf("pileup counts for %s: %w", tablePrefix, err)
 					}
 					return nil
@@ -3547,4 +3545,8 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
+	if err != nil && ctx.Err() == nil { // ignore context cancellation
+		return err
+	}
+	return nil
 }
