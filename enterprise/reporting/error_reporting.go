@@ -705,7 +705,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		reportsCountMap := make(map[types.EDErrorDetailsKey]*types.EDReportMapValue)
 		for index, rep := range reports {
 			messageMap[rep.ErrorMessage] = index
-			errDet := rep.EDErrorDetails.EDErrorDetailsKey
+			errDet := rep.EDErrorDetailsKey
 			reportMapValue, ok := reportsCountMap[errDet]
 			if !ok {
 				reportsCountMap[errDet] = &types.EDReportMapValue{

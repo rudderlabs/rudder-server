@@ -108,7 +108,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 	if statusCode == http.StatusOK {
 		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
-		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
+		err = t.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
 			t.log.Errorn("[preRoundTrip] secret augmentation",
 				obskit.DestinationID(rts.destination.ID),
