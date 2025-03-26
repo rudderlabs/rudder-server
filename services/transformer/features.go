@@ -16,7 +16,6 @@ import (
 const (
 	V0 = "v0"
 	V1 = "v1"
-	V2 = "v2"
 )
 
 type FeaturesServiceOptions struct {
@@ -27,7 +26,6 @@ type FeaturesServiceOptions struct {
 
 type FeaturesService interface {
 	Regulations() []string
-	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
 	TransformerProxyVersion() string
 	Wait() chan struct{}
@@ -38,9 +36,7 @@ var defaultTransformerFeatures = `{
 	  "MARKETO": true,
 	  "HS": true
 	},
-	"regulations": ["AM"],
-	"supportSourceTransformV1": true,
-	"upgradedToSourceTransformV2": false,
+	"regulations": ["AM"]
   }`
 
 func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
@@ -73,11 +69,6 @@ type noopService struct{}
 
 func (*noopService) Regulations() []string {
 	return []string{}
-}
-
-func (*noopService) SourceTransformerVersion() string {
-	// v0 is deprecated and upgrading to v2
-	return V2
 }
 
 func (*noopService) TransformerProxyVersion() string {

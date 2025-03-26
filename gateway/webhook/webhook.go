@@ -27,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 type webhookT struct {
@@ -310,13 +309,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			var payload []byte
-			var eventRequest []byte
 
-			if sourceTransformAdapter.getAdapterVersion() == transformer.V1 {
-				eventRequest, err = prepareTransformerEventRequestV1(req.request, breq.sourceType, bt.webhook.config.sourceListForParsingParams)
-			} else {
-				eventRequest, err = prepareTransformerEventRequestV2(req.request)
-			}
+			eventRequest, err := prepareTransformerRequestBody(req.request)
 
 			if err == nil && !json.Valid(eventRequest) {
 				err = errors.New(response.InvalidJSON)

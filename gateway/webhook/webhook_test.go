@@ -65,16 +65,12 @@ type mockSourceTransformAdapter struct {
 	url string
 }
 
-func (v0 *mockSourceTransformAdapter) getTransformerEvent(_ *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
+func (adp *mockSourceTransformAdapter) getTransformerEvent(_ *gwtypes.AuthRequestContext, body []byte) ([]byte, error) {
 	return body, nil
 }
 
-func (v0 *mockSourceTransformAdapter) getTransformerURL(string) (string, error) {
-	return v0.url, nil
-}
-
-func (v0 *mockSourceTransformAdapter) getAdapterVersion() string {
-	return transformer.V0
+func (adp *mockSourceTransformAdapter) getTransformerURL(string) (string, error) {
+	return adp.url, nil
 }
 
 func getMockSourceTransformAdapterFunc(url string) func(ctx context.Context) (sourceTransformAdapter, error) {
@@ -485,102 +481,7 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.EqualValues(t, m.LastValue(), 1)
 }
 
-func TestPrepareTransformerEventRequestV1(t *testing.T) {
-	type requestOpts struct {
-		method  string
-		target  string
-		body    io.Reader
-		params  map[string]string
-		headers map[string]string
-	}
-
-	createRequest := func(reqOpts requestOpts) *http.Request {
-		r := httptest.NewRequest(reqOpts.method, reqOpts.target, reqOpts.body)
-		for k, v := range reqOpts.headers {
-			r.Header.Set(k, v)
-		}
-
-		q := r.URL.Query()
-		for k, v := range reqOpts.params {
-			q.Add(k, v)
-		}
-		r.URL.RawQuery = q.Encode()
-		return r
-	}
-
-	testCases := []struct {
-		name               string
-		req                *http.Request
-		sourceType         string
-		includeQueryParams bool
-		wantError          bool
-		expectedResponse   string
-	}{
-		{
-			name:             "Empty request body with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com"}),
-			sourceType:       "webhook",
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Empty request body with query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			sourceType:       "webhook",
-			expectedResponse: "{}",
-		},
-		{
-			name:             "Some payload with no query parameters for webhook",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			sourceType:       "webhook",
-			expectedResponse: `{"key":"value"}`,
-		},
-		{
-			name:             "Empty request body with query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key": "value"}}),
-			sourceType:       "shopify",
-			expectedResponse: `{"query_parameters":{"key":["value"]}}`,
-		},
-		{
-			name:             "Error reading request body for Shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: iotest.ErrReader(errors.New("some error"))}),
-			sourceType:       "Shopify",
-			wantError:        true,
-			expectedResponse: "",
-		},
-		{
-			name:             "Some payload with no query parameters for shopify",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key":"value"}`)}),
-			sourceType:       "shopify",
-			expectedResponse: `{"key":"value","query_parameters":{}}`,
-		},
-		{
-			name:             "Some payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", body: strings.NewReader(`{"key1":"value1"}`), params: map[string]string{"key2": "value2"}}),
-			sourceType:       "Adjust",
-			expectedResponse: `{"key1":"value1","query_parameters":{"key2":["value2"]}}`,
-		},
-		{
-			name:             "No payload with query parameters for Adjust",
-			req:              createRequest(requestOpts{method: http.MethodPost, target: "http://example.com", params: map[string]string{"key2": "value2"}}),
-			sourceType:       "adjust",
-			expectedResponse: `{"query_parameters":{"key2":["value2"]}}`,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareTransformerEventRequestV1(tc.req, tc.sourceType, []string{"adjust", "shopify"})
-			if tc.wantError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedResponse, string(result))
-		})
-	}
-}
-
-func TestPrepareTransformerEventRequestV2(t *testing.T) {
+func TestPrepareTransformerRequest(t *testing.T) {
 	type requestOpts struct {
 		method  string
 		target  string
@@ -655,7 +556,7 @@ func TestPrepareTransformerEventRequestV2(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := prepareTransformerEventRequestV2(tc.req)
+			result, err := prepareTransformerRequestBody(tc.req)
 			if tc.wantError {
 				require.Error(t, err)
 				return
