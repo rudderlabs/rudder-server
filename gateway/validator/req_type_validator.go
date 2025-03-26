@@ -6,13 +6,16 @@ import (
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 )
 
-type ReqTypeValidator struct{}
+type reqTypeValidator struct{}
 
-func (p *ReqTypeValidator) ValidatorName() string {
-	return "ReqTypeValidator"
+func newReqTypeValidator() *reqTypeValidator {
+	return &reqTypeValidator{}
+}
+func (p *reqTypeValidator) ValidatorName() string {
+	return "ReqType"
 }
 
-func (p *ReqTypeValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
+func (p *reqTypeValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
 	reqType := properties.RequestType
 	if reqType != "" {
 		switch reqType {

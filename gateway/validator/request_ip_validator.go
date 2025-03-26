@@ -6,12 +6,16 @@ import (
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 )
 
-type RequestIPValidator struct{}
+type requestIPValidator struct{}
 
-func (e *RequestIPValidator) ValidatorName() string {
-	return "RequestIPValidator"
+func newRequestIPValidator() *requestIPValidator {
+	return &requestIPValidator{}
 }
 
-func (p *RequestIPValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
+func (e *requestIPValidator) ValidatorName() string {
+	return "RequestIP"
+}
+
+func (p *requestIPValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
 	return gjson.GetBytes(payload, "request_ip").Exists(), nil
 }
