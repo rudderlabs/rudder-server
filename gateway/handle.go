@@ -45,7 +45,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-type MessageValidator interface {
+type messageValidator interface {
 	Validate(payload []byte, message *stream.MessageProperties) (bool, error)
 }
 
@@ -130,7 +130,7 @@ type Handle struct {
 	streamMsgValidator func(message *stream.Message) error
 
 	// internal batch validator
-	msgValidator MessageValidator
+	msgValidator messageValidator
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.

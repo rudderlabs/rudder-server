@@ -6,12 +6,15 @@ import (
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 )
 
-type MessageIDValidator struct{}
+type messageIDValidator struct{}
 
-func (p *MessageIDValidator) ValidatorName() string {
-	return "MessageIDValidator"
+func newMessageIDValidator() *messageIDValidator {
+	return &messageIDValidator{}
+}
+func (p *messageIDValidator) ValidatorName() string {
+	return "messageID"
 }
 
-func (p *MessageIDValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
+func (p *messageIDValidator) Validate(payload []byte, properties *stream.MessageProperties) (bool, error) {
 	return gjson.GetBytes(payload, "messageId").String() != "", nil
 }
