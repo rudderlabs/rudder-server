@@ -626,7 +626,7 @@ func TestEvents(t *testing.T) {
 			"userId": "",
 		}
 	}
-	trackMergedefaultOutput := func() testhelper.OutputBuilder {
+	trackMergeDefaultOutput := func() testhelper.OutputBuilder {
 		return testhelper.OutputBuilder{
 			"data": map[string]any{
 				"merge_property_1_type":  "anonymous_id",
@@ -1844,6 +1844,166 @@ func TestEvents(t *testing.T) {
 			},
 		},
 		{
+			name:         "track (POSTGRES) jsonPaths (legacy destOpts for properties)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination: getDestination("POSTGRES", map[string]any{
+				"jsonPaths": "location",
+			}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (legacy destOpts for user properties)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}, "rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination: getDestination("POSTGRES", map[string]any{
+				"jsonPaths": "location",
+			}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (destOpts)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311", "location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination: getDestination("POSTGRES", map[string]any{
+				"jsonPaths": "track.properties.location",
+			}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (intrOpts)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311", "location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"POSTGRES":{"options":{"jsonPaths":["track.properties.location"]}}}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (DATA_WAREHOUSE)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311", "location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"DATA_WAREHOUSE":{"options":{"jsonPaths":["track.properties.location"]}}}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (intrOpts with higher path)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311", "location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"DATA_WAREHOUSE":{"options":{"jsonPaths":["track.properties.location"]}},"POSTGRES":{"options":{"jsonPaths":["track.properties.location.coordinates"]}}}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
+			name:         "track (POSTGRES) jsonPaths (DATA_WAREHOUSE with higher path)",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311", "location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"},"integrations":{"DATA_WAREHOUSE":{"options":{"jsonPaths":["track.properties.location.coordinates"]}},"POSTGRES":{"options":{"jsonPaths":["track.properties.location"]}}}}`,
+			metadata:     getTrackMetadata("POSTGRES", "webhook"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				Events: []types.TransformerResponse{
+					{
+						Output:     trackDefaultOutput(),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+					{
+						Output: trackEventDefaultOutput().
+							SetDataField("location", "{\"city\":\"Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+							SetColumnField("location", "json"),
+						Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+						StatusCode: http.StatusOK,
+					},
+				},
+			},
+		},
+		{
 			name: "track (BQ) merge event",
 			configOverride: map[string]any{
 				"Warehouse.enableIDResolution": true,
@@ -1868,7 +2028,7 @@ func TestEvents(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output:     trackMergedefaultOutput(),
+						Output:     trackMergeDefaultOutput(),
 						Metadata:   getTrackMetadata("BQ", "webhook"),
 						StatusCode: http.StatusOK,
 					},
