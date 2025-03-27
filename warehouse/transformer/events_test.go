@@ -1,13 +1,19 @@
 package transformer
 
 import (
+	"context"
 	"net/http"
 	"testing"
+	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/google/uuid"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -18,6 +24,103 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/testhelper"
 )
+
+func TestEventsMandatoryFields(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	transformerResource, err := transformertest.Setup(pool, t)
+	require.NoError(t, err)
+
+	now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
+	uid := uuid.NewString()
+
+	testCases := []struct {
+		name           string
+		eventPayload   string
+		metadata       types.Metadata
+		destination    backendconfig.DestinationT
+		verifyResponse func(t *testing.T, resp types.TransformerResponse)
+	}{
+		{
+			name:         "messageId and receivedAt both present",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES", MessageID: "messageId", ReceivedAt: "2021-09-01T00:00:00.000Z"},
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+				require.Equal(t, "messageId", misc.MapLookup(resp.Output, "data", "id"))
+				require.Equal(t, "2021-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "data", "received_at"))
+			},
+		},
+		{
+			name:         "messageId and receivedAt both not present",
+			eventPayload: `{"type":"track","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES"},
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+				require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
+				require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
+			},
+		},
+		{
+			name:         "messageId and receivedAt both not empty",
+			eventPayload: `{"type":"track","messageId":"","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES"},
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+				require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
+				require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
+			},
+		},
+		{
+			name:         "messageId and receivedAt both are null",
+			eventPayload: `{"type":"track","messageId":null,"anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":null,"originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+			metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES"},
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+				require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
+				require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := setupConfig(transformerResource, map[string]any{})
+
+			processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+			warehouseTransformer.now = func() time.Time {
+				return now
+			}
+			warehouseTransformer.uuidGenerator = func() string {
+				return uid
+			}
+
+			var singularEvent types.SingularEventT
+			err := jsonrs.Unmarshal([]byte(tc.eventPayload), &singularEvent)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			batchSize := 100
+			events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
+
+			pResponse := processorTransformer.Transform(ctx, events, batchSize)
+			wResponse := warehouseTransformer.Transform(ctx, events, batchSize)
+
+			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+			require.Nil(t, wResponse.FailedEvents)
+			require.Nil(t, pResponse.FailedEvents)
+			for i := range wResponse.Events {
+				require.NotEmpty(t, misc.MapLookup(wResponse.Events[i].Output, "data", "id"))
+				require.NotEmpty(t, misc.MapLookup(pResponse.Events[i].Output, "data", "id"))
+				require.NotEmpty(t, misc.MapLookup(wResponse.Events[i].Output, "data", "received_at"))
+				require.NotEmpty(t, misc.MapLookup(pResponse.Events[i].Output, "data", "received_at"))
+				tc.verifyResponse(t, wResponse.Events[i])
+			}
+		})
+	}
+}
 
 func TestEvents(t *testing.T) {
 	pool, err := dockertest.NewPool("")
