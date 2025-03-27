@@ -50,7 +50,6 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.18.2
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
-	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3
 	github.com/hashicorp/go-retryablehttp v0.7.7
@@ -115,6 +114,8 @@ require (
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.6
 )
+
+require github.com/google/go-cmp v0.7.0 // indirect
 
 require (
 	cel.dev/expr v0.19.2 // indirect
