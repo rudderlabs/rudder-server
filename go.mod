@@ -67,8 +67,8 @@ require (
 	github.com/minio/minio-go/v7 v7.0.88
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/onsi/ginkgo/v2 v2.23.2
-	github.com/onsi/gomega v1.36.2
+	github.com/onsi/ginkgo/v2 v2.23.3
+	github.com/onsi/gomega v1.36.3
 	github.com/ory/dockertest/v3 v3.11.1-0.20241115124854-f845de5f3bbd
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -78,7 +78,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.47.1
+	github.com/rudderlabs/rudder-go-kit v0.48.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.5.4
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
@@ -101,8 +101,8 @@ require (
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20240122235623-d6294584ab18
-	go.etcd.io/etcd/api/v3 v3.5.19
-	go.etcd.io/etcd/client/v3 v3.5.19
+	go.etcd.io/etcd/api/v3 v3.5.20
+	go.etcd.io/etcd/client/v3 v3.5.20
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
@@ -113,7 +113,7 @@ require (
 	google.golang.org/api v0.226.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb
 	google.golang.org/grpc v1.71.0
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 )
 
 require (
@@ -216,7 +216,7 @@ require (
 	github.com/goccy/go-reflect v1.2.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -313,7 +313,7 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.5.19 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.5.20 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.34.0 // indirect

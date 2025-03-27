@@ -136,7 +136,7 @@ func TestIntegrationOptions(t *testing.T) {
 		require.False(t, opts.useBlendoCasing)
 		require.True(t, opts.skipTracksTable)
 		require.False(t, opts.skipUsersTable)
-		require.Equal(t, []string{"path1", "path2", "path3", "path4", "path5"}, opts.jsonPaths)
+		require.Equal(t, []string{"path4", "path5", "path1", "path2", "path3"}, opts.jsonPaths)
 	})
 }
 

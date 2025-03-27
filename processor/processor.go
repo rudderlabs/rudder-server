@@ -1169,16 +1169,16 @@ func (proc *Handle) getTransformerEvents(
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
 				if pu != reportingtypes.TRACKINGPLAN_VALIDATOR {
-					return []byte(`{}`)
+					return nil
 				}
 				if proc.transientSources.Apply(commonMetaData.SourceID) {
-					return []byte(`{}`)
+					return nil
 				}
 
 				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
 					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
-					sampleEvent = []byte(`{}`)
+					sampleEvent = nil
 				}
 				return sampleEvent
 			},
@@ -1470,12 +1470,12 @@ func (proc *Handle) getTransformationMetrics(
 				pu,
 				func() json.RawMessage {
 					if proc.transientSources.Apply(commonMetaData.SourceID) {
-						return []byte(`{}`)
+						return nil
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
 						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
-						sampleEvent = []byte(`{}`)
+						sampleEvent = nil
 					}
 					return sampleEvent
 				},
@@ -1625,7 +1625,7 @@ func getDiffMetrics(
 			StatusDetail: &reportingtypes.StatusDetail{
 				Status:      reportingtypes.DiffStatus,
 				Count:       count,
-				SampleEvent: []byte(`{}`),
+				SampleEvent: nil,
 				EventName:   eventName,
 				EventType:   eventType,
 			},
@@ -1980,12 +1980,12 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				reportingtypes.GATEWAY,
 				func() json.RawMessage {
 					if sourceIsTransient {
-						return []byte(`{}`)
+						return nil
 					}
 					if payload := event.payloadFunc(); payload != nil {
 						return payload
 					}
-					return []byte("{}")
+					return nil
 				},
 				nil,
 			)
@@ -2028,7 +2028,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return []byte(`{}`) }, nil)
+			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return nil }, nil)
 		}
 	}
 
@@ -2768,16 +2768,17 @@ type destTransformOutput struct {
 
 // userTransformAndFilterOutput holds the data passed between preprocessing and postprocessing steps
 type userTransformAndFilterOutput struct {
-	eventsToTransform     []types.TransformerEvent
-	commonMetaData        *types.Metadata
-	reportMetrics         []*reportingtypes.PUReportedMetric
-	procErrorJobsByDestID map[string][]*jobsdb.JobT
-	droppedJobs           []*jobsdb.JobT
-	inCountMap            map[string]int64
-	inCountMetadataMap    map[string]MetricMetadata
-	eventsByMessageID     map[string]types.SingularEventWithReceivedAt
-	srcAndDestKey         string
-	response              types.Response
+	eventsToTransform       []types.TransformerEvent
+	commonMetaData          *types.Metadata
+	reportMetrics           []*reportingtypes.PUReportedMetric
+	procErrorJobsByDestID   map[string][]*jobsdb.JobT
+	droppedJobs             []*jobsdb.JobT
+	inCountMap              map[string]int64
+	inCountMetadataMap      map[string]MetricMetadata
+	successCountMetadataMap map[string]MetricMetadata
+	eventsByMessageID       map[string]types.SingularEventWithReceivedAt
+	srcAndDestKey           string
+	response                types.Response
 }
 
 func (proc *Handle) userTransformAndFilter(
@@ -3020,18 +3021,20 @@ func (proc *Handle) userTransformAndFilter(
 	eventFilterStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 	eventFilterStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 	eventFilterStat.transformTime.Since(s)
+	// Filtering events based on the supported message types - END
 
 	return userTransformAndFilterOutput{
-		eventsToTransform:     eventsToTransform,
-		commonMetaData:        commonMetaData,
-		reportMetrics:         reportMetrics,
-		procErrorJobsByDestID: procErrorJobsByDestID,
-		droppedJobs:           droppedJobs,
-		inCountMap:            inCountMap,
-		inCountMetadataMap:    inCountMetadataMap,
-		eventsByMessageID:     eventsByMessageID,
-		srcAndDestKey:         srcAndDestKey,
-		response:              response,
+		eventsToTransform:       eventsToTransform,
+		commonMetaData:          commonMetaData,
+		reportMetrics:           reportMetrics,
+		procErrorJobsByDestID:   procErrorJobsByDestID,
+		droppedJobs:             droppedJobs,
+		inCountMap:              inCountMap,
+		inCountMetadataMap:      inCountMetadataMap,
+		eventsByMessageID:       eventsByMessageID,
+		srcAndDestKey:           srcAndDestKey,
+		response:                response,
+		successCountMetadataMap: successCountMetadataMap,
 	}
 }
 
@@ -3121,7 +3124,7 @@ func (proc *Handle) destTransform(
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return []byte(`{}`) }, nil)
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, reportingtypes.DEST_TRANSFORMER, func() json.RawMessage { return nil }, nil)
 				}
 				reportingtypes.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
@@ -3140,7 +3143,7 @@ func (proc *Handle) destTransform(
 					reportingtypes.EVENT_FILTER,
 					reportingtypes.DEST_TRANSFORMER,
 					data.inCountMetadataMap,
-					nil,
+					data.successCountMetadataMap,
 					data.inCountMap,
 					successCountMap,
 					nonSuccessMetrics.failedCountMap,
@@ -3391,7 +3394,7 @@ func ConvertToFilteredTransformerResponse(
 
 func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	if proc.limiter.read != nil {
-		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
+		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
 
 	s := time.Now()

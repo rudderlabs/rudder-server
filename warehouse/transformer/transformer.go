@@ -37,7 +37,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 
 	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
 	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.HistogramType)
-	t.stats.comparisionTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
+	t.stats.comparisonTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
 
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")

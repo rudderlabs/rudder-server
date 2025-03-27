@@ -288,7 +288,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.ErrorDetails.Code,
 			metric.StatusDetail.ErrorDetails.Message,
 			sampleResponse,
-			string(sampleEvent),
+			getStringifiedSampleEvent(sampleEvent),
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
@@ -626,6 +626,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			EDErrorDetails:    types.EDErrorDetails{},
 			EDInstanceDetails: types.EDInstanceDetails{},
 		}
+		var sampleEvent string
 		err = rows.Scan(
 			&dbEdMetric.EDInstanceDetails.WorkspaceID,
 			&dbEdMetric.EDInstanceDetails.Namespace,
@@ -643,13 +644,14 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.ErrorMessage,
 			&dbEdMetric.EDConnectionDetails.DestType,
 			&dbEdMetric.EDErrorDetails.SampleResponse,
-			&dbEdMetric.EDErrorDetails.SampleEvent,
+			&sampleEvent,
 			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.EventName,
 		)
 		if err != nil {
 			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
+		dbEdMetric.EDErrorDetails.SampleEvent = []byte(sampleEvent)
 		metrics = append(metrics, dbEdMetric)
 	}
 	if rows.Err() != nil {
