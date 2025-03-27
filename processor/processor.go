@@ -413,7 +413,6 @@ func (proc *Handle) Setup(
 	proc.readErrorDB = readErrorDB
 	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
-	proc.transformerClients = transformer.NewClients(proc.conf, proc.logger, proc.statsFactory)
 	proc.archivalDB = archivalDB
 
 	proc.pendingEventsRegistry = pendingEventsRegistry
