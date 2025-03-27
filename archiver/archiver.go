@@ -39,6 +39,7 @@ type archiver struct {
 		minWorkerSleep   time.Duration
 		uploadFrequency  time.Duration
 		enabled          func() bool
+		customVal        string
 	}
 }
 
@@ -57,11 +58,7 @@ func New(
 
 		archiveFrom: "gw",
 		archiveTrigger: func() <-chan time.Time {
-			return time.After(c.GetDuration(
-				"archival.ArchiveSleepDuration",
-				30,
-				time.Second,
-			))
+			return time.After(c.GetDuration("archival.ArchiveSleepDuration", 30, time.Second))
 		},
 		adaptivePayloadLimitFunc: func(i int64) int64 { return i },
 	}
@@ -87,6 +84,7 @@ func New(
 	a.config.instanceID = c.GetString("INSTANCE_ID", "1")
 	a.config.minWorkerSleep = c.GetDuration("archival.MinWorkerSleep", 1, time.Minute)
 	a.config.uploadFrequency = c.GetDuration("archival.UploadFrequency", 5, time.Minute)
+	a.config.customVal = c.GetString("Gateway.CustomVal", "GW")
 
 	for _, opt := range opts {
 		opt(a)
@@ -151,6 +149,7 @@ func (a *archiver) Start() error {
 
 				queryParams := &jobsdb.GetQueryParams{
 					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "source_id", Value: sourceID}},
+					CustomValFilters: []string{a.config.customVal},
 				}
 				w.queryParams = *queryParams
 
