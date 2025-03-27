@@ -18,10 +18,14 @@ type AdaptiveLimiterFunc func(int64) int64
 func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimiterFunc {
 	var freeMem FreeMemory
 	if config.GetBool("AdaptivePayloadLimiter.enabled", true) {
+		useRSS := config.GetReloadableBoolVar(true, "AdaptivePayloadLimiter.useRSS")
 		freeMem = func() (float64, error) {
 			s, err := mem.Get()
 			if err != nil {
 				return 0, err
+			}
+			if useRSS.Load() {
+				return s.AvailableIgnoreCachePercent(), nil
 			}
 			return s.AvailablePercent, nil
 		}
