@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -11,7 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
-// workerHandle is the interface trying to abstract processor's [Handle] implememtation from the worker
+// workerHandle is the interface trying to abstract processor's [Handle] implementation from the worker
 type workerHandle interface {
 	logger() logger.Logger
 	config() workerHandleConfig
@@ -20,9 +21,9 @@ type workerHandle interface {
 	stats() *processorStats
 	tracer() stats.Tracer
 
-	getJobs(partition string) jobsdb.JobsResult
-	markExecuting(partition string, jobs []*jobsdb.JobT) error
-	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
+	getJobs(ctx context.Context, partition string) jobsdb.JobsResult
+	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
+	jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error)
 	generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error)
 	transformations(partition string, in *transformationMessage) *storeMessage

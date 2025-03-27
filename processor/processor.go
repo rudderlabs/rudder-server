@@ -733,7 +733,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, h, traces.NewSpanRecorder(proc.tracer))
+			return newPartitionWorker(partition, h, proc.tracer, traces.NewSpanRecorder(proc.tracer))
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
@@ -1713,6 +1713,9 @@ type preTransformationMessage struct {
 }
 
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
+	_, span := proc.tracer.Start(subJobs.ctx, "processJobsForDest", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -2064,6 +2067,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
+	_, span := proc.tracer.Start(preTrans.subJobs.ctx, "generateTransformationMessage", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority("", proc.getLimiterPriority(preTrans.partition))()
 	}
@@ -2268,6 +2274,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 	// processJob throughput per second.
 	proc.stats.processJobThroughput(preTrans.partition).Count(processJobThroughput)
 	return &transformationMessage{
+		preTrans.subJobs.ctx,
 		preTrans.groupedEvents,
 		trackingPlanEnabledMap,
 		preTrans.eventsByMessageID,
@@ -2288,6 +2295,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 }
 
 type transformationMessage struct {
+	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
@@ -2308,6 +2316,9 @@ type transformationMessage struct {
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
+	_, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.transform != nil {
 		defer proc.limiter.transform.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
@@ -3279,7 +3290,10 @@ func ConvertToFilteredTransformerResponse(
 	return types.Response{Events: responses, FailedEvents: failedEvents}
 }
 
-func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
+func (proc *Handle) getJobs(ctx context.Context, partition string) jobsdb.JobsResult {
+	ctx, span := proc.tracer.Start(ctx, "getJobs", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.read != nil {
 		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
@@ -3339,7 +3353,10 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	return unprocessedList
 }
 
-func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
+func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {
+	ctx, span := proc.tracer.Start(ctx, "markExecuting", stats.SpanKindInternal)
+	defer span.End()
+
 	start := time.Now()
 	defer proc.stats.statMarkExecuting(partition).Since(start)
 
@@ -3374,7 +3391,7 @@ func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	s := time.Now()
 
-	unprocessedList := proc.getJobs(partition)
+	unprocessedList := proc.getJobs(context.TODO(), partition)
 	proc.logger.Infof("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
 	proc.statsFactory.NewTaggedStat("processor_jobs_picked_up_from_gw", stats.CountType, stats.Tags{
 		"partition": partition,
@@ -3419,15 +3436,17 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 // So, to keep track of sub-batch we have `hasMore` variable.
 // each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
+	ctx           context.Context
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 }
 
-func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
+func (proc *Handle) jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
 	chunks := lo.Chunk(jobs, proc.config.subJobSize)
 	return lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
 		return subJob{
+			ctx:           ctx,
 			subJobs:       subJobs,
 			hasMore:       index+1 < len(chunks),
 			rsourcesStats: rsourcesStats,

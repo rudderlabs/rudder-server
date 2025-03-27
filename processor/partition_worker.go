@@ -22,19 +22,21 @@ type partitionWorker struct {
 	partition    string
 	pipelines    []*pipelineWorker
 	logger       logger.Logger
+	tracer       stats.Tracer
 	spanRecorder traces.SpanRecorder
 	stats        *processorStats
 	handle       workerHandle
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle, spanRecorder traces.SpanRecorder) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer, spanRecorder traces.SpanRecorder) *partitionWorker {
 	w := &partitionWorker{
 		partition:    partition,
 		logger:       h.logger().Child(partition),
 		spanRecorder: spanRecorder,
 		stats:        h.stats(),
 		handle:       h,
+		tracer:       t,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
@@ -55,8 +57,16 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	start := time.Now()
+	ctx, span := w.tracer.Start(context.Background(), "partitionWorker.Work", stats.SpanKindInternal,
+		stats.SpanWithTimestamp(start),
+		stats.SpanWithTags(stats.Tags{
+			"partition": w.partition,
+		}),
+	)
+	defer span.End()
+
 	// Get jobs for this partition
-	jobs := w.handle.getJobs(w.partition)
+	jobs := w.handle.getJobs(ctx, w.partition)
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
@@ -91,7 +101,7 @@ func (w *partitionWorker) Work() bool {
 
 	// Mark jobs as executing
 	start = time.Now()
-	err := w.handle.markExecuting(w.partition, jobs.Jobs)
+	err := w.handle.markExecuting(ctx, w.partition, jobs.Jobs)
 	if err != nil {
 		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
@@ -108,7 +118,7 @@ func (w *partitionWorker) Work() bool {
 	})
 
 	// Create an errGroup to handle cancellation and manage goroutines
-	g, gCtx := errgroup.WithContext(context.Background())
+	g, gCtx := errgroup.WithContext(ctx)
 
 	// Send jobs to their respective partitions for processing
 	for pipelineIdx, pipelineJobs := range jobsByPipeline {
@@ -119,7 +129,7 @@ func (w *partitionWorker) Work() bool {
 		rsourcesStats.BeginProcessing(jobs)
 
 		g.Go(func() error {
-			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
+			subJobs := w.handle.jobSplitter(gCtx, jobs, rsourcesStats)
 			for _, subJob := range subJobs {
 				start := time.Now()
 				select {

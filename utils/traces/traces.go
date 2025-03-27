@@ -150,6 +150,13 @@ func (s *spanRecorderImpl) RecordJobsSpans(
 
 type NOP struct{}
 
+func (n *NOP) RecordUniqueSpans(
+	_ context.Context, _ []Traceable,
+	_ string, _ stats.SpanKind, _ time.Time, _ ...Option,
+) func() {
+	return func() {}
+}
+
 func (n *NOP) RecordSpan(_, _ string, _ stats.SpanKind, _ time.Time, _ ...Option) {
 }
 

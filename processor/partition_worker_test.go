@@ -7,18 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/traces"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/utils/traces"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
 
@@ -57,7 +55,7 @@ func TestWorkerPool(t *testing.T) {
 
 		// create a worker pool
 		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, &traces.NOP{})
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), &traces.NOP{})
 		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
@@ -135,7 +133,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
 		func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, &traces.NOP{})
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), &traces.NOP{})
 		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
@@ -218,12 +216,12 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobs(partition)
+	jobs := m.getJobs(context.Background(), partition)
 	if len(jobs.Jobs) > 0 {
-		_ = m.markExecuting(partition, jobs.Jobs)
+		_ = m.markExecuting(context.Background(), partition, jobs.Jobs)
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
-	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
+	for _, subJob := range m.jobSplitter(context.Background(), jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
 		preTransMessage, err := m.processJobsForDest(partition, subJob)
@@ -252,7 +250,7 @@ func (*mockWorkerHandle) stats() *processorStats {
 	}
 }
 
-func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
+func (m *mockWorkerHandle) getJobs(_ context.Context, partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
 		defer m.limiters.query.Begin("")()
 	}
@@ -277,7 +275,7 @@ func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
 	}
 }
 
-func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
+func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jobs []*jobsdb.JobT) error {
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
 	s := m.partitionStats[partition]
@@ -288,7 +286,7 @@ func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) 
 	return nil
 }
 
-func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
+func (m *mockWorkerHandle) jobSplitter(_ context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
 	if !m.shouldProcessMultipleSubJobs {
 		return []subJob{
 			{
