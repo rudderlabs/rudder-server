@@ -150,18 +150,36 @@ func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerE
 }
 
 func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
-	if messageID, exists := event.Message["messageId"]; !exists || utils.IsBlank(messageID) {
+	t.ensureMessageID(event)
+	t.ensureReceivedAt(event)
+}
+
+func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
+	messageID, exists := event.Message["messageId"]
+	if !exists || utils.IsBlank(messageID) {
 		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
 		event.Message["messageId"] = event.Metadata.MessageID
 	}
-	if receivedAt, exists := event.Message["receivedAt"]; !exists || utils.IsBlank(receivedAt) {
-		if strReceivedAt, isString := receivedAt.(string); !isString || !utils.ValidTimestamp(strReceivedAt) {
-			if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
-				event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
-			}
-			event.Message["receivedAt"] = event.Metadata.ReceivedAt
-		}
+}
+
+func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
+	receivedAt, exists := event.Message["receivedAt"]
+	if !exists || utils.IsBlank(receivedAt) {
+		t.setDefaultReceivedAt(event)
+		return
 	}
+
+	strReceivedAt, isString := receivedAt.(string)
+	if !isString || !utils.ValidTimestamp(strReceivedAt) {
+		t.setDefaultReceivedAt(event)
+	}
+}
+
+func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
+	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
+		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
+	}
+	event.Message["receivedAt"] = event.Metadata.ReceivedAt
 }
 
 func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
