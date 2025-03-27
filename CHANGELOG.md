@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.3](https://github.com/rudderlabs/rudder-server/compare/v1.45.2...v1.45.3) (2025-03-26)
+
+
+### Miscellaneous
+
+* version deprecation detection logic ([#5644](https://github.com/rudderlabs/rudder-server/issues/5644)) ([9c09c94](https://github.com/rudderlabs/rudder-server/commit/9c09c94e95a80221e1ad685ec6c54180b24b885e))
+
 ## [1.45.2](https://github.com/rudderlabs/rudder-server/compare/v1.45.1...v1.45.2) (2025-03-20)
 
 

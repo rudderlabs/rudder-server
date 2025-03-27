@@ -34,52 +34,58 @@ var (
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
 	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
-	deprecationKeywordSets  = [][]string{
-		{"version", "action required", "api"},
-		{"version", "api", "removed"},
-		{"version", "api", "retired"},
-		{"version", "deprecated"},
-		{"version", "discontinued"},
-		{"version", "end of life"},
-		{"version", "end of service"},
-		{"version", "end of support"},
-		{"version", "expiring"},
-		{"version", "expired"},
-		{"version", "maintenance mode"},
-		{"version", "no longer available"},
-		{"version", "no longer supported"},
-		{"version", "not active"},
-		{"version", "outdated"},
-		{"version", "phased out"},
-		{"version", "please upgrade"},
-		{"version", "scheduled", "deprecation"},
-		{"version", "sunset"},
-		{"version", "support ending"},
-		{"version", "unsupported"},
-		{"version", "not supported"},
-		{"version", "upgrade", "required"},
-		{"endpoint", "deprecated"},
-		{"endpoint", "removed"},
-		{"endpoint", "unsupported"},
-		{"endpoint", "unavailable"},
-		{"endpoint", "obsolete"},
-		{"endpoint", "outdated"},
-		{"endpoint", "not supported"},
-		{"endpoint", "end of life"},
-		{"endpoint", "end of service"},
-		{"endpoint", "end of support"},
-		{"endpoint", "expiring"},
-		{"endpoint", "maintenance mode"},
-		{"endpoint", "no longer available"},
-		{"endpoint", "no longer supported"},
-		{"api", "deprecated"},
-		{"api", "no longer supported"},
-		{"api", "end of life"},
-		{"api", "end of service"},
-		{"api", "end of support"},
-		{"api", "maintenance mode"},
-		{"api", "no longer available"},
-		{"api", "no longer supported"},
+	deprecationKeywordSets  = map[string][][]string{
+		"version": {
+			{"action required", "api"},
+			{"api", "removed"},
+			{"api", "retired"},
+			{"deprecated"},
+			{"discontinued"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"expiring"},
+			{"expired"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+			{"not active"},
+			{"outdated"},
+			{"phased out"},
+			{"please upgrade"},
+			{"scheduled", "deprecation"},
+			{"sunset"},
+			{"support ending"},
+			{"unsupported"},
+			{"not supported"},
+			{"upgrade", "required"},
+		},
+		"endpoint": {
+			{"deprecated"},
+			{"removed"},
+			{"unsupported"},
+			{"unavailable"},
+			{"obsolete"},
+			{"outdated"},
+			{"not supported"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"expiring"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+		},
+		"api": {
+			{"deprecated"},
+			{"no longer supported"},
+			{"end of life"},
+			{"end of service"},
+			{"end of support"},
+			{"maintenance mode"},
+			{"no longer available"},
+			{"no longer supported"},
+		},
 	}
 )
 
@@ -357,14 +363,26 @@ func containsDeprecationKey(errorMessage, key string) bool {
 	return strings.HasPrefix(errorMessage, key) || strings.Contains(errorMessage, " "+key)
 }
 
+func containsAllKeywords(errorMessage string, keywordSets [][]string) bool {
+	return slices.ContainsFunc(keywordSets, func(keywordSet []string) bool {
+		return !slices.ContainsFunc(keywordSet, func(keyword string) bool {
+			return !containsDeprecationKey(errorMessage, keyword)
+		})
+	})
+}
+
 func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool {
 	// Normalize error message
 	cleanedError := strings.ReplaceAll(strings.ToLower(errorMessage), "-", " ")
-	return slices.ContainsFunc(deprecationKeywordSets, func(keywordSet []string) bool {
-		return !slices.ContainsFunc(keywordSet, func(keyword string) bool {
-			return !containsDeprecationKey(cleanedError, keyword)
-		})
-	})
+	for key, keywordSets := range deprecationKeywordSets {
+		if !containsDeprecationKey(cleanedError, key) {
+			continue
+		}
+		if containsAllKeywords(cleanedError, keywordSets) {
+			return true
+		}
+	}
+	return false
 }
 
 func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
