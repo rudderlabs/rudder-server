@@ -44,6 +44,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
+	handle.tracer = stat.NewTracer("user_transformer")
 	tcConf := transformerutils.TransformerClientConfig(conf, "UserTransformer")
 	handle.client = transformerclient.NewClient(tcConf)
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
@@ -95,9 +96,13 @@ type Client struct {
 	stat             stats.Stats
 	client           transformerclient.Client
 	guardConcurrency chan struct{}
+	tracer           stats.Tracer
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	ctx, span := u.tracer.Start(ctx, "transform", stats.SpanKindClient)
+	defer span.End()
+
 	batchSize := u.config.batchSize.Load()
 	var dehydratedClientEvents []types.TransformerEvent
 	for _, clientEvent := range clientEvents {
@@ -200,6 +205,9 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
+	ctx, span := u.tracer.Start(ctx, "sendBatch", stats.SpanKindInternal)
+	defer span.End()
+
 	noOfEvents := len(data)
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(noOfEvents)
 

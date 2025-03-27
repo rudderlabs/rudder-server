@@ -8,6 +8,10 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
+type Traceable interface {
+	TraceParent() string
+}
+
 type options struct {
 	tags stats.Tags
 }
@@ -19,6 +23,10 @@ func WithTags(tags stats.Tags) Option {
 }
 
 type SpanRecorder interface {
+	RecordUniqueSpans(
+		ctx context.Context, traceables []Traceable,
+		name string, kind stats.SpanKind, start time.Time, opts ...Option,
+	) func()
 	RecordSpan(traceParent, name string, kind stats.SpanKind, start time.Time, opts ...Option)
 	RecordSpans(contexts []context.Context, name string, kind stats.SpanKind, start time.Time, opts ...Option)
 	RecordJobsSpans(ctx context.Context, jobs []*jobsdb.JobT, name string, kind stats.SpanKind, start time.Time, opts ...Option)
@@ -33,6 +41,44 @@ type spanRecorderImpl struct {
 
 func NewSpanRecorder(tracer stats.Tracer) SpanRecorder {
 	return &spanRecorderImpl{tracer: tracer}
+}
+
+func (s *spanRecorderImpl) RecordUniqueSpans(
+	ctx context.Context, traceables []Traceable,
+	name string, kind stats.SpanKind, start time.Time, opts ...Option,
+) func() {
+	var options options
+	for _, opt := range opts {
+		opt(&options)
+	}
+	so := []stats.SpanOption{stats.SpanWithTimestamp(start)}
+	if len(options.tags) > 0 {
+		so = append(so, stats.SpanWithTags(options.tags))
+	}
+
+	var (
+		spans      []stats.TraceSpan
+		tracesSeen = make(map[string]struct{})
+	)
+	for _, e := range traceables {
+		tp := e.TraceParent()
+		if tp == "" {
+			continue
+		}
+		if _, ok := tracesSeen[tp]; ok {
+			continue
+		}
+		tracesSeen[tp] = struct{}{}
+		ctx := stats.InjectTraceParentIntoContext(ctx, tp)
+		_, span := s.tracer.Start(ctx, name, kind, so...)
+		spans = append(spans, span)
+	}
+
+	return func() {
+		for _, span := range spans {
+			span.End()
+		}
+	}
 }
 
 func (s *spanRecorderImpl) RecordSpan(traceParent, name string, kind stats.SpanKind, start time.Time, opts ...Option) {

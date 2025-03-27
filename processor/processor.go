@@ -2703,7 +2703,20 @@ func (proc *Handle) transformSrcDest(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
-	defer proc.stats.pipeProcessing(partition).Since(time.Now())
+	start := time.Now()
+	defer proc.stats.pipeProcessing(partition).Since(start)
+
+	sr := traces.NewSpanRecorder(proc.tracer)
+	traceables := make([]traces.Traceable, 0, len(eventList))
+	for _, event := range eventList {
+		traceables = append(traceables, &event)
+	}
+	f := sr.RecordUniqueSpans(context.Background(), traceables, "transformSrcDest", stats.SpanKindInternal, start,
+		traces.WithTags(stats.Tags{
+			"partition": partition,
+		}),
+	)
+	defer f()
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	sourceName := eventList[0].Metadata.SourceName
