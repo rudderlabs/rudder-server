@@ -1,6 +1,8 @@
 package badger
 
 import (
+	"os"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -95,15 +97,15 @@ func TestBadgerDirCleanup(t *testing.T) {
 	require.False(t, allowed[types.BatchKey{Key: "a"}])
 	badger.Close()
 
-	// start badger again with same config
+	// reopen
 	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
 	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
 	require.NoError(t, err)
-	require.False(t, allowed[types.BatchKey{Key: "a"}], "since the directory was not cleaned up, the key should be present")
+	require.False(t, allowed[types.BatchKey{Key: "a"}], "since the directory wasn't cleaned up, the key should be present")
 	badger.Close()
 
-	// start badger again with different config
-	conf.Set("BadgerDB.memTableSize", 2*bytesize.MB)
+	// corrupt KEYREGISTRY file
+	require.NoError(t, os.WriteFile(path.Join(dbPath, "badgerdbv4", "KEYREGISTRY"), []byte("corrupted"), 0o644))
 	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
 	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
 	require.NoError(t, err)

@@ -2,6 +2,8 @@ package event_sampler
 
 import (
 	"context"
+	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -109,7 +111,7 @@ func TestBadgerDirCleanup(t *testing.T) {
 	require.True(t, found)
 	badger.Close()
 
-	// start badger again with same config
+	// start badger again
 	badger, err = NewEventSampler(context.Background(),
 		config.SingleValueLoader(time.Hour),
 		config.SingleValueLoader(string(BadgerTypeEventSampler)),
@@ -124,7 +126,9 @@ func TestBadgerDirCleanup(t *testing.T) {
 	require.True(t, found, "since directory was not cleaned up the previous key should be found")
 	badger.Close()
 
-	// start badger again with different config
+	// corrupt KEYREGISTRY file
+	require.NoError(t, os.WriteFile(path.Join(dbPath, "module-badger", "KEYREGISTRY"), []byte("corrupted"), 0o644))
+	// start badger again
 	conf.Set("BadgerDB.memTableSize", 2*bytesize.MB)
 	badger, err = NewEventSampler(context.Background(),
 		config.SingleValueLoader(time.Hour),

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"sync"
 	"time"
 
@@ -138,41 +137,22 @@ func (d *BadgerDB) Close() {
 
 func (d *BadgerDB) init() error {
 	var err error
-
 	d.once.Do(func() {
-		// cleanup the badger db directory if the badger version file value changes
-		{
-			badgerVersionFileValue := fmt.Sprintf("%d-%d-%d", d.opts.MemTableSize, d.opts.BlockSize, d.opts.BaseTableSize)
-			badgerVersionFilePath := path.Join(d.path, ".rudder-version")
-			createDirWithVersionFile := func() error {
-				if err = os.MkdirAll(d.opts.Dir, 0o755); err != nil {
-					return fmt.Errorf("creating badger db directory: %w", err)
-				}
-				if err = os.WriteFile(badgerVersionFilePath, []byte(badgerVersionFileValue), 0o644); err != nil {
-					return fmt.Errorf("writing badger version file: %w", err)
-				}
-				return nil
-			}
-			// create the directory if it doesn't exist
-			if _, err = os.Stat(d.opts.Dir); errors.Is(err, os.ErrNotExist) {
-				if err = createDirWithVersionFile(); err != nil {
-					return
-				}
-			}
-			// check if the version file exists
-			if previous, _ := os.ReadFile(badgerVersionFilePath); string(previous) != badgerVersionFileValue {
-				if err = os.RemoveAll(d.opts.Dir); err != nil {
-					err = fmt.Errorf("removing badger db directory: %w", err)
-					return
-				}
-				if err = createDirWithVersionFile(); err != nil {
-					return
-				}
-			}
-		}
 		d.badgerDB, err = badger.Open(d.opts)
 		if err != nil {
-			return
+			// corrupted or incompatible db, clean up the directory and retry
+			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
+				logger.NewErrorField(err),
+			)
+			if err = os.RemoveAll(d.opts.Dir); err != nil {
+				err = fmt.Errorf("removing badger db directory: %w", err)
+				return
+			}
+			d.badgerDB, err = badger.Open(d.opts)
+			if err != nil {
+				err = fmt.Errorf("opening badger db: %w", err)
+				return
+			}
 		}
 		d.wg.Add(1)
 		rruntime.Go(func() {

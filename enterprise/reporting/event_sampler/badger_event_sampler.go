@@ -110,7 +110,17 @@ func NewBadgerEventSampler(
 
 	db, err := badger.Open(opts)
 	if err != nil {
-		return nil, err
+		// corrupted or incompatible db, clean up the directory and retry
+		log.Errorn("Error while opening event sampler badger db, cleaning up the directory",
+			logger.NewStringField("module", module),
+			logger.NewErrorField(err),
+		)
+		if err := os.RemoveAll(opts.Dir); err != nil {
+			return nil, fmt.Errorf("removing badger db directory: %w", err)
+		}
+		if db, err = badger.Open(opts); err != nil {
+			return nil, fmt.Errorf("opening badger db: %w", err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
