@@ -19,7 +19,7 @@ type (
 		statsFactory stats.Stats
 
 		stats struct {
-			comparisionTime  stats.Timer
+			comparisonTime   stats.Timer
 			matchedEvents    stats.Histogram
 			mismatchedEvents stats.Histogram
 		}
