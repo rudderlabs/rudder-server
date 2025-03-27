@@ -123,12 +123,12 @@ type Handle struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
-		read                 kitsync.Limiter
-		preprocess           kitsync.Limiter
-		pretransform         kitsync.Limiter
-		usertransform        kitsync.Limiter
-		destinationtransform kitsync.Limiter
-		store                kitsync.Limiter
+		read         kitsync.Limiter
+		preprocess   kitsync.Limiter
+		pretransform kitsync.Limiter
+		utransform   kitsync.Limiter
+		dtransform   kitsync.Limiter
+		store        kitsync.Limiter
 	}
 	config struct {
 		isolationMode                   isolation.Mode
@@ -691,12 +691,12 @@ func (proc *Handle) Start(ctx context.Context) error {
 		config.GetInt("Processor.Limiter.pretransform.limit", 50),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.usertransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_usertransform",
-		config.GetInt("Processor.Limiter.usertransform.limit", 50),
+	proc.limiter.utransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_utransform",
+		config.GetInt("Processor.Limiter.utransform.limit", 50),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.usertransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.destinationtransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_destinationtransform",
-		config.GetInt("Processor.Limiter.destinationtransform.limit", 50),
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.utransform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.dtransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_dtransform",
+		config.GetInt("Processor.Limiter.dtransform.limit", 50),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.destinationtransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
@@ -2309,13 +2309,13 @@ type transformationMessage struct {
 }
 
 type userTransformData struct {
-	intermediateTransformDataMap map[string]intermediateTransformData
-	reportMetrics                []*reportingtypes.PUReportedMetric
-	statusList                   []*jobsdb.JobStatusT
-	procErrorJobs                []*jobsdb.JobT
-	sourceDupStats               map[dupStatKey]int
-	dedupKeys                    map[string]struct{}
-	trackedUsersReports          []*trackedusers.UsersReport
+	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
+	reportMetrics                 []*reportingtypes.PUReportedMetric
+	statusList                    []*jobsdb.JobStatusT
+	procErrorJobs                 []*jobsdb.JobT
+	sourceDupStats                map[dupStatKey]int
+	dedupKeys                     map[string]struct{}
+	trackedUsersReports           []*trackedusers.UsersReport
 
 	totalEvents int
 	start       time.Time
@@ -2326,8 +2326,8 @@ type userTransformData struct {
 }
 
 func (proc *Handle) usertransformations(partition string, in *transformationMessage) *userTransformData {
-	if proc.limiter.usertransform != nil {
-		defer proc.limiter.usertransform.BeginWithPriority("", proc.getLimiterPriority(partition))()
+	if proc.limiter.utransform != nil {
+		defer proc.limiter.utransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2335,7 +2335,7 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 	ctx, task := trace.NewTask(context.Background(), "user_transformations")
 	defer task.End()
 
-	chOut := make(chan intermediateTransformData, 1)
+	chOut := make(chan userTransformAndFilterOutput, 1)
 	wg := sync.WaitGroup{}
 	wg.Add(len(in.groupedEvents))
 
@@ -2374,7 +2374,7 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 		srcAndDestKey, eventList := srcAndDestKey, eventList
 		rruntime.Go(func() {
 			defer wg.Done()
-			chOut <- proc.transformSrcDestPreprocess(
+			chOut <- proc.userTransformAndFilter(
 				ctx,
 				partition,
 
@@ -2391,30 +2391,30 @@ func (proc *Handle) usertransformations(partition string, in *transformationMess
 		close(chOut)
 	})
 
-	intermediateTransformDataMap := make(map[string]intermediateTransformData)
+	userTransformAndFilterOutputs := make(map[string]userTransformAndFilterOutput, len(in.groupedEvents))
 	for o := range chOut {
-		intermediateTransformDataMap[o.srcAndDestKey] = o
+		userTransformAndFilterOutputs[o.srcAndDestKey] = o
 	}
 
 	return &userTransformData{
-		intermediateTransformDataMap: intermediateTransformDataMap,
-		reportMetrics:                in.reportMetrics,
-		statusList:                   in.statusList,
-		procErrorJobs:                in.procErrorJobs,
-		sourceDupStats:               in.sourceDupStats,
-		dedupKeys:                    in.dedupKeys,
-		totalEvents:                  in.totalEvents,
-		start:                        in.start,
-		hasMore:                      in.hasMore,
-		rsourcesStats:                in.rsourcesStats,
-		trackedUsersReports:          in.trackedUsersReports,
-		traces:                       traces,
+		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
+		reportMetrics:                 in.reportMetrics,
+		statusList:                    in.statusList,
+		procErrorJobs:                 in.procErrorJobs,
+		sourceDupStats:                in.sourceDupStats,
+		dedupKeys:                     in.dedupKeys,
+		totalEvents:                   in.totalEvents,
+		start:                         in.start,
+		hasMore:                       in.hasMore,
+		rsourcesStats:                 in.rsourcesStats,
+		trackedUsersReports:           in.trackedUsersReports,
+		traces:                        traces,
 	}
 }
 
 func (proc *Handle) destinationtransformations(partition string, in *userTransformData) *storeMessage {
-	if proc.limiter.destinationtransform != nil {
-		defer proc.limiter.destinationtransform.BeginWithPriority("", proc.getLimiterPriority(partition))()
+	if proc.limiter.dtransform != nil {
+		defer proc.limiter.dtransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
 
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
@@ -2424,7 +2424,7 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 	routerDestIDs := make(map[string]struct{})
 
 	destProcStart := time.Now()
-	chOut := make(chan transformSrcDestOutput, 1)
+	chOut := make(chan destTransformOutput, 1)
 	ctx, task := trace.NewTask(context.Background(), "destination_transformations")
 	defer task.End()
 
@@ -2441,14 +2441,14 @@ func (proc *Handle) destinationtransformations(partition string, in *userTransfo
 	}
 
 	wg := sync.WaitGroup{}
-	wg.Add(len(in.intermediateTransformDataMap))
+	wg.Add(len(in.userTransformAndFilterOutputs))
 
 	// Start worker goroutines
-	for srcAndDestKey, intermediateTransformData := range in.intermediateTransformDataMap {
-		srcAndDestKey, intermediateTransformData := srcAndDestKey, intermediateTransformData
+	for srcAndDestKey, userTransformAndFilterOutput := range in.userTransformAndFilterOutputs {
+		srcAndDestKey, userTransformAndFilterOutput := srcAndDestKey, userTransformAndFilterOutput
 		rruntime.Go(func() {
 			defer wg.Done()
-			chOut <- proc.transformSrcDestPostprocess(ctx, srcAndDestKey, intermediateTransformData)
+			chOut <- proc.destTransform(ctx, srcAndDestKey, userTransformAndFilterOutput)
 		})
 	}
 
@@ -2757,7 +2757,7 @@ func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]
 	return jobCounts
 }
 
-type transformSrcDestOutput struct {
+type destTransformOutput struct {
 	reportMetrics   []*reportingtypes.PUReportedMetric
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
@@ -2766,8 +2766,8 @@ type transformSrcDestOutput struct {
 	droppedJobs     []*jobsdb.JobT
 }
 
-// intermediateTransformData holds the data passed between preprocessing and postprocessing steps
-type intermediateTransformData struct {
+// userTransformAndFilterOutput holds the data passed between preprocessing and postprocessing steps
+type userTransformAndFilterOutput struct {
 	eventsToTransform     []types.TransformerEvent
 	commonMetaData        *types.Metadata
 	reportMetrics         []*reportingtypes.PUReportedMetric
@@ -2780,7 +2780,7 @@ type intermediateTransformData struct {
 	response              types.Response
 }
 
-func (proc *Handle) transformSrcDestPreprocess(
+func (proc *Handle) userTransformAndFilter(
 	ctx context.Context,
 	partition string,
 	srcAndDestKey string,
@@ -2788,11 +2788,11 @@ func (proc *Handle) transformSrcDestPreprocess(
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
-) intermediateTransformData {
+) userTransformAndFilterOutput {
 	defer proc.stats.pipeProcessing(partition).Since(time.Now())
 
 	if len(eventList) == 0 {
-		return intermediateTransformData{
+		return userTransformAndFilterOutput{
 			eventsToTransform: eventList,
 		}
 	}
@@ -2943,7 +2943,7 @@ func (proc *Handle) transformSrcDestPreprocess(
 	}
 
 	if len(eventsToTransform) == 0 {
-		return intermediateTransformData{
+		return userTransformAndFilterOutput{
 			eventsToTransform:     eventsToTransform,
 			commonMetaData:        commonMetaData,
 			reportMetrics:         reportMetrics,
@@ -3021,7 +3021,7 @@ func (proc *Handle) transformSrcDestPreprocess(
 	eventFilterStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 	eventFilterStat.transformTime.Since(s)
 
-	return intermediateTransformData{
+	return userTransformAndFilterOutput{
 		eventsToTransform:     eventsToTransform,
 		commonMetaData:        commonMetaData,
 		reportMetrics:         reportMetrics,
@@ -3035,15 +3035,15 @@ func (proc *Handle) transformSrcDestPreprocess(
 	}
 }
 
-func (proc *Handle) transformSrcDestPostprocess(
+func (proc *Handle) destTransform(
 	ctx context.Context,
 	srcAndDestKey string,
-	data intermediateTransformData,
-) transformSrcDestOutput {
+	data userTransformAndFilterOutput,
+) destTransformOutput {
 	if len(data.eventsToTransform) == 0 {
-		return transformSrcDestOutput{
-			destJobs:        []*jobsdb.JobT{},
-			batchDestJobs:   []*jobsdb.JobT{},
+		return destTransformOutput{
+			destJobs:        nil,
+			batchDestJobs:   nil,
 			errorsPerDestID: data.procErrorJobsByDestID,
 			reportMetrics:   data.reportMetrics,
 			routerDestIDs:   make(map[string]struct{}),
@@ -3162,7 +3162,6 @@ func (proc *Handle) transformSrcDestPostprocess(
 		// Save the JSON in DB. This is what the router uses
 		for i := range response.Events {
 			destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
-			proc.logger.Infof(string(destEventJSON))
 			// Should be a valid JSON since it's our transformation, but we handle it anyway
 			if err != nil {
 				continue
@@ -3242,7 +3241,7 @@ func (proc *Handle) transformSrcDestPostprocess(
 		}
 	})
 
-	return transformSrcDestOutput{
+	return destTransformOutput{
 		destJobs:        destJobs,
 		batchDestJobs:   batchDestJobs,
 		errorsPerDestID: data.procErrorJobsByDestID,

@@ -104,7 +104,7 @@ func (w *pipelineWorker) start() {
 		}
 	})
 
-	// Transformation goroutine
+	// User transformation  goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
@@ -116,7 +116,7 @@ func (w *pipelineWorker) start() {
 		}
 	})
 
-	// Transformation goroutine
+	// Destination Transformation goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
