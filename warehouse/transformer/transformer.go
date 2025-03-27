@@ -42,7 +42,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
-	t.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Warehouse.maxLoggedEvents")
+	t.config.maxLoggedEvents = conf.GetReloadableIntVar(100000, 1, "Warehouse.maxLoggedEvents")
 	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
 	return t
 }

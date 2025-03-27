@@ -40,11 +40,8 @@ func (t *Transformer) CompareAndLog(
 		return
 	}
 
-	logEntries := lo.Map(differingEvents, func(item types.SingularEventT, index int) string {
-		return stringify.Any(types.TransformerEvent{
-			Message:  item,
-			Metadata: *metadata,
-		})
+	logEntries := lo.Map(differingEvents, func(item types.TransformerEvent, index int) string {
+		return stringify.Any(item)
 	})
 	if err := t.write(append([]string{sampleDiff}, logEntries...)); err != nil {
 		t.logger.Warnn("Error logging events", obskit.Error(err))
@@ -59,20 +56,16 @@ func (t *Transformer) differingEvents(
 	eventsToTransform []types.TransformerEvent,
 	pResponse, wResponse types.Response,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-) ([]types.SingularEventT, string) {
+) ([]types.TransformerEvent, string) {
 	// If the event counts differ, return all events in the transformation
 	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
-		events := lo.Map(eventsToTransform, func(e types.TransformerEvent, _ int) types.SingularEventT {
-			return eventsByMessageID[e.Metadata.MessageID].SingularEvent
-		})
-		t.stats.mismatchedEvents.Observe(float64(len(events)))
-		return events, ""
+		t.stats.mismatchedEvents.Observe(float64(len(eventsToTransform)))
+		return eventsToTransform, ""
 	}
 
 	var (
-		differedSampleEvents []types.SingularEventT
-		differedEventsCount  int
-		sampleDiff           string
+		differedEventsCount int
+		sampleDiff          string
 	)
 
 	for i := range pResponse.Events {
@@ -80,19 +73,17 @@ func (t *Transformer) differingEvents(
 		if len(diff) == 0 {
 			continue
 		}
-
 		if differedEventsCount == 0 {
-			// Collect the mismatched messages and break (sample only)
-			differedSampleEvents = append(differedSampleEvents, lo.Map(pResponse.Events[i].Metadata.GetMessagesIDs(), func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
-			})...)
 			sampleDiff = diff
 		}
 		differedEventsCount++
 	}
+	if differedEventsCount == 0 {
+		return nil, ""
+	}
 	t.stats.matchedEvents.Observe(float64(len(pResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
-	return differedSampleEvents, sampleDiff
+	return eventsToTransform, sampleDiff
 }
 
 func (t *Transformer) write(data []string) error {
