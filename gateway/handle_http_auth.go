@@ -290,12 +290,13 @@ func (gw *Handle) handleFailureStats(errorMessage, reqType string, arctx *gwtype
 			}
 		case response.SourceDisabled, response.NoDestinationIDInHeader, response.InvalidDestinationID, response.DestinationDisabled:
 			stat = gwstats.SourceStat{
-				SourceID:    arctx.SourceID,
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				Source:      arctx.SourceTag(),
-				WorkspaceID: arctx.WorkspaceID,
-				SourceType:  arctx.SourceCategory,
+				SourceID:      arctx.SourceID,
+				WriteKey:      arctx.WriteKey,
+				ReqType:       reqType,
+				Source:        arctx.SourceTag(),
+				WorkspaceID:   arctx.WorkspaceID,
+				SourceType:    arctx.SourceCategory,
+				SourceDefName: arctx.SourceDefName,
 			}
 		}
 		stat.RequestFailed(response.GetStatus(errorMessage))

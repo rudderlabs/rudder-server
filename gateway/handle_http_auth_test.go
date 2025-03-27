@@ -102,13 +102,14 @@ func TestAuth(t *testing.T) {
 				statsStore.Get(
 					"gateway.write_key_requests",
 					map[string]string{
-						"source":      "noWriteKey",
-						"sourceID":    "noWriteKey",
-						"workspaceId": "",
-						"writeKey":    "noWriteKey",
-						"reqType":     "dummy",
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "noWriteKey",
+						"sourceID":      "noWriteKey",
+						"workspaceId":   "",
+						"writeKey":      "noWriteKey",
+						"reqType":       "dummy",
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": "",
 					},
 				).LastValue(),
 			)
@@ -136,6 +137,7 @@ func TestAuth(t *testing.T) {
 					WorkspaceID: "wrskpc",
 					SourceDefinition: backendconfig.SourceDefinitionT{
 						Category: "catA",
+						Name:     "sourceA",
 					},
 					WriteKey: writeKey,
 				},
@@ -153,13 +155,14 @@ func TestAuth(t *testing.T) {
 				statsStore.Get(
 					"gateway.write_key_requests",
 					map[string]string{
-						"reqType":     "dummy",
-						"sdkVersion":  "",
-						"source":      "789_123",
-						"sourceID":    "456",
-						"sourceType":  "catA",
-						"workspaceId": "wrskpc",
-						"writeKey":    writeKey,
+						"reqType":       "dummy",
+						"sdkVersion":    "",
+						"source":        "789_123",
+						"sourceDefName": "sourcea",
+						"sourceID":      "456",
+						"sourceType":    "catA",
+						"workspaceId":   "wrskpc",
+						"writeKey":      writeKey,
 					},
 				).LastValue(),
 			)
@@ -176,6 +179,7 @@ func TestAuth(t *testing.T) {
 						"workspaceId": "wrskpc",
 						"writeKey":    writeKey,
 						"reason":      "source is disabled",
+						"sourceDefName": "sourcea",
 					},
 				).LastValue(),
 			)

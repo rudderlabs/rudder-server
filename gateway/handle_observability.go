@@ -11,12 +11,13 @@ import (
 // NewSourceStat creates a new source stat for a gateway request
 func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat {
 	return &gwstats.SourceStat{
-		Source:      arctx.SourceTag(),
-		SourceID:    arctx.SourceID,
-		WriteKey:    arctx.WriteKey,
-		ReqType:     reqType,
-		WorkspaceID: arctx.WorkspaceID,
-		SourceType:  arctx.SourceCategory,
+		Source:        arctx.SourceTag(),
+		SourceID:      arctx.SourceID,
+		WriteKey:      arctx.WriteKey,
+		ReqType:       reqType,
+		WorkspaceID:   arctx.WorkspaceID,
+		SourceType:    arctx.SourceCategory,
+		SourceDefName: arctx.SourceDefName,
 	}
 }
 
