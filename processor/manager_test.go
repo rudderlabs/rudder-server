@@ -79,7 +79,7 @@ func TestProcessorManager(t *testing.T) {
 	initJobsDB()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
+	mockTransformerClients := mocksTransformer.NewMockTransformerClients(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	RegisterTestingT(t)
@@ -207,7 +207,7 @@ func TestProcessorManager(t *testing.T) {
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 		processor.BackendConfig = mockBackendConfig
-		processor.Handle.transformer = mockTransformer
+		processor.Handle.transformerClients = mockTransformerClients
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {

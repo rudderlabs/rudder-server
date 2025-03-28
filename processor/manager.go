@@ -38,7 +38,7 @@ type LifecycleManager struct {
 	clearDB                    *bool
 	ReportingI                 types.Reporting // need not initialize again
 	BackendConfig              backendconfig.BackendConfig
-	Transformer                transformer.Transformer
+	TransformerClients         *transformer.Clients
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	rsourcesService            rsources.JobService
@@ -54,8 +54,8 @@ type LifecycleManager struct {
 // If the processor is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
 func (proc *LifecycleManager) Start() error {
-	if proc.Transformer != nil {
-		proc.Handle.transformer = proc.Transformer
+	if proc.TransformerClients != nil {
+		proc.Handle.transformerClients = proc.TransformerClients
 	}
 
 	if err := proc.Handle.Setup(
@@ -132,7 +132,7 @@ func New(
 	proc := &LifecycleManager{
 		Handle: NewHandle(
 			config.Default,
-			transformer.NewTransformer(
+			transformer.NewClients(
 				config.Default,
 				logger.NewLogger().Child("processor"),
 				stats.Default,
@@ -176,5 +176,11 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 func WithStats(stats stats.Stats) Opts {
 	return func(l *LifecycleManager) {
 		l.Handle.statsFactory = stats
+	}
+}
+
+func WithTransformerClients(transformerClients transformer.TransformerClients) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.transformerClients = transformerClients
 	}
 }

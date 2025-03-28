@@ -2399,7 +2399,7 @@ func TestEvents(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := setupConfig(transformerResource, tc.configOverride)
 
-				processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
 				warehouseTransformer := New(c, logger.NOP, stats.NOP)
 
 				eventContexts := []testhelper.EventContext{
@@ -2483,7 +2483,7 @@ func TestEvents(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := setupConfig(transformerResource, map[string]any{})
 
-				processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
 				warehouseTransformer := New(c, logger.NOP, stats.NOP)
 				warehouseTransformer.now = func() time.Time {
 					return now
@@ -2497,11 +2497,10 @@ func TestEvents(t *testing.T) {
 				require.NoError(t, err)
 
 				ctx := context.Background()
-				batchSize := 100
 				events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
 
-				pResponse := processorTransformer.Transform(ctx, events, batchSize)
-				wResponse := warehouseTransformer.Transform(ctx, events, batchSize)
+				pResponse := processorTransformer.Destination().Transform(ctx, events)
+				wResponse := warehouseTransformer.Transform(ctx, events)
 
 				nonEmptyFields := []string{"data.id", "data.received_at", "metadata.receivedAt"}
 
