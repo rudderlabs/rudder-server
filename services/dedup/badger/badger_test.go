@@ -1,10 +1,13 @@
 package badger
 
 import (
+	"os"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -72,6 +75,54 @@ func Test_Badger(t *testing.T) {
 			require.Equal(t, expected[key], found[key])
 		}
 	})
+}
+
+func TestBadgerDirCleanup(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	conf.Set("BadgerDB.memTableSize", 1*bytesize.MB)
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+	badger := NewBadgerDB(conf, stats.NOP, DefaultPath())
+	allowed, err := badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.True(t, allowed[types.BatchKey{Key: "a"}])
+	err = badger.Commit([]string{"a"})
+	require.NoError(t, err)
+	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.False(t, allowed[types.BatchKey{Key: "a"}])
+	badger.Close()
+
+	// reopen
+	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
+	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.False(t, allowed[types.BatchKey{Key: "a"}], "since the directory wasn't cleaned up, the key should be present")
+	badger.Close()
+
+	// corrupt KEYREGISTRY file
+	require.NoError(t, os.WriteFile(path.Join(dbPath, "badgerdbv4", "KEYREGISTRY"), []byte("corrupted"), 0o644))
+	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
+	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.True(t, allowed[types.BatchKey{Key: "a"}], "since the directory was cleaned up, the key should not be present")
+	err = badger.Commit([]string{"a"})
+	require.NoError(t, err)
+	badger.Close()
+
+	// cleanup on startup
+	conf.Set("BadgerDB.cleanupOnStartup", true)
+	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
+	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.True(t, allowed[types.BatchKey{Key: "a"}], "since the directory was cleaned up, the key should not be present")
+	err = badger.Commit([]string{"a"})
+	require.NoError(t, err)
+	badger.Close()
 }
 
 func TestBadgerClose(t *testing.T) {
