@@ -3,6 +3,7 @@ package stats
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,23 +89,25 @@ func TestReport(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		sourceTag := fmt.Sprint(i)
 		tags := map[string]string{
-			"source":      statMap[sourceTag].Source,
-			"sourceID":    statMap[sourceTag].SourceID,
-			"workspaceId": statMap[sourceTag].WorkspaceID,
-			"writeKey":    statMap[sourceTag].WriteKey,
-			"reqType":     statMap[sourceTag].ReqType,
-			"sourceType":  statMap[sourceTag].SourceType,
-			"sdkVersion":  statMap[sourceTag].Version,
+			"source":        statMap[sourceTag].Source,
+			"sourceID":      statMap[sourceTag].SourceID,
+			"workspaceId":   statMap[sourceTag].WorkspaceID,
+			"writeKey":      statMap[sourceTag].WriteKey,
+			"reqType":       statMap[sourceTag].ReqType,
+			"sourceType":    statMap[sourceTag].SourceType,
+			"sdkVersion":    statMap[sourceTag].Version,
+			"sourceDefName": strings.ToLower(statMap[sourceTag].SourceDefName),
 		}
 		failedTags := map[string]string{
-			"source":      statMap[sourceTag].Source,
-			"sourceID":    statMap[sourceTag].SourceID,
-			"workspaceId": statMap[sourceTag].WorkspaceID,
-			"writeKey":    statMap[sourceTag].WriteKey,
-			"reqType":     statMap[sourceTag].ReqType,
-			"sourceType":  statMap[sourceTag].SourceType,
-			"sdkVersion":  statMap[sourceTag].Version,
-			"reason":      "reason",
+			"source":        statMap[sourceTag].Source,
+			"sourceID":      statMap[sourceTag].SourceID,
+			"workspaceId":   statMap[sourceTag].WorkspaceID,
+			"writeKey":      statMap[sourceTag].WriteKey,
+			"reqType":       statMap[sourceTag].ReqType,
+			"sourceType":    statMap[sourceTag].SourceType,
+			"sdkVersion":    statMap[sourceTag].Version,
+			"reason":        "reason",
+			"sourceDefName": strings.ToLower(statMap[sourceTag].SourceDefName),
 		}
 		require.Equal(t,
 			float64(counterMap[sourceTag].total),
@@ -169,13 +172,14 @@ func TestReport(t *testing.T) {
 
 func getSourceStat(statMap map[string]*SourceStat, sourceTag string) {
 	statMap[sourceTag] = &SourceStat{
-		Source:      sourceTag,
-		SourceID:    trand.String(10),
-		WorkspaceID: trand.String(10),
-		WriteKey:    trand.String(10),
-		ReqType:     trand.String(10),
-		SourceType:  trand.String(10),
-		Version:     trand.String(10),
+		Source:        sourceTag,
+		SourceID:      trand.String(10),
+		WorkspaceID:   trand.String(10),
+		WriteKey:      trand.String(10),
+		ReqType:       trand.String(10),
+		SourceType:    trand.String(10),
+		Version:       trand.String(10),
+		SourceDefName: trand.String(10),
 	}
 }
 
