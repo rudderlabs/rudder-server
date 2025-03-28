@@ -62,7 +62,7 @@ func NewBadgerEventSampler(
 		WithLogger(badgerLogger{log}).
 		WithCompression(options.None).
 		WithIndexCacheSize(conf.GetInt64Var(10*bytesize.MB, 1, "BadgerDB.EventSampler.indexCacheSize", "BadgerDB.indexCacheSize")).
-		WithValueLogFileSize(conf.GetInt64Var(16*bytesize.MB, 1, "BadgerDB.EventSampler.valueLogFileSize", "BadgerDB.valueLogFileSize")).
+		WithValueLogFileSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.valueLogFileSize", "BadgerDB.valueLogFileSize")).
 		WithBlockSize(conf.GetIntVar(int(4*bytesize.KB), 1, "BadgerDB.EventSampler.blockSize", "BadgerDB.blockSize")).
 		WithMemTableSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.memTableSize", "BadgerDB.memTableSize")).
 		WithNumMemtables(conf.GetIntVar(5, 1, "BadgerDB.EventSampler.numMemtable", "BadgerDB.numMemtable")).
