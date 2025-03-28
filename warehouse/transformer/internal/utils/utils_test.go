@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -123,22 +124,24 @@ func TestIsBlank(t *testing.T) {
 		input    interface{}
 		expected bool
 	}{
-		{"NilValue", nil, true},                                     // nil
-		{"EmptyString", "", true},                                   // empty string
-		{"NonEmptyString", "Hello", false},                          // non-empty string
-		{"IntZero", 0, false},                                       // integer zero
-		{"IntNonZero", 123, false},                                  // non-zero integer
-		{"FloatZero", 0.0, false},                                   // float zero
-		{"FloatNonZero", 123.45, false},                             // non-zero float
-		{"BoolFalse", false, false},                                 // boolean false
-		{"BoolTrue", true, false},                                   // boolean true
-		{"EmptySlice", []any{}, true},                               // empty slice
-		{"NonEmptySlice", []any{1, 2, 3}, false},                    // non-empty slice
-		{"EmptyMap", map[string]any{}, true},                        // empty map
-		{"NonEmptyMap", map[string]any{"key": 1}, false},            // non-empty map
-		{"EmptyStruct", struct{}{}, false},                          // empty struct
-		{"StructWithField", struct{ Field string }{"value"}, false}, // non-empty struct
-		{"StructWithMethod", Person{Name: "Alice", Age: 30}, false}, // struct with String method
+		{"NilValue", nil, true},
+		{"EmptyString", "", true},
+		{"NonEmptyString", "Hello", false},
+		{"IntZero", 0, false},
+		{"IntNonZero", 123, false},
+		{"FloatZero", 0.0, false},
+		{"FloatNonZero", 123.45, false},
+		{"BoolFalse", false, false},
+		{"BoolTrue", true, false},
+		{"EmptySlice", []any{}, true},
+		{"NonEmptySlice", []any{1, 2, 3}, false},
+		{"EmptyMap", map[string]any{}, true},
+		{"NonEmptyMap", map[string]any{"key": 1}, false},
+		{"EmptyStruct", struct{}{}, false},
+		{"StructWithField", struct{ Field string }{"value"}, false},
+		{"StructWithMethod", Person{Name: "Alice", Age: 30}, false},
+		{"EmptyValidationError", []types.ValidationError{}, true},
+		{"NonEmptyValidationError", []types.ValidationError{{Type: "something"}}, false},
 	}
 
 	for _, tc := range testCases {

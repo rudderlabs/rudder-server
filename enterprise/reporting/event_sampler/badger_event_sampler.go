@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -59,21 +60,46 @@ func NewBadgerEventSampler(
 	opts := badger.DefaultOptions(dbPath).
 		WithLogger(badgerLogger{log}).
 		WithCompression(options.None).
-		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
-		WithNumMemtables(conf.GetInt("Reporting.eventSampling.badgerDB.numMemtable", 5)).
-		WithValueThreshold(conf.GetInt64("Reporting.eventSampling.badgerDB.valueThreshold", 1048576)).
-		WithNumLevelZeroTables(conf.GetInt("Reporting.eventSampling.badgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(conf.GetInt("Reporting.eventSampling.badgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(conf.GetBool("Reporting.eventSampling.badgerDB.syncWrites", false)).
-		WithDetectConflicts(conf.GetBool("Reporting.eventSampling.badgerDB.detectConflicts", false))
+		WithIndexCacheSize(conf.GetInt64Var(10*bytesize.MB, 1, "BadgerDB.EventSampler.indexCacheSize", "BadgerDB.indexCacheSize")).
+		WithValueLogFileSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.valueLogFileSize", "BadgerDB.valueLogFileSize")).
+		WithBlockSize(conf.GetIntVar(int(4*bytesize.KB), 1, "BadgerDB.EventSampler.blockSize", "BadgerDB.blockSize")).
+		WithMemTableSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.memTableSize", "BadgerDB.memTableSize")).
+		WithNumMemtables(conf.GetIntVar(5, 1, "BadgerDB.EventSampler.numMemtable", "BadgerDB.numMemtable")).
+		WithNumLevelZeroTables(conf.GetIntVar(5, 1, "BadgerDB.EventSampler.numLevelZeroTables", "BadgerDB.numLevelZeroTables")).
+		WithNumLevelZeroTablesStall(conf.GetIntVar(10, 1, "BadgerDB.EventSampler.numLevelZeroTablesStall", "BadgerDB.numLevelZeroTablesStall")).
+		WithBaseTableSize(conf.GetInt64Var(200*bytesize.KB, 1, "BadgerDB.EventSampler.baseTableSize", "BadgerDB.baseTableSize")).
+		WithBaseLevelSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.baseLevelSize", "BadgerDB.baseLevelSize")).
+		WithLevelSizeMultiplier(conf.GetIntVar(10, 1, "BadgerDB.EventSampler.levelSizeMultiplier", "BadgerDB.levelSizeMultiplier")).
+		WithMaxLevels(conf.GetIntVar(7, 1, "BadgerDB.EventSampler.maxLevels", "BadgerDB.maxLevels")).
+		WithNumCompactors(conf.GetIntVar(4, 1, "BadgerDB.EventSampler.numCompactors", "BadgerDB.numCompactors")).
+		WithValueThreshold(conf.GetInt64Var(10*bytesize.B, 1, "BadgerDB.EventSampler.valueThreshold", "BadgerDB.valueThreshold")).
+		WithSyncWrites(conf.GetBoolVar(false, "BadgerDB.EventSampler.syncWrites", "BadgerDB.syncWrites")).
+		WithBlockCacheSize(conf.GetInt64Var(0, 1, "BadgerDB.EventSampler.blockCacheSize", "BadgerDB.blockCacheSize")).
+		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.EventSampler.detectConflicts", "BadgerDB.detectConflicts"))
+
+	if conf.GetBoolVar(false, "BadgerDB.EventSampler.cleanupOnStartup", "BadgerDB.cleanupOnStartup") {
+		if err := os.RemoveAll(opts.Dir); err != nil {
+			return nil, fmt.Errorf("removing badger db directory: %w", err)
+		}
+	}
+	db, err := badger.Open(opts)
+	if err != nil {
+		// corrupted or incompatible db, clean up the directory and retry
+		log.Errorn("Error while opening event sampler badger db, cleaning up the directory",
+			logger.NewStringField("module", module),
+			logger.NewErrorField(err),
+		)
+		if err := os.RemoveAll(opts.Dir); err != nil {
+			return nil, fmt.Errorf("removing badger db directory: %w", err)
+		}
+		if db, err = badger.Open(opts); err != nil {
+			return nil, fmt.Errorf("opening badger db: %w", err)
+		}
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
-
-	db, err := badger.Open(opts)
-
 	es := &BadgerEventSampler{
 		db:     db,
 		dbPath: dbPath,
@@ -85,11 +111,6 @@ func NewBadgerEventSampler(
 		wg:     sync.WaitGroup{},
 		sc:     NewStatsCollector(BadgerTypeEventSampler, module, stats),
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
 	es.wg.Add(1)
 	rruntime.Go(func() {
 		defer es.wg.Done()
@@ -135,7 +156,7 @@ func (es *BadgerEventSampler) Put(key string) error {
 	es.sc.RecordPut()
 
 	return es.db.Update(func(txn *badger.Txn) error {
-		entry := badger.NewEntry([]byte(key), []byte{1}).WithTTL(es.ttl.Load())
+		entry := badger.NewEntry([]byte(key), nil).WithTTL(es.ttl.Load())
 		return txn.SetEntry(entry)
 	})
 }
