@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jsonrs"
