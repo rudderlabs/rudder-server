@@ -107,7 +107,7 @@ services:
       REPLICAS:                  1
       CONCURRENCY:               ${RL_CONCURRENCY:-3000}
       MESSAGE_GENERATORS:        ${RL_MESSAGE_GENERATORS:-1500}
-      MAX_EVENTS_PER_SECOND:     ${RL_MAX_EVENTS_PER_SECOND:-4000}
+      MAX_EVENTS_PER_SECOND:     ${RL_MAX_EVENTS_PER_SECOND:-4100}
       SOURCES:                   2tJ69WBiVaaCO6DqELKNtrW0JLB,2tXF5TaThOMyUz0POvqutoXgLMn,2uRvqPSNiHfCSjZJ0OcuaJYvGjv
       HOT_SOURCES:               33,33,34
       HTTP_ENDPOINT:             http://backend:8080/v1/batch

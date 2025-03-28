@@ -149,7 +149,10 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	// Wait for all goroutines to complete or for context to be cancelled
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+	_, waitSpan := w.tracer.Start(ctx, "partitionWorker.waitPreProcess", stats.SpanKindInternal)
+	err = g.Wait()
+	waitSpan.End()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		w.logger.Error("Error while processing jobs", "error", err)
 		panic(err)
 	}
@@ -159,9 +162,11 @@ func (w *partitionWorker) Work() bool {
 		readLoopSleep := w.handle.config().readLoopSleep
 		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
 			// Sleep for the remaining time, respecting context cancellation
+			_, sleepSpan := w.tracer.Start(ctx, "partitionWorker.sleep", stats.SpanKindInternal)
 			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
 				panic(err)
 			}
+			sleepSpan.End()
 		}
 	}
 	return true
