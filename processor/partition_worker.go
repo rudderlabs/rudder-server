@@ -129,7 +129,7 @@ func (w *partitionWorker) Work() bool {
 		rsourcesStats.BeginProcessing(jobs)
 
 		g.Go(func() error {
-			subJobs := w.handle.jobSplitter(gCtx, jobs, rsourcesStats)
+			subJobs := w.handle.jobSplitter(ctx, jobs, rsourcesStats)
 			for _, subJob := range subJobs {
 				start := time.Now()
 				select {

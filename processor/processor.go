@@ -2316,7 +2316,7 @@ type transformationMessage struct {
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
-	ctx, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
+	_, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
 	defer span.End()
 
 	if proc.limiter.transform != nil {
@@ -2325,7 +2325,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
 
-	ctx, task := trace.NewTask(context.Background(), "transformations")
+	_, task := trace.NewTask(context.Background(), "transformations")
 	defer task.End()
 
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
@@ -2363,9 +2363,10 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 				"destinationId": event.Metadata.DestinationID,
 				"destType":      event.Metadata.DestinationType,
 			}
-			ctx := stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
-
+			_, span := proc.tracer.Start(
+				stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent),
+				"proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags),
+			)
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
 		}
@@ -2376,7 +2377,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.transformSrcDest(
-				ctx,
+				in.ctx,
 				partition,
 
 				srcAndDestKey, eventList,
@@ -2411,7 +2412,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
-		ctx,
+		in.ctx,
 		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
