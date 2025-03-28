@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
-	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,17 +26,18 @@ import (
 func CreateActionFileTemplate(csvFile *os.File, actionType string) (*csv.Writer, error) {
 	var err error
 	csvWriter := csv.NewWriter(csvFile)
-	if actionType == "insert" {
+	switch actionType {
+	case "insert":
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Status", "Id", "Parent Id", "Client Id", "Name", "Conversion Currency Code", "Conversion Name", "Conversion Time", "Conversion Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "External Attribution Credit", "External Attribution Model"},
 			{"Format Version", "", "", "", "", "6.0", "", "", "", "", "", "", "", "", ""},
 		})
-	} else if actionType == "update" {
+	case "update":
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Adjustment Value", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjusted Currency Code", "Adjustment Time"},
 			{"Format Version", "", "", "", "6.0", "", "", "", "", "", "", "", ""},
 		})
-	} else {
+	default:
 		// For deleting conversion
 		err = csvWriter.WriteAll([][]string{
 			{"Type", "Adjustment Type", "Client Id", "Id", "Name", "Conversion Name", "Conversion Time", "Microsoft Click Id", "Hashed Email Address", "Hashed Phone Number", "Adjustment Time"},
@@ -136,7 +136,7 @@ func (b *BingAdsBulkUploader) populateZipFile(actionFile *ActionFileInfo, line s
 		var fields RecordFields
 		unmarshallingErr := jsonrs.Unmarshal(data.Message.Fields, &fields)
 		if unmarshallingErr != nil {
-			return fmt.Errorf("unmarshalling event %w:", unmarshallingErr)
+			return fmt.Errorf("unmarshalling event %w", unmarshallingErr)
 		}
 
 		var err error
@@ -251,7 +251,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		panic(fmt.Errorf("Error while creating tmp directory Err: %w", err))
+		panic(fmt.Errorf("error while creating tmp directory: %w", err))
 	}
 	outputDir := path.Join(tmpDirPath, localTmpDirName)
 	// Create output directory if it doesn't exist
@@ -259,7 +259,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	if os.IsNotExist(err) {
 		err = os.MkdirAll(outputDir, 0o755)
 		if err != nil {
-			panic(fmt.Errorf("Error while creating output directory err: %w", err))
+			panic(fmt.Errorf("error while creating output directory: %w", err))
 		}
 	}
 
@@ -398,9 +398,10 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	if len(records) > 0 {
 		header := records[0]
 		for i, column := range header {
-			if column == "Id" {
+			switch column {
+			case "Id":
 				jobIdIndex = i
-			} else if column == "Error" {
+			case "Error":
 				errorIndex = i
 			}
 		}
@@ -453,7 +454,7 @@ func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 }
 
 /*
-This function validates if a `field` is present, not null and have a valid value or not in the `fields“ object
+This function validates if a `field` is present, not null and have a valid value or not in the `fields" object
 */
 func validateField(fields map[string]interface{}, field string) error {
 	val, ok := fields[field]
@@ -480,7 +481,7 @@ func calculateHashCode(data string) string {
 	return hashCode
 }
 
-func hashFields(input map[string]interface{}) (stdjson.RawMessage, error) {
+func hashFields(input map[string]interface{}) (json.RawMessage, error) {
 	// Create a new map to hold the hashed fields
 	hashedMap := make(map[string]interface{})
 

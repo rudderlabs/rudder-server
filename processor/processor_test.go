@@ -5148,10 +5148,10 @@ var _ = Describe("Static Function Tests", func() {
 
 			// Sort the response for consistent testing
 			sort.Slice(response, func(i, j int) bool {
-				if response[i].ConnectionDetails.SourceID == response[j].ConnectionDetails.SourceID {
+				if response[i].SourceID == response[j].SourceID {
 					return response[i].StatusDetail.EventName < response[j].StatusDetail.EventName
 				}
-				return response[i].ConnectionDetails.SourceID < response[j].ConnectionDetails.SourceID
+				return response[i].SourceID < response[j].SourceID
 			})
 
 			// Should include metrics for all cases
@@ -5159,18 +5159,18 @@ var _ = Describe("Static Function Tests", func() {
 
 			// Case 1: Event name transformation
 			diffMetric1Input := response[0]
-			Expect(diffMetric1Input.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Input.SourceID).To(Equal("source1"))
 			Expect(diffMetric1Input.StatusDetail.EventName).To(Equal("event1"))
 			Expect(diffMetric1Input.StatusDetail.Count).To(Equal(int64(-10))) // All input events transformed
 
 			diffMetric1Output := response[1]
-			Expect(diffMetric1Output.ConnectionDetails.SourceID).To(Equal("source1"))
+			Expect(diffMetric1Output.SourceID).To(Equal("source1"))
 			Expect(diffMetric1Output.StatusDetail.EventName).To(Equal("updated_event1"))
 			Expect(diffMetric1Output.StatusDetail.Count).To(Equal(int64(10))) // All events transformed to new name
 
 			// Case 2: Event splitting
 			diffMetric2New := response[2]
-			Expect(diffMetric2New.ConnectionDetails.SourceID).To(Equal("source2"))
+			Expect(diffMetric2New.SourceID).To(Equal("source2"))
 			Expect(diffMetric2New.StatusDetail.EventName).To(Equal("new_event2"))
 			Expect(diffMetric2New.StatusDetail.Count).To(Equal(int64(10))) // 10 new events added
 
@@ -6326,22 +6326,22 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 
 func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReportedMetric) {
 	sort.Slice(expectedMetric, func(i, j int) bool {
-		return expectedMetric[i].ConnectionDetails.SourceID < expectedMetric[j].ConnectionDetails.SourceID
+		return expectedMetric[i].SourceID < expectedMetric[j].SourceID
 	})
 	sort.Slice(actualMetric, func(i, j int) bool {
-		return actualMetric[i].ConnectionDetails.SourceID < actualMetric[j].ConnectionDetails.SourceID
+		return actualMetric[i].SourceID < actualMetric[j].SourceID
 	})
 	Expect(len(expectedMetric)).To(Equal(len(actualMetric)))
 	for index, value := range expectedMetric {
-		Expect(value.ConnectionDetails.SourceID).To(Equal(actualMetric[index].ConnectionDetails.SourceID))
-		Expect(value.ConnectionDetails.DestinationID).To(Equal(actualMetric[index].ConnectionDetails.DestinationID))
-		Expect(value.ConnectionDetails.SourceJobID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobID))
-		Expect(value.ConnectionDetails.SourceJobRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobRunID))
-		Expect(value.ConnectionDetails.SourceTaskRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceTaskRunID))
-		Expect(value.PUDetails.InPU).To(Equal(actualMetric[index].PUDetails.InPU))
-		Expect(value.PUDetails.PU).To(Equal(actualMetric[index].PUDetails.PU))
-		Expect(value.PUDetails.TerminalPU).To(Equal(actualMetric[index].PUDetails.TerminalPU))
-		Expect(value.PUDetails.InitialPU).To(Equal(actualMetric[index].PUDetails.InitialPU))
+		Expect(value.SourceID).To(Equal(actualMetric[index].SourceID))
+		Expect(value.DestinationID).To(Equal(actualMetric[index].DestinationID))
+		Expect(value.SourceJobID).To(Equal(actualMetric[index].SourceJobID))
+		Expect(value.SourceJobRunID).To(Equal(actualMetric[index].SourceJobRunID))
+		Expect(value.SourceTaskRunID).To(Equal(actualMetric[index].SourceTaskRunID))
+		Expect(value.PUDetails.InPU).To(Equal(actualMetric[index].InPU))
+		Expect(value.PUDetails.PU).To(Equal(actualMetric[index].PU))
+		Expect(value.PUDetails.TerminalPU).To(Equal(actualMetric[index].TerminalPU))
+		Expect(value.PUDetails.InitialPU).To(Equal(actualMetric[index].InitialPU))
 		Expect(value.StatusDetail.Status).To(Equal(actualMetric[index].StatusDetail.Status))
 		Expect(value.StatusDetail.StatusCode).To(Equal(actualMetric[index].StatusDetail.StatusCode))
 		Expect(value.StatusDetail.Count).To(Equal(actualMetric[index].StatusDetail.Count))

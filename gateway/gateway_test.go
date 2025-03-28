@@ -296,7 +296,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
-			expectHandlerResponse(gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "OK", "batch")
+			expectHandlerResponse(gateway.webBatchHandler(), authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), http.StatusOK, "ok", "batch")
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
@@ -359,7 +359,7 @@ var _ = Describe("Gateway Enterprise", func() {
 					bytes.NewBufferString(allowedUserEventData),
 				),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"batch",
 			)
 			Eventually(
@@ -436,7 +436,7 @@ var _ = Describe("Gateway", func() {
 			c.initializeAppFeatures()
 			whServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				_, _ = io.WriteString(w, "OK")
+				_, _ = io.WriteString(w, "ok")
 			}))
 			WHURL := whServer.URL
 			parsedURL, err := url.Parse(WHURL)
@@ -504,7 +504,7 @@ var _ = Describe("Gateway", func() {
 		It("should be able to hit all the handlers", func() {
 			c.mockWebhook.EXPECT().RequestHandler(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				_, _ = io.WriteString(w, "OK")
+				_, _ = io.WriteString(w, "ok")
 			})
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
 			var err error
@@ -615,7 +615,7 @@ var _ = Describe("Gateway", func() {
 		// common tests for all web handlers
 		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if !(handlerType == "batch" || handlerType == "import") {
+				if handlerType != "batch" && handlerType != "import" {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
@@ -666,7 +666,7 @@ var _ = Describe("Gateway", func() {
 							WriteKeyEnabled,
 							bytes.NewBuffer(validBody)),
 						http.StatusOK,
-						"OK",
+						"ok",
 						handlerType,
 					)
 					Eventually(
@@ -727,7 +727,7 @@ var _ = Describe("Gateway", func() {
 					ReplaySourceID,
 					bytes.NewBuffer(validBody)),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"replay",
 			)
 
@@ -780,7 +780,7 @@ var _ = Describe("Gateway", func() {
 					RETLSourceID,
 					bytes.NewBuffer(payloads[0])),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"retl",
 			)
 
@@ -810,7 +810,7 @@ var _ = Describe("Gateway", func() {
 					RETLSourceID,
 					bytes.NewBuffer(payloads[1])),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"retl",
 			)
 
@@ -860,7 +860,7 @@ var _ = Describe("Gateway", func() {
 						bytes.NewBufferString(body),
 					),
 					http.StatusOK,
-					"OK",
+					"ok",
 					handlerType,
 				)
 			}
@@ -936,7 +936,7 @@ var _ = Describe("Gateway", func() {
 					),
 				),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"batch",
 			)
 
@@ -1016,7 +1016,7 @@ var _ = Describe("Gateway", func() {
 					),
 				),
 				http.StatusOK,
-				"OK",
+				"ok",
 				"alias",
 			)
 			Eventually(
@@ -1122,7 +1122,7 @@ var _ = Describe("Gateway", func() {
 								"workspaceId": "",
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
-								"reason":      "Failed to read writeKey from header",
+								"reason":      "failed to read writekey from header",
 								"sourceType":  "",
 								"sdkVersion":  "",
 							},
@@ -1153,7 +1153,7 @@ var _ = Describe("Gateway", func() {
 								"workspaceId": "",
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
-								"reason":      "Failed to read writeKey from header",
+								"reason":      "failed to read writekey from header",
 								"sourceType":  "",
 								"sdkVersion":  "",
 							},
@@ -1315,7 +1315,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with 500 if jobsdb store returns an error", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if !(handlerType == "batch" || handlerType == "import") {
+				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
 					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -1366,7 +1366,7 @@ var _ = Describe("Gateway", func() {
 					bytes.NewBufferString(`{"batch":[]}`),
 				),
 				http.StatusBadRequest,
-				"Empty batch payload\n",
+				"empty batch payload\n",
 				"batch",
 			)
 		})

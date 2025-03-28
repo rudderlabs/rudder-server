@@ -108,7 +108,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
 	if statusCode == http.StatusOK {
 		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
-		err = t.Augmenter.Augment(rts.req, body, authResponse.Account.Secret)
+		err = t.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
 			t.log.Errorn("[preRoundTrip] secret augmentation",
 				obskit.DestinationID(rts.destination.ID),
@@ -166,7 +166,9 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 		)
 		return nil, fmt.Errorf("getting auth error category post roundTrip: %s", string(respData))
 	}
-	if authErrorCategory == common.CategoryRefreshToken {
+
+	switch authErrorCategory {
+	case common.CategoryRefreshToken:
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
 		var oldSecret json.RawMessage
 		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
@@ -206,7 +208,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 			return rts.res, nil
 		}
 		interceptorResp.StatusCode = http.StatusInternalServerError
-	} else if authErrorCategory == common.CategoryAuthStatusInactive {
+	case common.CategoryAuthStatusInactive:
 		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
 			Destination:     rts.destination,
 			WorkspaceID:     rts.destination.WorkspaceID,

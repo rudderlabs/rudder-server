@@ -188,7 +188,7 @@ var _ = Describe("Network", func() {
 		var network *netHandle
 		var requestParams integrations.PostParametersT
 		var mockResponse http.Response
-		var mockResponseContentType func(contentType string) = func(contentType string) {
+		mockResponseContentType := func(contentType string) {
 			mockResponse.Header.Del("Content-Type")
 			mockResponse.Header.Add("Content-Type", contentType)
 			mockResponse.Body = io.NopCloser(bytes.NewReader([]byte(mockResponseBody)))

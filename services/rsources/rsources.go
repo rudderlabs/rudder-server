@@ -182,13 +182,13 @@ type FailedRecord struct {
 }
 
 // ErrStatusNotFound sentinel error indicating that status cannot be found
-var ErrStatusNotFound = errors.New("Status not found")
+var ErrStatusNotFound = errors.New("status not found")
 
 // ErrSourceNotCompleted sentinel error indicating that a source is not completed
-var ErrSourceNotCompleted = errors.New("Source not completed")
+var ErrSourceNotCompleted = errors.New("source not completed")
 
 // ErrFailedRecordsNotFound sentinel error indicating that failed records cannot be found
-var ErrFailedRecordsNotFound = errors.New("Failed records not found")
+var ErrFailedRecordsNotFound = errors.New("failed records not found")
 
 // StatsIncrementer increments stats
 type StatsIncrementer interface {

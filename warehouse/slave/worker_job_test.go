@@ -334,7 +334,7 @@ func TestSlaveJob(t *testing.T) {
 			jr.stagingFilePath = writer.GetLoadFile().Name()
 
 			for i := 0; i < lines; i++ {
-				_, err = writer.Write([]byte(fmt.Sprintf("test %d\n", i)))
+				_, err = fmt.Fprintf(writer, "test %d\n", i)
 				require.NoError(t, err)
 			}
 			require.NoError(t, writer.Close())

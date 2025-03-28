@@ -7,71 +7,71 @@ import (
 
 const (
 	// Ok - ok
-	Ok = "OK"
+	Ok = "ok"
 	// RequestBodyNil - Request body is nil
-	RequestBodyNil = "Request body is nil"
+	RequestBodyNil = "request body is nil"
 	// InvalidRequestMethod - Request Method is invalid
-	InvalidRequestMethod = "Invalid HTTP Request Method"
+	InvalidRequestMethod = "invalid http request method"
 	// TooManyRequests - too many requests
-	TooManyRequests = "Max Requests Limit reached"
+	TooManyRequests = "max requests limit reached"
 	// NoWriteKeyInBasicAuth - Failed to read writeKey from header
-	NoWriteKeyInBasicAuth = "Failed to read writeKey from header"
+	NoWriteKeyInBasicAuth = "failed to read writekey from header"
 	// NoWriteKeyInQueryParams - Failed to read writeKey from Query Params
-	NoWriteKeyInQueryParams = "Failed to read writeKey from Query Params"
+	NoWriteKeyInQueryParams = "failed to read writekey from query params"
 	// RequestBodyReadFailed - Failed to read body from request
-	RequestBodyReadFailed = "Failed to read body from request"
+	RequestBodyReadFailed = "failed to read body from request"
 	// RequestBodyTooLarge - Request size exceeds max limit
-	RequestBodyTooLarge = "Request size exceeds max limit"
+	RequestBodyTooLarge = "request size exceeds max limit"
 	// InvalidWriteKey - Invalid Write Key
-	InvalidWriteKey = "Invalid Write Key"
+	InvalidWriteKey = "invalid write key"
 	// InvalidJSON - Invalid JSON
-	InvalidJSON = "Invalid JSON"
+	InvalidJSON = "invalid json"
 	// EmptyBatchPayload - Empty batch payload
-	EmptyBatchPayload = "Empty batch payload"
+	EmptyBatchPayload = "empty batch payload"
 	// InvalidWebhookSource - Source does not accept webhook events
-	InvalidWebhookSource = "Source does not accept webhook events"
-	// SourceTransformerResponseErrorReadFailed - Failed to read error from source transformer response
-	SourceTransformerResponseErrorReadFailed = "Failed to read error from source transformer response"
+	InvalidWebhookSource = "source does not accept webhook events"
+	// SourceTransformerResponseErrorReadFailed - failed to read error from source transformer response
+	SourceTransformerResponseErrorReadFailed = "failed to read error from source transformer response"
 	// SourceDisabled - write key is present, but the source for it is disabled.
-	SourceDisabled = "Source is disabled"
-	// SourceTransformerFailed - Internal server error in source transformer
-	SourceTransformerFailed = "Internal server error in source transformer"
-	// SourceTransformerFailedToReadOutput - Output not found in source transformer response
-	SourceTransformerFailedToReadOutput = "Output not found in source transformer response"
-	// SourceTransformerInvalidResponseFormat - Invalid format of source transformer response
-	SourceTransformerInvalidResponseFormat = "Invalid format of source transformer response"
-	// SourceTransformerInvalidOutputFormatInResponse - Invalid output format in source transformer response
-	SourceTransformerInvalidOutputFormatInResponse = "Invalid output format in source transformer response"
-	// SourceTransformerInvalidOutputJSON - Invalid output json in source transformer response
-	SourceTransformerInvalidOutputJSON = "Invalid output json in source transformer response"
-	// NonIdentifiableRequest - Request neither has anonymousId nor userId
-	NonIdentifiableRequest = "Request neither has anonymousId nor userId"
-	// ErrorInMarshal - Error while marshalling
-	ErrorInMarshal = "Error while marshalling"
-	// ErrorInParseForm - Error during parsing form
-	ErrorInParseForm = "Error during parsing form"
-	// ErrorInParseMultiform - Error during parsing multiform
-	ErrorInParseMultiform = "Error during parsing multiform"
-	// NotRudderEvent = Event is not a Valid Rudder Event
-	NotRudderEvent = "Event is not a valid rudder event"
+	SourceDisabled = "source is disabled"
+	// SourceTransformerFailed - internal server error in source transformer
+	SourceTransformerFailed = "internal server error in source transformer"
+	// SourceTransformerFailedToReadOutput - output not found in source transformer response
+	SourceTransformerFailedToReadOutput = "output not found in source transformer response"
+	// SourceTransformerInvalidResponseFormat - invalid format of source transformer response
+	SourceTransformerInvalidResponseFormat = "invalid format of source transformer response"
+	// SourceTransformerInvalidOutputFormatInResponse - invalid output format in source transformer response
+	SourceTransformerInvalidOutputFormatInResponse = "invalid output format in source transformer response"
+	// SourceTransformerInvalidOutputJSON - invalid output json in source transformer response
+	SourceTransformerInvalidOutputJSON = "invalid output json in source transformer response"
+	// NonIdentifiableRequest - request neither has anonymousId nor userId
+	NonIdentifiableRequest = "request neither has anonymousId nor userId"
+	// ErrorInMarshal - error while marshalling
+	ErrorInMarshal = "error while marshalling"
+	// ErrorInParseForm - error during parsing form
+	ErrorInParseForm = "error during parsing form"
+	// ErrorInParseMultiform - error during parsing multiform
+	ErrorInParseMultiform = "error during parsing multiform"
+	// NotRudderEvent = event is not a valid rudder event
+	NotRudderEvent = "event is not a valid rudder event"
 	// ContextDeadlineExceeded - context deadline exceeded
 	ContextDeadlineExceeded = "context deadline exceeded"
-	// GatewayTimeout - Gateway timeout
-	GatewayTimeout = "Gateway timeout"
-	// ServiceUnavailable - Service unavailable
-	ServiceUnavailable = "Service unavailable"
-	// NoSourceIdInHeader - Failed to read source id from header
-	NoSourceIdInHeader = "Failed to read source id from header"
-	// InvalidSourceID - Invalid source id
-	InvalidSourceID = "Invalid source id"
-	// InvalidReplaySource - Invalid replay source
-	InvalidReplaySource = "Invalid replay source"
-	// InvalidDestinationID - Invalid destination id
-	InvalidDestinationID = "Invalid destination id"
-	// DestinationDisabled - Destination is disabled
-	DestinationDisabled = "Destination is disabled"
-	// NoDestinationIDInHeader - Failed to read destination id from header
-	NoDestinationIDInHeader = "Failed to read destination id from header"
+	// GatewayTimeout - gateway timeout
+	GatewayTimeout = "gateway timeout"
+	// ServiceUnavailable - service unavailable
+	ServiceUnavailable = "service unavailable"
+	// NoSourceIdInHeader - failed to read source id from header
+	NoSourceIdInHeader = "failed to read source id from header"
+	// InvalidSourceID - invalid source id
+	InvalidSourceID = "invalid source id"
+	// InvalidReplaySource - invalid replay source
+	InvalidReplaySource = "invalid replay source"
+	// InvalidDestinationID - invalid destination id
+	InvalidDestinationID = "invalid destination id"
+	// DestinationDisabled - destination is disabled
+	DestinationDisabled = "destination is disabled"
+	// NoDestinationIDInHeader - failed to read destination id from header
+	NoDestinationIDInHeader = "failed to read destination id from header"
 
 	transPixelResponse = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04" +
 		"\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"

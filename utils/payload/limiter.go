@@ -92,7 +92,7 @@ func (r *adaptivePayloadLimitAlgorithm) tick() {
 		r.config.Log.Warnf("failed to get free memory: %v", err)
 		freeMem = 100
 	}
-	var newState LimiterState = LimiterStateCritical
+	newState := LimiterStateCritical
 	if freeMem > r.config.FreeMemThresholdLimit {
 		newState = LimiterStateNormal
 	} else if freeMem > r.config.FreeMemCriticalLimit {
