@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-server/processor/types"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -32,6 +34,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		logger:         logger.Child("warehouse-transformer"),
 		statsFactory:   statsFactory,
 		now:            timeutil.Now,
+		uuidGenerator:  uuid.NewString,
 		loggedFileName: generateLogFileName(),
 	}
 
@@ -120,6 +123,7 @@ func (t *Transformer) processWarehouseMessage(cache *cache, event *types.Transfo
 	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
 		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
 	}
+	t.addMandatoryFields(event)
 	return t.handleEvent(event, cache)
 }
 
@@ -143,6 +147,39 @@ func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerE
 
 	event.Message["context"] = messageContextMap
 	return nil
+}
+
+func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
+	t.ensureMessageID(event)
+	t.ensureReceivedAt(event)
+}
+
+func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
+	messageID, exists := event.Message["messageId"]
+	if !exists || utils.IsBlank(messageID) {
+		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
+		event.Message["messageId"] = event.Metadata.MessageID
+	}
+}
+
+func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
+	receivedAt, exists := event.Message["receivedAt"]
+	if !exists || utils.IsBlank(receivedAt) {
+		t.setDefaultReceivedAt(event)
+		return
+	}
+
+	strReceivedAt, isString := receivedAt.(string)
+	if !isString || !utils.ValidTimestamp(strReceivedAt) {
+		t.setDefaultReceivedAt(event)
+	}
+}
+
+func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
+	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
+		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
+	}
+	event.Message["receivedAt"] = event.Metadata.ReceivedAt
 }
 
 func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
