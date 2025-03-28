@@ -397,7 +397,9 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 }
 
 func shouldSkipUsersTable(tec *transformEventContext) bool {
-	return tec.event.Metadata.DestinationType == whutils.SnowpipeStreaming || tec.destOpts.skipUsersTable || tec.intrOpts.skipUsersTable
+	return tec.event.Metadata.DestinationType == whutils.SnowpipeStreaming ||
+		tec.destOpts.skipUsersTable ||
+		tec.intrOpts.skipUsersTable
 }
 
 func (t *Transformer) pageEvents(tec *transformEventContext) ([]map[string]any, error) {
