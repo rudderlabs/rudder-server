@@ -42,7 +42,7 @@ func newPartitionWorker(partition string, h workerHandle, t stats.Tracer, spanRe
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newPipelineWorker(partition, h, spanRecorder)
+		w.pipelines[i] = newPipelineWorker(partition, h, t, spanRecorder)
 	}
 
 	return w
@@ -149,7 +149,7 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	// Wait for all goroutines to complete or for context to be cancelled
-	_, waitSpan := w.tracer.Start(ctx, "partitionWorker.waitPreProcess", stats.SpanKindInternal)
+	_, waitSpan := w.tracer.Start(ctx, "partitionWorker.waitPreProcessGroup", stats.SpanKindInternal)
 	err = g.Wait()
 	waitSpan.End()
 	if err != nil && !errors.Is(err, context.Canceled) {
