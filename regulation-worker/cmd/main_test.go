@@ -415,7 +415,8 @@ func handler(t *testing.T, minioConfig map[string]interface{}, redisAddress stri
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"regulations": ["BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP", "GA", "ITERABLE", "ENGAGE", "CUSTIFY", "SENDGRID", "SPRIG"],
-			"supportSourceTransformV1": true
+			"supportSourceTransformV1": true,
+			"upgradedToSourceTransformV2": true
 		}`))
 	})
 	return srvMux

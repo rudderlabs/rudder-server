@@ -134,7 +134,7 @@ func (b *Builder) Build() *httptest.Server {
 	mux.HandleFunc("/batch", b.routerBatchTransformHandler)
 
 	// features
-	features := []byte(`{"routerTransform": {}, "supportSourceTransformV1": true}`)
+	features := []byte(`{"routerTransform": {}, "supportSourceTransformV1": true, "upgradedToSourceTransformV2": true}`)
 	for destType := range b.routerTransforms {
 		features, _ = sjson.SetBytes(features, "routerTransform."+destType, true)
 	}

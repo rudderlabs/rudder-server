@@ -37,7 +37,7 @@ var _ = Describe("Transformer features", func() {
 			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 
-		It("before features are fetched, SourceTransformerVersion should return v1(default) because v0 is deprecated", func() {
+		It("before features are fetched, SourceTransformerVersion should return v2(default)", func() {
 			handler := &featuresService{
 				features: json.RawMessage(defaultTransformerFeatures),
 				logger:   logger.NewLogger(),
@@ -48,7 +48,7 @@ var _ = Describe("Transformer features", func() {
 				},
 			}
 
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
+			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
 		It("before features are fetched, TransformerProxyVersion should return v0", func() {
@@ -81,7 +81,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1))
+			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
 		It("if transformer returns 404, features should be same as defaultTransformerFeatures", func() {
@@ -102,9 +102,10 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeTrue())
 			Expect(handler.RouterTransform("ACTIVE_CAMPAIGN")).To(BeFalse())
 			Expect(handler.RouterTransform("ALGOLIA")).To(BeFalse())
+			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 		})
 
-		It("If source transform is not v1, it should panic as v0 is deprecated", func() {
+		It("If source transform is not v1 or v2, it should panic as v0 is deprecated", func() {
 			defer func() {
 				if r := recover(); r == nil {
 					Fail("The function `SourceTransformerVersion()` is supposed to panic. It did not.")
@@ -167,6 +168,7 @@ var _ = Describe("Transformer features", func() {
 				},
 				"regulations": ["AM"],
 				"supportSourceTransformV1": true,
+				"upgradedToSourceTransformV2": true,
 				"supportTransformerProxyV1": true
 			  }`
 			transformerServer := httptest.NewServer(
@@ -186,7 +188,7 @@ var _ = Describe("Transformer features", func() {
 			Expect(handler.RouterTransform("HS")).To(BeFalse())
 			Expect(handler.RouterTransform("a")).To(BeTrue())
 			Expect(handler.RouterTransform("b")).To(BeTrue())
-			Expect(handler.SourceTransformerVersion()).To(Equal(V1)) // V1 is default (V0 is deprecated)
+			Expect(handler.SourceTransformerVersion()).To(Equal(V2))
 			Expect(handler.TransformerProxyVersion()).To(Equal(V1))
 			Expect(handler.Regulations()).To(Equal([]string{"AM"}))
 		})
