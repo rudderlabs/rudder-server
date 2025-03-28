@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/processor/transformer/mock_transformer_clients.go -package=mocks_transformer github.com/rudderlabs/rudder-server/processor/transformer TransformerClients
+//go:generate mockgen -destination=../../mocks/processor/transformer/mock_transformer_clients.go -package=mocks_transformer_clients github.com/rudderlabs/rudder-server/processor/transformer TransformerClients
 
 package transformer
 

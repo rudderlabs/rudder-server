@@ -53,6 +53,7 @@ func run(ctx context.Context) error {
 
 	runID := uuid.New().String()
 	conf := config.Default
+	conf.Set("Processor.transformBatchSize", batchSize)
 
 	logFactory := logger.Default
 	l := logFactory.NewLogger().Child("warehouse-transformer-benchmark").Child(mode)
@@ -93,9 +94,6 @@ func run(ctx context.Context) error {
 	g.Go(func() error {
 		for i := 0; i < iterations; i++ {
 			l.Infof("Running iteration: %d", i+1)
-			t.Transform(gCtx, clientEvents)
-			t.Transform(gCtx, clientEvents)
-			t.Transform(gCtx, clientEvents)
 			t.Transform(gCtx, clientEvents)
 		}
 
