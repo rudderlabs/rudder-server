@@ -2721,6 +2721,12 @@ func (proc *Handle) transformSrcDest(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
+	ctx, span := proc.tracer.Start(ctx, "pw.transformSrcDest", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+		"partition":  partition,
+		"noOfEvents": strconv.Itoa(len(eventList)),
+	}))
+	defer span.End()
+
 	start := time.Now()
 	defer proc.stats.pipeProcessing(partition).Since(start)
 
