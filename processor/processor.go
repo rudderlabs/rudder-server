@@ -2316,7 +2316,7 @@ type transformationMessage struct {
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
-	_, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
+	ctx, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
 	defer span.End()
 
 	if proc.limiter.transform != nil {
@@ -2411,7 +2411,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
-		in.ctx,
+		ctx,
 		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
