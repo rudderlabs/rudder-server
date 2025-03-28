@@ -142,6 +142,24 @@ func TestBadgerDirCleanup(t *testing.T) {
 	found, err = badger.Get("a")
 	require.NoError(t, err)
 	require.False(t, found, "since directory was cleaned up the previous key should not be found")
+	err = badger.Put("a")
+	require.NoError(t, err)
+	badger.Close()
+
+	// cleanup on startup
+	conf.Set("BadgerDB.cleanupOnStartup", true)
+	badger, err = NewEventSampler(context.Background(),
+		config.SingleValueLoader(time.Hour),
+		config.SingleValueLoader(string(BadgerTypeEventSampler)),
+		config.SingleValueLoader(100),
+		"module",
+		conf,
+		logger.NOP,
+		stats.NOP)
+	require.NoError(t, err)
+	found, err = badger.Get("a")
+	require.NoError(t, err)
+	require.False(t, found, "since directory was cleaned up the previous key should not be found")
 	badger.Close()
 }
 

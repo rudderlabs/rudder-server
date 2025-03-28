@@ -113,6 +113,16 @@ func TestBadgerDirCleanup(t *testing.T) {
 	err = badger.Commit([]string{"a"})
 	require.NoError(t, err)
 	badger.Close()
+
+	// cleanup on startup
+	conf.Set("BadgerDB.cleanupOnStartup", true)
+	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
+	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	require.NoError(t, err)
+	require.True(t, allowed[types.BatchKey{Key: "a"}], "since the directory was cleaned up, the key should not be present")
+	err = badger.Commit([]string{"a"})
+	require.NoError(t, err)
+	badger.Close()
 }
 
 func TestBadgerClose(t *testing.T) {

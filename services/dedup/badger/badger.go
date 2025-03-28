@@ -23,12 +23,13 @@ import (
 )
 
 type BadgerDB struct {
-	logger   loggerForBadger
-	badgerDB *badger.DB
-	window   config.ValueLoader[time.Duration]
-	path     string
-	opts     badger.Options
-	once     sync.Once
+	logger           loggerForBadger
+	badgerDB         *badger.DB
+	window           config.ValueLoader[time.Duration]
+	path             string
+	opts             badger.Options
+	cleanupOnStartup bool
+	once             sync.Once
 
 	wg     sync.WaitGroup
 	bgCtx  context.Context
@@ -58,6 +59,8 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 	badgerOpts := badger.
 		DefaultOptions(path).
 		WithCompression(options.None).
+		WithNumGoroutines(1).
+		WithNumVersionsToKeep(1).
 		WithIndexCacheSize(conf.GetInt64Var(16*bytesize.MB, 1, "BadgerDB.Dedup.indexCacheSize", "BadgerDB.indexCacheSize")).
 		WithValueLogFileSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.Dedup.valueLogFileSize", "BadgerDB.valueLogFileSize")).
 		WithBlockSize(conf.GetIntVar(int(4*bytesize.KB), 1, "BadgerDB.Dedup.blockSize", "BadgerDB.blockSize")).
@@ -77,12 +80,13 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 
 	bgCtx, cancel := context.WithCancel(context.Background())
 	db := &BadgerDB{
-		logger: loggerForBadger{log},
-		path:   path,
-		window: dedupWindow,
-		opts:   badgerOpts,
-		bgCtx:  bgCtx,
-		cancel: cancel,
+		logger:           loggerForBadger{log},
+		path:             path,
+		window:           dedupWindow,
+		opts:             badgerOpts,
+		bgCtx:            bgCtx,
+		cancel:           cancel,
+		cleanupOnStartup: conf.GetBoolVar(false, "BadgerDB.Dedup.cleanupOnStartup", "BadgerDB.cleanupOnStartup"),
 	}
 	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
 	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
@@ -138,6 +142,12 @@ func (d *BadgerDB) Close() {
 func (d *BadgerDB) init() error {
 	var err error
 	d.once.Do(func() {
+		if d.cleanupOnStartup {
+			if err = os.RemoveAll(d.path); err != nil {
+				err = fmt.Errorf("removing badger db directory: %w", err)
+				return
+			}
+		}
 		d.badgerDB, err = badger.Open(d.opts)
 		if err != nil {
 			// corrupted or incompatible db, clean up the directory and retry

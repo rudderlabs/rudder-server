@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"sync"
 	"time"
 
@@ -61,6 +60,8 @@ func NewBadgerEventSampler(
 	opts := badger.DefaultOptions(dbPath).
 		WithLogger(badgerLogger{log}).
 		WithCompression(options.None).
+		WithNumGoroutines(1).
+		WithNumVersionsToKeep(1).
 		WithIndexCacheSize(conf.GetInt64Var(10*bytesize.MB, 1, "BadgerDB.EventSampler.indexCacheSize", "BadgerDB.indexCacheSize")).
 		WithValueLogFileSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.EventSampler.valueLogFileSize", "BadgerDB.valueLogFileSize")).
 		WithBlockSize(conf.GetIntVar(int(4*bytesize.KB), 1, "BadgerDB.EventSampler.blockSize", "BadgerDB.blockSize")).
@@ -78,36 +79,11 @@ func NewBadgerEventSampler(
 		WithBlockCacheSize(conf.GetInt64Var(0, 1, "BadgerDB.EventSampler.blockCacheSize", "BadgerDB.blockCacheSize")).
 		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.EventSampler.detectConflicts", "BadgerDB.detectConflicts"))
 
-	// cleanup the badger db directory if the badger version file value changes
-	{
-		badgerVersionFileValue := fmt.Sprintf("%d-%d-%d", opts.MemTableSize, opts.BlockSize, opts.BaseTableSize)
-		badgerVersionFilePath := path.Join(dbPath, ".rudder-version")
-		createDirWithVersionFile := func() error {
-			if err := os.MkdirAll(opts.Dir, 0o755); err != nil {
-				return fmt.Errorf("creating badger db directory: %w", err)
-			}
-			if err := os.WriteFile(badgerVersionFilePath, []byte(badgerVersionFileValue), 0o644); err != nil {
-				return fmt.Errorf("writing badger version file: %w", err)
-			}
-			return nil
-		}
-		// create the directory if it doesn't exist
-		if _, err := os.Stat(opts.Dir); errors.Is(err, os.ErrNotExist) {
-			if err := createDirWithVersionFile(); err != nil {
-				return nil, err
-			}
-		}
-		// check if the version file exists
-		if previous, _ := os.ReadFile(badgerVersionFilePath); string(previous) != badgerVersionFileValue {
-			if err := os.RemoveAll(opts.Dir); err != nil {
-				return nil, fmt.Errorf("removing badger db directory: %w", err)
-			}
-			if err := createDirWithVersionFile(); err != nil {
-				return nil, err
-			}
+	if conf.GetBoolVar(false, "BadgerDB.EventSampler.cleanupOnStartup", "BadgerDB.cleanupOnStartup") {
+		if err := os.RemoveAll(opts.Dir); err != nil {
+			return nil, fmt.Errorf("removing badger db directory: %w", err)
 		}
 	}
-
 	db, err := badger.Open(opts)
 	if err != nil {
 		// corrupted or incompatible db, clean up the directory and retry
