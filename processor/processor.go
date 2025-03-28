@@ -2411,6 +2411,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
+		in.ctx,
 		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
@@ -2433,6 +2434,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
+	ctx                 context.Context
 	trackedUsersReports []*trackedusers.UsersReport
 	statusList          []*jobsdb.JobStatusT
 	destJobs            []*jobsdb.JobT
@@ -2495,6 +2497,11 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) Store(partition string, in *storeMessage) {
+	_, span := proc.tracer.Start(in.ctx, "store", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+		"partition": partition,
+	}))
+	defer span.End()
+
 	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {
