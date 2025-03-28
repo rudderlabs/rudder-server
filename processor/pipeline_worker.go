@@ -139,8 +139,9 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("transform routine stopped for worker: %s", w.partition)
 
 		for msg := range w.channel.transform {
+			storeMsg := w.handle.transformations(w.partition, msg)
 			startWait := time.Now()
-			w.channel.store <- w.handle.transformations(w.partition, msg)
+			w.channel.store <- storeMsg
 			_, span := w.tracer.Start(msg.ctx, "storeCh.Wait", stats.SpanKindInternal,
 				stats.SpanWithTimestamp(startWait),
 			)
