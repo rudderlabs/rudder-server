@@ -2934,6 +2934,8 @@ func (proc *Handle) transformSrcDest(
 			return false, ""
 		},
 	)
+	_, filteringSpan := proc.tracer.Start(ctx, "pw.filterEvents", stats.SpanKindInternal, stats.SpanWithTimestamp(s))
+	filteringSpan.End()
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
@@ -2997,6 +2999,9 @@ func (proc *Handle) transformSrcDest(
 	// b. transformAt is router and transformer doesn't support router transform
 	if transformAt == "processor" || (transformAt == "router" && !transformAtFromFeaturesFile) {
 		trace.WithRegion(ctx, "Dest Transform", func() {
+			_, destTransformSpan := proc.tracer.Start(ctx, "pw.destTransform", stats.SpanKindInternal)
+			defer destTransformSpan.End()
+
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
@@ -3075,6 +3080,9 @@ func (proc *Handle) transformSrcDest(
 	}
 
 	trace.WithRegion(ctx, "MarshalForDB", func() {
+		_, marshalForDBSpan := proc.tracer.Start(ctx, "pw.marshalForDB", stats.SpanKindInternal)
+		defer marshalForDBSpan.End()
+
 		// Save the JSON in DB. This is what the router uses
 		for i := range response.Events {
 			destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
