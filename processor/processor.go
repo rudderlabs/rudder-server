@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/traces"
+
 	"github.com/google/uuid"
 
 	"github.com/samber/lo"
@@ -730,7 +732,9 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, h, proc.tracer, traces.NewSpanRecorder(proc.tracer))
+		}, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {
@@ -1709,6 +1713,9 @@ type preTransformationMessage struct {
 }
 
 func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
+	_, span := proc.tracer.Start(subJobs.ctx, "processJobsForDest", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -1783,21 +1790,21 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 	var dedupBatchKeys []dedup.BatchKey
 	var dedupBatchKeysIdx int
 	for _, batchEvent := range jobList {
-		var eventParams types.EventParams
-		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
-			return nil, err
-		}
-
 		var span stats.TraceSpan
+		eventParams := batchEvent.EventParameters
 		traceParent := eventParams.TraceParent
 		if traceParent == "" {
 			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-				"workspaceId": batchEvent.WorkspaceId,
-				"sourceId":    eventParams.SourceId,
-			}))
+			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer,
+				stats.SpanWithTimestamp(start),
+				stats.SpanWithTags(stats.Tags{
+					"workspaceId": batchEvent.WorkspaceId,
+					"sourceId":    eventParams.SourceId,
+					"partition":   partition,
+				}),
+			)
 			spans = append(spans, span)
 		}
 
@@ -1867,7 +1874,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 				workspaceID:   batchEvent.WorkspaceId,
 				singularEvent: singularEvent,
 				messageID:     messageId,
-				eventParams:   eventParams,
+				eventParams:   *eventParams,
 				dedupKey:      dedupBatchKey,
 				requestIP:     requestIP,
 				recievedAt:    receivedAt,
@@ -2060,6 +2067,9 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob) (*preTr
 }
 
 func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error) {
+	_, span := proc.tracer.Start(preTrans.subJobs.ctx, "generateTransformationMessage", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority("", proc.getLimiterPriority(preTrans.partition))()
 	}
@@ -2264,6 +2274,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 	// processJob throughput per second.
 	proc.stats.processJobThroughput(preTrans.partition).Count(processJobThroughput)
 	return &transformationMessage{
+		preTrans.subJobs.ctx,
 		preTrans.groupedEvents,
 		trackingPlanEnabledMap,
 		preTrans.eventsByMessageID,
@@ -2284,6 +2295,7 @@ func (proc *Handle) generateTransformationMessage(preTrans *preTransformationMes
 }
 
 type transformationMessage struct {
+	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
@@ -2304,13 +2316,16 @@ type transformationMessage struct {
 }
 
 func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
+	_, span := proc.tracer.Start(in.ctx, "transformations", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.transform != nil {
 		defer proc.limiter.transform.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
 
-	ctx, task := trace.NewTask(context.Background(), "transformations")
+	_, task := trace.NewTask(context.Background(), "transformations")
 	defer task.End()
 
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
@@ -2348,9 +2363,10 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 				"destinationId": event.Metadata.DestinationID,
 				"destType":      event.Metadata.DestinationType,
 			}
-			ctx := stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
-
+			_, span := proc.tracer.Start(
+				stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent),
+				"proc.transformations", stats.SpanKindInternal, stats.SpanWithTags(tags),
+			)
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
 		}
@@ -2361,7 +2377,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.transformSrcDest(
-				ctx,
+				in.ctx,
 				partition,
 
 				srcAndDestKey, eventList,
@@ -2396,6 +2412,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 	proc.stats.transformationsThroughput(partition).Count(transformationsThroughput)
 
 	return &storeMessage{
+		in.ctx,
 		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
@@ -2418,6 +2435,7 @@ func (proc *Handle) transformations(partition string, in *transformationMessage)
 }
 
 type storeMessage struct {
+	ctx                 context.Context
 	trackedUsersReports []*trackedusers.UsersReport
 	statusList          []*jobsdb.JobStatusT
 	destJobs            []*jobsdb.JobT
@@ -2480,6 +2498,11 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) Store(partition string, in *storeMessage) {
+	_, span := proc.tracer.Start(in.ctx, "store", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+		"partition": partition,
+	}))
+	defer span.End()
+
 	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {
@@ -2699,7 +2722,26 @@ func (proc *Handle) transformSrcDest(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) transformSrcDestOutput {
-	defer proc.stats.pipeProcessing(partition).Since(time.Now())
+	ctx, span := proc.tracer.Start(ctx, "pw.transformSrcDest", stats.SpanKindInternal, stats.SpanWithTags(stats.Tags{
+		"partition":  partition,
+		"noOfEvents": strconv.Itoa(len(eventList)),
+	}))
+	defer span.End()
+
+	start := time.Now()
+	defer proc.stats.pipeProcessing(partition).Since(start)
+
+	sr := traces.NewSpanRecorder(proc.tracer)
+	traceables := make([]traces.Traceable, 0, len(eventList))
+	for _, event := range eventList {
+		traceables = append(traceables, &event)
+	}
+	f := sr.RecordUniqueSpans(context.Background(), traceables, "transformSrcDest", stats.SpanKindInternal, start,
+		traces.WithTags(stats.Tags{
+			"partition": partition,
+		}),
+	)
+	defer f()
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
 	sourceName := eventList[0].Metadata.SourceName
@@ -2892,6 +2934,8 @@ func (proc *Handle) transformSrcDest(
 			return false, ""
 		},
 	)
+	_, filteringSpan := proc.tracer.Start(ctx, "pw.filterEvents", stats.SpanKindInternal, stats.SpanWithTimestamp(s))
+	filteringSpan.End()
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
@@ -2955,6 +2999,9 @@ func (proc *Handle) transformSrcDest(
 	// b. transformAt is router and transformer doesn't support router transform
 	if transformAt == "processor" || (transformAt == "router" && !transformAtFromFeaturesFile) {
 		trace.WithRegion(ctx, "Dest Transform", func() {
+			_, destTransformSpan := proc.tracer.Start(ctx, "pw.destTransform", stats.SpanKindInternal)
+			defer destTransformSpan.End()
+
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(eventsToTransform))
 			proc.logger.Debug("Dest Transform input size", len(eventsToTransform))
 			s := time.Now()
@@ -3033,6 +3080,9 @@ func (proc *Handle) transformSrcDest(
 	}
 
 	trace.WithRegion(ctx, "MarshalForDB", func() {
+		_, marshalForDBSpan := proc.tracer.Start(ctx, "pw.marshalForDB", stats.SpanKindInternal)
+		defer marshalForDBSpan.End()
+
 		// Save the JSON in DB. This is what the router uses
 		for i := range response.Events {
 			destEventJSON, err := jsonrs.Marshal(response.Events[i].Output)
@@ -3262,7 +3312,10 @@ func ConvertToFilteredTransformerResponse(
 	return types.Response{Events: responses, FailedEvents: failedEvents}
 }
 
-func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
+func (proc *Handle) getJobs(ctx context.Context, partition string) jobsdb.JobsResult {
+	ctx, span := proc.tracer.Start(ctx, "getJobs", stats.SpanKindInternal)
+	defer span.End()
+
 	if proc.limiter.read != nil {
 		defer proc.limiter.read.BeginWithPriority("", proc.getLimiterPriority(partition))()
 	}
@@ -3322,7 +3375,10 @@ func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
 	return unprocessedList
 }
 
-func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
+func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {
+	ctx, span := proc.tracer.Start(ctx, "markExecuting", stats.SpanKindInternal)
+	defer span.End()
+
 	start := time.Now()
 	defer proc.stats.statMarkExecuting(partition).Since(start)
 
@@ -3357,7 +3413,11 @@ func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	s := time.Now()
 
-	unprocessedList := proc.getJobs(partition)
+	unprocessedList := proc.getJobs(context.TODO(), partition)
+	proc.logger.Infof("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
+	proc.statsFactory.NewTaggedStat("processor_jobs_picked_up_from_gw", stats.CountType, stats.Tags{
+		"partition": partition,
+	}).Count(len(unprocessedList.Jobs))
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
@@ -3398,15 +3458,17 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 // So, to keep track of sub-batch we have `hasMore` variable.
 // each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
+	ctx           context.Context
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 }
 
-func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
+func (proc *Handle) jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
 	chunks := lo.Chunk(jobs, proc.config.subJobSize)
 	return lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
 		return subJob{
+			ctx:           ctx,
 			subJobs:       subJobs,
 			hasMore:       index+1 < len(chunks),
 			rsourcesStats: rsourcesStats,

@@ -44,7 +44,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
+	handle.tracer = stat.NewTracer("user_transformer")
+	tcConf := transformerutils.TransformerClientConfig(conf, "UserTransformer")
+	handle.client = transformerclient.NewClient(tcConf)
 	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
 	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
@@ -55,6 +57,20 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.UserTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
 	handle.config.batchSize = conf.GetReloadableIntVar(200, 1, "Processor.UserTransformer.batchSize", "Processor.userTransformBatchSize")
+
+	handle.log.Infon("User transformer client",
+		logger.NewStringField("type", tcConf.ClientType),
+		logger.NewIntField("maxConnsPerHost", int64(tcConf.TransportConfig.MaxConnsPerHost)),
+		logger.NewIntField("maxIdleConnsPerHost", int64(tcConf.TransportConfig.MaxIdleConnsPerHost)),
+		logger.NewIntField("batchSize", int64(handle.config.batchSize.Load())),
+		logger.NewIntField("maxRetry", int64(handle.config.maxRetry.Load())),
+		logger.NewIntField("maxRetryBackoffInterval", int64(handle.config.maxRetryBackoffInterval.Load().Seconds())),
+		logger.NewIntField("timeoutDuration", int64(handle.config.timeoutDuration.Seconds())),
+		logger.NewIntField("maxConcurrency", int64(handle.config.maxConcurrency)),
+		logger.NewBoolField("failOnUserTransformTimeout", handle.config.failOnUserTransformTimeout.Load()),
+		logger.NewBoolField("failOnError", handle.config.failOnError.Load()),
+		logger.NewStringField("userTransformationURL", handle.config.userTransformationURL),
+	)
 
 	for _, opt := range opts {
 		opt(handle)
@@ -80,9 +96,13 @@ type Client struct {
 	stat             stats.Stats
 	client           transformerclient.Client
 	guardConcurrency chan struct{}
+	tracer           stats.Tracer
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	ctx, span := u.tracer.Start(ctx, "transform", stats.SpanKindClient)
+	defer span.End()
+
 	batchSize := u.config.batchSize.Load()
 	var dehydratedClientEvents []types.TransformerEvent
 	for _, clientEvent := range clientEvents {
@@ -185,7 +205,12 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
-	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	ctx, span := u.tracer.Start(ctx, "sendBatch", stats.SpanKindInternal)
+	defer span.End()
+
+	noOfEvents := len(data)
+	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(noOfEvents)
+
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -197,13 +222,20 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		panic(err)
 	}
 
-	if len(data) == 0 {
+	if noOfEvents == 0 {
 		return nil
 	}
 
 	var (
-		respData   []byte
-		statusCode int
+		respData               []byte
+		statusCode             int
+		eventsPerRequestsGauge = u.stat.NewStat("processor.transformer_events_per_request", stats.GaugeType)
+		requestsSucceededCount = u.stat.NewTaggedStat("processor.transformer_requests_count", stats.CountType, stats.Tags{
+			"success": "true",
+		})
+		requestsFailedCount = u.stat.NewTaggedStat("processor.transformer_requests_count", stats.CountType, stats.Tags{
+			"success": "false",
+		})
 	)
 
 	// endless retry if transformer-control plane connection is down
@@ -223,10 +255,13 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				return fmt.Errorf("control plane not reachable")
 			}
 			u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
+			requestsSucceededCount.Increment()
+			eventsPerRequestsGauge.Gauge(float64(noOfEvents))
 			return nil
 		},
 		endlessBackoff,
 		func(err error, t time.Duration) {
+			requestsFailedCount.Increment()
 			var transformationID, transformationVersionID string
 			if len(data[0].Destination.Transformations) > 0 {
 				transformationID = data[0].Destination.Transformations[0].ID
@@ -289,6 +324,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	// MaxInterval caps the RetryInterval
 	retryStrategy.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
+	reqActualDuration := u.stat.NewStat("processor.transformer_actual_request_seconds", stats.TimerType)
+
 	err := backoff.RetryNotify(
 		func() error {
 			var reqErr error
@@ -305,13 +342,14 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
 
+			start := time.Now()
 			resp, reqErr = u.client.Do(req)
+			reqActualDuration.SendTiming(time.Since(start))
 			defer func() { httputil.CloseResponse(resp) }()
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
-
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 

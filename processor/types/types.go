@@ -43,6 +43,8 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
+func (e *TransformerEvent) TraceParent() string { return e.Metadata.TraceParent }
+
 // GetVersionsOnly removes the connection and credentials from the event
 // along with pruning the destination to only include the transformation versionID
 // before sending it to the transformer thereby reducing the payload size

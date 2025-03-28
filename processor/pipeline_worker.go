@@ -3,18 +3,23 @@ package processor
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/traces"
 )
 
 // newPipelineWorker new worker which manages a single pipeline of a partition
-func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
+func newPipelineWorker(partition string, h workerHandle, t stats.Tracer, spanRecorder traces.SpanRecorder) *pipelineWorker {
 	w := &pipelineWorker{
-		handle:    h,
-		logger:    h.logger().Child(partition),
-		partition: partition,
+		handle:       h,
+		logger:       h.logger().Child(partition),
+		tracer:       t,
+		spanRecorder: spanRecorder,
+		partition:    partition,
 	}
 
 	// Initialize lifecycle context
@@ -41,9 +46,11 @@ func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
 //  3. transform
 //  4. store
 type pipelineWorker struct {
-	partition string
-	handle    workerHandle
-	logger    logger.Logger
+	partition    string
+	handle       workerHandle
+	logger       logger.Logger
+	tracer       stats.Tracer
+	spanRecorder traces.SpanRecorder
 
 	lifecycle struct { // worker lifecycle related fields
 		ctx    context.Context    // worker context
@@ -81,7 +88,12 @@ func (w *pipelineWorker) start() {
 				w.logger.Errorf("Error preprocessing jobs: %v", err)
 				panic(err)
 			}
+			startWait := time.Now()
 			w.channel.preTransform <- val
+			_, span := w.tracer.Start(jobs.ctx, "preprocessCh.Wait", stats.SpanKindInternal,
+				stats.SpanWithTimestamp(startWait),
+			)
+			span.End()
 		}
 	})
 
@@ -93,12 +105,29 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
 
 		for processedMessage := range w.channel.preTransform {
+			start := time.Now()
 			val, err := w.handle.generateTransformationMessage(processedMessage)
 			if err != nil {
 				w.logger.Errorf("Error generating transformation message: %v", err)
 				panic(err)
 			}
+			go w.spanRecorder.RecordJobsSpans(context.Background(),
+				processedMessage.subJobs.subJobs, "pipelineWorker.generateTransformationMessage",
+				stats.SpanKindInternal, start,
+				traces.WithTags(stats.Tags{
+					"partition": w.partition,
+				}))
+			startWait := time.Now()
 			w.channel.transform <- val
+			_, span := w.tracer.Start(processedMessage.subJobs.ctx, "transformCh.Wait", stats.SpanKindInternal,
+				stats.SpanWithTimestamp(startWait),
+			)
+			span.End()
+			go w.spanRecorder.RecordJobsSpans(context.Background(),
+				processedMessage.subJobs.subJobs, "pipelineWorker.preTransform", stats.SpanKindInternal, start,
+				traces.WithTags(stats.Tags{
+					"partition": w.partition,
+				}))
 		}
 	})
 
@@ -110,7 +139,13 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("transform routine stopped for worker: %s", w.partition)
 
 		for msg := range w.channel.transform {
-			w.channel.store <- w.handle.transformations(w.partition, msg)
+			storeMsg := w.handle.transformations(w.partition, msg)
+			startWait := time.Now()
+			w.channel.store <- storeMsg
+			_, span := w.tracer.Start(msg.ctx, "storeCh.Wait", stats.SpanKindInternal,
+				stats.SpanWithTimestamp(startWait),
+			)
+			span.End()
 		}
 	})
 
@@ -127,7 +162,9 @@ func (w *pipelineWorker) start() {
 			// If this is the first subjob and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
+				_, span := w.tracer.Start(subJob.ctx, "storeFunc", stats.SpanKindInternal)
 				w.handle.Store(w.partition, subJob)
+				span.End()
 				continue
 			}
 
@@ -148,7 +185,9 @@ func (w *pipelineWorker) start() {
 
 			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
+				_, span := w.tracer.Start(subJob.ctx, "storeFunc", stats.SpanKindInternal)
 				w.handle.Store(w.partition, mergedJob)
+				span.End()
 				firstSubJob = true
 			}
 		}
