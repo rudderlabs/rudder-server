@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/dgraph-io/badger/v4/options"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -21,12 +23,13 @@ import (
 )
 
 type BadgerDB struct {
-	logger   loggerForBadger
-	badgerDB *badger.DB
-	window   config.ValueLoader[time.Duration]
-	path     string
-	opts     badger.Options
-	once     sync.Once
+	logger           loggerForBadger
+	badgerDB         *badger.DB
+	window           config.ValueLoader[time.Duration]
+	path             string
+	opts             badger.Options
+	cleanupOnStartup bool
+	once             sync.Once
 
 	wg     sync.WaitGroup
 	bgCtx  context.Context
@@ -56,25 +59,34 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 	badgerOpts := badger.
 		DefaultOptions(path).
 		WithCompression(options.None).
-		WithIndexCacheSize(16 << 20). // 16mb
 		WithNumGoroutines(1).
-		WithNumMemtables(conf.GetInt("BadgerDB.numMemtable", 5)).
-		WithValueThreshold(conf.GetInt64("BadgerDB.valueThreshold", 1048576)).
-		WithBlockCacheSize(0).
 		WithNumVersionsToKeep(1).
-		WithNumLevelZeroTables(conf.GetInt("BadgerDB.numLevelZeroTables", 5)).
-		WithNumLevelZeroTablesStall(conf.GetInt("BadgerDB.numLevelZeroTablesStall", 15)).
-		WithSyncWrites(conf.GetBool("BadgerDB.syncWrites", false)).
-		WithDetectConflicts(conf.GetBool("BadgerDB.detectConflicts", false))
+		WithIndexCacheSize(conf.GetInt64Var(16*bytesize.MB, 1, "BadgerDB.Dedup.indexCacheSize", "BadgerDB.indexCacheSize")).
+		WithValueLogFileSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.Dedup.valueLogFileSize", "BadgerDB.valueLogFileSize")).
+		WithBlockSize(conf.GetIntVar(int(4*bytesize.KB), 1, "BadgerDB.Dedup.blockSize", "BadgerDB.blockSize")).
+		WithMemTableSize(conf.GetInt64Var(20*bytesize.MB, 1, "BadgerDB.Dedup.memTableSize", "BadgerDB.memTableSize")).
+		WithNumMemtables(conf.GetIntVar(5, 1, "BadgerDB.Dedup.numMemtable", "BadgerDB.numMemtable")).
+		WithNumLevelZeroTables(conf.GetIntVar(5, 1, "BadgerDB.Dedup.numLevelZeroTables", "BadgerDB.numLevelZeroTables")).
+		WithNumLevelZeroTablesStall(conf.GetIntVar(10, 1, "BadgerDB.Dedup.numLevelZeroTablesStall", "BadgerDB.numLevelZeroTablesStall")).
+		WithBaseTableSize(conf.GetInt64Var(1*bytesize.MB, 1, "BadgerDB.Dedup.baseTableSize", "BadgerDB.baseTableSize")).
+		WithBaseLevelSize(conf.GetInt64Var(5*bytesize.MB, 1, "BadgerDB.Dedup.baseLevelSize", "BadgerDB.baseLevelSize")).
+		WithLevelSizeMultiplier(conf.GetIntVar(10, 1, "BadgerDB.Dedup.levelSizeMultiplier", "BadgerDB.levelSizeMultiplier")).
+		WithMaxLevels(conf.GetIntVar(7, 1, "BadgerDB.Dedup.maxLevels", "BadgerDB.maxLevels")).
+		WithNumCompactors(conf.GetIntVar(4, 1, "BadgerDB.Dedup.numCompactors", "BadgerDB.numCompactors")).
+		WithValueThreshold(conf.GetInt64Var(10*bytesize.B, 1, "BadgerDB.Dedup.valueThreshold", "BadgerDB.valueThreshold")).
+		WithSyncWrites(conf.GetBoolVar(false, "BadgerDB.Dedup.syncWrites", "BadgerDB.syncWrites")).
+		WithBlockCacheSize(conf.GetInt64Var(0, 1, "BadgerDB.Dedup.blockCacheSize", "BadgerDB.blockCacheSize")).
+		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.Dedup.detectConflicts", "BadgerDB.detectConflicts"))
 
 	bgCtx, cancel := context.WithCancel(context.Background())
 	db := &BadgerDB{
-		logger: loggerForBadger{log},
-		path:   path,
-		window: dedupWindow,
-		opts:   badgerOpts,
-		bgCtx:  bgCtx,
-		cancel: cancel,
+		logger:           loggerForBadger{log},
+		path:             path,
+		window:           dedupWindow,
+		opts:             badgerOpts,
+		bgCtx:            bgCtx,
+		cancel:           cancel,
+		cleanupOnStartup: conf.GetBoolVar(false, "BadgerDB.Dedup.cleanupOnStartup", "BadgerDB.cleanupOnStartup"),
 	}
 	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
 	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "badger"})
@@ -129,11 +141,28 @@ func (d *BadgerDB) Close() {
 
 func (d *BadgerDB) init() error {
 	var err error
-
 	d.once.Do(func() {
+		if d.cleanupOnStartup {
+			if err = os.RemoveAll(d.path); err != nil {
+				err = fmt.Errorf("removing badger db directory: %w", err)
+				return
+			}
+		}
 		d.badgerDB, err = badger.Open(d.opts)
 		if err != nil {
-			return
+			// corrupted or incompatible db, clean up the directory and retry
+			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
+				logger.NewErrorField(err),
+			)
+			if err = os.RemoveAll(d.opts.Dir); err != nil {
+				err = fmt.Errorf("removing badger db directory: %w", err)
+				return
+			}
+			d.badgerDB, err = badger.Open(d.opts)
+			if err != nil {
+				err = fmt.Errorf("opening badger db: %w", err)
+				return
+			}
 		}
 		d.wg.Add(1)
 		rruntime.Go(func() {
