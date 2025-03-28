@@ -12,6 +12,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -2512,6 +2514,70 @@ func TestEvents(t *testing.T) {
 						require.NotEmpty(t, misc.MapLookup(pResponse.Events[i].Output, strings.Split(field, ".")...))
 					}
 					tc.verifyResponse(t, wResponse.Events[i])
+				}
+			})
+		}
+	})
+
+	t.Run("Tracking Plan", func(t *testing.T) {
+		message := map[string]any{
+			"context": map[string]any{
+				"trackingPlanId":      "tp_2jap9a9T5SOjEx45gsy76jiTu5q",
+				"trackingPlanVersion": 8,
+				"violationErrors": []types.ValidationError{
+					{
+						Type:    "Required-Missing",
+						Message: "must have required property 'name'",
+						Meta: map[string]string{
+							"instancePath": "/traits",
+							"schemaPath":   "#/properties/traits/required",
+						},
+						Property: "name",
+					},
+					{
+						Type:    "Datatype-Mismatch",
+						Message: "must be string",
+						Meta: map[string]string{
+							"instancePath": "/traits/email",
+							"schemaPath":   "#/properties/traits/properties/email/type",
+						},
+						Property: "",
+					},
+				},
+			},
+			"messageId":         "messageId",
+			"originalTimestamp": "2021-09-01T00:00:00.000Z",
+			"receivedAt":        "2021-09-01T00:00:00.000Z",
+			"sentAt":            "2021-09-01T00:00:00.000Z",
+			"timestamp":         "2021-09-01T00:00:00.000Z",
+			"traits": map[string]any{
+				"email": float64(12),
+			},
+			"type": "track",
+		}
+		for destination := range whutils.WarehouseDestinationMap {
+			t.Run(destination, func(t *testing.T) {
+				c := setupConfig(transformerResource, map[string]any{})
+
+				processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+				warehouseTransformer := New(c, logger.NOP, stats.NOP)
+
+				ctx := context.Background()
+				batchSize := 100
+
+				events := []types.TransformerEvent{{
+					Message:     message,
+					Metadata:    getMetadata("track", destination),
+					Destination: getDestination(destination, map[string]any{}),
+				}}
+				pResponse := processorTransformer.Transform(ctx, events, batchSize)
+				wResponse := warehouseTransformer.Transform(ctx, events, batchSize)
+
+				require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+				require.Nil(t, pResponse.FailedEvents)
+				require.Nil(t, wResponse.FailedEvents)
+				for i := range pResponse.Events {
+					require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
 				}
 			})
 		}
