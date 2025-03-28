@@ -217,7 +217,7 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobs(partition)
+	jobs := m.getJobsStage(partition)
 	if len(jobs.Jobs) > 0 {
 		_ = m.markExecuting(partition, jobs.Jobs)
 	}
@@ -225,16 +225,16 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
-		preTransMessage, err := m.processJobsForDest(partition, subJob)
+		preTransMessage, err := m.preprocessStage(partition, subJob)
 		if err != nil {
 			return false
 		}
-		dest, err = m.generateTransformationMessage(preTransMessage)
+		dest, err = m.pretransformStage(partition, preTransMessage)
 		if err != nil {
 			return false
 		}
-		m.Store(partition, m.destinationtransformations(partition,
-			m.usertransformations(partition, dest),
+		m.storeStage(partition, m.destinationTransformStage(partition,
+			m.userTransformStage(partition, dest),
 		))
 	}
 	return len(jobs.Jobs) > 0
@@ -251,7 +251,7 @@ func (*mockWorkerHandle) stats() *processorStats {
 	}
 }
 
-func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
+func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
 		defer m.limiters.query.Begin("")()
 	}
@@ -316,7 +316,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
+func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin("")()
 	}
@@ -334,7 +334,7 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 	}, nil
 }
 
-func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMessage) (*transformationMessage, error) {
+func (m *mockWorkerHandle) pretransformStage(partition string, in *preTransformationMessage) (*transformationMessage, error) {
 	return &transformationMessage{
 		totalEvents: in.totalEvents,
 		hasMore:     in.subJobs.hasMore,
@@ -344,7 +344,7 @@ func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMe
 	}, nil
 }
 
-func (m *mockWorkerHandle) usertransformations(partition string, in *transformationMessage) *userTransformData {
+func (m *mockWorkerHandle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
 	if m.limiters.usertransform != nil {
 		defer m.limiters.usertransform.Begin("")()
 	}
@@ -362,7 +362,7 @@ func (m *mockWorkerHandle) usertransformations(partition string, in *transformat
 	}
 }
 
-func (m *mockWorkerHandle) destinationtransformations(partition string, in *userTransformData) *storeMessage {
+func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userTransformData) *storeMessage {
 	if m.limiters.destinationtransform != nil {
 		defer m.limiters.destinationtransform.Begin("")()
 	}
@@ -380,7 +380,7 @@ func (m *mockWorkerHandle) destinationtransformations(partition string, in *user
 	}
 }
 
-func (m *mockWorkerHandle) Store(partition string, in *storeMessage) {
+func (m *mockWorkerHandle) storeStage(partition string, in *storeMessage) {
 	if m.limiters.store != nil {
 		defer m.limiters.store.Begin("")()
 	}

@@ -78,7 +78,7 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 
 		for jobs := range w.channel.preprocess {
-			val, err := w.handle.processJobsForDest(w.partition, jobs)
+			val, err := w.handle.preprocessStage(w.partition, jobs)
 			if err != nil {
 				w.logger.Errorf("Error preprocessing jobs: %v", err)
 				panic(err)
@@ -95,7 +95,7 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
 
 		for processedMessage := range w.channel.preTransform {
-			val, err := w.handle.generateTransformationMessage(processedMessage)
+			val, err := w.handle.pretransformStage(w.partition, processedMessage)
 			if err != nil {
 				w.logger.Errorf("Error generating transformation message: %v", err)
 				panic(err)
@@ -112,7 +112,7 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("usertransform routine stopped for worker: %s", w.partition)
 
 		for msg := range w.channel.usertransform {
-			w.channel.destinationtransform <- w.handle.usertransformations(w.partition, msg)
+			w.channel.destinationtransform <- w.handle.userTransformStage(w.partition, msg)
 		}
 	})
 
@@ -124,7 +124,7 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("destinationtransform routine stopped for worker: %s", w.partition)
 
 		for msg := range w.channel.destinationtransform {
-			w.channel.store <- w.handle.destinationtransformations(w.partition, msg)
+			w.channel.store <- w.handle.destinationTransformStage(w.partition, msg)
 		}
 	})
 
@@ -141,7 +141,7 @@ func (w *pipelineWorker) start() {
 			// If this is the first subjob and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
-				w.handle.Store(w.partition, subJob)
+				w.handle.storeStage(w.partition, subJob)
 				continue
 			}
 
@@ -162,7 +162,7 @@ func (w *pipelineWorker) start() {
 
 			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
-				w.handle.Store(w.partition, mergedJob)
+				w.handle.storeStage(w.partition, mergedJob)
 				firstSubJob = true
 			}
 		}
