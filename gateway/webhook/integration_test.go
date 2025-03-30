@@ -143,6 +143,14 @@ func TestIntegrationWebhook(t *testing.T) {
 			).
 			Build()
 
+		// If source config exists in test case, unmarshal and set it
+		if len(tc.Input.Source.Config) > 0 {
+			var configOptions map[string]interface{}
+			err = json.Unmarshal([]byte(tc.Input.Source.Config), &configOptions)
+			require.NoError(t, err)
+			sConfig.Config = configOptions
+		}
+
 		bc := backendconfigtest.NewConfigBuilder().WithSource(
 			sConfig,
 		).Build()
@@ -205,24 +213,21 @@ func TestIntegrationWebhook(t *testing.T) {
 			t.Logf("sourceID: %s", sourceID)
 			t.Logf("workspaceID: %s", workspaceID)
 
-			query, err := url.ParseQuery(tc.Input.Request.RawQuery)
-			// parse query parameters from input request
-			qParams := gjson.GetBytes(tc.Input.Request.Body, "query_parameters").Map()
-			if len(qParams) != 0 {
-				for k, v := range qParams {
-					vStr := v.Array()[0].String()
-					query.Set(k, vStr)
-				}
-			}
-			require.NoError(t, err)
+			query := url.Values{}
 			query.Set("writeKey", writeKey)
+			for k, v := range tc.Input.Request.RawQuery {
+				if k == "writeKey" {
+					continue
+				}
+				query.Set(k, v[0])
+			}
 
 			t.Log("Request URL:", fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()))
 			method := tc.Input.Request.Method
 			if method == "" {
 				method = http.MethodPost
 			}
-			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer(tc.Input.Request.Body))
+			req, err := http.NewRequest(method, fmt.Sprintf("%s/v1/webhook?%s", gwURL, query.Encode()), bytes.NewBuffer([]byte(tc.Input.Request.Body)))
 			require.NoError(t, err)
 
 			req.Header.Set("X-Forwarded-For", testSetup.Context.RequestIP)
@@ -290,6 +295,23 @@ func TestIntegrationWebhook(t *testing.T) {
 					assert.NoError(t, err)
 				}
 
+				if gjson.GetBytes(p, "receivedAt").String() != "" {
+					p, err = sjson.SetBytes(p, "receivedAt", "2006-01-02T15:04:05.000Z07:00")
+					require.NoError(t, err)
+				}
+
+				batch.Batch[0], err = sjson.SetBytes(batch.Batch[0], "receivedAt", "2006-01-02T15:04:05.000Z07:00")
+
+				batch.Batch[0], err = sjson.DeleteBytes(batch.Batch[0], "context.url")
+				require.NoError(t, err)
+				p, err = sjson.DeleteBytes(p, "context.url")
+				require.NoError(t, err)
+
+				batch.Batch[0], err = sjson.DeleteBytes(batch.Batch[0], "context.query_parameters.writeKey")
+				require.NoError(t, err)
+				p, err = sjson.DeleteBytes(p, "context.query_parameters.writeKey")
+				require.NoError(t, err)
+
 				assert.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
 
@@ -333,6 +355,20 @@ func TestIntegrationWebhook(t *testing.T) {
 				})
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
+				require.NoError(t, err)
+
+				payload := gjson.GetBytes(r.Jobs[i].EventPayload, "request.body").String()
+				fmt.Println("payload", payload)
+				if !gjson.ValidBytes([]byte(payload)) {
+					marshaledPayload, err := jsonrs.Marshal(payload)
+					require.NoError(t, err)
+					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "request.body", marshaledPayload)
+					require.NoError(t, err)
+				}
+
+				r.Jobs[i].EventPayload, err = sjson.DeleteBytes(r.Jobs[i].EventPayload, "request.headers.Content-Length")
+				require.NoError(t, err)
+				errPayload, err = sjson.DeleteBytes(errPayload, "request.headers.Content-Length")
 				require.NoError(t, err)
 
 				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
