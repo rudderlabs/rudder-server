@@ -21,7 +21,7 @@ type workerHandle interface {
 	tracer() stats.Tracer
 
 	getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult
-	markExecuting(partition string, jobs []*jobsdb.JobT) error
+	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error)
 	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -25,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -3276,6 +3274,8 @@ func ConvertToFilteredTransformerResponse(
 }
 
 func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult {
+	s := time.Now()
+
 	_, span := proc.tracer.Start(ctx, "proc.getJobsStage", stats.SpanKindInternal,
 		stats.SpanWithTags(stats.Tags{
 			"partition": partition,
@@ -3286,8 +3286,6 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 	if proc.limiter.read != nil {
 		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
-
-	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
 
@@ -3335,7 +3333,14 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 	return unprocessedList
 }
 
-func (proc *Handle) markExecuting(_ string, jobs []*jobsdb.JobT) error {
+func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {
+	_, span := proc.tracer.Start(ctx, "proc.markExecuting", stats.SpanKindInternal,
+		stats.SpanWithTags(stats.Tags{
+			"partition": partition,
+		}),
+	)
+	defer span.End()
+
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
 		statusList[i] = &jobsdb.JobStatusT{

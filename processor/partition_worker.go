@@ -69,7 +69,7 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	// Mark jobs as executing
-	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
+	if err := w.handle.markExecuting(ctx, w.partition, jobs.Jobs); err != nil {
 		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
 	}
