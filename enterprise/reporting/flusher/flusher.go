@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -31,8 +32,10 @@ type Flusher struct {
 	db                 *sql.DB
 	maxOpenConnections int
 
-	client     *http.Client
-	aggregator aggregator.Aggregator
+	httpClient      *http.Client
+	useCommonClient *config.Reloadable[bool]
+	client          *client.Client
+	aggregator      aggregator.Aggregator
 
 	instanceId string
 	table      string
@@ -87,7 +90,8 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
 
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	httpClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.flusher.useCommonClient")
 
 	f := Flusher{
 		db:                         db,
@@ -112,7 +116,9 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		maxOpenConnections:                  maxOpenConns,
 		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
-		client:                              client,
+		httpClient:                          httpClient,
+		useCommonClient:                     useCommonClient,
+		client:                              client.NewClient(reportingURL, client.PathAggregates, conf, log, stats),
 		module:                              module,
 	}
 
@@ -386,7 +392,7 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		start := time.Now()
-		resp, err := f.client.Do(req)
+		resp, err := f.httpClient.Do(req)
 		if err != nil {
 			return err
 		}

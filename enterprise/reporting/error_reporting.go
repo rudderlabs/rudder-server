@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -93,6 +94,9 @@ type ErrorDetailReporter struct {
 
 	stats  stats.Stats
 	config *config.Config
+
+	useCommonClient *config.Reloadable[bool]
+	client          *client.Client
 }
 
 func NewErrorDetailReporter(
@@ -104,6 +108,7 @@ func NewErrorDetailReporter(
 	tr := &http.Transport{}
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
+	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.useCommonClient")
 
 	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	mainLoopSleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
@@ -156,6 +161,9 @@ func NewErrorDetailReporter(
 		maxOpenConnections:   maxOpenConnections,
 		stats:                stats,
 		config:               conf,
+
+		useCommonClient: useCommonClient,
+		client:          client.NewClient(reportingServiceURL, client.PathRecordErrors, conf, log, stats),
 	}
 }
 
@@ -744,6 +752,10 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 }
 
 func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
+	if edr.useCommonClient.Load() {
+		return edr.client.Send(ctx, metric)
+	}
+
 	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		return fmt.Errorf("marshal failure: %w", err)
