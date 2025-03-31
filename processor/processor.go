@@ -639,7 +639,9 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.logger.Info("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
-		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, h) }, proc.logger)
+		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"))
+		}, proc.logger)
 		defer pool.Shutdown()
 		for {
 			select {

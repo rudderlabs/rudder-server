@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,22 +21,24 @@ type partitionWorker struct {
 	pipelines []*pipelineWorker
 	logger    logger.Logger
 	stats     *processorStats
+	tracer    stats.Tracer
 	handle    workerHandle
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *partitionWorker {
 	w := &partitionWorker{
 		partition: partition,
 		logger:    h.logger().Child(partition),
 		stats:     h.stats(),
+		tracer:    t,
 		handle:    h,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newPipelineWorker(partition, h)
+		w.pipelines[i] = newPipelineWorker(partition, h, t)
 	}
 
 	return w

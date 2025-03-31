@@ -56,7 +56,9 @@ func TestWorkerPool(t *testing.T) {
 		defer poolCancel()
 
 		// create a worker pool
-		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) }, logger.NOP)
+		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
 		var wg sync.WaitGroup
@@ -133,7 +135,9 @@ func TestWorkerPoolIdle(t *testing.T) {
 
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
-		func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) },
+		func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
 		workerpool.WithIdleTimeout(200*time.Millisecond))

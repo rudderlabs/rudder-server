@@ -5,15 +5,17 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 // newPipelineWorker new worker which manages a single pipeline of a partition
-func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
+func newPipelineWorker(partition string, h workerHandle, t stats.Tracer) *pipelineWorker {
 	w := &pipelineWorker{
 		handle:    h,
 		logger:    h.logger().Child(partition),
+		tracer:    t,
 		partition: partition,
 	}
 
@@ -45,6 +47,7 @@ type pipelineWorker struct {
 	partition string
 	handle    workerHandle
 	logger    logger.Logger
+	tracer    stats.Tracer
 
 	lifecycle struct { // worker lifecycle related fields
 		ctx    context.Context    // worker context
