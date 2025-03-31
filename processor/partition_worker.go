@@ -80,6 +80,49 @@ func (w *partitionWorker) Work() bool {
 	})
 
 	// Create an errGroup to handle cancellation and manage goroutines
+	w.trace(ctx, "preProcess", func(ctx context.Context) {
+		err := w.sendToPreProcess(ctx, jobsByPipeline)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			w.logger.Error("Error while processing jobs", "error", err)
+			panic(err)
+		}
+	})
+
+	// Handle rate limiting if needed
+	if !jobs.LimitsReached {
+		readLoopSleep := w.handle.config().readLoopSleep
+		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
+			// Sleep for the remaining time, respecting context cancellation
+			w.trace(ctx, "sleep", func(_ context.Context) {
+				if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
+					panic(err)
+				}
+			})
+		}
+	}
+
+	return true
+}
+
+// SleepDurations returns the min and max sleep durations for the worker
+func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
+	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
+}
+
+// Stop stops the worker and waits until all its goroutines have stopped
+func (w *partitionWorker) Stop() {
+	var wg sync.WaitGroup
+	for _, pipeline := range w.pipelines {
+		wg.Add(1)
+		go func(p *pipelineWorker) {
+			defer wg.Done()
+			p.Stop()
+		}(pipeline)
+	}
+	wg.Wait() // Wait for all stop operations to complete
+}
+
+func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline map[int][]*jobsdb.JobT) error {
 	g, gCtx := errgroup.WithContext(context.Background())
 
 	// Send jobs to their respective partitions for processing
@@ -105,38 +148,15 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	// Wait for all goroutines to complete or for context to be cancelled
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		w.logger.Error("Error while processing jobs", "error", err)
-		panic(err)
-	}
-
-	// Handle rate limiting if needed
-	if !jobs.LimitsReached {
-		readLoopSleep := w.handle.config().readLoopSleep
-		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
-			// Sleep for the remaining time, respecting context cancellation
-			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
-				panic(err)
-			}
-		}
-	}
-	return true
+	return g.Wait()
 }
 
-// SleepDurations returns the min and max sleep durations for the worker
-func (w *partitionWorker) SleepDurations() (min, max time.Duration) {
-	return w.handle.config().readLoopSleep.Load(), w.handle.config().maxLoopSleep.Load()
-}
-
-// Stop stops the worker and waits until all its goroutines have stopped
-func (w *partitionWorker) Stop() {
-	var wg sync.WaitGroup
-	for _, pipeline := range w.pipelines {
-		wg.Add(1)
-		go func(p *pipelineWorker) {
-			defer wg.Done()
-			p.Stop()
-		}(pipeline)
-	}
-	wg.Wait() // Wait for all stop operations to complete
+func (w *partitionWorker) trace(ctx context.Context, name string, f func(ctx context.Context)) {
+	_, span := w.tracer.Start(ctx, "partitionWorker.Work."+name, stats.SpanKindInternal,
+		stats.SpanWithTags(stats.Tags{
+			"partition": w.partition,
+		}),
+	)
+	f(ctx)
+	span.End()
 }

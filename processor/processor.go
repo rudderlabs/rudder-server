@@ -3415,8 +3415,8 @@ type subJob struct {
 }
 
 func (proc *Handle) jobSplitter(
-	ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector,
-) []subJob { //nolint:unparam
+	ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector, //nolint:unparam
+) []subJob {
 	chunks := lo.Chunk(jobs, proc.config.subJobSize)
 	return lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
 		return subJob{
