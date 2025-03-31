@@ -3408,15 +3408,19 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 // So, to keep track of sub-batch we have `hasMore` variable.
 // each sub-batch has `hasMore`. If, a sub-batch is the last one from the batch it's marked as `false`, else `true`.
 type subJob struct {
+	ctx           context.Context
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 }
 
-func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
+func (proc *Handle) jobSplitter(
+	ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector,
+) []subJob { //nolint:unparam
 	chunks := lo.Chunk(jobs, proc.config.subJobSize)
 	return lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
 		return subJob{
+			ctx:           ctx,
 			subJobs:       subJobs,
 			hasMore:       index+1 < len(chunks),
 			rsourcesStats: rsourcesStats,

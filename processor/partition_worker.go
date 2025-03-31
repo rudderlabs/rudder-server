@@ -91,7 +91,7 @@ func (w *partitionWorker) Work() bool {
 		rsourcesStats.BeginProcessing(jobs)
 
 		g.Go(func() error {
-			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
+			subJobs := w.handle.jobSplitter(ctx, jobs, rsourcesStats)
 			for _, subJob := range subJobs {
 				select {
 				case <-gCtx.Done():

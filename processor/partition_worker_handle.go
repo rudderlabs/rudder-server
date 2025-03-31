@@ -22,7 +22,7 @@ type workerHandle interface {
 
 	getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult
 	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
-	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
+	jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error)
 	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)
 	userTransformStage(partition string, in *transformationMessage) *userTransformData
