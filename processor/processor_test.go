@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -38,7 +35,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
-	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
+	mockFeatures "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -55,6 +52,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type mockObserver struct {
@@ -5446,8 +5444,8 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(len(proc.jobSplitter(jobs, nil))).To(Equal(len(expectedSubJobs)))
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(len(proc.jobSplitter(context.Background(), jobs, nil))).To(Equal(len(expectedSubJobs)))
+			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
 			proc := NewHandle(config.Default, nil)
@@ -5494,7 +5492,7 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
 			proc := NewHandle(config.Default, nil)
@@ -5531,7 +5529,7 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
 		})
 	})
 })

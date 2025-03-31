@@ -221,12 +221,13 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobsStage(context.Background(), partition)
+	ctx := context.Background()
+	jobs := m.getJobsStage(ctx, partition)
 	if len(jobs.Jobs) > 0 {
-		_ = m.markExecuting(context.Background(), partition, jobs.Jobs)
+		_ = m.markExecuting(ctx, partition, jobs.Jobs)
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
-	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
+	for _, subJob := range m.jobSplitter(ctx, jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
 		preTransMessage, err := m.preprocessStage(partition, subJob)
@@ -284,7 +285,7 @@ func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jo
 	return nil
 }
 
-func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
+func (m *mockWorkerHandle) jobSplitter(_ context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
 	if !m.shouldProcessMultipleSubJobs {
 		return []subJob{
 			{
