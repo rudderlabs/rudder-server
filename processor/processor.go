@@ -1617,14 +1617,20 @@ type preTransformationMessage struct {
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
+	start := time.Now()
+
+	spanTags := stats.Tags{"partition": partition}
+	ctx, processJobsSpan := proc.tracer.Start(subJobs.ctx, "proc.preprocessStage", stats.SpanKindInternal,
+		stats.SpanWithTags(spanTags),
+	)
+	defer processJobsSpan.End()
+
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 		defer proc.stats.statPreprocessStageCount(partition).Count(len(subJobs.subJobs))
 	}
 
 	jobList := subJobs.subJobs
-	start := time.Now()
-
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
@@ -1750,8 +1756,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			continue
 		}
 
-		for _, enricher := range proc.enrichers {
-			if err := enricher.Enrich(source, &gatewayBatchEvent); err != nil {
+		for _, e := range proc.enrichers {
+			if err := e.Enrich(source, &gatewayBatchEvent); err != nil {
 				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
 			}
 		}
@@ -1794,7 +1800,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	var allowedBatchKeys map[dedup.BatchKey]bool
 	var err error
 	if proc.config.enableDedup {
-		allowedBatchKeys, err = proc.dedup.Allowed(dedupBatchKeys...)
+		proc.trace(ctx, "processJobsForDest.dedupAllowed", spanTags, func(ctx context.Context) {
+			allowedBatchKeys, err = proc.dedup.Allowed(dedupBatchKeys...)
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -3558,4 +3566,14 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (proc *Handle) trace(ctx context.Context, name string, tags stats.Tags, f func(ctx context.Context)) {
+	var spanOptions []stats.SpanOption
+	if len(tags) > 0 {
+		spanOptions = append(spanOptions, stats.SpanWithTags(tags))
+	}
+	_, span := proc.tracer.Start(ctx, "proc."+name, stats.SpanKindInternal, spanOptions...)
+	f(ctx)
+	span.End()
 }
