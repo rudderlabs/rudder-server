@@ -221,9 +221,9 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobsStage(partition)
+	jobs := m.getJobsStage(context.Background(), partition)
 	if len(jobs.Jobs) > 0 {
-		_ = m.markExecuting(partition, jobs.Jobs)
+		_ = m.markExecuting(context.Background(), partition, jobs.Jobs)
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
@@ -248,7 +248,7 @@ func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{}
 }
 
-func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
+func (m *mockWorkerHandle) getJobsStage(_ context.Context, partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
 		defer m.limiters.query.Begin("")()
 	}
@@ -273,7 +273,7 @@ func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
 	}
 }
 
-func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
+func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jobs []*jobsdb.JobT) error {
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
 	s := m.partitionStats[partition]
