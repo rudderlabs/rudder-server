@@ -53,8 +53,15 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	start := time.Now()
+	ctx, span := w.tracer.Start(context.Background(), "partitionWorker.Work", stats.SpanKindInternal,
+		stats.SpanWithTags(stats.Tags{
+			"partition": w.partition,
+		}),
+	)
+	defer span.End()
+
 	// Get jobs for this partition
-	jobs := w.handle.getJobsStage(w.partition)
+	jobs := w.handle.getJobsStage(ctx, w.partition)
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {

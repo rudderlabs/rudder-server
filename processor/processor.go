@@ -3275,7 +3275,14 @@ func ConvertToFilteredTransformerResponse(
 	return types.Response{Events: responses, FailedEvents: failedEvents}
 }
 
-func (proc *Handle) getJobsStage(partition string) jobsdb.JobsResult {
+func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult {
+	_, span := proc.tracer.Start(ctx, "proc.getJobsStage", stats.SpanKindInternal,
+		stats.SpanWithTags(stats.Tags{
+			"partition": partition,
+		}),
+	)
+	defer span.End()
+
 	if proc.limiter.read != nil {
 		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
@@ -3358,7 +3365,7 @@ func (proc *Handle) markExecuting(_ string, jobs []*jobsdb.JobT) error {
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
-	unprocessedList := proc.getJobsStage(partition)
+	unprocessedList := proc.getJobsStage(context.TODO(), partition) // context is used for tracing
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
