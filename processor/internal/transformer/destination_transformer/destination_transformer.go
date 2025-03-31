@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -39,6 +41,19 @@ func WithClient(client transformerclient.Client) Opt {
 	}
 }
 
+func WithFeatureService(featureService transformerfs.FeaturesService) Opt {
+	return func(s *Client) {
+		if featureService == nil {
+			return
+		}
+		go func() {
+			// Wait for the feature service to be ready
+			<-featureService.Wait()
+			s.config.compactionSupported = featureService.SupportDestTransformCompactedPayloadV1()
+		}()
+	}
+}
+
 func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
 	handle := &Client{}
 	handle.conf = conf
@@ -53,6 +68,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
+	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -70,6 +86,8 @@ type Client struct {
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
 		batchSize               config.ValueLoader[int]
+		compactionEnabled       config.ValueLoader[bool]
+		compactionSupported     bool
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
@@ -169,19 +187,40 @@ func (d *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 func (d *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
 	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	if len(data) == 0 {
+		return nil, nil
+	}
 	// Call remote transformation
 	var (
 		rawJSON []byte
 		err     error
 	)
 
-	rawJSON, err = jsonrs.Marshal(data)
-	if err != nil {
-		panic(err)
-	}
-
-	if len(data) == 0 {
-		return nil, nil
+	if d.config.compactionSupported && d.config.compactionEnabled.Load() {
+		ctr := types.CompactedTransformRequest{
+			Input:        make([]types.CompactedTransformerEvent, 0, len(data)),
+			Connections:  make(map[string]backendconfig.Connection),
+			Destinations: make(map[string]backendconfig.DestinationT),
+		}
+		for i := range data {
+			ctr.Input = append(ctr.Input, types.CompactedTransformerEvent{
+				Message:     data[i].Message,
+				Metadata:    data[i].Metadata,
+				Libraries:   data[i].Libraries,
+				Credentials: data[i].Credentials,
+			})
+			ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
+			ctr.Connections[data[i].Metadata.SourceID+":"+data[i].Metadata.DestinationID] = data[i].Connection
+		}
+		rawJSON, err = jsonrs.Marshal(&ctr)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		rawJSON, err = jsonrs.Marshal(data)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	var (
@@ -251,6 +290,9 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
+			if d.config.compactionSupported && d.config.compactionEnabled.Load() {
+				req.Header.Set("X-Content-Format", "json+compactedv1")
+			}
 
 			resp, reqErr = d.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()

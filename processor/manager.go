@@ -136,6 +136,7 @@ func New(
 				config.Default,
 				logger.NewLogger().Child("processor"),
 				stats.Default,
+				transformerFeaturesService,
 			),
 		),
 		mainCtx:                    ctx,

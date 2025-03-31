@@ -151,7 +151,7 @@ func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, even
 	s.pipelinesPerPartition = pipelinesPerPartition
 
 	var idx int
-	for u := 0; u < workspaces; u++ {
+	for u := range workspaces {
 		workspaceID := "workspace-" + strconv.Itoa(u)
 		s.workspaces = append(s.workspaces, workspaceID)
 		for i := 0; i < eventsPerWorkspace; i++ {
@@ -200,7 +200,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		return err
 	})
 	containersGroup.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithDockerImageTag("feat.dtransformCompaction"), transformertest.WithRepository("hub.dev-rudder.rudderlabs.com/dockerhub-proxy/rudderstack/develop-rudder-transformer"))
 		return err
 	})
 	require.NoError(t, containersGroup.Wait())
@@ -240,6 +240,8 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("Router.toAbortDestinationIDs", destinationID)
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
+	config.Set("Transformer.compactionEnabled", true)
+	config.Set("Processor.enableTransformationV2", true)
 
 	config.Set("Processor.pipelinesPerPartition", spec.pipelinesPerPartition)
 	config.Set("Processor.isolationMode", string(spec.isolationMode))

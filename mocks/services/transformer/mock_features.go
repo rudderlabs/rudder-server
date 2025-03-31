@@ -81,6 +81,20 @@ func (mr *MockFeaturesServiceMockRecorder) SourceTransformerVersion() *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SourceTransformerVersion", reflect.TypeOf((*MockFeaturesService)(nil).SourceTransformerVersion))
 }
 
+// SupportDestTransformCompactedPayloadV1 mocks base method.
+func (m *MockFeaturesService) SupportDestTransformCompactedPayloadV1() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SupportDestTransformCompactedPayloadV1")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// SupportDestTransformCompactedPayloadV1 indicates an expected call of SupportDestTransformCompactedPayloadV1.
+func (mr *MockFeaturesServiceMockRecorder) SupportDestTransformCompactedPayloadV1() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SupportDestTransformCompactedPayloadV1", reflect.TypeOf((*MockFeaturesService)(nil).SupportDestTransformCompactedPayloadV1))
+}
+
 // TransformerProxyVersion mocks base method.
 func (m *MockFeaturesService) TransformerProxyVersion() string {
 	m.ctrl.T.Helper()
