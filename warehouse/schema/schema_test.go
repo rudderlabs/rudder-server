@@ -46,11 +46,11 @@ func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int6
 	return 0, nil
 }
 
-type mockFetchSchemaRepoV2 struct {
+type mockFetchSchemaRepo struct {
 	count int
 }
 
-func (m *mockFetchSchemaRepoV2) FetchSchema(ctx context.Context) (model.Schema, error) {
+func (m *mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, error) {
 	m.count++
 	schema := model.Schema{
 		"table1": {
@@ -84,19 +84,19 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 
 var ttl = 10 * time.Minute
 
-func newSchemaV2(warehouse model.Warehouse, schemaRepo schemaRepo) *schemaV2 {
-	return &schemaV2{
+func newSchema(warehouse model.Warehouse, schemaRepo schemaRepo) *schema {
+	return &schema{
 		warehouse:                        warehouse,
 		log:                              logger.NOP,
 		ttlInMinutes:                     ttl,
 		schemaRepo:                       schemaRepo,
-		fetchSchemaRepo:                  &mockFetchSchemaRepoV2{},
+		fetchSchemaRepo:                  &mockFetchSchemaRepo{},
 		now:                              timeutil.Now,
 		stagingFilesSchemaPaginationSize: 2,
 	}
 }
 
-func TestSchemaV2(t *testing.T) {
+func TestSchema(t *testing.T) {
 	warehouse := model.Warehouse{
 		Destination: backendconfig.DestinationT{
 			ID: "dest_id",
@@ -106,20 +106,20 @@ func TestSchemaV2(t *testing.T) {
 			ID: "source_id",
 		},
 	}
-	v2 := newSchemaV2(warehouse, &mockSchemaRepo{
+	sch := newSchema(warehouse, &mockSchemaRepo{
 		schemaMap: make(map[string]model.WHSchema),
 	})
 	ctx := context.Background()
 
 	t.Run("SyncRemoteSchema", func(t *testing.T) {
-		schema, err := v2.getSchema(ctx)
+		schema, err := sch.getSchema(ctx)
 		require.NoError(t, err)
 		require.Equal(t, model.Schema{}, schema)
-		require.True(t, v2.IsWarehouseSchemaEmpty(ctx))
+		require.True(t, sch.IsWarehouseSchemaEmpty(ctx))
 
-		_, err = v2.SyncRemoteSchema(ctx, nil, 0)
+		_, err = sch.SyncRemoteSchema(ctx, nil, 0)
 		require.NoError(t, err)
-		schema, err = v2.getSchema(ctx)
+		schema, err = sch.getSchema(ctx)
 		require.NoError(t, err)
 		require.Equal(t, model.Schema{
 			"table1": {
@@ -135,7 +135,7 @@ func TestSchemaV2(t *testing.T) {
 	})
 
 	t.Run("Test ttl", func(t *testing.T) {
-		v2 := newSchemaV2(warehouse, &mockSchemaRepo{
+		sch := newSchema(warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
 					Schema: model.Schema{
@@ -151,32 +151,32 @@ func TestSchemaV2(t *testing.T) {
 				},
 			},
 		})
-		count, err := v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		count, err := sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 1, count)
-		_, err = v2.SyncRemoteSchema(ctx, nil, 0)
+		_, err = sch.SyncRemoteSchema(ctx, nil, 0)
 		require.NoError(t, err)
-		count, err = v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		count, err = sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 3, count)
 
-		v2.now = func() time.Time {
+		sch.now = func() time.Time {
 			return timeutil.Now().Add(ttl * 2)
 		}
-		count, err = v2.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		count, err = sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 4, count)
 	})
 
 	t.Run("TableSchemaDiff", func(t *testing.T) {
-		err := v2.UpdateWarehouseTableSchema(ctx, "table2", model.TableSchema{
+		err := sch.UpdateWarehouseTableSchema(ctx, "table2", model.TableSchema{
 			"column11": "string",
 			"column12": "int",
 			"column13": "int",
 			"column14": "string",
 		})
 		require.NoError(t, err)
-		diff, err := v2.TableSchemaDiff(ctx, "table2", model.TableSchema{
+		diff, err := sch.TableSchemaDiff(ctx, "table2", model.TableSchema{
 			"column11": "float",
 			"column15": "int",
 		})
@@ -1223,22 +1223,22 @@ func TestSchemaV2(t *testing.T) {
 					Type:        tc.warehouseType,
 				}
 
-				v2 := newSchemaV2(warehouse, &mockSchemaRepo{
+				sch := newSchema(warehouse, &mockSchemaRepo{
 					schemaMap: map[string]model.WHSchema{
 						"test_source_id_test_destination_id_test_namespace": {
 							Schema: tc.warehouseSchema,
 						},
 					},
 				})
-				v2.stagingFileRepo = &mockStagingFileRepo{
+				sch.stagingFileRepo = &mockStagingFileRepo{
 					schemas: tc.mockSchemas,
 					err:     tc.mockErr,
 				}
-				v2.enableIDResolution = tc.idResolutionEnabled
-				v2.now = func() time.Time {
+				sch.enableIDResolution = tc.idResolutionEnabled
+				sch.now = func() time.Time {
 					return time.Time{}
 				}
-				uploadSchema, err := v2.ConsolidateStagingFilesUsingLocalSchema(ctx, stagingFiles)
+				uploadSchema, err := sch.ConsolidateStagingFilesUsingLocalSchema(ctx, stagingFiles)
 				if tc.wantError == nil {
 					require.NoError(t, err)
 				} else {
