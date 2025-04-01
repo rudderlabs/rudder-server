@@ -254,19 +254,19 @@ func TestClientSendErrorMetric(t *testing.T) {
 
 	// Expected tags for all metrics
 	expectedTags := stats.Tags{
-		"workspaceId": "test-workspace",
-		"clientName":  "test-client",
-		"instanceId":  "test-instance",
-		"endpoint":    serverURL.Host,
+		"path":       string(client.PathMetrics),
+		"module":     "test-client",
+		"instanceId": "test-instance",
+		"endpoint":   serverURL.Host,
 	}
 
 	// Expected tags for HTTP metrics
 	expectedHttpTags := stats.Tags{
-		"workspaceId": "test-workspace",
-		"clientName":  "test-client",
-		"instanceId":  "test-instance",
-		"endpoint":    serverURL.Host,
-		"status":      "200",
+		"path":       string(client.PathMetrics),
+		"module":     "test-client",
+		"instanceId": "test-instance",
+		"endpoint":   serverURL.Host,
+		"status":     "200",
 	}
 
 	// Verify total bytes metric
