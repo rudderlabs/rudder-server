@@ -58,7 +58,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	return t
 }
 
-func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
+func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent) (res types.Response) {
 	if len(clientEvents) == 0 {
 		return
 	}
