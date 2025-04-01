@@ -2567,7 +2567,7 @@ func TestEvents(t *testing.T) {
 					Metadata:    getMetadata("track", destination),
 					Destination: getDestination(destination, map[string]any{}),
 				}}
-				pResponse := processorTransformer.Transform(ctx, events)
+				pResponse := processorTransformer.Destination().Transform(ctx, events)
 				wResponse := warehouseTransformer.Transform(ctx, events)
 
 				require.Equal(t, len(wResponse.Events), len(pResponse.Events))
