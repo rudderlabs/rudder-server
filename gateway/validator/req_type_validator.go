@@ -11,6 +11,7 @@ type reqTypeValidator struct{}
 func newReqTypeValidator() *reqTypeValidator {
 	return &reqTypeValidator{}
 }
+
 func (p *reqTypeValidator) ValidatorName() string {
 	return "ReqType"
 }

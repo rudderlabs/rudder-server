@@ -11,6 +11,7 @@ type messageIDValidator struct{}
 func newMessageIDValidator() *messageIDValidator {
 	return &messageIDValidator{}
 }
+
 func (p *messageIDValidator) ValidatorName() string {
 	return "messageID"
 }
