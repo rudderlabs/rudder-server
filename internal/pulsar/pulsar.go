@@ -107,7 +107,7 @@ func (pl *pulsarLogAdapter) SubLogger(fields pulsarLog.Fields) pulsarLog.Logger 
 	for k, v := range fields {
 		farr = append(farr, k, v)
 	}
-	return &pulsarLogAdapter{pl.Logger.With(farr...)}
+	return &pulsarLogAdapter{logger.Logger(pl).With(farr...)}
 }
 
 func (pl *pulsarLogAdapter) WithFields(fields pulsarLog.Fields) pulsarLog.Entry {
@@ -115,7 +115,7 @@ func (pl *pulsarLogAdapter) WithFields(fields pulsarLog.Fields) pulsarLog.Entry 
 }
 
 func (pl *pulsarLogAdapter) WithField(name string, value interface{}) pulsarLog.Entry {
-	return &pulsarLogAdapter{pl.Logger.With(name, value)}
+	return &pulsarLogAdapter{logger.Logger(pl).With(name, value)}
 }
 
 func (pl *pulsarLogAdapter) WithError(err error) pulsarLog.Entry {
