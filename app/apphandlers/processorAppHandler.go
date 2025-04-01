@@ -32,6 +32,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -48,11 +49,13 @@ type processorApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		processorDSLimit   config.ValueLoader[int]
-		routerDSLimit      config.ValueLoader[int]
-		batchRouterDSLimit config.ValueLoader[int]
-		gatewayDSLimit     config.ValueLoader[int]
-		http               struct {
+		procErrorDSLimit config.ValueLoader[int]
+		eschDSLimit      config.ValueLoader[int]
+		arcDSLimit       config.ValueLoader[int]
+		rtDSLimit        config.ValueLoader[int]
+		batchrtDSLimit   config.ValueLoader[int]
+		gwDSLimit        config.ValueLoader[int]
+		http             struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
 			WriteTimeout      time.Duration
@@ -70,10 +73,12 @@ func (a *processorApp) Setup() error {
 	a.config.http.IdleTimeout = config.GetDurationVar(720, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	a.config.http.webPort = config.GetIntVar(8086, 1, "Processor.webPort")
 	a.config.http.MaxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
-	a.config.processorDSLimit = config.GetReloadableIntVar(0, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.routerDSLimit = config.GetReloadableIntVar(0, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.batchRouterDSLimit = config.GetReloadableIntVar(0, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.gwDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.gw.dsLimit", "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.rtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.rt.dsLimit", "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.batchrtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt.dsLimit", "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.procErrorDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.proc_error.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.eschDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.esch.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	a.config.arcDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.arc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -158,7 +163,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
+		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
@@ -167,7 +172,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.routerDSLimit),
+		jobsdb.WithDSLimit(a.config.rtDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
@@ -176,7 +181,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.batchRouterDSLimit),
+		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
@@ -185,7 +190,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	errDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.procErrorDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
@@ -206,7 +211,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.eschDSLimit),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
@@ -215,7 +220,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	archivalDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.processorDSLimit),
+		jobsdb.WithDSLimit(a.config.arcDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(
@@ -269,6 +274,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
+	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
+
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
@@ -288,6 +295,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		transformationhandle,
 		enrichers,
 		trackedUsersReporter,
+		pendingEventsRegistry,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
 	throttlerFactory, err := throttler.NewFactory(config, statsFactory)
@@ -306,16 +314,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
+		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        reporting,
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		RouterDB:         batchRouterDB,
-		ProcErrorDB:      errDBForWrite,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-		Debugger:         destinationHandle,
-		AdaptiveLimit:    adaptiveLimit,
+		Reporting:             reporting,
+		BackendConfig:         backendconfig.DefaultBackendConfig,
+		RouterDB:              batchRouterDB,
+		ProcErrorDB:           errDBForWrite,
+		TransientSources:      transientSources,
+		RsourcesService:       rsourcesService,
+		Debugger:              destinationHandle,
+		AdaptiveLimit:         adaptiveLimit,
+		PendingEventsRegistry: pendingEventsRegistry,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

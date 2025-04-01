@@ -34,6 +34,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -53,6 +54,7 @@ func (brt *Handle) Setup(
 	rsourcesService rsources.JobService,
 	debugger destinationdebugger.DestinationDebugger,
 	conf *config.Config,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) {
 	brt.destType = destType
 	brt.backendConfig = backendConfig
@@ -64,6 +66,7 @@ func (brt *Handle) Setup(
 	}
 	brt.jobsDB = jobsDB
 	brt.errorDB = errorDB
+	brt.pendingEventsRegistry = pendingEventsRegistry
 	brt.reporting = reporting
 	brt.fileManagerFactory = filemanager.New
 	brt.transientSources = transientSources
@@ -215,6 +218,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter."+brt.destType+".minIdleSleep", "BatchRouter.minIdleSleep")
 	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".uploadFreqInS", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
 	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".mainLoopFreq", "BatchRouter.mainLoopFreq")
+	brt.schemaGenerationWorkers = config.GetReloadableIntVar(2, 1, "BatchRouter."+brt.destType+".schemaGenerationWorkers", "BatchRouter.schemaGenerationWorkers")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")

@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -51,6 +52,7 @@ func (rt *Handle) Setup(
 	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
@@ -67,6 +69,8 @@ func (rt *Handle) Setup(
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destType = destType
+
+	rt.pendingEventsRegistry = pendingEventsRegistry
 
 	rt.drainer = routerutils.NewDrainer(
 		config,
@@ -109,6 +113,7 @@ func (rt *Handle) Setup(
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
 	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
 	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, "Router."+destType+".reportJobsdbPayload", "Router.reportJobsdbPayload")
+	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, "Router."+destType+".saveDestinationResponseOverride", "Router.saveDestinationResponseOverride")
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
@@ -124,7 +129,7 @@ func (rt *Handle) Setup(
 		backendConfig, rt.reloadableConfig.oauthV2Enabled,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 	)
-
+	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
 	rt.isBackendConfigInitialized = false
@@ -141,11 +146,13 @@ func (rt *Handle) Setup(
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
+	orderingDisabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledWorkspaceIDs")
 	rt.eventOrderingDisabledForWorkspace = func(workspaceID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+		return slices.Contains(orderingDisabledWorkspaceIDs.Load(), workspaceID)
 	}
+	orderingDisabledDestinationIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledDestinationIDs")
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
-		return slices.Contains(config.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
 	rt.barrier = eventorder.NewBarrier(eventorder.WithMetadata(map[string]string{
 		"destType":         rt.destType,

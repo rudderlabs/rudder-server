@@ -7,18 +7,20 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 type (
 	Transformer struct {
-		now func() time.Time
+		now           func() time.Time
+		uuidGenerator func() string
 
 		logger       logger.Logger
 		statsFactory stats.Stats
 
 		stats struct {
-			comparisionTime  stats.Timer
+			comparisonTime   stats.Timer
 			matchedEvents    stats.Histogram
 			mismatchedEvents stats.Histogram
 		}
@@ -27,6 +29,7 @@ type (
 			populateSrcDestInfoInContext config.ValueLoader[bool]
 			maxColumnsInEvent            config.ValueLoader[int]
 			maxLoggedEvents              config.ValueLoader[int]
+			concurrentTransformations    config.ValueLoader[int]
 		}
 
 		loggedEvents   int64

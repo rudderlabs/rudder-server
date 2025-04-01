@@ -56,11 +56,12 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 					req := httptest.NewRequest("GET", "http://testing", nil)
 
 					handlerToTest.ServeHTTP(respRecorder, req)
-					if respRecorder.Code == 200 {
+					switch respRecorder.Code {
+					case 200:
 						atomic.AddInt32(&resp200, 1)
-					} else if respRecorder.Code == 503 {
+					case 503:
 						atomic.AddInt32(&resp503, 1)
-					} else {
+					default:
 						atomic.AddInt32(&randomResp, 1)
 					}
 				}()
