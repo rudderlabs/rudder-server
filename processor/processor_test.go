@@ -966,7 +966,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.processJobsForDest(
+			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1015,7 +1015,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 			)
 			Expect(err).To(BeNil())
-			_, _ = processor.generateTransformationMessage(preTransMessage)
+			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
@@ -1042,7 +1042,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.processJobsForDest(
+			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
 					subJobs: []*jobsdb.JobT{
@@ -1097,7 +1097,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 			)
 			Expect(err).To(BeNil())
-			_, _ = processor.generateTransformationMessage(preTransMessage)
+			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 			for _, v := range c.MockObserver.calls {
@@ -1297,14 +1297,14 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			preTransMessage, err := processor.processJobsForDest(
+			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
 			Expect(err).To(BeNil())
-			_, _ = processor.generateTransformationMessage(preTransMessage)
+			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1483,14 +1483,14 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			preTransMessage, err := processor.processJobsForDest(
+			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
 			Expect(err).To(BeNil())
-			_, _ = processor.generateTransformationMessage(preTransMessage)
+			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
@@ -1635,14 +1635,14 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			preTransMessage, err := processor.processJobsForDest(
+			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
 			)
 			Expect(err).To(BeNil())
-			_, _ = processor.generateTransformationMessage(preTransMessage)
+			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
 		})
