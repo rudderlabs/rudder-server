@@ -122,6 +122,7 @@ type Handle struct {
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
+		enableInternalBatchValidator         config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -791,7 +792,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	for _, msg := range messages {
 		stat := gwstats.SourceStat{ReqType: reqType}
 
-		if gw.config.GetReloadableBoolVar(false, "gateway.enableMsgValidator").Load() {
+		if gw.conf.enableInternalBatchValidator.Load() {
 			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
 			if err != nil || !ok {
 				errMsg := "validations failed"

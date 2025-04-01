@@ -106,6 +106,7 @@ func (gw *Handle) Setup(
 	gw.conf.maxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
 	// if set to '0', it means disabled.
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
+	gw.conf.enableInternalBatchValidator = config.GetReloadableBoolVar(false, "gateway.enableMsgValidator")
 
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
