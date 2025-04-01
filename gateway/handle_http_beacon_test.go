@@ -59,6 +59,6 @@ func TestBeaconInterceptor(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 		body, err := io.ReadAll(w.Body)
 		require.NoError(t, err, "reading response body should succeed")
-		require.Equal(t, "Failed to read writeKey from Query Params\n", string(body))
+		require.Equal(t, "failed to read writekey from query params\n", string(body))
 	})
 }

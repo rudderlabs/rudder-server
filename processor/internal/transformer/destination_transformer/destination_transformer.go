@@ -25,6 +25,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -52,7 +53,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.DestinationTransformer.maxRetry", "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
-	handle.config.batchSize = config.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
+	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
 
 	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Processor.DestinationTransformer.maxLoggedEvents")
 
@@ -334,7 +335,7 @@ func (d *Client) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", d.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", d.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", d.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
 		case warehouseutils.RS:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -346,7 +347,37 @@ func (d *Client) destTransformURL(destType string) string {
 		}
 	}
 	if destType == warehouseutils.SnowpipeStreaming {
-		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, d.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
+		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, d.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
+}
+
+type transformer func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
+
+var embeddedTransformerImpls = map[string]transformer{
+	"GOOGLEPUBSUB": pubsub.Transform,
+}
+
+func (c *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
+	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	impl, ok := embeddedTransformerImpls[destType]
+	if !ok {
+		return c.transform(ctx, clientEvents)
+	}
+	if !c.conf.GetBoolVar(false, "Processor.Transformer.Embedded."+destType+".Enabled") {
+		return c.transform(ctx, clientEvents)
+	}
+	if c.conf.GetBoolVar(true, "Processor.Transformer.Embedded."+destType+".Verify") {
+		legacyTransformerResponse := c.transform(ctx, clientEvents)
+		embeddedTransformerResponse := impl(ctx, clientEvents)
+
+		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
+
+		return legacyTransformerResponse
+	}
+	return impl(ctx, clientEvents)
 }

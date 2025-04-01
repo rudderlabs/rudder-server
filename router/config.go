@@ -5,19 +5,9 @@ import (
 )
 
 func getRouterConfigBool(key, destType string, defaultValue bool) bool {
-	destOverrideFound := config.IsSet("Router." + destType + "." + key)
-	if destOverrideFound {
-		return config.GetBool("Router."+destType+"."+key, defaultValue)
-	} else {
-		return config.GetBool("Router."+key, defaultValue)
-	}
+	return config.GetBoolVar(defaultValue, "Router."+destType+"."+key, "Router."+key)
 }
 
 func getRouterConfigInt(key, destType string, defaultValue int) int {
-	destOverrideFound := config.IsSet("Router." + destType + "." + key)
-	if destOverrideFound {
-		return config.GetInt("Router."+destType+"."+key, defaultValue)
-	} else {
-		return config.GetInt("Router."+key, defaultValue)
-	}
+	return config.GetIntVar(defaultValue, 1, "Router."+destType+"."+key, "Router."+key)
 }

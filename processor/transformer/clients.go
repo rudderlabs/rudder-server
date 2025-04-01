@@ -1,3 +1,5 @@
+//go:generate mockgen -destination=../../mocks/processor/transformer/mock_transformer_clients.go -package=mocks_transformer_clients github.com/rudderlabs/rudder-server/processor/transformer TransformerClients
+
 package transformer
 
 import (
@@ -30,7 +32,13 @@ type Clients struct {
 	trackingplan TrackingPlanClient
 }
 
-func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats) *Clients {
+type TransformerClients interface {
+	User() UserClient
+	Destination() DestinationClient
+	TrackingPlan() TrackingPlanClient
+}
+
+func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats) TransformerClients {
 	return &Clients{
 		user:         user_transformer.New(conf, log, statsFactory),
 		destination:  destination_transformer.New(conf, log, statsFactory),

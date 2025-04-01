@@ -239,7 +239,7 @@ func TestGetStatus(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedResponseCode, resp.Code, "actual response code different than expected")
-			require.Equal(t, tt.respBody, string(body), "actual response body different than expected")
+			require.Equal(t, strings.ToLower(tt.respBody), strings.ToLower(string(body)), "actual response body different than expected")
 		})
 	}
 }

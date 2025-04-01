@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -27,26 +29,36 @@ const (
 	redshiftStringLimit = 512
 )
 
+// Compile-time check to ensure ValidationError struct remains unchanged.
+var _ = struct {
+	Type     string
+	Message  string
+	Meta     map[string]string
+	Property string
+}(types.ValidationError{})
+
 func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *Transformer {
 	t := &Transformer{
 		logger:         logger.Child("warehouse-transformer"),
 		statsFactory:   statsFactory,
 		now:            timeutil.Now,
+		uuidGenerator:  uuid.NewString,
 		loggedFileName: generateLogFileName(),
 	}
 
 	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
 	t.stats.mismatchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_mismatched_events", stats.HistogramType)
-	t.stats.comparisionTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
+	t.stats.comparisonTime = t.statsFactory.NewStat("warehouse_dest_transform_comparison_time", stats.TimerType)
 
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Warehouse.maxLoggedEvents")
+	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
 	return t
 }
 
-func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
+func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent) (res types.Response) {
 	if len(clientEvents) == 0 {
 		return
 	}
@@ -71,22 +83,47 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 		t.statsFactory.NewTaggedStat("warehouse_dest_transform_output_failed_events", stats.HistogramType, tags).Observe(float64(len(res.FailedEvents)))
 	}()
 
-	for _, clientEvent := range clientEvents {
-		r, err := t.processWarehouseMessage(c, &clientEvent)
-		if err != nil {
-			res.FailedEvents = append(res.FailedEvents, transformerResponseFromErr(&clientEvent, err))
-			continue
-		}
+	results := make(chan types.TransformerResponse, len(clientEvents))
+	done := make(chan struct{})
 
-		res.Events = append(res.Events, lo.Map(r, func(item map[string]any, index int) types.TransformerResponse {
-			clientEvent.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
-			return types.TransformerResponse{
-				Output:     item,
-				Metadata:   clientEvent.Metadata,
-				StatusCode: http.StatusOK,
+	g := errgroup.Group{}
+	g.SetLimit(t.config.concurrentTransformations.Load())
+
+	go func() {
+		defer close(done)
+		for r := range results {
+			if r.Error != "" {
+				res.FailedEvents = append(res.FailedEvents, r)
+			} else {
+				res.Events = append(res.Events, r)
 			}
-		})...)
+		}
+	}()
+
+	for i := range clientEvents {
+		event := clientEvents[i]
+		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+
+		g.Go(func() error {
+			r, err := t.processWarehouseMessage(c, &event)
+			if err != nil {
+				results <- transformerResponseFromErr(&event, err)
+				return nil
+			}
+			for _, item := range r {
+				results <- types.TransformerResponse{
+					Output:     item,
+					Metadata:   event.Metadata,
+					StatusCode: http.StatusOK,
+				}
+			}
+			return nil
+		})
 	}
+
+	_ = g.Wait()
+	close(results)
+	<-done
 	return
 }
 
@@ -94,6 +131,7 @@ func (t *Transformer) processWarehouseMessage(cache *cache, event *types.Transfo
 	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
 		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
 	}
+	t.addMandatoryFields(event)
 	return t.handleEvent(event, cache)
 }
 
@@ -117,6 +155,39 @@ func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerE
 
 	event.Message["context"] = messageContextMap
 	return nil
+}
+
+func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
+	t.ensureMessageID(event)
+	t.ensureReceivedAt(event)
+}
+
+func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
+	messageID, exists := event.Message["messageId"]
+	if !exists || utils.IsBlank(messageID) {
+		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
+		event.Message["messageId"] = event.Metadata.MessageID
+	}
+}
+
+func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
+	receivedAt, exists := event.Message["receivedAt"]
+	if !exists || utils.IsBlank(receivedAt) {
+		t.setDefaultReceivedAt(event)
+		return
+	}
+
+	strReceivedAt, isString := receivedAt.(string)
+	if !isString || !utils.ValidTimestamp(strReceivedAt) {
+		t.setDefaultReceivedAt(event)
+	}
+}
+
+func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
+	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
+		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
+	}
+	event.Message["receivedAt"] = event.Metadata.ReceivedAt
 }
 
 func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {

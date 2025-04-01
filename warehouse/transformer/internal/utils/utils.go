@@ -9,6 +9,7 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -155,6 +156,12 @@ func IsBlank(value interface{}) bool {
 		return v == ""
 	case fmt.Stringer:
 		return v.String() == ""
+	case map[string]any:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	case []types.ValidationError:
+		return len(v) == 0
 	default:
 		return false
 	}
