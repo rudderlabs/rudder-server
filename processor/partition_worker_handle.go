@@ -6,7 +6,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
@@ -18,7 +17,6 @@ type workerHandle interface {
 	rsourcesService() rsources.JobService
 	handlePendingGatewayJobs(key string) bool
 	stats() *processorStats
-	tracer() stats.Tracer
 
 	getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult
 	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
