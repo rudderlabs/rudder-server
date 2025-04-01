@@ -25,6 +25,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -349,4 +350,34 @@ func (d *Client) destTransformURL(destType string) string {
 		return fmt.Sprintf("%s?whSchemaVersion=%s&whIDResolve=%t", destinationEndPoint, d.conf.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 	}
 	return destinationEndPoint
+}
+
+type transformer func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
+
+var embeddedTransformerImpls = map[string]transformer{
+	"GOOGLEPUBSUB": pubsub.Transform,
+}
+
+func (c *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
+	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	impl, ok := embeddedTransformerImpls[destType]
+	if !ok {
+		return c.transform(ctx, clientEvents)
+	}
+	if !c.conf.GetBoolVar(false, "Processor.Transformer.Embedded."+destType+".Enabled") {
+		return c.transform(ctx, clientEvents)
+	}
+	if c.conf.GetBoolVar(true, "Processor.Transformer.Embedded."+destType+".Verify") {
+		legacyTransformerResponse := c.transform(ctx, clientEvents)
+		embeddedTransformerResponse := impl(ctx, clientEvents)
+
+		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
+
+		return legacyTransformerResponse
+	}
+	return impl(ctx, clientEvents)
 }
