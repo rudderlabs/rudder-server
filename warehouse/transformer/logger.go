@@ -31,12 +31,12 @@ func (t *Transformer) CompareAndLog(events []types.TransformerEvent, pResponse, 
 
 	t.stats.comparisonTime.RecordDuration()()
 
-	differingEvents, sampleDiff := t.differingEvents(events, pResponse, wResponse)
-	if len(differingEvents) == 0 {
+	sampleDiff := t.sampleDiff(events, pResponse, wResponse)
+	if len(sampleDiff) == 0 {
 		return
 	}
 
-	logEntries := lo.Map(differingEvents, func(item types.TransformerEvent, index int) string {
+	logEntries := lo.Map(events, func(item types.TransformerEvent, index int) string {
 		return stringify.Any(item)
 	})
 	if err := t.write(append([]string{sampleDiff}, logEntries...)); err != nil {
@@ -48,7 +48,7 @@ func (t *Transformer) CompareAndLog(events []types.TransformerEvent, pResponse, 
 	t.loggedEvents += int64(len(logEntries))
 }
 
-func (t *Transformer) differingEvents(eventsToTransform []types.TransformerEvent, pResponse, wResponse types.Response) ([]types.TransformerEvent, string) {
+func (t *Transformer) sampleDiff(eventsToTransform []types.TransformerEvent, pResponse, wResponse types.Response) string {
 	sortTransformerResponsesByJobID(pResponse.Events)
 	sortTransformerResponsesByJobID(pResponse.FailedEvents)
 	sortTransformerResponsesByJobID(wResponse.Events)
@@ -57,7 +57,7 @@ func (t *Transformer) differingEvents(eventsToTransform []types.TransformerEvent
 	// If the event counts differ, return all events in the transformation
 	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(eventsToTransform)))
-		return eventsToTransform, ""
+		return ""
 	}
 
 	var (
@@ -77,10 +77,7 @@ func (t *Transformer) differingEvents(eventsToTransform []types.TransformerEvent
 	}
 	t.stats.matchedEvents.Observe(float64(len(pResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
-	if differedEventsCount == 0 {
-		return nil, ""
-	}
-	return eventsToTransform, sampleDiff
+	return sampleDiff
 }
 
 func sortTransformerResponsesByJobID(responses []types.TransformerResponse) {

@@ -2973,7 +2973,7 @@ func (proc *Handle) destTransform(
 			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
 			s := time.Now()
 			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
-			proc.handleWarehouseTransformations(ctx, data.eventsToTransform, response, commonMetaData)
+			proc.handleWarehouseTransformations(ctx, data.eventsToTransform, response, data.commonMetaData)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
