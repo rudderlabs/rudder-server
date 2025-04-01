@@ -28,9 +28,10 @@ func LoadOptions(args []string) *Options {
 	versionFlag := flagSet.Bool("v", false, "Print the current version and exit")
 
 	serverMode := os.Getenv("RSERVER_MODE")
-	if serverMode == "normal" {
+	switch serverMode {
+	case "normal":
 		*normalMode = true
-	} else if serverMode == "degraded" {
+	case "degraded":
 		*degradedMode = true
 	}
 

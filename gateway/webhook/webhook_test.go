@@ -148,7 +148,7 @@ func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
 	webhookHandler.RequestHandler(w, req)
 
 	assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
-	assert.Contains(t, strings.TrimSpace(w.Body.String()), "Gateway timeout")
+	assert.Contains(t, strings.TrimSpace(w.Body.String()), "gateway timeout")
 	_ = webhookHandler.Shutdown()
 }
 

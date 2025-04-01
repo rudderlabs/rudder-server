@@ -83,7 +83,7 @@ func TestMainFlow(t *testing.T) {
 	t.Run("common connection pool to database", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
-			if tearDownStart == (time.Time{}) {
+			if tearDownStart.IsZero() {
 				t.Log("--- Teardown done (unexpected)")
 			} else {
 				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))
@@ -107,7 +107,7 @@ func TestMainFlow(t *testing.T) {
 	t.Run("separate connection pools to database", func(t *testing.T) {
 		var tearDownStart time.Time
 		defer func() {
-			if tearDownStart == (time.Time{}) {
+			if tearDownStart.IsZero() {
 				t.Log("--- Teardown done (unexpected)")
 			} else {
 				t.Logf("--- Teardown done (%s)", time.Since(tearDownStart))

@@ -128,7 +128,7 @@ func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 		return
 	}
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
@@ -154,7 +154,7 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	err := r.db.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
 		// TODO: Handle this
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 	return
 }
@@ -177,7 +177,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := r.db.QueryRow(sqlStatement).Scan(&name)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 	if len(name.String) > 0 {
 		return
@@ -197,7 +197,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -211,7 +211,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -228,7 +228,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -245,7 +245,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -256,7 +256,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -269,7 +269,7 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 }
 

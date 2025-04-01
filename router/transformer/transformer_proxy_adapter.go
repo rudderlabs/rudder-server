@@ -65,10 +65,11 @@ type (
 )
 
 func (v0 *v0Adapter) getPayload(proxyReqParams *ProxyRequestParams) ([]byte, error) {
+	params := proxyReqParams.ResponseData
 	proxyReqPayload := &ProxyRequestPayloadV0{
-		PostParametersT:   proxyReqParams.ResponseData.PostParametersT,
-		Metadata:          proxyReqParams.ResponseData.Metadata[0],
-		DestinationConfig: proxyReqParams.ResponseData.DestinationConfig,
+		PostParametersT:   params.PostParametersT,
+		Metadata:          params.Metadata[0],
+		DestinationConfig: params.DestinationConfig,
 	}
 	return jsonrs.Marshal(proxyReqPayload)
 }

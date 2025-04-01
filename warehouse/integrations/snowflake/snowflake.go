@@ -832,7 +832,7 @@ func (sf *Snowflake) ShouldMerge(tableName string) bool {
 	shouldAppend := slices.Contains(sf.config.appendOnlyTables, tableName) ||
 		sf.Warehouse.GetPreferAppendSetting()
 
-	return !(shouldAppend && sf.Uploader.CanAppend())
+	return !shouldAppend || !sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
