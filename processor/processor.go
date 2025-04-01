@@ -2180,6 +2180,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	processTime := time.Since(preTrans.start)
 	proc.stats.processJobsTime(preTrans.partition).SendTiming(processTime)
 	return &transformationMessage{
+		preTrans.subJobs.ctx,
 		preTrans.groupedEvents,
 		trackingPlanEnabledMap,
 		preTrans.eventsByMessageID,
@@ -2200,6 +2201,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 }
 
 type transformationMessage struct {
+	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
@@ -2220,6 +2222,7 @@ type transformationMessage struct {
 }
 
 type userTransformData struct {
+	ctx                           context.Context
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	statusList                    []*jobsdb.JobStatusT
@@ -2308,6 +2311,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 	}
 
 	return &userTransformData{
+		ctx:                           in.ctx,
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
 		reportMetrics:                 in.reportMetrics,
 		statusList:                    in.statusList,
@@ -2382,6 +2386,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	}
 
 	return &storeMessage{
+		in.ctx,
 		in.trackedUsersReports,
 		in.statusList,
 		destJobs,
@@ -2404,6 +2409,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 }
 
 type storeMessage struct {
+	ctx                 context.Context
 	trackedUsersReports []*trackedusers.UsersReport
 	statusList          []*jobsdb.JobStatusT
 	destJobs            []*jobsdb.JobT

@@ -3,18 +3,21 @@ package processor
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/tracing"
 )
 
 // newPipelineWorker new worker which manages a single pipeline of a partition
-func newPipelineWorker(partition string, h workerHandle, t stats.Tracer) *pipelineWorker {
+func newPipelineWorker(partition string, h workerHandle, t *tracing.Tracer) *pipelineWorker {
 	w := &pipelineWorker{
 		handle:    h,
-		logger:    h.logger().Child(partition),
+		logger:    h.logger().Withn(logger.NewStringField("partition", partition)),
 		tracer:    t,
 		partition: partition,
 	}
@@ -47,7 +50,7 @@ type pipelineWorker struct {
 	partition string
 	handle    workerHandle
 	logger    logger.Logger
-	tracer    stats.Tracer
+	tracer    *tracing.Tracer
 
 	lifecycle struct { // worker lifecycle related fields
 		ctx    context.Context    // worker context
@@ -56,7 +59,7 @@ type pipelineWorker struct {
 	}
 	channel struct { // worker channels
 		preprocess           chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, esch and tracking plan validation
+		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, each and tracking plan validation
 		usertransform        chan *transformationMessage    // userTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		destinationtransform chan *userTransformData        // destinationTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		store                chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
@@ -73,20 +76,25 @@ func (w *pipelineWorker) start() {
 		<-w.lifecycle.ctx.Done()
 	})
 
+	// Common span tags
+	spanTags := stats.Tags{"partition": w.partition}
+
 	// Preprocessing goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.preTransform)
-		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("preprocessing routine stopped")
 
 		for jobs := range w.channel.preprocess {
 			val, err := w.handle.preprocessStage(w.partition, jobs)
 			if err != nil {
-				w.logger.Errorf("Error preprocessing jobs: %v", err)
+				w.logger.Errorn("Error preprocessing jobs", obskit.Error(err))
 				panic(err)
 			}
+			waitStart := time.Now()
 			w.channel.preTransform <- val
+			w.tracer.RecordSpan(jobs.ctx, "start.preTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
 		}
 	})
 
@@ -95,15 +103,17 @@ func (w *pipelineWorker) start() {
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.usertransform)
-		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("pretransform routine stopped")
 
 		for processedMessage := range w.channel.preTransform {
 			val, err := w.handle.pretransformStage(w.partition, processedMessage)
 			if err != nil {
-				w.logger.Errorf("Error generating transformation message: %v", err)
+				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
 				panic(err)
 			}
+			waitStart := time.Now()
 			w.channel.usertransform <- val
+			w.tracer.RecordSpan(processedMessage.subJobs.ctx, "start.userTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
 		}
 	})
 
@@ -112,10 +122,13 @@ func (w *pipelineWorker) start() {
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.destinationtransform)
-		defer w.logger.Debugf("usertransform routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("usertransform routine stopped")
 
 		for msg := range w.channel.usertransform {
-			w.channel.destinationtransform <- w.handle.userTransformStage(w.partition, msg)
+			data := w.handle.userTransformStage(w.partition, msg)
+			waitStart := time.Now()
+			w.channel.destinationtransform <- data
+			w.tracer.RecordSpan(msg.ctx, "start.destinationTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
 		}
 	})
 
@@ -124,10 +137,13 @@ func (w *pipelineWorker) start() {
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.store)
-		defer w.logger.Debugf("destinationtransform routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("destinationtransform routine stopped")
 
 		for msg := range w.channel.destinationtransform {
-			w.channel.store <- w.handle.destinationTransformStage(w.partition, msg)
+			storeMsg := w.handle.destinationTransformStage(w.partition, msg)
+			waitStart := time.Now()
+			w.channel.store <- storeMsg
+			w.tracer.RecordSpan(msg.ctx, "start.storeCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
 		}
 	})
 
@@ -135,13 +151,13 @@ func (w *pipelineWorker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer w.logger.Debugf("store routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("store routine stopped")
 
 		var mergedJob *storeMessage
 		firstSubJob := true
 
 		for subJob := range w.channel.store {
-			// If this is the first subjob and it doesn't have more parts,
+			// If this is the first subjob, and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
 				w.handle.storeStage(w.partition, subJob)

@@ -39,7 +39,7 @@ func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *parti
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
 	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newPipelineWorker(partition, h, t)
+		w.pipelines[i] = newPipelineWorker(partition, h, tracing.New(t, tracing.WithNamePrefix("pipelineWorker")))
 	}
 
 	return w
