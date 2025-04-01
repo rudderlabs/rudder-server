@@ -109,6 +109,8 @@ type Handle struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
+	jobBuffer *JobBuffer // Added for channel-based job buffering
+
 	backendConfigInitializedOnce sync.Once
 	backendConfigInitialized     chan bool
 
