@@ -148,7 +148,15 @@ func (d *BadgerDB) init() error {
 				return
 			}
 		}
-		d.badgerDB, err = badger.Open(d.opts)
+		openDB := func() (dbase *badger.DB, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("panic during badgerdb open: %v", r)
+				}
+			}()
+			return badger.Open(d.opts)
+		}
+		d.badgerDB, err = openDB()
 		if err != nil {
 			// corrupted or incompatible db, clean up the directory and retry
 			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
@@ -158,7 +166,7 @@ func (d *BadgerDB) init() error {
 				err = fmt.Errorf("removing badger db directory: %w", err)
 				return
 			}
-			d.badgerDB, err = badger.Open(d.opts)
+			d.badgerDB, err = openDB()
 			if err != nil {
 				err = fmt.Errorf("opening badger db: %w", err)
 				return
