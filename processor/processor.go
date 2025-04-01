@@ -184,41 +184,26 @@ type Handle struct {
 type processorStats struct {
 	statGatewayDBR                func(partition string) stats.Measurement
 	statGatewayDBW                func(partition string) stats.Measurement
-	statRouterDBW                 func(partition string) stats.Measurement
-	statBatchRouterDBW            func(partition string) stats.Measurement
-	statProcErrDBW                func(partition string) stats.Measurement
 	statDBR                       func(partition string) stats.Measurement
 	statDBW                       func(partition string) stats.Measurement
-	statLoopTime                  func(partition string) stats.Measurement
-	validateEventsTime            func(partition string) stats.Measurement
-	processJobsTime               func(partition string) stats.Measurement
-	statSessionTransform          func(partition string) stats.Measurement
-	statUserTransform             func(partition string) stats.Measurement
-	statDestTransform             func(partition string) stats.Measurement
-	marshalSingularEvents         func(partition string) stats.Measurement
-	destProcessing                func(partition string) stats.Measurement
-	pipeProcessing                func(partition string) stats.Measurement
+	validateEventsTime            func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
+	processJobsTime               func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
+	marshalSingularEvents         func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statNumRequests               func(partition string) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
-	statDBReadRequests            func(partition string) stats.Measurement
-	statDBReadEvents              func(partition string) stats.Measurement
-	statDBReadPayloadBytes        func(partition string) stats.Measurement
-	statDBReadOutOfOrder          func(partition string) stats.Measurement
-	statDBReadOutOfSequence       func(partition string) stats.Measurement
-	statMarkExecuting             func(partition string) stats.Measurement
-	statDBWriteStatusTime         func(partition string) stats.Measurement
-	statDBWriteJobsTime           func(partition string) stats.Measurement
-	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement
-	statDBWriteBatchPayloadBytes  func(partition string) stats.Measurement
-	statDBWriteRouterEvents       func(partition string) stats.Measurement
-	statDBWriteBatchEvents        func(partition string) stats.Measurement
+	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
+	statDBWriteBatchPayloadBytes  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statDestNumOutputEvents       func(partition string) stats.Measurement
 	statBatchDestNumOutputEvents  func(partition string) stats.Measurement
-	processJobThroughput          func(partition string) stats.Measurement
-	transformationsThroughput     func(partition string) stats.Measurement
-	trackedUsersReportGeneration  func(partition string) stats.Measurement
-}
+	trackedUsersReportGeneration  func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 
+	statReadStageCount         func(partition string) stats.Measurement
+	statPretransformStageCount func(partition string) stats.Measurement
+	statPreprocessStageCount   func(partition string) stats.Measurement
+	statUtransformStageCount   func(partition string) stats.Measurement
+	statDtransformStageCount   func(partition string) stats.Measurement
+	statStoreStageCount        func(partition string) stats.Measurement
+}
 type DestStatT struct {
 	numEvents               stats.Measurement
 	numOutputSuccessEvents  stats.Measurement
@@ -445,16 +430,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statRouterDBW = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_router_db_write", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statBatchRouterDBW = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_batch_router_db_write", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.statDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read_time", stats.TimerType, stats.Tags{
 			"partition": partition,
@@ -462,21 +437,6 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.statDBW = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_write_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statProcErrDBW = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_proc_err_db_write", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statLoopTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_loop_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statMarkExecuting = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_mark_executing", stats.TimerType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -490,33 +450,8 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statSessionTransform = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_session_transform_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statUserTransform = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_user_transform_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDestTransform = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_dest_transform_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.marshalSingularEvents = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_marshal_singular_events", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.destProcessing = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_dest_processing", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.pipeProcessing = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_pipe_processing", stats.TimerType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -530,41 +465,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.statDBReadRequests = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_requests", stats.HistogramType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBReadEvents = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_events", stats.HistogramType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBReadPayloadBytes = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_payload_bytes", stats.HistogramType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBReadOutOfOrder = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_order", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBReadOutOfSequence = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_read_out_of_sequence", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBWriteJobsTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_jobs_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBWriteStatusTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_status_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.statDBWriteRouterPayloadBytes = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
 			"module":    "router",
@@ -573,18 +473,6 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.statDBWriteBatchPayloadBytes = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_db_write_payload_bytes", stats.HistogramType, stats.Tags{
-			"module":    "batch_router",
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBWriteRouterEvents = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_events", stats.HistogramType, stats.Tags{
-			"module":    "router",
-			"partition": partition,
-		})
-	}
-	proc.stats.statDBWriteBatchEvents = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_db_write_events", stats.HistogramType, stats.Tags{
 			"module":    "batch_router",
 			"partition": partition,
 		})
@@ -601,19 +489,38 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.processJobThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_processJob_thoughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.transformationsThroughput = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_transformations_throughput", stats.CountType, stats.Tags{
-			"partition": partition,
-		})
-	}
-
 	proc.stats.trackedUsersReportGeneration = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_tracked_users_report_gen_seconds", stats.TimerType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statReadStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_read_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statPretransformStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_pretransform_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statPreprocessStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_preprocess_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statUtransformStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_utransform_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statDtransformStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_dtransform_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statStoreStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_store_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -695,7 +602,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	proc.limiter.dtransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_dtransform",
 		config.GetInt("Processor.Limiter.dtransform.limit", 50),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.destinationtransform.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.dtransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
 		config.GetInt("Processor.Limiter.store.limit", 50),
 		s,
@@ -1712,6 +1619,7 @@ type preTransformationMessage struct {
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	if proc.limiter.preprocess != nil {
 		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.stats.statPreprocessStageCount(partition).Count(len(subJobs.subJobs))
 	}
 
 	jobList := subJobs.subJobs
@@ -2063,6 +1971,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 func (proc *Handle) pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error) {
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.stats.statPretransformStageCount(partition).Count(len(preTrans.subJobs.subJobs))
 	}
 
 	g, groupCtx := errgroup.WithContext(context.Background())
@@ -2261,9 +2170,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	processTime := time.Since(preTrans.start)
 	proc.stats.processJobsTime(preTrans.partition).SendTiming(processTime)
-	processJobThroughput := throughputPerSecond(preTrans.totalEvents, processTime)
-	// processJob throughput per second.
-	proc.stats.processJobThroughput(preTrans.partition).Count(processJobThroughput)
 	return &transformationMessage{
 		preTrans.groupedEvents,
 		trackingPlanEnabledMap,
@@ -2324,6 +2230,7 @@ type userTransformData struct {
 func (proc *Handle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
 	if proc.limiter.utransform != nil {
 		defer proc.limiter.utransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.stats.statUtransformStageCount(partition).Count(len(in.statusList))
 	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
@@ -2411,6 +2318,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 func (proc *Handle) destinationTransformStage(partition string, in *userTransformData) *storeMessage {
 	if proc.limiter.dtransform != nil {
 		defer proc.limiter.dtransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		defer proc.stats.statDtransformStageCount(partition).Count(len(in.statusList))
 	}
 
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
@@ -2419,7 +2327,6 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	var droppedJobs []*jobsdb.JobT
 	routerDestIDs := make(map[string]struct{})
 
-	destProcStart := time.Now()
 	chOut := make(chan destTransformOutput, 1)
 	ctx, task := trace.NewTask(context.Background(), "destination_transformations")
 	defer task.End()
@@ -2465,9 +2372,6 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
 		}
 	}
-
-	destProcTime := time.Since(destProcStart)
-	defer proc.stats.destProcessing(partition).SendTiming(destProcTime)
 
 	return &storeMessage{
 		in.trackedUsersReports,
@@ -2568,6 +2472,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 
 	if proc.limiter.store != nil {
 		defer proc.limiter.store.BeginWithPriority("", proc.getLimiterPriority(partition))()
+		defer proc.stats.statStoreStageCount(partition).Count(len(in.statusList))
 	}
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
@@ -2602,7 +2507,6 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 
 		proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
 		proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
-		proc.stats.statDBWriteBatchEvents(partition).Observe(float64(len(batchDestJobs)))
 		proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
 			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 		)
@@ -2656,7 +2560,6 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
-			proc.stats.statDBWriteRouterEvents(partition).Observe(float64(len(destJobs)))
 			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
@@ -2679,9 +2582,6 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 
-	writeJobsTime := time.Since(beforeStoreStatus)
-
-	txnStart := time.Now()
 	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
@@ -2726,15 +2626,8 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 		}
 	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
-	proc.stats.statDBWriteJobsTime(partition).SendTiming(writeJobsTime)
-	proc.stats.statDBWriteStatusTime(partition).Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
-	// XX: End of transaction
-
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
-	proc.stats.statRouterDBW(partition).Count(len(destJobs))
-	proc.stats.statBatchRouterDBW(partition).Count(len(batchDestJobs))
-	proc.stats.statProcErrDBW(partition).Count(len(in.procErrorJobs))
 }
 
 // getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
@@ -2780,15 +2673,13 @@ type userTransformAndFilterOutput struct {
 
 func (proc *Handle) userTransformAndFilter(
 	ctx context.Context,
-	partition string,
+	_ string,
 	srcAndDestKey string,
 	eventList []types.TransformerEvent,
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) userTransformAndFilterOutput {
-	defer proc.stats.pipeProcessing(partition).Since(time.Now())
-
 	if len(eventList) == 0 {
 		return userTransformAndFilterOutput{
 			eventsToTransform: eventList,
@@ -3411,10 +3302,6 @@ func (proc *Handle) getJobsStage(partition string) jobsdb.JobsResult {
 		panic(err)
 	}
 
-	totalPayloadBytes := 0
-	for _, job := range unprocessedList.Jobs {
-		totalPayloadBytes += len(job.EventPayload)
-	}
 	dbReadTime := time.Since(s)
 	defer proc.stats.statDBR(partition).SendTiming(dbReadTime)
 
@@ -3434,18 +3321,12 @@ func (proc *Handle) getJobsStage(partition string) jobsdb.JobsResult {
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
 	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
-
-	proc.stats.statDBReadRequests(partition).Observe(float64(len(unprocessedList.Jobs)))
-	proc.stats.statDBReadEvents(partition).Observe(float64(unprocessedList.EventsCount))
-	proc.stats.statDBReadPayloadBytes(partition).Observe(float64(totalPayloadBytes))
+	proc.stats.statReadStageCount(partition).Count(len(unprocessedList.Jobs))
 
 	return unprocessedList
 }
 
-func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
-	start := time.Now()
-	defer proc.stats.statMarkExecuting(partition).Since(start)
-
+func (proc *Handle) markExecuting(_ string, jobs []*jobsdb.JobT) error {
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
 	for i, job := range jobs {
 		statusList[i] = &jobsdb.JobStatusT{
@@ -3475,8 +3356,6 @@ func (proc *Handle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
-	s := time.Now()
-
 	unprocessedList := proc.getJobsStage(partition)
 
 	if len(unprocessedList.Jobs) == 0 {
@@ -3503,13 +3382,10 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	if err != nil {
 		panic(err)
 	}
-
 	proc.storeStage(partition,
 		proc.destinationTransformStage(partition,
 			proc.userTransformStage(partition, transMessage)),
 	)
-	proc.stats.statLoopTime(partition).Since(s)
-
 	return true
 }
 
@@ -3532,11 +3408,6 @@ func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.Stat
 			rsourcesStats: rsourcesStats,
 		}
 	})
-}
-
-func throughputPerSecond(processedJob int, timeTaken time.Duration) int {
-	normalizedTime := float64(timeTaken) / float64(time.Second)
-	return int(float64(processedJob) / normalizedTime)
 }
 
 func (proc *Handle) crashRecover() {

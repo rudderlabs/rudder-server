@@ -241,14 +241,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 }
 
 func (*mockWorkerHandle) stats() *processorStats {
-	return &processorStats{
-		statDBReadOutOfOrder: func(partition string) stats.Measurement {
-			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
-		},
-		statDBReadOutOfSequence: func(partition string) stats.Measurement {
-			return stats.NOP.NewStat("db_read_out_of_sequence", stats.CountType)
-		},
-	}
+	return &processorStats{}
 }
 
 func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
