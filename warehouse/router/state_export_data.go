@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/samber/lo"
 
@@ -247,7 +246,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		LastExecTime: &lastExecTime,
 	})
 
-	alteredIdentitySchema, err := job.updateSchema(job.identifiesTableName())
+	err = job.updateSchema(job.identifiesTableName())
 	if err != nil {
 		status := model.TableUploadUpdatingSchemaFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -257,7 +256,6 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 		})
 		return job.processLoadTableResponse(map[string]error{job.identifiesTableName(): err})
 	}
-	var alteredUserSchema bool
 	if _, ok := job.upload.UploadSchema[job.usersTableName()]; ok {
 		status := model.TableUploadExecuting
 		lastExecTime := job.now()
@@ -265,7 +263,7 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 			Status:       &status,
 			LastExecTime: &lastExecTime,
 		})
-		alteredUserSchema, err = job.updateSchema(job.usersTableName())
+		err = job.updateSchema(job.usersTableName())
 		if err != nil {
 			status = model.TableUploadUpdatingSchemaFailed
 			errorsString := misc.QuoteLiteral(err.Error())
@@ -283,32 +281,26 @@ func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]e
 	}
 
 	errorMap := job.whManager.LoadUserTables(job.ctx)
-
-	if alteredIdentitySchema || alteredUserSchema {
-		job.logger.Infof("loadUserTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx)
-	}
 	return job.processLoadTableResponse(errorMap)
 }
 
-func (job *UploadJob) updateSchema(tName string) (alteredSchema bool, err error) {
+func (job *UploadJob) updateSchema(tName string) error {
 	tableSchemaDiff, err := job.schemaHandle.TableSchemaDiff(job.ctx, tName, job.GetTableSchemaInUpload(tName))
 	if err != nil {
-		return false, fmt.Errorf("table schema diff: %w", err)
+		return fmt.Errorf("table schema diff: %w", err)
 	}
 	if tableSchemaDiff.Exists {
 		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
-			return
+			return err
 		}
 
-		err = job.schemaHandle.UpdateWarehouseTableSchema(job.ctx, tName, tableSchemaDiff.UpdatedSchema)
+		err = job.schemaHandle.UpdateTableSchema(job.ctx, tName, tableSchemaDiff.UpdatedSchema)
 		if err != nil {
-			return false, fmt.Errorf("update warehouse table schema: %w", err)
+			return fmt.Errorf("update warehouse table schema: %w", err)
 		}
-		alteredSchema = true
 	}
-	return
+	return nil
 }
 
 func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.TableSchemaDiff) (err error) {
@@ -508,8 +500,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			return job.processLoadTableResponse(errorMap)
 		}
 	}
-
-	var alteredSchema bool
 	for _, tableName := range identityTables {
 		if _, loaded := currentJobSucceededTables[tableName]; loaded {
 			continue
@@ -533,7 +523,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 				errorMap := map[string]error{tableName: err}
 				return job.processLoadTableResponse(errorMap)
 			}
-			err = job.schemaHandle.UpdateWarehouseTableSchema(job.ctx, tableName, tableSchemaDiff.UpdatedSchema)
+			err = job.schemaHandle.UpdateTableSchema(job.ctx, tableName, tableSchemaDiff.UpdatedSchema)
 			if err != nil {
 				return nil, fmt.Errorf("update warehouse table schema: %w", err)
 			}
@@ -542,7 +532,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			_ = job.tableUploadsRepo.Set(job.ctx, job.upload.ID, tableName, repo.TableUploadSetOptions{
 				Status: &status,
 			})
-			alteredSchema = true
 		}
 
 		status := model.TableUploadExecuting
@@ -568,12 +557,6 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 			break
 		}
 	}
-
-	if alteredSchema {
-		job.logger.Infof("loadIdentityTables: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
-	}
-
 	return job.processLoadTableResponse(errorMap)
 }
 
@@ -654,8 +637,6 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
-
-	var alteredSchemaInAtLeastOneTable atomic.Bool
 	concurrencyGuard := make(chan struct{}, parallelLoads)
 
 	var (
@@ -696,10 +677,7 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		tableName := tableName
 		concurrencyGuard <- struct{}{}
 		rruntime.GoForWarehouse(func() {
-			alteredSchema, err := job.loadTable(tableName)
-			if alteredSchema {
-				alteredSchemaInAtLeastOneTable.Store(true)
-			}
+			err := job.loadTable(tableName)
 			if err != nil {
 				loadErrorLock.Lock()
 				loadErrors = append(loadErrors, err)
@@ -711,17 +689,11 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		})
 	}
 	wg.Wait()
-
-	if alteredSchemaInAtLeastOneTable.Load() {
-		job.logger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
-		_ = job.schemaHandle.UpdateLocalSchemaWithWarehouse(job.ctx) // TODO check error
-	}
-
 	return loadErrors
 }
 
-func (job *UploadJob) loadTable(tName string) (bool, error) {
-	alteredSchema, err := job.updateSchema(tName)
+func (job *UploadJob) loadTable(tName string) error {
+	err := job.updateSchema(tName)
 	if err != nil {
 		status := model.TableUploadUpdatingSchemaFailed
 		errorsString := misc.QuoteLiteral(err.Error())
@@ -729,7 +701,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 			Status: &status,
 			Error:  &errorsString,
 		})
-		return alteredSchema, fmt.Errorf("update schema: %w", err)
+		return fmt.Errorf("update schema: %w", err)
 	}
 
 	job.logger.Infow("starting load for table", logfield.TableName, tName)
@@ -749,7 +721,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 			Status: &status,
 			Error:  &errorsString,
 		})
-		return alteredSchema, fmt.Errorf("load table: %w", err)
+		return fmt.Errorf("load table: %w", err)
 	}
 	if loadTableStat.RowsUpdated > 0 {
 		job.statsFactory.NewTaggedStat("dedup_rows", stats.CountType, stats.Tags{
@@ -765,7 +737,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 
 	tableUpload, errEventCount := job.tableUploadsRepo.GetByUploadIDAndTableName(job.ctx, job.upload.ID, tName)
 	if errEventCount != nil {
-		return alteredSchema, fmt.Errorf("get table upload: %w", errEventCount)
+		return fmt.Errorf("get table upload: %w", errEventCount)
 	}
 
 	tags := []whutils.Tag{
@@ -786,7 +758,7 @@ func (job *UploadJob) loadTable(tName string) (bool, error) {
 
 	job.columnCountStat(tName)
 
-	return alteredSchema, nil
+	return nil
 }
 
 // columnCountStat sent the column count for a table to statsd
@@ -811,7 +783,7 @@ func (job *UploadJob) columnCountStat(tableName string) {
 	tags := []whutils.Tag{
 		{Name: "tableName", Value: whutils.TableNameForStats(tableName)},
 	}
-	currentColumnsCount, err := job.schemaHandle.GetColumnsCountInWarehouseSchema(job.ctx, tableName)
+	currentColumnsCount, err := job.schemaHandle.GetColumnsCount(job.ctx, tableName)
 	if err != nil {
 		job.logger.Warnn("Getting column count in warehouse schema",
 			logger.NewStringField(logfield.TableName, tableName),

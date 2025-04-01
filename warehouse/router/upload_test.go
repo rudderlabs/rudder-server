@@ -171,7 +171,7 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 			}, whManager)
-			err = j.schemaHandle.UpdateWarehouseTableSchema(ctx, tableName, model.TableSchema{
+			err = j.schemaHandle.UpdateTableSchema(ctx, tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",
 				"test-column-3": "string",
@@ -187,7 +187,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := statsStore.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				columnsCount, err := j.schemaHandle.GetColumnsCountInWarehouseSchema(ctx, tableName)
+				columnsCount, err := j.schemaHandle.GetColumnsCount(ctx, tableName)
 				require.NoError(t, err)
 				require.EqualValues(t, m1.LastValue(), columnsCount)
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
