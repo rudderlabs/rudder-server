@@ -3155,7 +3155,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
-			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
+			mockTransformerFeaturesService := mockFeatures.NewMockFeaturesService(c.mockCtrl)
 			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
