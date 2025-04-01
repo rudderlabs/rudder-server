@@ -110,7 +110,7 @@ func getTopic(event types.TransformerEvent, topicMap map[string]string) (string,
 		return topic, nil
 	}
 
-	return "", fmt.Errorf("No topic set for this event")
+	return "", fmt.Errorf("no topic set for this event")
 }
 
 func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[string][]string) []string {
