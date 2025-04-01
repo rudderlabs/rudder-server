@@ -48,6 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/tracing"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
@@ -86,7 +87,7 @@ type warehouseTransformer interface {
 // Handle is a handle to the processor module
 type Handle struct {
 	conf                 *config.Config
-	tracer               stats.Tracer
+	tracer               *tracing.Tracer
 	backendConfig        backendconfig.BackendConfig
 	warehouseTransformer warehouseTransformer
 	transformerClients   transformer.TransformerClients
@@ -417,7 +418,7 @@ func (proc *Handle) Setup(
 	proc.instanceID = misc.GetInstanceID()
 
 	proc.trackedUsersReporter = trackedUsersReporter
-	proc.tracer = proc.statsFactory.NewTracer("processor")
+	proc.tracer = tracing.New(proc.statsFactory.NewTracer("processor"), tracing.WithNamePrefix("proc"))
 	proc.stats.statGatewayDBR = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_gateway_db_read", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -1618,11 +1619,8 @@ type preTransformationMessage struct {
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	start := time.Now()
-
 	spanTags := stats.Tags{"partition": partition}
-	ctx, processJobsSpan := proc.tracer.Start(subJobs.ctx, "proc.preprocessStage", stats.SpanKindInternal,
-		stats.SpanWithTags(spanTags),
-	)
+	ctx, processJobsSpan := proc.tracer.Trace(subJobs.ctx, "preprocessStage", tracing.WithTraceTags(spanTags))
 	defer processJobsSpan.End()
 
 	if proc.limiter.preprocess != nil {
@@ -1709,10 +1707,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Start(ctx, "proc.processJobsForDest", stats.SpanKindConsumer, stats.SpanWithTags(stats.Tags{
-				"workspaceId": batchEvent.WorkspaceId,
-				"sourceId":    eventParams.SourceId,
-			}))
+			_, span = proc.tracer.Trace(ctx, "processJobsForDest", tracing.WithTraceKind(stats.SpanKindConsumer),
+				tracing.WithTraceTags(stats.Tags{
+					"workspaceId": batchEvent.WorkspaceId,
+					"sourceId":    eventParams.SourceId,
+					"partition":   partition,
+				}),
+			)
 			spans = append(spans, span)
 		}
 
@@ -1800,9 +1801,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	var allowedBatchKeys map[dedup.BatchKey]bool
 	var err error
 	if proc.config.enableDedup {
-		proc.trace(ctx, "processJobsForDest.dedupAllowed", spanTags, func(ctx context.Context) {
+		_ = proc.tracer.TraceFunc(ctx, "processJobsForDest.dedupAllowed", func(ctx context.Context) {
 			allowedBatchKeys, err = proc.dedup.Allowed(dedupBatchKeys...)
-		})
+		}, tracing.WithTraceTags(spanTags))
 		if err != nil {
 			return nil, err
 		}
@@ -2274,8 +2275,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 				"destType":      event.Metadata.DestinationType,
 			}
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), event.Metadata.TraceParent)
-			_, span := proc.tracer.Start(ctx, "proc.user_transformations", stats.SpanKindInternal, stats.SpanWithTags(tags))
-
+			_, span := proc.tracer.Trace(ctx, "user_transformations", tracing.WithTraceTags(tags))
 			spans = append(spans, span)
 			traces[event.Metadata.TraceParent] = tags
 		}
@@ -2474,7 +2474,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	}()
 	for traceParent, tags := range in.traces {
 		ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-		_, span := proc.tracer.Start(ctx, "proc.store", stats.SpanKindProducer, stats.SpanWithTags(tags))
+		_, span := proc.tracer.Trace(ctx, "store", tracing.WithTraceTags(tags))
 		spans = append(spans, span)
 	}
 
@@ -3284,11 +3284,9 @@ func ConvertToFilteredTransformerResponse(
 func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult {
 	s := time.Now()
 
-	_, span := proc.tracer.Start(ctx, "proc.getJobsStage", stats.SpanKindInternal,
-		stats.SpanWithTags(stats.Tags{
-			"partition": partition,
-		}),
-	)
+	_, span := proc.tracer.Trace(ctx, "getJobsStage", tracing.WithTraceTags(stats.Tags{
+		"partition": partition,
+	}))
 	defer span.End()
 
 	if proc.limiter.read != nil {
@@ -3342,11 +3340,9 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 }
 
 func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {
-	_, span := proc.tracer.Start(ctx, "proc.markExecuting", stats.SpanKindInternal,
-		stats.SpanWithTags(stats.Tags{
-			"partition": partition,
-		}),
-	)
+	_, span := proc.tracer.Trace(ctx, "markExecuting", tracing.WithTraceTags(stats.Tags{
+		"partition": partition,
+	}))
 	defer span.End()
 
 	statusList := make([]*jobsdb.JobStatusT, len(jobs))
@@ -3566,14 +3562,4 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (proc *Handle) trace(ctx context.Context, name string, tags stats.Tags, f func(ctx context.Context)) {
-	var spanOptions []stats.SpanOption
-	if len(tags) > 0 {
-		spanOptions = append(spanOptions, stats.SpanWithTags(tags))
-	}
-	_, span := proc.tracer.Start(ctx, "proc."+name, stats.SpanKindInternal, spanOptions...)
-	f(ctx)
-	span.End()
 }

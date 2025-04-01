@@ -55,14 +55,15 @@ func (w *partitionWorker) Work() bool {
 
 	start := time.Now()
 	spanTags := stats.Tags{"partition": w.partition}
-	ctx, spanEnd := w.tracer.Trace(context.Background(), "Work", nil, tracing.WithTags(spanTags))
-	defer spanEnd()
+	ctx, span := w.tracer.Trace(context.Background(), "Work", tracing.WithTraceTags(spanTags))
+	defer span.End()
 
 	// Get jobs for this partition
 	jobs := w.handle.getJobsStage(ctx, w.partition)
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
+		span.SetStatus(stats.SpanStatusOk, "No jobs found")
 		return false
 	}
 
@@ -89,11 +90,11 @@ func (w *partitionWorker) Work() bool {
 		readLoopSleep := w.handle.config().readLoopSleep
 		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
 			// Sleep for the remaining time, respecting context cancellation
-			startSleep := time.Now()
-			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
-				panic(err)
-			}
-			w.tracer.RecordSpan(ctx, "Work.sleep", startSleep, spanTags)
+			_ = w.tracer.TraceFunc(ctx, "Work.sleep", func(ctx context.Context) {
+				if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
+					panic(err)
+				}
+			}, tracing.WithTraceTags(spanTags))
 		}
 	}
 
@@ -119,9 +120,9 @@ func (w *partitionWorker) Stop() {
 }
 
 func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline map[int][]*jobsdb.JobT) error {
-	start := time.Now()
 	spanTags := stats.Tags{"partition": w.partition}
-	defer w.tracer.RecordSpan(ctx, "Work.sendToPreProcess", start, spanTags)
+	_, span := w.tracer.Trace(ctx, "Work.sendToPreProcess", tracing.WithTraceTags(spanTags))
+	defer span.End()
 
 	g, gCtx := errgroup.WithContext(context.Background())
 
@@ -142,7 +143,7 @@ func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline m
 					return gCtx.Err()
 				case w.pipelines[partition].channel.preprocess <- subJob:
 					// Job successfully sent to worker
-					w.tracer.RecordSpan(ctx, "Work.preprocessCh.wait", waitStart, spanTags)
+					w.tracer.RecordSpan(ctx, "Work.preprocessCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
 				}
 			}
 			return nil
