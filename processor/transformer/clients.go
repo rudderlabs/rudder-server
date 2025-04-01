@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/trackingplan_validation"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 type DestinationClient interface {
@@ -38,10 +39,10 @@ type TransformerClients interface {
 	TrackingPlan() TrackingPlanClient
 }
 
-func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats) TransformerClients {
+func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats, featuresService transformerfs.FeaturesService) TransformerClients {
 	return &Clients{
 		user:         user_transformer.New(conf, log, statsFactory),
-		destination:  destination_transformer.New(conf, log, statsFactory),
+		destination:  destination_transformer.New(conf, log, statsFactory, destination_transformer.WithFeatureService(featuresService)),
 		trackingplan: trackingplan_validation.New(conf, log, statsFactory),
 	}
 }

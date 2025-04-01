@@ -135,7 +135,7 @@ func selectTransformer(
 ) (ptrans.DestinationClient, error) {
 	switch strings.ToUpper(mode) {
 	case processorTransformer:
-		return ptrans.NewClients(conf, l, stats.NOP).Destination(), nil
+		return ptrans.NewClients(conf, l, stats.NOP, nil).Destination(), nil
 	case warehouseTransformer:
 		return wtrans.New(conf, l, stats.NOP), nil
 	default:

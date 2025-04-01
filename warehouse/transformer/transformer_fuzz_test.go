@@ -571,7 +571,7 @@ func FuzzTransformer(f *testing.F) {
 
 		conf := setupConfig(transformerResource, map[string]any{})
 
-		processorTransformer := ptrans.NewClients(conf, logger.NOP, stats.Default)
+		processorTransformer := ptrans.NewClients(conf, logger.NOP, stats.Default, nil)
 		warehouseTransformer := New(conf, logger.NOP, stats.NOP)
 
 		eventContexts := []testhelper.EventContext{

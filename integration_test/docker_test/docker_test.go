@@ -300,9 +300,9 @@ func testCases(t *testing.T) {
 
 func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan struct{} {
 	setupStart := time.Now()
-	if testing.Verbose() {
-		t.Setenv("LOG_LEVEL", "DEBUG")
-	}
+	// if testing.Verbose() {
+	// t.Setenv("LOG_LEVEL", "DEBUG")
+	// }
 
 	config.Reset()
 	logger.Reset()
@@ -334,7 +334,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan
 		return nil
 	})
 	containersGroup.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithDockerImageTag("feat.dtransformCompaction"), transformertest.WithRepository("hub.dev-rudder.rudderlabs.com/dockerhub-proxy/rudderstack/develop-rudder-transformer"))
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -353,6 +353,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan
 	t.Setenv("WAREHOUSE_JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformerURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	t.Setenv("RSERVER_PROCESSOR_ENABLE_TRANSFORMATION_V2", "true")
+	t.Setenv("RSERVER_TRANSFORMER_COMPACTION_ENABLED", "true")
 	if !commonPool {
 		t.Setenv("RSERVER_DB_POOL_SHARED", strconv.FormatBool(commonPool))
 	}

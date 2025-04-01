@@ -731,11 +731,11 @@ func TestLongRunningTransformation(t *testing.T) {
 	})
 }
 
-func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
+func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 	testCases := []struct {
 		name     string
 		event    *types.TransformerEvent
-		expected *types.TransformerEvent
+		expected *types.UserTransformerEvent
 	}{
 		{
 			name: "remove connections",
@@ -750,13 +750,9 @@ func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
 					Transformations: make([]backendconfig.TransformationT, 0),
 				},
 			},
-			expected: &types.TransformerEvent{
-				Metadata:   types.Metadata{},
-				Message:    map[string]interface{}{},
-				Connection: backendconfig.Connection{},
-				Destination: backendconfig.DestinationT{
-					Transformations: make([]backendconfig.TransformationT, 0),
-				},
+			expected: &types.UserTransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
 			},
 		},
 		{
@@ -786,13 +782,9 @@ func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
 					},
 				},
 			},
-			expected: &types.TransformerEvent{
-				Metadata:   types.Metadata{},
-				Message:    map[string]interface{}{},
-				Connection: backendconfig.Connection{},
-				Destination: backendconfig.DestinationT{
-					Transformations: make([]backendconfig.TransformationT, 0),
-				},
+			expected: &types.UserTransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
 			},
 		},
 		{
@@ -833,12 +825,13 @@ func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
 					},
 				},
 			},
-			expected: &types.TransformerEvent{
-				Metadata:   types.Metadata{},
-				Message:    map[string]interface{}{},
-				Connection: backendconfig.Connection{},
-				Destination: backendconfig.DestinationT{
-					Transformations: []backendconfig.TransformationT{
+			expected: &types.UserTransformerEvent{
+				Metadata: types.Metadata{},
+				Message:  map[string]interface{}{},
+				Destination: struct {
+					Transformations []struct{ VersionID string }
+				}{
+					Transformations: []struct{ VersionID string }{
 						{
 							VersionID: "version-id",
 						},
@@ -852,7 +845,7 @@ func TestTransformerEvent_GetVersionsOnly(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, tc.event.GetVersionsOnly())
+			assert.Equal(t, tc.expected, tc.event.ToUserTransformerEvent())
 		})
 	}
 }

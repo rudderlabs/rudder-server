@@ -83,21 +83,20 @@ type Client struct {
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
-	batchSize := u.config.batchSize.Load()
-	var dehydratedClientEvents []types.TransformerEvent
-	for _, clientEvent := range clientEvents {
-		dehydratedClientEvent := clientEvent.GetVersionsOnly()
-		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
-	}
-
-	if len(dehydratedClientEvents) == 0 {
+	if len(clientEvents) == 0 {
 		return types.Response{}
 	}
+	batchSize := u.config.batchSize.Load()
+	var userTransformerEvents []types.UserTransformerEvent
+	for _, clientEvent := range clientEvents {
+		userTransformerEvents = append(userTransformerEvents, *clientEvent.ToUserTransformerEvent())
+	}
+
 	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
 	// flip back afterward
-	for i := range dehydratedClientEvents {
-		if dehydratedClientEvents[i].Metadata.OriginalSourceID != "" {
-			dehydratedClientEvents[i].Metadata.OriginalSourceID, dehydratedClientEvents[i].Metadata.SourceID = dehydratedClientEvents[i].Metadata.SourceID, dehydratedClientEvents[i].Metadata.OriginalSourceID
+	for i := range userTransformerEvents {
+		if userTransformerEvents[i].Metadata.OriginalSourceID != "" {
+			userTransformerEvents[i].Metadata.OriginalSourceID, userTransformerEvents[i].Metadata.SourceID = userTransformerEvents[i].Metadata.SourceID, userTransformerEvents[i].Metadata.OriginalSourceID
 		}
 	}
 
@@ -130,7 +129,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		trackWg.Done()
 	}()
 
-	batches := lo.Chunk(dehydratedClientEvents, batchSize)
+	batches := lo.Chunk(userTransformerEvents, batchSize)
 
 	u.stat.NewTaggedStat(
 		"processor.transformer_request_batch_count",
@@ -145,7 +144,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 	lo.ForEach(
 		batches,
-		func(batch []types.TransformerEvent, i int) {
+		func(batch []types.UserTransformerEvent, i int) {
 			u.guardConcurrency <- struct{}{}
 			go func() {
 				transformResponse[i] = u.sendBatch(ctx, u.userTransformURL(), labels, batch)
@@ -184,8 +183,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 }
 
-func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
+func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.UserTransformerEvent) []types.TransformerResponse {
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	if len(data) == 0 {
+		return nil
+	}
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -195,10 +197,6 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	rawJSON, err = jsonrs.Marshal(data)
 	if err != nil {
 		panic(err)
-	}
-
-	if len(data) == 0 {
-		return nil
 	}
 
 	var (
@@ -229,7 +227,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		func(err error, t time.Duration) {
 			var transformationID, transformationVersionID string
 			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
+				// transformationID = data[0].Destination.Transformations[0].ID // TODO: fix this
 				transformationVersionID = data[0].Destination.Transformations[0].VersionID
 			}
 			u.log.Errorn("JS HTTP connection error",

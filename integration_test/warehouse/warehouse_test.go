@@ -1797,7 +1797,7 @@ func TestDestinationTransformation(t *testing.T) {
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
-			tr := transformer.NewClients(conf, logger.NOP, stats.Default)
+			tr := transformer.NewClients(conf, logger.NOP, stats.Default, nil)
 			response := tr.Destination().Transform(context.Background(), transformerEvents)
 			require.Zero(t, len(response.FailedEvents))
 			require.Len(t, response.Events, 2)
@@ -1927,7 +1927,7 @@ func TestDestinationTransformation(t *testing.T) {
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
-			tr := transformer.NewClients(conf, logger.NOP, stats.Default)
+			tr := transformer.NewClients(conf, logger.NOP, stats.Default, nil)
 			response := tr.Destination().Transform(context.Background(), transformerEvents)
 			require.Zero(t, len(response.FailedEvents))
 			require.Len(t, response.Events, 2)
@@ -2051,7 +2051,7 @@ func TestDestinationTransformation(t *testing.T) {
 			err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 			require.NoError(t, err)
 
-			tr := transformer.NewClients(conf, logger.NOP, stats.Default)
+			tr := transformer.NewClients(conf, logger.NOP, stats.Default, nil)
 			response := tr.Destination().Transform(context.Background(), transformerEvents)
 			require.Zero(t, len(response.FailedEvents))
 			require.Len(t, response.Events, 2)
