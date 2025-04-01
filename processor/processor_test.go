@@ -1264,6 +1264,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					WorkspaceId: sampleWorkspaceID,
 				},
 			}
+
 			c.mockEventSchemasDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -1805,6 +1806,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 			processor.trackedUsersReporter = c.mockTrackedUsersReporter
+
 			mockTransformerClients.SetDestinationTransformOutput(
 				// Return a fixed response that matches our expectations for store calls
 				types.Response{
