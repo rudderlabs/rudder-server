@@ -2558,19 +2558,18 @@ func TestEvents(t *testing.T) {
 			t.Run(destination, func(t *testing.T) {
 				c := setupConfig(transformerResource, map[string]any{})
 
-				processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default).Destination()
 				warehouseTransformer := New(c, logger.NOP, stats.NOP)
 
 				ctx := context.Background()
-				batchSize := 100
 
 				events := []types.TransformerEvent{{
 					Message:     message,
 					Metadata:    getMetadata("track", destination),
 					Destination: getDestination(destination, map[string]any{}),
 				}}
-				pResponse := processorTransformer.Transform(ctx, events, batchSize)
-				wResponse := warehouseTransformer.Transform(ctx, events, batchSize)
+				pResponse := processorTransformer.Transform(ctx, events)
+				wResponse := warehouseTransformer.Transform(ctx, events)
 
 				require.Equal(t, len(wResponse.Events), len(pResponse.Events))
 				require.Nil(t, pResponse.FailedEvents)
