@@ -98,7 +98,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 	workspaces, states, customVals, params := c.filtersToInvalidationKeys(workspace, states, customVals, parameters)
 
 	if len(workspaces) == 0 { // if no workspace is provided, invalidate all by deleting the workspace's parent node
-		if c.warnOnBranchInvalidation.Load() && !(len(customVals) == 0 && len(states) == 0 && len(parameters) == 0) {
+		if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
 			c.logger.Warnn("Invalidating entire dataset",
 				logger.NewStringField("dataset", dataset),
 				logger.NewStringField("workspace", workspace),

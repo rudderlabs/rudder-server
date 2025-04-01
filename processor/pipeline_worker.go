@@ -23,7 +23,8 @@ func newPipelineWorker(partition string, h workerHandle) *pipelineWorker {
 	bufSize := h.config().pipelineBufferedItems
 	w.channel.preprocess = make(chan subJob, bufSize)
 	w.channel.preTransform = make(chan *preTransformationMessage, bufSize)
-	w.channel.transform = make(chan *transformationMessage, bufSize)
+	w.channel.usertransform = make(chan *transformationMessage, bufSize)
+	w.channel.destinationtransform = make(chan *userTransformData, bufSize)
 
 	// Store channel needs a larger buffer to accommodate all processed events
 	storeBufferSize := (bufSize + 1) * (h.config().maxEventsToProcess.Load()/h.config().subJobSize + 1)
@@ -51,10 +52,11 @@ type pipelineWorker struct {
 		wg     sync.WaitGroup     // worker wait group
 	}
 	channel struct { // worker channels
-		preprocess   chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		preTransform chan *preTransformationMessage // preTransform is used to send jobs to store to arc, esch and tracking plan validation
-		transform    chan *transformationMessage    // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
-		store        chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
+		preprocess           chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, esch and tracking plan validation
+		usertransform        chan *transformationMessage    // userTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
+		destinationtransform chan *userTransformData        // destinationTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
+		store                chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
 }
 
@@ -76,7 +78,7 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
 
 		for jobs := range w.channel.preprocess {
-			val, err := w.handle.processJobsForDest(w.partition, jobs)
+			val, err := w.handle.preprocessStage(w.partition, jobs)
 			if err != nil {
 				w.logger.Errorf("Error preprocessing jobs: %v", err)
 				panic(err)
@@ -89,28 +91,40 @@ func (w *pipelineWorker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.transform)
+		defer close(w.channel.usertransform)
 		defer w.logger.Debugf("pretransform routine stopped for worker: %s", w.partition)
 
 		for processedMessage := range w.channel.preTransform {
-			val, err := w.handle.generateTransformationMessage(processedMessage)
+			val, err := w.handle.pretransformStage(w.partition, processedMessage)
 			if err != nil {
 				w.logger.Errorf("Error generating transformation message: %v", err)
 				panic(err)
 			}
-			w.channel.transform <- val
+			w.channel.usertransform <- val
 		}
 	})
 
-	// Transformation goroutine
+	// User transformation  goroutine
+	w.lifecycle.wg.Add(1)
+	rruntime.Go(func() {
+		defer w.lifecycle.wg.Done()
+		defer close(w.channel.destinationtransform)
+		defer w.logger.Debugf("usertransform routine stopped for worker: %s", w.partition)
+
+		for msg := range w.channel.usertransform {
+			w.channel.destinationtransform <- w.handle.userTransformStage(w.partition, msg)
+		}
+	})
+
+	// Destination Transformation goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.store)
-		defer w.logger.Debugf("transform routine stopped for worker: %s", w.partition)
+		defer w.logger.Debugf("destinationtransform routine stopped for worker: %s", w.partition)
 
-		for msg := range w.channel.transform {
-			w.channel.store <- w.handle.transformations(w.partition, msg)
+		for msg := range w.channel.destinationtransform {
+			w.channel.store <- w.handle.destinationTransformStage(w.partition, msg)
 		}
 	})
 
@@ -127,7 +141,7 @@ func (w *pipelineWorker) start() {
 			// If this is the first subjob and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
-				w.handle.Store(w.partition, subJob)
+				w.handle.storeStage(w.partition, subJob)
 				continue
 			}
 
@@ -148,7 +162,7 @@ func (w *pipelineWorker) start() {
 
 			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
-				w.handle.Store(w.partition, mergedJob)
+				w.handle.storeStage(w.partition, mergedJob)
 				firstSubJob = true
 			}
 		}

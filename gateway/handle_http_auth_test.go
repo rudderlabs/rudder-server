@@ -96,7 +96,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Failed to read writeKey from header\n", string(body))
+			require.Equal(t, "failed to read writekey from header\n", string(body))
 			require.Equal(t,
 				float64(1),
 				statsStore.Get(
@@ -123,7 +123,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid Write Key\n", string(body))
+			require.Equal(t, "invalid write key\n", string(body))
 		})
 
 		t.Run("disabled source", func(t *testing.T) {
@@ -147,7 +147,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Source is disabled\n", string(body))
+			require.Equal(t, "source is disabled\n", string(body))
 			require.Equal(t,
 				float64(1),
 				statsStore.Get(
@@ -175,7 +175,7 @@ func TestAuth(t *testing.T) {
 						"sourceType":  "catA",
 						"workspaceId": "wrskpc",
 						"writeKey":    writeKey,
-						"reason":      "Source is disabled",
+						"reason":      "source is disabled",
 					},
 				).LastValue(),
 			)
@@ -236,7 +236,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Failed to read writeKey from Query Params\n", string(body))
+			require.Equal(t, "failed to read writekey from query params\n", string(body))
 		})
 
 		t.Run("invalid writeKey", func(t *testing.T) {
@@ -248,7 +248,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid Write Key\n", string(body))
+			require.Equal(t, "invalid write key\n", string(body))
 		})
 
 		t.Run("not a webhook source", func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid Write Key\n", string(body))
+			require.Equal(t, "invalid write key\n", string(body))
 		})
 
 		t.Run("disabled webhook source", func(t *testing.T) {
@@ -288,7 +288,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Source is disabled\n", string(body))
+			require.Equal(t, "source is disabled\n", string(body))
 		})
 	})
 
@@ -319,7 +319,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Failed to read source id from header\n", string(body))
+			require.Equal(t, "failed to read source id from header\n", string(body))
 		})
 
 		t.Run("invalid writeKey", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid source id\n", string(body))
+			require.Equal(t, "invalid source id\n", string(body))
 		})
 
 		t.Run("disabled source", func(t *testing.T) {
@@ -348,7 +348,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Source is disabled\n", string(body))
+			require.Equal(t, "source is disabled\n", string(body))
 		})
 	})
 
@@ -389,7 +389,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid source id\n", string(body))
+			require.Equal(t, "invalid source id\n", string(body))
 		})
 
 		t.Run("regular source using replay endpoint", func(t *testing.T) {
@@ -408,7 +408,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusUnauthorized, w.Code, "authentication should not succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid replay source\n", string(body))
+			require.Equal(t, "invalid replay source\n", string(body))
 		})
 	})
 
@@ -518,7 +518,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, w.Code, "authentication should succeed")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Failed to read destination id from header\n", string(body))
+			require.Equal(t, "failed to read destination id from header\n", string(body))
 		})
 
 		t.Run("invalid destination id", func(t *testing.T) {
@@ -543,7 +543,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, w.Code, "authentication should fail")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Invalid destination id\n", string(body))
+			require.Equal(t, "invalid destination id\n", string(body))
 		})
 
 		t.Run("destination disabled", func(t *testing.T) {
@@ -568,7 +568,7 @@ func TestAuth(t *testing.T) {
 			require.Equal(t, http.StatusNotFound, w.Code, "authentication should fail")
 			body, err := io.ReadAll(w.Body)
 			require.NoError(t, err, "reading response body should succeed")
-			require.Equal(t, "Destination is disabled\n", string(body))
+			require.Equal(t, "destination is disabled\n", string(body))
 		})
 	})
 }

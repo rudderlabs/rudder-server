@@ -263,7 +263,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 // upload the given batch of jobs to the given object storage provider
 func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse bool) UploadResult {
 	if brt.disableEgress {
-		return UploadResult{Error: rterror.DisabledEgress}
+		return UploadResult{Error: rterror.ErrDisabledEgress}
 	}
 
 	var localTmpDirName string
@@ -589,7 +589,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
 		switch {
-		case errors.Is(errOccurred, rterror.DisabledEgress):
+		case errors.Is(errOccurred, rterror.ErrDisabledEgress):
 			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.Connection.Source.ID,
 				time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Succeeded.State

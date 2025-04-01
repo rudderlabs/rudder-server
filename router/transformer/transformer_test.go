@@ -1645,11 +1645,12 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 					_, _ = w.Write(b)
 					return
 				}
-				if tc.proxyVersion == "v1" {
+				switch tc.proxyVersion {
+				case "v1":
 					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV1)
-				} else if tc.proxyVersion == "v0" {
+				case "v0":
 					b, _ = jsonrs.Marshal(tc.transformerProxyResponseV0)
-				} else {
+				default:
 					b = []byte(tc.transformerResponse)
 				}
 				outputJson, _ := sjson.SetRawBytes([]byte(`{}`), "output", b)

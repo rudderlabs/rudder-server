@@ -590,7 +590,7 @@ func TestTransformer(t *testing.T) {
 
 			c := setupConfig(transformerResource, tc.configOverride)
 
-			processorTransformer := ptrans.NewTransformer(c, logger.NOP, stats.Default)
+			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
 			warehouseTransformer := New(c, logger.NOP, stats.NOP)
 
 			eventContexts := []testhelper.EventContext{

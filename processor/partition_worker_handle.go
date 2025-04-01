@@ -20,13 +20,14 @@ type workerHandle interface {
 	stats() *processorStats
 	tracer() stats.Tracer
 
-	getJobs(partition string) jobsdb.JobsResult
+	getJobsStage(partition string) jobsdb.JobsResult
 	markExecuting(partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
-	processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error)
-	generateTransformationMessage(preTrans *preTransformationMessage) (*transformationMessage, error)
-	transformations(partition string, in *transformationMessage) *storeMessage
-	Store(partition string, in *storeMessage)
+	preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error)
+	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)
+	userTransformStage(partition string, in *transformationMessage) *userTransformData
+	destinationTransformStage(partition string, in *userTransformData) *storeMessage
+	storeStage(partition string, in *storeMessage)
 }
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers
