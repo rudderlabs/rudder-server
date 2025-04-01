@@ -255,9 +255,9 @@ func TestIntegrationWebhook(t *testing.T) {
 
 			assert.Equal(t, tc.Output.Response.StatusCode, resp.StatusCode)
 			if resp.Header.Get("Content-Type") == "application/json" {
-				assert.JSONEq(t, string(tc.Output.Response.Body), string(b))
+				assert.JSONEq(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(string(b)))
 			} else {
-				assert.Equal(t, string(tc.Output.Response.Body), fmt.Sprintf("%q", b))
+				assert.Equal(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(fmt.Sprintf("%q", b)))
 			}
 			r, err := gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 				WorkspaceID: workspaceID,

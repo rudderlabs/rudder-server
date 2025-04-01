@@ -174,7 +174,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 		}
 	}()
 
-	sourceJSON, err = bc.workspaceConfig.Get(ctx)
+	sourceJSON, err = bc.Get(ctx)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)

@@ -86,26 +86,11 @@ var (
 		"processor.transformer_request_batch_count": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000,
 		},
-		"processor_db_write_events": {
-			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
-		},
 		"processor_db_write_payload_bytes": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB), float64(100 * bytesize.MB),
 			float64(1 * bytesize.GB),
-		},
-		"processor_db_read_events": {
-			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
-		},
-		"processor_db_read_payload_bytes": {
-			float64(10 * bytesize.B), float64(100 * bytesize.B),
-			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
-			float64(1 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB), float64(100 * bytesize.MB),
-			float64(1 * bytesize.GB),
-		},
-		"processor_db_read_requests": {
-			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,
 		},
 		"router.kafka.batch_size": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000,

@@ -44,7 +44,7 @@ func (irh *ImportRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.
 // for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
 func getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	if !gjson.ValidBytes(requestPayload) {
-		return make(map[string][]byte), errors.New(response.InvalidJSON)
+		return make(map[string][]byte), errors.New((response.InvalidJSON))
 	}
 
 	result := gjson.GetBytes(requestPayload, "batch")
