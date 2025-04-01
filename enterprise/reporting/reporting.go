@@ -146,7 +146,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
 		useCommonClient:                      useCommonClient,
-		client:                               client.NewClient(reportingServiceURL, client.PathMetrics, conf, log, stats),
+		client:                               client.New(reportingServiceURL, client.PathMetrics, conf, log, stats),
 	}
 }
 

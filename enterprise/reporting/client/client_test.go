@@ -52,7 +52,7 @@ func TestClientSendMetric(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	c := client.NewClient(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
+	c := client.New(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
 
 	bucket, _ := reporting.GetAggregationBucketMinute(28017690, 10)
 
@@ -192,7 +192,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	c := client.NewClient(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
+	c := client.New(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
 
 	// Create sample event as json.RawMessage
 	sampleEvent := json.RawMessage(`{"event": "test_event", "properties": {"test": "value"}}`)
@@ -303,7 +303,7 @@ func TestClient5xx(t *testing.T) {
 	conf.Set("clientName", "test-client")
 
 	// Create the client
-	c := client.NewClient(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
+	c := client.New(server.URL, client.PathMetrics, conf, logger.NOP, statsStore)
 
 	// Create a test metric
 	metric := &types.Metric{

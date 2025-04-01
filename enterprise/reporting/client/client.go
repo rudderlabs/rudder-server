@@ -50,8 +50,8 @@ type Client struct {
 	path                Path
 }
 
-// NewClient creates a new reporting client
-func NewClient(reportingServiceURL string, path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+// New creates a new reporting client
+func New(reportingServiceURL string, path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}

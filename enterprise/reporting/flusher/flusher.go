@@ -118,7 +118,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
 		httpClient:                          httpClient,
 		useCommonClient:                     useCommonClient,
-		client:                              client.NewClient(reportingURL, client.PathAggregates, conf, log, stats),
+		client:                              client.New(reportingURL, client.PathAggregates, conf, log, stats),
 		module:                              module,
 	}
 
