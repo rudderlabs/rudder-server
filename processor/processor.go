@@ -1978,6 +1978,10 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 }
 
 func (proc *Handle) pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error) {
+	spanTags := stats.Tags{"partition": partition}
+	_, mainSpan := proc.tracer.Trace(preTrans.subJobs.ctx, "pretransformStage", tracing.WithTraceTags(spanTags))
+	defer mainSpan.End()
+
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 		defer proc.stats.statPretransformStageCount(partition).Count(len(preTrans.subJobs.subJobs))
@@ -2240,6 +2244,10 @@ type userTransformData struct {
 }
 
 func (proc *Handle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
+	spanTags := stats.Tags{"partition": partition}
+	_, mainSpan := proc.tracer.Trace(in.ctx, "userTransformStage", tracing.WithTraceTags(spanTags))
+	defer mainSpan.End()
+
 	if proc.limiter.utransform != nil {
 		defer proc.limiter.utransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 		defer proc.stats.statUtransformStageCount(partition).Count(len(in.statusList))
@@ -2328,6 +2336,10 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 }
 
 func (proc *Handle) destinationTransformStage(partition string, in *userTransformData) *storeMessage {
+	spanTags := stats.Tags{"partition": partition}
+	_, mainSpan := proc.tracer.Trace(in.ctx, "destinationTransformStage", tracing.WithTraceTags(spanTags))
+	defer mainSpan.End()
+
 	if proc.limiter.dtransform != nil {
 		defer proc.limiter.dtransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 		defer proc.stats.statDtransformStageCount(partition).Count(len(in.statusList))
@@ -2472,6 +2484,10 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) storeStage(partition string, in *storeMessage) {
+	spanTags := stats.Tags{"partition": partition}
+	_, mainSpan := proc.tracer.Trace(in.ctx, "storeStage", tracing.WithTraceTags(spanTags))
+	defer mainSpan.End()
+
 	spans := make([]stats.TraceSpan, 0, len(in.traces))
 	defer func() {
 		for _, span := range spans {

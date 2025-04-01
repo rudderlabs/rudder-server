@@ -5820,6 +5820,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	}
 
 	sm3 := &storeMessage{
+		context.Background(),
 		[]*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 		[]*jobsdb.JobStatusT{{JobID: 3}},
 		[]*jobsdb.JobT{{JobID: 3}},
