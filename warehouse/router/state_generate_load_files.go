@@ -11,9 +11,8 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (job *UploadJob) generateLoadFiles(hasSchemaChanged bool) error {
-	generateAll := hasSchemaChanged ||
-		slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
+func (job *UploadJob) generateLoadFiles() error {
+	generateAll := slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
 		job.config.alwaysRegenerateAllLoadFiles
 
 	var startLoadFileID, endLoadFileID int64

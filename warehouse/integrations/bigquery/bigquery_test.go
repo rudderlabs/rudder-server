@@ -628,6 +628,7 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_ENABLE_DELETE_BY_JOBS", "true")
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_BIGQUERY_SLOW_QUERY_THRESHOLD", "0s")
+				t.Setenv("RSERVER_WAREHOUSE_SCHEMA_TTLIN_MINUTES", "0s")
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
