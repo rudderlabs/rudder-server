@@ -60,6 +60,21 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 	drainStatsbyDest := make(map[string]*routerutils.DrainStats)
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 
+	// Sort jobs by ID to ensure consistent processing order
+	slices.SortFunc(destinationJobs.jobs, func(a, b *jobsdb.JobT) int {
+		return int(a.JobID - b.JobID)
+	})
+
+	// Organize jobs by destination and source
+	type jobEntry struct {
+		job      *jobsdb.JobT
+		status   *jobsdb.JobStatusT
+		sourceID string
+		destID   string
+	}
+
+	var jobsToBuffer []jobEntry
+
 	// Process jobs and check for drain conditions
 	for _, job := range destinationJobs.jobs {
 		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
@@ -81,11 +96,10 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 				RetryTime:     time.Now(),
 				ErrorCode:     routerutils.DRAIN_ERROR_CODE,
 				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", reason),
-				Parameters:    []byte(`{}`), // check
+				Parameters:    []byte(`{}`),
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 			}
-			// Enhancing job parameter with the drain reason.
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
 			drainList = append(drainList, &status)
@@ -102,7 +116,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 				drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, reason)
 			}
 		} else {
-			jobCh := brt.jobBuffer.getJobChannel(sourceID, destinationID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -115,8 +128,31 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 			}
-			jobCh <- job
+
 			statusList = append(statusList, &status)
+			jobsToBuffer = append(jobsToBuffer, jobEntry{
+				job:      job,
+				status:   &status,
+				sourceID: sourceID,
+				destID:   destinationID,
+			})
+		}
+	}
+
+	// Mark jobs as executing in a single batch operation
+	if len(statusList) > 0 {
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
+		}, brt.sendRetryUpdateStats)
+		if err != nil {
+			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))
+		}
+		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+
+		// Now that all statuses are updated, we can safely send jobs to channels
+		for _, entry := range jobsToBuffer {
+			jobCh := brt.jobBuffer.getJobChannel(entry.sourceID, entry.destID)
+			jobCh <- entry.job
 		}
 	}
 
@@ -143,7 +179,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 						return fmt.Errorf("reporting metrics: %w", err)
 					}
 				}
-				// rsources stats
 				return brt.updateRudderSourcesStats(ctx, tx, drainJobList, drainList)
 			})
 		}, brt.sendRetryUpdateStats)
@@ -161,17 +196,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			}).Count(destDrainStat.Count)
 			w.brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(destDrainStat.Count))
 		}
-	}
-
-	// Mark the jobs as executing
-	if len(statusList) > 0 {
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
-		}, brt.sendRetryUpdateStats)
-		if err != nil {
-			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))
-		}
-		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 	}
 }
 
