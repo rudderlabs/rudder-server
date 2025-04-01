@@ -53,6 +53,7 @@ func run(ctx context.Context) error {
 
 	runID := uuid.New().String()
 	conf := config.Default
+	conf.Set("Processor.transformBatchSize", batchSize)
 
 	logFactory := logger.Default
 	l := logFactory.NewLogger().Child("warehouse-transformer-benchmark").Child(mode)
@@ -93,7 +94,7 @@ func run(ctx context.Context) error {
 	g.Go(func() error {
 		for i := 0; i < iterations; i++ {
 			l.Infof("Running iteration: %d", i+1)
-			t.Transform(gCtx, clientEvents, batchSize)
+			t.Transform(gCtx, clientEvents)
 		}
 
 		endTime := timeutil.Now().Sub(startTime).Seconds()
@@ -131,10 +132,10 @@ func selectTransformer(
 	mode string,
 	conf *config.Config,
 	l logger.Logger,
-) (ptrans.DestinationTransformer, error) {
+) (ptrans.DestinationClient, error) {
 	switch strings.ToUpper(mode) {
 	case processorTransformer:
-		return ptrans.NewTransformer(conf, l, stats.NOP), nil
+		return ptrans.NewClients(conf, l, stats.NOP).Destination(), nil
 	case warehouseTransformer:
 		return wtrans.New(conf, l, stats.NOP), nil
 	default:
