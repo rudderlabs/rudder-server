@@ -101,9 +101,8 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
-
+	mockTransformerClients := mocksTransformer.NewMockTransformerClients(mockCtrl)
 	gwDB := jobsdb.NewForReadWrite("gw", jobsdb.WithStats(stats.NOP))
 	defer gwDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch", jobsdb.WithStats(stats.NOP))
@@ -148,9 +147,9 @@ func TestDynamicClusterManager(t *testing.T) {
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
 		rmetrics.NewPendingEventsRegistry(),
+		processor.WithTransformerClients(mockTransformerClients),
 	)
 	processor.BackendConfig = mockBackendConfig
-	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
 	rtFactory := &router.Factory{

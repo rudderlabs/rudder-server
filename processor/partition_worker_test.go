@@ -27,13 +27,14 @@ func TestWorkerPool(t *testing.T) {
 			log:        logger.NOP,
 			loopEvents: 100,
 			partitionStats: map[string]struct {
-				queried      int
-				marked       int
-				processed    int
-				transformed  int
-				stored       int
-				subBatches   int
-				trackedUsers int
+				queried              int
+				marked               int
+				processed            int
+				userTransform        int
+				destinationTransform int
+				stored               int
+				subBatches           int
+				trackedUsers         int
 			}{},
 			limitsReached:                limitsReached,
 			shouldProcessMultipleSubJobs: shouldProcessMultipleSubJobs,
@@ -47,7 +48,8 @@ func TestWorkerPool(t *testing.T) {
 			wh.limiters.query = kitsync.NewLimiter(poolCtx, &limiterWg, "query", 2, stats.Default)
 			wh.limiters.process = kitsync.NewLimiter(poolCtx, &limiterWg, "process", 2, stats.Default)
 			wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
-			wh.limiters.transform = kitsync.NewLimiter(poolCtx, &limiterWg, "transform", 2, stats.Default)
+			wh.limiters.usertransform = kitsync.NewLimiter(poolCtx, &limiterWg, "usertransform", 2, stats.Default)
+			wh.limiters.destinationtransform = kitsync.NewLimiter(poolCtx, &limiterWg, "destinationtransform", 2, stats.Default)
 			defer limiterWg.Wait()
 		}
 
@@ -116,13 +118,14 @@ func TestWorkerPoolIdle(t *testing.T) {
 		log:        logger.NewLogger(),
 		loopEvents: 0,
 		partitionStats: map[string]struct {
-			queried      int
-			marked       int
-			processed    int
-			transformed  int
-			stored       int
-			subBatches   int
-			trackedUsers int
+			queried              int
+			marked               int
+			processed            int
+			userTransform        int
+			destinationTransform int
+			stored               int
+			subBatches           int
+			trackedUsers         int
 		}{},
 	}
 	poolCtx, poolCancel := context.WithCancel(context.Background())
@@ -155,20 +158,22 @@ type mockWorkerHandle struct {
 	statsMu        sync.RWMutex
 	log            logger.Logger
 	partitionStats map[string]struct {
-		queried      int
-		marked       int
-		processed    int
-		transformed  int
-		stored       int
-		subBatches   int
-		trackedUsers int
+		queried              int
+		marked               int
+		processed            int
+		userTransform        int
+		destinationTransform int
+		stored               int
+		subBatches           int
+		trackedUsers         int
 	}
 
 	limiters struct {
-		query     kitsync.Limiter
-		process   kitsync.Limiter
-		transform kitsync.Limiter
-		store     kitsync.Limiter
+		query                kitsync.Limiter
+		process              kitsync.Limiter
+		store                kitsync.Limiter
+		usertransform        kitsync.Limiter
+		destinationtransform kitsync.Limiter
 	}
 
 	limitsReached                bool
@@ -185,8 +190,8 @@ func (m *mockWorkerHandle) validate(t *testing.T) {
 	for partition, s := range m.partitionStats {
 		require.Equalf(t, s.queried, s.marked, "Partition %s: Queried %d, Marked %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.marked, s.processed, "Partition %s: Marked %d, Processed %d", partition, s.queried, s.marked)
-		require.Equalf(t, s.processed, s.transformed, "Partition %s: Processed %d, Transformed %d", partition, s.queried, s.marked)
-		require.Equalf(t, s.transformed, s.stored, "Partition %s: Transformed %d, Stored %d", partition, s.queried, s.marked)
+		require.Equalf(t, s.processed, s.userTransform, "Partition %s: Processed %d, User Transform %d", partition, s.queried, s.marked)
+		require.Equalf(t, s.userTransform, s.destinationTransform, "Partition %s: User Transform %d, Destination Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.subBatches, s.trackedUsers, "Partition %s: Tracked Users %d, Subjobs %d", partition, s.trackedUsers, s.subBatches)
 	}
 }
@@ -212,7 +217,7 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobs(partition)
+	jobs := m.getJobsStage(partition)
 	if len(jobs.Jobs) > 0 {
 		_ = m.markExecuting(partition, jobs.Jobs)
 	}
@@ -220,33 +225,26 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
-		preTransMessage, err := m.processJobsForDest(partition, subJob)
+		preTransMessage, err := m.preprocessStage(partition, subJob)
 		if err != nil {
 			return false
 		}
-		dest, err = m.generateTransformationMessage(preTransMessage)
+		dest, err = m.pretransformStage(partition, preTransMessage)
 		if err != nil {
 			return false
 		}
-		m.Store(partition, m.transformations(partition,
-			dest,
+		m.storeStage(partition, m.destinationTransformStage(partition,
+			m.userTransformStage(partition, dest),
 		))
 	}
 	return len(jobs.Jobs) > 0
 }
 
 func (*mockWorkerHandle) stats() *processorStats {
-	return &processorStats{
-		statDBReadOutOfOrder: func(partition string) stats.Measurement {
-			return stats.NOP.NewStat("db_read_out_of_order", stats.CountType)
-		},
-		statDBReadOutOfSequence: func(partition string) stats.Measurement {
-			return stats.NOP.NewStat("db_read_out_of_sequence", stats.CountType)
-		},
-	}
+	return &processorStats{}
 }
 
-func (m *mockWorkerHandle) getJobs(partition string) jobsdb.JobsResult {
+func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
 		defer m.limiters.query.Begin("")()
 	}
@@ -311,7 +309,7 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 }
 
-func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) (*preTransformationMessage, error) {
+func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin("")()
 	}
@@ -329,7 +327,7 @@ func (m *mockWorkerHandle) processJobsForDest(partition string, subJobs subJob) 
 	}, nil
 }
 
-func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMessage) (*transformationMessage, error) {
+func (m *mockWorkerHandle) pretransformStage(partition string, in *preTransformationMessage) (*transformationMessage, error) {
 	return &transformationMessage{
 		totalEvents: in.totalEvents,
 		hasMore:     in.subJobs.hasMore,
@@ -339,16 +337,34 @@ func (m *mockWorkerHandle) generateTransformationMessage(in *preTransformationMe
 	}, nil
 }
 
-func (m *mockWorkerHandle) transformations(partition string, in *transformationMessage) *storeMessage {
-	if m.limiters.transform != nil {
-		defer m.limiters.transform.Begin("")()
+func (m *mockWorkerHandle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
+	if m.limiters.usertransform != nil {
+		defer m.limiters.usertransform.Begin("")()
 	}
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
 	s := m.partitionStats[partition]
-	s.transformed += in.totalEvents
+	s.userTransform += in.totalEvents
 	m.partitionStats[partition] = s
-	m.log.Infof("transformations partition: %s stats: %+v", partition, s)
+	m.log.Infof("usertransformations partition: %s stats: %+v", partition, s)
+
+	return &userTransformData{
+		totalEvents:         in.totalEvents,
+		hasMore:             in.hasMore,
+		trackedUsersReports: in.trackedUsersReports,
+	}
+}
+
+func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userTransformData) *storeMessage {
+	if m.limiters.destinationtransform != nil {
+		defer m.limiters.destinationtransform.Begin("")()
+	}
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	s := m.partitionStats[partition]
+	s.destinationTransform += in.totalEvents
+	m.partitionStats[partition] = s
+	m.log.Infof("destinationtransformations partition: %s stats: %+v", partition, s)
 
 	return &storeMessage{
 		totalEvents:         in.totalEvents,
@@ -357,7 +373,7 @@ func (m *mockWorkerHandle) transformations(partition string, in *transformationM
 	}
 }
 
-func (m *mockWorkerHandle) Store(partition string, in *storeMessage) {
+func (m *mockWorkerHandle) storeStage(partition string, in *storeMessage) {
 	if m.limiters.store != nil {
 		defer m.limiters.store.Begin("")()
 	}

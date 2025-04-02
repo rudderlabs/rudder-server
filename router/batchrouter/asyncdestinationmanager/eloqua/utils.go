@@ -131,14 +131,15 @@ func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fie
 			}
 		}
 	}
-	if eventDetails.Type == "identify" {
+	switch eventDetails.Type {
+	case "identify":
 		return map[string]interface{}{
 			"name":                    "Rudderstack-Contact-Import",
 			"fields":                  fieldStatement,
 			"identifierFieldName":     eventDetails.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
-	} else if eventDetails.Type == "track" {
+	case "track":
 		return map[string]interface{}{
 			"name":                    "Rudderstack-CustomObject-Import",
 			"updateRule":              "always",
@@ -146,9 +147,9 @@ func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fie
 			"identifierFieldName":     eventDetails.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
+	default:
+		return nil, fmt.Errorf("unable to create body for import definition")
 	}
-
-	return nil, fmt.Errorf("unable to create body for import definition")
 }
 
 func generateErrorString(item RejectedItem) string {

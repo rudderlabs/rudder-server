@@ -266,8 +266,8 @@ func Copy(dst, src interface{}) {
 	}
 }
 
-//  Returns chronological timestamp of the event using the formula
-//  timestamp = receivedAt - (sentAt - originalTimestamp)
+// Returns chronological timestamp of the event using the formula
+// timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
@@ -305,7 +305,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 		return intArr, nil
 	}
 	typeInterface := reflect.TypeOf(interfaceT).Kind()
-	if !(typeInterface != reflect.Slice) && !(typeInterface != reflect.Array) {
+	if typeInterface == reflect.Slice || typeInterface == reflect.Array {
 		return intArr, errors.New("didn't receive array from transformer")
 	}
 

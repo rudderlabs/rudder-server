@@ -377,7 +377,7 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		Body:          string(res),
 		DestName:      refTokenParams.DestDefName,
 		RequestType:   actionType,
-		BasicAuthUser: h.TokenProvider.Identity(),
+		BasicAuthUser: h.Identity(),
 	}
 	var accountSecret AccountSecret
 	// Stat for counting number of Refresh Token endpoint calls

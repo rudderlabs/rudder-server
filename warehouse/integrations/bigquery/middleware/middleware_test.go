@@ -41,19 +41,19 @@ func TestQueryWrapper(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := []struct {
-		name               string
-		executionTimeInSec time.Duration
-		wantLog            bool
+		name          string
+		executionTime time.Duration
+		wantLog       bool
 	}{
 		{
-			name:               "slow query",
-			executionTimeInSec: 500 * time.Second,
-			wantLog:            true,
+			name:          "slow query",
+			executionTime: 500 * time.Second,
+			wantLog:       true,
 		},
 		{
-			name:               "fast query",
-			executionTimeInSec: 1 * time.Second,
-			wantLog:            false,
+			name:          "fast query",
+			executionTime: 1 * time.Second,
+			wantLog:       false,
 		},
 	}
 
@@ -75,7 +75,7 @@ func TestQueryWrapper(t *testing.T) {
 				middleware.WithLogger(mockLogger),
 				middleware.WithKeyAndValues(keysAndValues...),
 				middleware.WithSince(func(time.Time) time.Duration {
-					return tc.executionTimeInSec
+					return tc.executionTime
 				}),
 			)
 
@@ -84,7 +84,7 @@ func TestQueryWrapper(t *testing.T) {
 
 			kvs := []any{
 				logfield.Query, queryStatement,
-				logfield.QueryExecutionTime, tc.executionTimeInSec,
+				logfield.QueryExecutionTime, tc.executionTime,
 			}
 			kvs = append(kvs, keysAndValues...)
 

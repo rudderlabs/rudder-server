@@ -302,7 +302,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	jobData = &jobFromReq{}
 	if !gjson.ValidBytes(body) {
-		err = errors.New(response.InvalidJSON)
+		err = errors.New((response.InvalidJSON))
 		return
 	}
 
@@ -310,7 +310,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	if req.reqType != "batch" && req.reqType != "replay" && req.reqType != "retl" {
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
-			err = errors.New(response.NotRudderEvent)
+			err = errors.New((response.NotRudderEvent))
 			return
 		}
 		body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
@@ -338,7 +338,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	for idx, v := range eventsBatch {
 		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
-			err = errors.New(response.NotRudderEvent)
+			err = errors.New((response.NotRudderEvent))
 			return
 		}
 
@@ -350,7 +350,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		).(string)
 
 		if gw.isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
-			err = errors.New(response.NonIdentifiableRequest)
+			err = errors.New((response.NonIdentifiableRequest))
 			return
 		}
 
@@ -447,7 +447,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 
 	if len(body) > gw.conf.maxReqSize.Load() && !containsAudienceList {
-		err = errors.New(response.RequestBodyTooLarge)
+		err = errors.New((response.RequestBodyTooLarge))
 		return
 	}
 
@@ -496,7 +496,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			}
 			payload, err = jsonrs.Marshal(singularEventBatch)
 			if err != nil {
-				err = errors.New(response.InvalidJSON)
+				err = errors.New((response.InvalidJSON))
 				return
 			}
 			eventCount = len(userEvent.events)
@@ -588,7 +588,7 @@ func (gw *Handle) getPayload(arctx *gwtypes.AuthRequestContext, r *http.Request,
 
 func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
-		return []byte{}, errors.New(response.RequestBodyNil)
+		return []byte{}, errors.New((response.RequestBodyNil))
 	}
 
 	start := time.Now()
@@ -603,7 +603,7 @@ func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 			string(payload),
 			err,
 		)
-		return payload, errors.New(response.RequestBodyReadFailed)
+		return payload, errors.New((response.RequestBodyReadFailed))
 	}
 	return payload, nil
 }
@@ -768,7 +768,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat.Report(gw.stats)
 		gw.logger.Errorn("invalid json in request",
 			obskit.Error(err))
-		return nil, errors.New(response.InvalidJSON)
+		return nil, errors.New((response.InvalidJSON))
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))
 
@@ -776,7 +776,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		stat.RequestFailed(response.NotRudderEvent)
 		stat.Report(gw.stats)
 		gw.logger.Errorn("no messages in request")
-		return nil, errors.New(response.NotRudderEvent)
+		return nil, errors.New((response.NotRudderEvent))
 	}
 
 	res = make([]jobWithStat, 0, len(messages))
@@ -789,9 +789,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("invalid message in request",
 				loggerFields...)
-			stat.RequestEventsFailed(1, response.InvalidStreamMessage)
+			stat.RequestEventsFailed(1, (response.InvalidStreamMessage))
 			stat.Report(gw.stats)
-			return nil, errors.New(response.InvalidStreamMessage)
+			return nil, errors.New((response.InvalidStreamMessage))
 		}
 		// TODO: get rid of this check
 		if msg.Properties.RequestType != "" {
@@ -800,12 +800,12 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			default:
 				msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
 				if err != nil {
-					stat.RequestEventsFailed(1, response.NotRudderEvent)
+					stat.RequestEventsFailed(1, (response.NotRudderEvent))
 					stat.Report(gw.stats)
 					loggerFields := msg.Properties.LoggerFields()
 					loggerFields = append(loggerFields, obskit.Error(err))
 					gw.logger.Errorn("failed to set type in message", loggerFields...)
-					return nil, errors.New(response.NotRudderEvent)
+					return nil, errors.New((response.NotRudderEvent))
 				}
 			}
 		}
@@ -816,30 +816,30 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		if changed {
 			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
 			if err != nil {
-				stat.RequestFailed(response.NotRudderEvent)
+				stat.RequestFailed((response.NotRudderEvent))
 				stat.Report(gw.stats)
 				gw.logger.Errorn("failed to set messageID in message",
 					obskit.Error(err))
-				return nil, errors.New(response.NotRudderEvent)
+				return nil, errors.New((response.NotRudderEvent))
 			}
 		}
 		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
 		if err != nil {
-			stat.RequestFailed(response.NotRudderEvent)
+			stat.RequestFailed((response.NotRudderEvent))
 			stat.Report(gw.stats)
 			gw.logger.Errorn("failed to get rudderId",
 				obskit.Error(err))
-			return nil, errors.New(response.NotRudderEvent)
+			return nil, errors.New((response.NotRudderEvent))
 		}
 		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
 		if err != nil {
-			stat.RequestFailed(response.NotRudderEvent)
+			stat.RequestFailed((response.NotRudderEvent))
 			stat.Report(gw.stats)
 			loggerFields := msg.Properties.LoggerFields()
 			loggerFields = append(loggerFields, obskit.Error(err))
 			gw.logger.Errorn("failed to set rudderId in message",
 				loggerFields...)
-			return nil, errors.New(response.NotRudderEvent)
+			return nil, errors.New((response.NotRudderEvent))
 		}
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
@@ -965,7 +965,7 @@ func getMessageID(event []byte) (string, bool) {
 func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
 	rudderId, err := kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 	if err != nil {
-		err = errors.New(response.NonIdentifiableRequest)
+		err = errors.New((response.NonIdentifiableRequest))
 		return rudderId, err
 	}
 	return rudderId, nil

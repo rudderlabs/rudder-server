@@ -47,7 +47,6 @@ import (
 type testCredentials struct {
 	Account              string `json:"account"`
 	User                 string `json:"user"`
-	Password             string `json:"password"`
 	Role                 string `json:"role"`
 	Database             string `json:"database"`
 	Warehouse            string `json:"warehouse"`
@@ -60,10 +59,9 @@ type testCredentials struct {
 }
 
 const (
-	testKey                = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
-	testRBACKey            = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
-	testKeyPairEncrypted   = "SNOWFLAKE_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS"
-	testKeyPairUnencrypted = "SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS"
+	testKey            = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
+	testRBACKey        = "SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS"
+	testUnencryptedKey = "SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS"
 )
 
 func getSnowflakeTestCredentials(key string) (*testCredentials, error) {
@@ -103,8 +101,7 @@ func TestIntegration(t *testing.T) {
 	t.Run("Event flow", func(t *testing.T) {
 		for _, key := range []string{
 			testRBACKey,
-			testKeyPairEncrypted,
-			testKeyPairUnencrypted,
+			testUnencryptedKey,
 		} {
 			if _, exists := os.LookupEnv(key); !exists {
 				if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
@@ -116,9 +113,7 @@ func TestIntegration(t *testing.T) {
 
 		rbacCredentials, err := getSnowflakeTestCredentials(testRBACKey)
 		require.NoError(t, err)
-		keyPairEncryptedCredentials, err := getSnowflakeTestCredentials(testKeyPairEncrypted)
-		require.NoError(t, err)
-		keyPairUnEncryptedCredentials, err := getSnowflakeTestCredentials(testKeyPairUnencrypted)
+		unencryptedCredentials, err := getSnowflakeTestCredentials(testUnencryptedKey)
 		require.NoError(t, err)
 
 		httpPort, err := kithelper.GetFreePort()
@@ -179,7 +174,6 @@ func TestIntegration(t *testing.T) {
 				eventFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
-					"password":     credentials.Password,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -216,7 +210,6 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"preferAppend": false,
 					"role":         rbacCredentials.Role,
-					"password":     rbacCredentials.Password,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -252,7 +245,6 @@ func TestIntegration(t *testing.T) {
 				eventFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
-					"password":     credentials.Password,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -282,53 +274,12 @@ func TestIntegration(t *testing.T) {
 			{
 				name:           "Upload Job with Key Pair Unencrypted Key",
 				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				cred:           keyPairUnEncryptedCredentials,
-				database:       keyPairUnEncryptedCredentials.Database,
+				cred:           unencryptedCredentials,
+				database:       unencryptedCredentials.Database,
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-2.json",
 				configOverride: map[string]any{
-					"preferAppend":   false,
-					"useKeyPairAuth": true,
-					"privateKey":     keyPairUnEncryptedCredentials.PrivateKey,
-				},
-
-				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
-					t.Helper()
-					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
-					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
-				},
-				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
-					t.Helper()
-					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "IDENTIFIES"))
-					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesRecords(userIDFormat, sourceID, destinationID, destType))
-					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %q.%q ORDER BY id;`, uuidTSSQL, namespace, "USERS"))
-					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersRecords(userIDFormat, sourceID, destinationID, destType))
-					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "TRACKS"))
-					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksRecords(userIDFormat, sourceID, destinationID, destType))
-					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PRODUCT_TRACK"))
-					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackRecords(userIDFormat, sourceID, destinationID, destType))
-					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "PAGES"))
-					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesRecords(userIDFormat, sourceID, destinationID, destType))
-					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "SCREENS"))
-					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensRecords(userIDFormat, sourceID, destinationID, destType))
-					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %q.%q ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "ALIASES"))
-					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesRecords(userIDFormat, sourceID, destinationID, destType))
-					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %q.%q ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "GROUPS"))
-					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsRecords(userIDFormat, sourceID, destinationID, destType))
-				},
-			},
-			{
-				name:           "Upload Job with Key Pair Encrypted Key",
-				tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				cred:           keyPairEncryptedCredentials,
-				database:       keyPairEncryptedCredentials.Database,
-				eventFilePath1: "../testdata/upload-job.events-1.json",
-				eventFilePath2: "../testdata/upload-job.events-2.json",
-				configOverride: map[string]any{
-					"preferAppend":         false,
-					"useKeyPairAuth":       true,
-					"privateKey":           keyPairEncryptedCredentials.PrivateKey,
-					"privateKeyPassphrase": keyPairEncryptedCredentials.PrivateKeyPassphrase,
+					"preferAppend": false,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -369,7 +320,6 @@ func TestIntegration(t *testing.T) {
 				eventFilePath2: "../testdata/source-job.events-2.json",
 				configOverride: map[string]any{
 					"preferAppend": false,
-					"password":     credentials.Password,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -398,7 +348,6 @@ func TestIntegration(t *testing.T) {
 				useSameUserID:  true,
 				configOverride: map[string]any{
 					"preferAppend": true,
-					"password":     credentials.Password,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -433,9 +382,6 @@ func TestIntegration(t *testing.T) {
 				eventFilePath1: "../testdata/upload-job.events-1.json",
 				eventFilePath2: "../testdata/upload-job.events-1.json",
 				useSameUserID:  true,
-				configOverride: map[string]any{
-					"password": credentials.Password,
-				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
 					schema := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
@@ -488,7 +434,10 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useRudderStorage", false).
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
+					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("useKeyPairAuth", tc.cred.UseKeyPairAuth).
+					WithConfigOption("privateKey", tc.cred.PrivateKey).
+					WithConfigOption("privateKeyPassphrase", tc.cred.PrivateKeyPassphrase)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -524,7 +473,6 @@ func TestIntegration(t *testing.T) {
 					Role:                 tc.cred.Role,
 					DBName:               tc.database,
 					Warehouse:            tc.cred.Warehouse,
-					Password:             tc.cred.Password,
 					UseKeyPairAuth:       tc.cred.UseKeyPairAuth,
 					PrivateKey:           tc.cred.PrivateKey,
 					PrivateKeyPassphrase: tc.cred.PrivateKeyPassphrase,
@@ -620,12 +568,14 @@ func TestIntegration(t *testing.T) {
 		namespace := whth.RandSchema(destType)
 
 		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
-			Account:   credentials.Account,
-			User:      credentials.User,
-			Role:      credentials.Role,
-			Password:  credentials.Password,
-			DBName:    credentials.Database,
-			Warehouse: credentials.Warehouse,
+			Account:              credentials.Account,
+			User:                 credentials.User,
+			Role:                 credentials.Role,
+			DBName:               credentials.Database,
+			Warehouse:            credentials.Warehouse,
+			UseKeyPairAuth:       credentials.UseKeyPairAuth,
+			PrivateKey:           credentials.PrivateKey,
+			PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
 		})
 		require.NoError(t, err)
 
@@ -642,22 +592,24 @@ func TestIntegration(t *testing.T) {
 		dest := backendconfig.DestinationT{
 			ID: "test_destination_id",
 			Config: map[string]interface{}{
-				"account":            credentials.Account,
-				"database":           credentials.Database,
-				"warehouse":          credentials.Warehouse,
-				"user":               credentials.User,
-				"password":           credentials.Password,
-				"cloudProvider":      "AWS",
-				"bucketName":         credentials.BucketName,
-				"storageIntegration": "",
-				"accessKeyID":        credentials.AccessKeyID,
-				"accessKey":          credentials.AccessKey,
-				"namespace":          namespace,
-				"prefix":             "snowflake-prefix",
-				"syncFrequency":      "30",
-				"enableSSE":          false,
-				"useRudderStorage":   false,
-				"preferAppend":       false,
+				"account":              credentials.Account,
+				"database":             credentials.Database,
+				"warehouse":            credentials.Warehouse,
+				"user":                 credentials.User,
+				"useKeyPairAuth":       credentials.UseKeyPairAuth,
+				"privateKey":           credentials.PrivateKey,
+				"privateKeyPassphrase": credentials.PrivateKeyPassphrase,
+				"cloudProvider":        "AWS",
+				"bucketName":           credentials.BucketName,
+				"storageIntegration":   "",
+				"accessKeyID":          credentials.AccessKeyID,
+				"accessKey":            credentials.AccessKey,
+				"namespace":            namespace,
+				"prefix":               "snowflake-prefix",
+				"syncFrequency":        "30",
+				"enableSSE":            false,
+				"useRudderStorage":     false,
+				"preferAppend":         false,
 			},
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				ID:          "1XjvXnzw34UMAz1YOuKqL1kwzh6",
@@ -676,12 +628,14 @@ func TestIntegration(t *testing.T) {
 		namespace := whth.RandSchema(destType)
 
 		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
-			Account:   credentials.Account,
-			User:      credentials.User,
-			Role:      credentials.Role,
-			Password:  credentials.Password,
-			DBName:    credentials.Database,
-			Warehouse: credentials.Warehouse,
+			Account:              credentials.Account,
+			User:                 credentials.User,
+			Role:                 credentials.Role,
+			UseKeyPairAuth:       credentials.UseKeyPairAuth,
+			PrivateKey:           credentials.PrivateKey,
+			PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+			DBName:               credentials.Database,
+			Warehouse:            credentials.Warehouse,
 		})
 		require.NoError(t, err)
 
@@ -729,17 +683,19 @@ func TestIntegration(t *testing.T) {
 					Name: destType,
 				},
 				Config: map[string]any{
-					"account":            credentials.Account,
-					"database":           credentials.Database,
-					"warehouse":          credentials.Warehouse,
-					"user":               credentials.User,
-					"password":           credentials.Password,
-					"cloudProvider":      "AWS",
-					"bucketName":         credentials.BucketName,
-					"storageIntegration": "",
-					"accessKeyID":        credentials.AccessKeyID,
-					"accessKey":          credentials.AccessKey,
-					"namespace":          namespace,
+					"account":              credentials.Account,
+					"database":             credentials.Database,
+					"warehouse":            credentials.Warehouse,
+					"user":                 credentials.User,
+					"useKeyPairAuth":       credentials.UseKeyPairAuth,
+					"privateKey":           credentials.PrivateKey,
+					"privateKeyPassphrase": credentials.PrivateKeyPassphrase,
+					"cloudProvider":        "AWS",
+					"bucketName":           credentials.BucketName,
+					"storageIntegration":   "",
+					"accessKeyID":          credentials.AccessKeyID,
+					"accessKey":            credentials.AccessKey,
+					"namespace":            namespace,
 				},
 			},
 			WorkspaceID: "test_workspace_id",
@@ -1157,12 +1113,14 @@ func TestIntegration(t *testing.T) {
 		namespace := whth.RandSchema(destType)
 
 		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
-			Account:   credentials.Account,
-			User:      credentials.User,
-			Role:      credentials.Role,
-			Password:  credentials.Password,
-			DBName:    credentials.Database,
-			Warehouse: credentials.Warehouse,
+			Account:              credentials.Account,
+			User:                 credentials.User,
+			Role:                 credentials.Role,
+			UseKeyPairAuth:       credentials.UseKeyPairAuth,
+			PrivateKey:           credentials.PrivateKey,
+			PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+			DBName:               credentials.Database,
+			Warehouse:            credentials.Warehouse,
 		})
 		require.NoError(t, err)
 
@@ -1264,12 +1222,14 @@ func TestIntegration(t *testing.T) {
 		namespace := whth.RandSchema(destType)
 
 		credentialsJSON, err := jsonrs.Marshal(sqlconnectconfig.Snowflake{
-			Account:   credentials.Account,
-			User:      credentials.User,
-			Role:      credentials.Role,
-			Password:  credentials.Password,
-			DBName:    credentials.Database,
-			Warehouse: credentials.Warehouse,
+			Account:              credentials.Account,
+			User:                 credentials.User,
+			Role:                 credentials.Role,
+			UseKeyPairAuth:       credentials.UseKeyPairAuth,
+			PrivateKey:           credentials.PrivateKey,
+			PrivateKeyPassphrase: credentials.PrivateKeyPassphrase,
+			DBName:               credentials.Database,
+			Warehouse:            credentials.Warehouse,
 		})
 		require.NoError(t, err)
 

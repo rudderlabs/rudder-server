@@ -197,11 +197,11 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 
 		statusList = append(statusList, lo.Map(jobWithPayloads, func(item jobWithPayload, index int) *jobsdb.JobStatusT {
 			return &jobsdb.JobStatusT{
-				JobID:         item.JobT.JobID,
+				JobID:         item.JobID,
 				JobState:      jobsdb.Succeeded.State,
 				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
 				Parameters:    []byte(`{}`),
-				AttemptNum:    item.JobT.LastJobStatus.AttemptNum + 1,
+				AttemptNum:    item.LastJobStatus.AttemptNum + 1,
 				ExecTime:      w.now(),
 				RetryTime:     w.now(),
 			}

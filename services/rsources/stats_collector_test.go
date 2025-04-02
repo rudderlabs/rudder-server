@@ -517,20 +517,18 @@ func BenchmarkParamsParsing(b *testing.B) {
 			var tk JobTargetKey
 			found := 0
 			r.ForEach(func(key, value gjson.Result) bool {
-				if key.Str == "source_task_run_id" {
+				switch key.Str {
+				case "source_task_run_id":
 					tk.TaskRunID = value.Str
 					found++
-				} else if key.Str == "source_id" {
+				case "source_id":
 					tk.SourceID = value.Str
 					found++
-				} else if key.Str == "destination_id" {
+				case "destination_id":
 					tk.DestinationID = value.Str
 					found++
 				}
-				if found == 3 {
-					return false
-				}
-				return true
+				return found != 3
 			})
 		}
 	})

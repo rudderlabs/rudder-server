@@ -52,7 +52,7 @@ func (w *partitionWorker) Work() bool {
 
 	start := time.Now()
 	// Get jobs for this partition
-	jobs := w.handle.getJobs(w.partition)
+	jobs := w.handle.getJobsStage(w.partition)
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {

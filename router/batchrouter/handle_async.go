@@ -19,8 +19,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -333,7 +332,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	if !asynccommon.IsAsyncDestination(brt.destType) {
+	if !common.IsAsyncDestination(brt.destType) {
 		return
 	}
 
@@ -455,7 +454,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
-			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error()) // skipcq: GO-R4002
+			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.ErrDisabledEgress.Error()) // skipcq: GO-R4002
 		}
 
 		brt.setMultipleJobStatus(setMultipleJobStatusParams{
@@ -470,7 +469,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if ok {
-		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*asynccommon.InvalidManager); ok {
+		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*common.InvalidManager); ok {
 			failedAsyncJobs := BatchedJobs{
 				Jobs:       batchJobs.Jobs,
 				Connection: batchJobs.Connection,

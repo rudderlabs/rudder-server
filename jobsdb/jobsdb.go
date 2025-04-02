@@ -186,10 +186,10 @@ type HandleInspector struct {
 
 // DSIndicesList returns the slice of current ds indices
 func (h *HandleInspector) DSIndicesList() []string {
-	h.Handle.dsListLock.RLock()
-	defer h.Handle.dsListLock.RUnlock()
+	h.dsListLock.RLock()
+	defer h.dsListLock.RUnlock()
 	var indicesList []string
-	for _, ds := range h.Handle.getDSList() {
+	for _, ds := range h.getDSList() {
 		indicesList = append(indicesList, ds.Index)
 	}
 
@@ -3183,10 +3183,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	limitByEventCount := false
-	if params.EventsLimit > 0 {
-		limitByEventCount = true
-	}
+	limitByEventCount := params.EventsLimit > 0
 
 	limitByPayloadSize := false
 	if params.PayloadSizeLimit > 0 {

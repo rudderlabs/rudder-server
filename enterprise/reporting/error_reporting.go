@@ -247,13 +247,13 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			continue
 		}
 
-		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
+		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		if edr.IsPIIReportingDisabled(workspaceID) {
 			edr.log.Debugn("PII setting is disabled for workspaceId:", obskit.WorkspaceID(workspaceID))
 			return nil
 		}
-		destinationDetail := edr.configSubscriber.GetDestDetail(metric.ConnectionDetails.DestinationID)
-		edr.log.Debugn("DestinationId & DestDetail details", obskit.DestinationID(metric.ConnectionDetails.DestinationID), logger.NewField("destinationDetail", destinationDetail))
+		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
+		edr.log.Debugn("DestinationId & DestDetail details", obskit.DestinationID(metric.DestinationID), logger.NewField("destinationDetail", destinationDetail))
 
 		// extract error-message & error-code
 		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags)
@@ -262,8 +262,8 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
 			"workspaceId":   workspaceID,
 			"destType":      destinationDetail.destType,
-			"sourceId":      metric.ConnectionDetails.SourceID,
-			"destinationId": metric.ConnectionDetails.DestinationID,
+			"sourceId":      metric.SourceID,
+			"destinationId": metric.DestinationID,
 		}).Count(int(metric.StatusDetail.Count))
 
 		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
@@ -275,12 +275,12 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			workspaceID,
 			edr.namespace,
 			edr.instanceID,
-			metric.ConnectionDetails.SourceDefinitionID,
-			metric.ConnectionDetails.SourceID,
+			metric.SourceDefinitionID,
+			metric.SourceID,
 			destinationDetail.destinationDefinitionID,
-			metric.ConnectionDetails.DestinationID,
+			metric.DestinationID,
 			destinationDetail.destType,
-			metric.PUDetails.PU,
+			metric.PU,
 			reportedAt,
 			metric.StatusDetail.Count,
 			metric.StatusDetail.StatusCode,
@@ -628,30 +628,30 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		}
 		var sampleEvent string
 		err = rows.Scan(
-			&dbEdMetric.EDInstanceDetails.WorkspaceID,
-			&dbEdMetric.EDInstanceDetails.Namespace,
-			&dbEdMetric.EDInstanceDetails.InstanceID,
-			&dbEdMetric.EDConnectionDetails.SourceDefinitionId,
-			&dbEdMetric.EDConnectionDetails.SourceID,
-			&dbEdMetric.EDConnectionDetails.DestinationDefinitionId,
-			&dbEdMetric.EDConnectionDetails.DestinationID,
+			&dbEdMetric.WorkspaceID,
+			&dbEdMetric.Namespace,
+			&dbEdMetric.InstanceID,
+			&dbEdMetric.SourceDefinitionId,
+			&dbEdMetric.SourceID,
+			&dbEdMetric.DestinationDefinitionId,
+			&dbEdMetric.DestinationID,
 			&dbEdMetric.PU,
-			&dbEdMetric.ReportMetadata.ReportedAt,
+			&dbEdMetric.ReportedAt,
 			&dbEdMetric.Count,
-			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.StatusCode,
-			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.EventType,
-			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.ErrorCode,
-			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.ErrorMessage,
-			&dbEdMetric.EDConnectionDetails.DestType,
-			&dbEdMetric.EDErrorDetails.SampleResponse,
+			&dbEdMetric.StatusCode,
+			&dbEdMetric.EventType,
+			&dbEdMetric.ErrorCode,
+			&dbEdMetric.ErrorMessage,
+			&dbEdMetric.DestType,
+			&dbEdMetric.SampleResponse,
 			&sampleEvent,
-			&dbEdMetric.EDErrorDetails.EDErrorDetailsKey.EventName,
+			&dbEdMetric.EventName,
 		)
 		if err != nil {
 			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
-		dbEdMetric.EDErrorDetails.SampleEvent = []byte(sampleEvent)
+		dbEdMetric.SampleEvent = []byte(sampleEvent)
 		metrics = append(metrics, dbEdMetric)
 	}
 	if rows.Err() != nil {
@@ -704,8 +704,8 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 		messageMap := make(map[string]int)
 		reportsCountMap := make(map[types.EDErrorDetailsKey]*types.EDReportMapValue)
 		for index, rep := range reports {
-			messageMap[rep.EDErrorDetails.ErrorMessage] = index
-			errDet := rep.EDErrorDetails.EDErrorDetailsKey
+			messageMap[rep.ErrorMessage] = index
+			errDet := rep.EDErrorDetailsKey
 			reportMapValue, ok := reportsCountMap[errDet]
 			if !ok {
 				reportsCountMap[errDet] = &types.EDReportMapValue{

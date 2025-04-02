@@ -85,9 +85,16 @@ func addDataAndMetadata(tec *transformEventContext, key string, val any, isJSONK
 	}
 
 	dataType := dataTypeFor(tec.event.Metadata.DestinationType, key, val, isJSONKey)
-
-	data[safeKey] = convertValIfDateTime(val, dataType)
 	metadata[safeKey] = dataType
+
+	switch safeKey {
+	case "context_tracking_plan_version", "CONTEXT_TRACKING_PLAN_VERSION":
+		data[safeKey] = convertToFloat64IfInteger(val)
+	case "context_violation_errors", "CONTEXT_VIOLATION_ERRORS":
+		data[safeKey] = convertToSliceIfViolationErrors(val)
+	default:
+		data[safeKey] = convertValIfDateTime(val, dataType)
+	}
 	return nil
 }
 
