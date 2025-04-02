@@ -1,12 +1,11 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -38,9 +37,16 @@ var (
 		whutils.AzureDatalake:     model.StringDataType,
 	}
 
-	reDateTime = regexp.MustCompile(
-		`^([+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))(:\d+)?)?(:[0-5]\d([.]\d+)?)?([zZ]|([+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`,
-	)
+	validTimestampFormats = []string{
+		time.RFC3339,
+		misc.RFC3339Milli,
+		time.DateTime,
+		time.DateOnly,
+		time.RFC3339Nano,
+	}
+	validTimestampFormatsMaxLength = len(lo.MaxBy(validTimestampFormats, func(a, b string) bool {
+		return len(a) > len(b)
+	}))
 
 	minTimeInMs = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
 	maxTimeInMs = time.Date(9999, 12, 31, 23, 59, 59, 999000000, time.UTC)
@@ -105,10 +111,11 @@ func GetFullEventColumnTypeByDestType(destType string) string {
 }
 
 func ValidTimestamp(input string) bool {
-	if !reDateTime.MatchString(input) {
+	if len(input) > validTimestampFormatsMaxLength {
 		return false
 	}
-	t, err := dateparse.ParseAny(input)
+
+	t, err := parseTimestamp(input)
 	if err != nil {
 		return false
 	}
@@ -117,13 +124,23 @@ func ValidTimestamp(input string) bool {
 
 func ToTimestamp(val any) any {
 	if strVal, ok := val.(string); ok {
-		t, err := dateparse.ParseAny(strVal)
+		t, err := parseTimestamp(strVal)
 		if err != nil {
 			return val
 		}
 		return t.UTC().Format(misc.RFC3339Milli)
 	}
 	return val
+}
+
+func parseTimestamp(input string) (time.Time, error) {
+	for _, format := range validTimestampFormats {
+		t, err := time.Parse(format, input)
+		if err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, errors.New("invalid timestamp format")
 }
 
 // ToString converts any value to a string representation.

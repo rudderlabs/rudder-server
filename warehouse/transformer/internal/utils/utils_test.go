@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,30 @@ func TestValidTimestamp(t *testing.T) {
 			require.Equal(t, tc.expected, ValidTimestamp(tc.timestamp))
 		})
 	}
+}
+
+// BenchmarkValidTimestamp/ValidTimestamp_Valid
+// BenchmarkValidTimestamp/ValidTimestamp_Valid-12         				34838106	 	31.71 ns/op
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid-12       	 			2619600	       	430.6 ns/op
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String-12        	7234989	       	178.7 ns/op
+func BenchmarkValidTimestamp(b *testing.B) {
+	b.Run("ValidTimestamp_Valid", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ValidTimestamp("2023-11-10T12:34:56Z")
+		}
+	})
+	b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ValidTimestamp("invalid-timestamp")
+		}
+	})
+	b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ValidTimestamp(strings.Repeat("a", 1000))
+		}
+	})
 }
 
 type Person struct {

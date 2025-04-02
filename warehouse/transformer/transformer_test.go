@@ -661,13 +661,6 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	trans := New(c, logger.NOP, statsStore)
 	trans.loggedFileName = tmpFile.Name()
 
-	metadata := &types.Metadata{
-		SourceID:        "sourceID",
-		DestinationID:   "destinationID",
-		SourceType:      "sourceType",
-		DestinationType: "destinationType",
-	}
-
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
 	for index := 0; index < 50; index++ {
 		eventsByMessageID[strconv.Itoa(index)] = types.SingularEventWithReceivedAt{
@@ -722,7 +715,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 			}),
 		}
 
-		trans.CompareAndLog(events, pResponse, wResponse, metadata, eventsByMessageID)
+		trans.CompareAndLog(events, pResponse, wResponse)
 	}
 
 	f, err := os.OpenFile(tmpFile.Name(), os.O_RDWR, 0o644)
@@ -741,7 +734,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	require.Len(t, differingEvents, maxLoggedEvents)
 
 	for i := 0; i < maxLoggedEvents; i++ {
-		require.Contains(t, differingEvents[i], "track"+strconv.Itoa(i))
+		require.Contains(t, differingEvents[i], "track")
 	}
 	require.EqualValues(t, []float64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
 }
