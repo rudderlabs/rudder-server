@@ -38,7 +38,7 @@ func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *parti
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
-	for i := range pipelinesPerPartition {
+	for i := 0; i < pipelinesPerPartition; i++ {
 		w.pipelines[i] = newPipelineWorker(partition, h, tracing.New(t, tracing.WithNamePrefix("pipelineWorker")))
 	}
 
