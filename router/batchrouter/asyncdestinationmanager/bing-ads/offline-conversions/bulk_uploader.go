@@ -52,7 +52,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	var fields map[string]interface{}
 	err := jsonrs.Unmarshal(job.EventPayload, &event)
 	if err != nil {
-		return payload, fmt.Errorf("unmarshalling event %w:", err)
+		return payload, fmt.Errorf("unmarshalling event %w", err)
 	}
 	err = jsonrs.Unmarshal(event.Fields, &fields)
 	if err != nil {
@@ -102,7 +102,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	if b.isHashRequired {
 		event.Fields, err = hashFields(fields)
 		if err != nil {
-			return payload, fmt.Errorf("Unable to hash fields.%w", err)
+			return payload, fmt.Errorf("unable to hash fields: %w", err)
 		}
 	}
 	data := Data{

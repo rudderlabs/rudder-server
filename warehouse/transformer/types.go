@@ -13,13 +13,14 @@ import (
 
 type (
 	Transformer struct {
-		now func() time.Time
+		now           func() time.Time
+		uuidGenerator func() string
 
 		logger       logger.Logger
 		statsFactory stats.Stats
 
 		stats struct {
-			comparisionTime  stats.Timer
+			comparisonTime   stats.Timer
 			matchedEvents    stats.Histogram
 			mismatchedEvents stats.Histogram
 		}

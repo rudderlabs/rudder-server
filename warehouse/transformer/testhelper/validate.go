@@ -18,16 +18,15 @@ type EventContext struct {
 	Destination backendconfig.DestinationT
 }
 
-func ValidateEvents(t *testing.T, eventContexts []EventContext, pTransformer, dTransformer ptrans.DestinationTransformer, expectedResponse types.Response) {
+func ValidateEvents(t *testing.T, eventContexts []EventContext, pTransformer ptrans.TransformerClients, dTransformer ptrans.DestinationClient, expectedResponse types.Response) {
 	t.Helper()
 
 	events := prepareEvents(t, eventContexts)
 
 	ctx := context.Background()
-	batchSize := 100
 
-	pResponse := pTransformer.Transform(ctx, events, batchSize)
-	wResponse := dTransformer.Transform(ctx, events, batchSize)
+	pResponse := pTransformer.Destination().Transform(ctx, events)
+	wResponse := dTransformer.Transform(ctx, events)
 
 	validateResponseLengths(t, expectedResponse, pResponse, wResponse)
 	validateRudderEventIfExists(t, expectedResponse, pResponse, wResponse)

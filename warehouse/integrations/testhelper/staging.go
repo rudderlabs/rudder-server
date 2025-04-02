@@ -134,8 +134,8 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 	err = jsonrs.Unmarshal([]byte(b.String()), &transformerEvents)
 	require.NoError(t, err)
 
-	tr := transformer.NewTransformer(c, logger.NOP, stats.Default)
-	response := tr.Transform(context.Background(), transformerEvents, 100)
+	tr := transformer.NewClients(c, logger.NOP, stats.Default)
+	response := tr.Destination().Transform(context.Background(), transformerEvents)
 	require.Zero(t, len(response.FailedEvents))
 	responseOutputs := lo.Map(response.Events, func(r types.TransformerResponse, index int) map[string]interface{} {
 		return r.Output

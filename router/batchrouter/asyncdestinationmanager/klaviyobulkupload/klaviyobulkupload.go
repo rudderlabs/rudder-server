@@ -73,7 +73,7 @@ func NewManager(logger logger.Logger, StatsFactory stats.Stats, destination *bac
 func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements int) ([][]Profile, error) {
 	var chunks [][]Profile
 	chunk := make([]Profile, 0)
-	var chunkSize int = 0
+	chunkSize := 0
 
 	for _, profile := range combinedProfiles {
 		profileJSON, err := jsonrs.Marshal(profile)

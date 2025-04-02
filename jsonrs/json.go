@@ -14,7 +14,7 @@ const (
 	// JsoniterLib is the JSON implementation of github.com/json-iterator/go.
 	JsoniterLib = "jsoniter"
 	// DefaultLib is the default JSON implementation.
-	DefaultLib = JsoniterLib
+	DefaultLib = SonnetLib
 )
 
 var Default = New(config.Default)

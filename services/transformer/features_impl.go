@@ -120,12 +120,13 @@ func (t *featuresService) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	if res.StatusCode == 200 {
+	switch res.StatusCode {
+	case 200:
 		t.features = body
 
 		//  we are calling this to see if the transformer version is deprecated. if so, we panic.
 		t.SourceTransformerVersion()
-	} else if res.StatusCode == 404 {
+	case 404:
 		t.features = json.RawMessage(defaultTransformerFeatures)
 	}
 

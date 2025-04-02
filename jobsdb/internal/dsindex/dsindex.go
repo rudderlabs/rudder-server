@@ -58,7 +58,7 @@ func (idx *Index) Increment(segment int) (*Index, error) {
 	if segment < 0 || segment > idx.Length() {
 		return nil, fmt.Errorf("cannot increment segment %d of %s", segment, idx)
 	}
-	var res *Index = &Index{}
+	res := &Index{}
 	for i := 0; i < segment; i++ {
 		toAppend := idx.segments[i]
 		res.segments = append(res.segments, toAppend)

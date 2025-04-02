@@ -45,5 +45,5 @@ func New() (AlertManager, error) {
 			instanceName: instanceName,
 		}, nil
 	}
-	return nil, errors.New("No provider configured for Alert Manager")
+	return nil, errors.New("no provider configured for Alert Manager")
 }

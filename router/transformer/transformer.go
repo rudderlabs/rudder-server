@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
@@ -117,7 +116,7 @@ type Transformer interface {
 // NewTransformer creates a new transformer
 func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
 	cache := oauthv2.NewCache()
-	oauthLock := kitsync.NewPartitionRWLocker()
+	oauthLock := sync.NewPartitionRWLocker()
 	handle := &handle{
 		oAuthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
@@ -169,11 +168,12 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 
 	var url string
-	if transformType == BATCH {
+	switch transformType {
+	case BATCH:
 		url = getBatchURL()
-	} else if transformType == ROUTER_TRANSFORM {
+	case ROUTER_TRANSFORM:
 		url = getRouterTransformURL()
-	} else {
+	default:
 		return []types.DestinationJobT{}
 	}
 
@@ -287,15 +287,16 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
 			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
-			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
+			panic(fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
 
-		if transformType == BATCH {
+		switch transformType {
+		case BATCH:
 			integrations.CollectIntgTransformErrorStats(respData)
 			err = jsonrs.Unmarshal(respData, &destinationJobs)
-		} else if transformType == ROUTER_TRANSFORM {
+		case ROUTER_TRANSFORM:
 			rawResp := []byte(gjson.GetBytes(respData, "output").Raw)
 			integrations.CollectIntgTransformErrorStats(rawResp)
 			err = jsonrs.Unmarshal(rawResp, &destinationJobs)

@@ -118,7 +118,7 @@ func (manager *ETCDManager) Ping() error {
 		return err
 	}
 
-	_, err := manager.Client.Cluster.MemberList(context.Background())
+	_, err := manager.Client.MemberList(context.Background())
 	if err != nil {
 		return fmt.Errorf("ping: get cluster member list: %w", err)
 	}

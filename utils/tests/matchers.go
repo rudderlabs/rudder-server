@@ -15,7 +15,7 @@ func (*beValidUUIDMatcher) Match(actual interface{}) (success bool, err error) {
 	s, ok := actual.(string)
 
 	if !ok {
-		return false, fmt.Errorf("Expected a string.  Got:\n%s", format.Object(actual, 1))
+		return false, fmt.Errorf("expected a string.  Got:\n%s", format.Object(actual, 1))
 	}
 
 	return misc.IsValidUUID(s), nil

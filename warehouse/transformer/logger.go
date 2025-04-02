@@ -33,7 +33,7 @@ func (t *Transformer) CompareAndLog(
 		return
 	}
 
-	t.stats.comparisionTime.RecordDuration()()
+	t.stats.comparisonTime.RecordDuration()()
 
 	differingEvents, sampleDiff := t.differingEvents(events, pResponse, wResponse, eventsByMessageID)
 	if len(differingEvents) == 0 {

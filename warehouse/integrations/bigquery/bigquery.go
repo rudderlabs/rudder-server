@@ -695,7 +695,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	}
 
 	query := bq.db.Query(sqlStatement)
-	query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(partitionedUsersTable)
+	query.Dst = bq.db.Dataset(bq.namespace).Table(partitionedUsersTable)
 	query.WriteDisposition = bigquery.WriteAppend
 
 	job, err := bq.db.Run(ctx, query)
