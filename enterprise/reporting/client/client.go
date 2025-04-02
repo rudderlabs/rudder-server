@@ -33,7 +33,7 @@ const (
 const (
 	PathMetrics      Path = "/metrics?version=v1"
 	PathRecordErrors Path = "/recordErrors"
-	PathAggregates   Path = "/aggregates"
+	PathTrackedUsers Path = "/trackedUser"
 )
 
 type Path string
@@ -53,8 +53,7 @@ type Client struct {
 // New creates a new reporting client
 func New(reportingServiceURL string, path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
-	tr := &http.Transport{}
-	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	netClient := &http.Client{Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 
 	return &Client{
 		httpClient:          netClient,
