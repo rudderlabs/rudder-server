@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -288,28 +290,6 @@ func TestClientSendErrorMetric(t *testing.T) {
 }
 
 func TestClient5xx(t *testing.T) {
-	// Create a test server that returns an error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("internal server error"))
-	}))
-	defer server.Close()
-
-	// Create stats store
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-
-	// Create a test config
-	conf := config.New()
-	conf.Set("INSTANCE_ID", "2")
-	conf.Set("clientName", "test-client")
-	conf.Set("REPORTING_URL", server.URL)
-	conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
-
-	// Create the client
-	c := client.New(client.PathMetrics, conf, logger.NOP, statsStore)
-
-	// Create a test metric
 	metric := &types.Metric{
 		InstanceDetails: types.InstanceDetails{
 			WorkspaceID: "test-workspace",
@@ -324,25 +304,51 @@ func TestClient5xx(t *testing.T) {
 		},
 	}
 
-	// Send the metric and expect an error
-	err = c.Send(context.Background(), metric)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "received unexpected response from reporting service: \"/metrics?version=v1\": statusCode: 500 body: internal server error")
-
-	// Get server hostname
-	serverURL, _ := url.Parse(server.URL)
-
-	// Expected tags for HTTP metrics
-	expectedHttpTags := stats.Tags{
-		"module":     "test-client",
-		"instanceId": "2",
-		"path":       string(client.PathMetrics),
-		"endpoint":   serverURL.Host,
-		"status":     "500",
+	statusCodes := []int{
+		http.StatusInternalServerError,
+		http.StatusTooManyRequests,
 	}
 
-	// Verify HTTP request metric
-	metrics := statsStore.GetByName(client.StatHttpRequest)
-	require.Len(t, metrics, 1, "should have exactly one http request metric")
-	require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
+	for _, statusCode := range statusCodes {
+		t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(statusCode)
+				_, _ = w.Write([]byte(fmt.Sprintf("error with status %d", statusCode)))
+			}))
+			defer server.Close()
+
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			conf := config.New()
+			conf.Set("INSTANCE_ID", "2")
+			conf.Set("clientName", "test-client")
+			conf.Set("REPORTING_URL", server.URL)
+			conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
+
+			c := client.New(client.PathMetrics, conf, logger.NOP, statsStore)
+
+			// Send the metric and expect an error
+			err = c.Send(context.Background(), metric)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), fmt.Sprintf("received unexpected response from reporting service: \"/metrics?version=v1\": statusCode: %d body: error with status %d", statusCode, statusCode))
+
+			// Get server hostname
+			serverURL, _ := url.Parse(server.URL)
+
+			// Expected tags for HTTP metrics
+			expectedHttpTags := stats.Tags{
+				"path":       string(client.PathMetrics),
+				"module":     "test-client",
+				"instanceId": "2",
+				"endpoint":   serverURL.Host,
+				"status":     strconv.Itoa(statusCode),
+			}
+
+			// Verify HTTP request metric
+			metrics := statsStore.GetByName(client.StatHttpRequest)
+			require.Len(t, metrics, 1, "should have exactly one http request metric")
+			require.Equal(t, expectedHttpTags, metrics[0].Tags, "http request metric should have correct tags")
+		})
+	}
 }
