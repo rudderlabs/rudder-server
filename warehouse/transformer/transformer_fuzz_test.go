@@ -571,7 +571,7 @@ func FuzzTransformer(f *testing.F) {
 
 		conf := setupConfig(transformerResource, map[string]any{})
 
-		processorTransformer := ptrans.NewTransformer(conf, logger.NOP, stats.Default)
+		processorTransformer := ptrans.NewClients(conf, logger.NOP, stats.Default)
 		warehouseTransformer := New(conf, logger.NOP, stats.NOP)
 
 		eventContexts := []testhelper.EventContext{
@@ -601,7 +601,7 @@ func FuzzTransformer(f *testing.F) {
 	})
 }
 
-func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer, dTransformer ptrans.DestinationTransformer) {
+func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer ptrans.TransformerClients, dTransformer ptrans.DestinationClient) {
 	t.Helper()
 
 	events := make([]types.TransformerEvent, 0, len(eventContexts))
@@ -618,10 +618,9 @@ func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransform
 	}
 
 	ctx := context.Background()
-	batchSize := 100
 
-	pResponse := pTransformer.Transform(ctx, events, batchSize)
-	wResponse := dTransformer.Transform(ctx, events, batchSize)
+	pResponse := pTransformer.Destination().Transform(ctx, events)
+	wResponse := dTransformer.Transform(ctx, events)
 
 	require.Equal(t, len(wResponse.Events), len(pResponse.Events))
 	require.Equal(t, len(wResponse.FailedEvents), len(pResponse.FailedEvents))

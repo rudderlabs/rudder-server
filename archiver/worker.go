@@ -80,11 +80,7 @@ start:
 			return false
 		}
 		log.Errorw("failed to fetch storage preferences", "error", err)
-		if err := w.markStatus(
-			jobs,
-			jobsdb.Aborted.State,
-			errJSON(err),
-		); err != nil {
+		if err := w.markStatus(jobs, jobsdb.Aborted.State, errJSON(err)); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
@@ -98,11 +94,7 @@ start:
 		goto start
 	}
 	if !storagePrefs.Backup(w.archiveFrom) {
-		if err := w.markStatus(
-			jobs,
-			jobsdb.Aborted.State,
-			errJSON(fmt.Errorf("%s archival disabled for workspace %s", w.archiveFrom, workspaceID)),
-		); err != nil {
+		if err := w.markStatus(jobs, jobsdb.Aborted.State, errJSON(fmt.Errorf("%s archival disabled for workspace %s", w.archiveFrom, workspaceID))); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
@@ -122,11 +114,7 @@ start:
 	}
 	w.lastUploadTime = time.Now()
 
-	if err := w.markStatus(
-		jobs,
-		jobsdb.Succeeded.State,
-		locationJSON(location),
-	); err != nil {
+	if err := w.markStatus(jobs, jobsdb.Succeeded.State, locationJSON(location)); err != nil {
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
@@ -240,9 +228,7 @@ func marshalJob(job *jobsdb.JobT) ([]byte, error) {
 	return jsonrs.Marshal(J)
 }
 
-func (w *worker) markStatus(
-	jobs []*jobsdb.JobT, state string, response []byte,
-) error {
+func (w *worker) markStatus(jobs []*jobsdb.JobT, state string, response []byte) error {
 	defer w.updateLimiter.Begin("")()
 	workspaceID := jobs[0].WorkspaceId
 	if err := misc.RetryWithNotify(
@@ -261,9 +247,11 @@ func (w *worker) markStatus(
 						AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 						ExecTime:      time.Now(),
 						RetryTime:     time.Now(),
+						WorkspaceId:   job.WorkspaceId,
+						JobParameters: job.Parameters,
 					}
 				}),
-				nil,
+				w.queryParams.CustomValFilters,
 				nil,
 			)
 		},

@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -28,6 +29,7 @@ type Factory struct {
 	ThrottlerFactory           throttler.Factory
 	Debugger                   destinationdebugger.DestinationDebugger
 	AdaptiveLimit              func(int64) int64
+	PendingEventsRegistry      rmetrics.PendingEventsRegistry
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
@@ -47,6 +49,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		f.TransformerFeaturesService,
 		f.Debugger,
 		f.ThrottlerFactory,
+		f.PendingEventsRegistry,
 	)
 	return r
 }

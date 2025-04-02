@@ -1,4 +1,4 @@
-package transformer_test
+package common_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestTransformer(t *testing.T) {
+func TestCommon(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Transformer Suite")
+	RunSpecs(t, "Common Suite")
 }

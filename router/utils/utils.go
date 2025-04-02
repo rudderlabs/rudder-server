@@ -12,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -105,7 +104,9 @@ func IsNotEmptyString(s string) bool {
 
 type Drainer interface {
 	Drain(
-		job *jobsdb.JobT,
+		createdAt time.Time,
+		destID string,
+		sourceJobRunID string,
 	) (bool, string)
 }
 
@@ -137,12 +138,10 @@ type drainer struct {
 }
 
 func (d *drainer) Drain(
-	job *jobsdb.JobT,
+	createdAt time.Time,
+	destID string,
+	sourceJobRunID string,
 ) (bool, string) {
-	createdAt := job.CreatedAt
-	var jobParams JobParameters
-	_ = jsonrs.Unmarshal(job.Parameters, &jobParams)
-	destID := jobParams.DestinationID
 	if time.Since(createdAt) > d.getRetentionTimeForDestination(destID) {
 		return true, DrainReasonJobExpired
 	}
@@ -157,8 +156,8 @@ func (d *drainer) Drain(
 		return true, DrainReasonDestAbort
 	}
 
-	if jobParams.SourceJobRunID != "" &&
-		slices.Contains(d.jobRunIDs.Load(), jobParams.SourceJobRunID) {
+	if sourceJobRunID != "" &&
+		slices.Contains(d.jobRunIDs.Load(), sourceJobRunID) {
 		return true, DrainReasonJobRunIDCancelled
 	}
 

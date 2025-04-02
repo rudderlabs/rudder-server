@@ -57,7 +57,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 
 	migration, err := migrate.NewWithInstance("iofs", sourceDriver, "postgres", destinationDriver)
 	if err != nil {
-		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
+		return fmt.Errorf("could not execute migrations from migration directory '%v': %w", migrationsDir, err)
 	}
 
 	if m.ShouldForceSetLowerVersion {

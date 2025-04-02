@@ -168,6 +168,11 @@ func GetAuthType(config map[string]interface{}) AuthType {
 	return AuthType(authType)
 }
 
+func IsOAuthDestination(config map[string]interface{}) bool {
+	authType := GetAuthType(config)
+	return authType == OAuth
+}
+
 // This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler(provider tokenProvider, options ...func(*OAuthErrResHandler)) *OAuthErrResHandler {
 	oAuthErrResHandler := &OAuthErrResHandler{
@@ -547,9 +552,9 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	// Detecting content type of the respData
 	contentTypeHeader := strings.ToLower(http.DetectContentType(respData))
 	// If content type is not of type "*text*", overriding it with empty string
-	if !(strings.Contains(contentTypeHeader, "text") ||
-		strings.Contains(contentTypeHeader, "application/json") ||
-		strings.Contains(contentTypeHeader, "application/xml")) {
+	if !strings.Contains(contentTypeHeader, "text") &&
+		!strings.Contains(contentTypeHeader, "application/json") &&
+		!strings.Contains(contentTypeHeader, "application/xml") {
 		respData = []byte("")
 	}
 

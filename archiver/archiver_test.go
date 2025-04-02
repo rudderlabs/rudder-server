@@ -54,6 +54,7 @@ func TestJobsArchival(t *testing.T) {
 	c.Set("DB.port", postgresResource.Port)
 	c.Set("DB.user", postgresResource.User)
 	c.Set("DB.password", postgresResource.Password)
+	c.Set("Gateway.CustomVal", "MOCKDS")
 	misc.Init()
 
 	jd := jobsdb.NewForReadWrite("archiver", jobsdb.WithClearDB(false), jobsdb.WithConfig(c), jobsdb.WithStats(stats.NOP))
