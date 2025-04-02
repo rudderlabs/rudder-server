@@ -5403,138 +5403,88 @@ func handlePendingGatewayJobs(processor *Handle) {
 	Expect(didWork).To(Equal(true))
 }
 
-var _ = Describe("TestJobSplitter", func() {
-	jobs := []*jobsdb.JobT{
-		{
-			JobID: 1,
-		},
-		{
-			JobID: 2,
-		},
-		{
-			JobID: 3,
-		},
-		{
-			JobID: 4,
-		},
-		{
-			JobID: 5,
-		},
+func TestJobSplitter(t *testing.T) {
+	inputJobs := func() []*jobsdb.JobT {
+		return []*jobsdb.JobT{
+			{JobID: 1}, {JobID: 2}, {JobID: 3}, {JobID: 4}, {JobID: 5},
+		}
 	}
-	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
-		It("default subJobSize: 2k", func() {
-			proc := NewHandle(config.Default, nil)
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
+	t.Run("default subJobSize: 2k", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		expectedSubJobs := []subJob{
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 1}, {JobID: 2}, {JobID: 3}, {JobID: 4}, {JobID: 5},
 				},
-			}
-			Expect(len(proc.jobSplitter(context.Background(), jobs, nil))).To(Equal(len(expectedSubJobs)))
-			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			proc := NewHandle(config.Default, nil)
-			proc.config.subJobSize = 1
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			proc := NewHandle(config.Default, nil)
-			proc.config.subJobSize = 2
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(proc.jobSplitter(context.Background(), jobs, nil)).To(Equal(expectedSubJobs))
-		})
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
 	})
-})
+	t.Run("subJobSize: 1, i.e. dividing read jobs into batch of 1", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		proc.config.subJobSize = 1
+		expectedSubJobs := []subJob{
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 1}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 2}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 3}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 4}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 5}},
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
+	})
+	t.Run("subJobSize: 2, i.e. dividing read jobs into batch of 2", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		proc.config.subJobSize = 2
+		expectedSubJobs := []subJob{
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 1},
+					{JobID: 2},
+				},
+				hasMore: true,
+			},
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 3},
+					{JobID: 4},
+				},
+				hasMore: true,
+			},
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 5},
+				},
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
+	})
+}
 
 var _ = Describe("TestConfigFilter", func() {
 	Context("testing config filter", func() {
