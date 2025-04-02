@@ -42,7 +42,6 @@ type Path string
 type Client struct {
 	httpClient          *http.Client
 	reportingServiceURL string
-	region              string
 	label               string
 	stats               stats.Stats
 	log                 logger.Logger
@@ -51,15 +50,14 @@ type Client struct {
 }
 
 // New creates a new reporting client
-func New(reportingServiceURL string, path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func New(path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
-	netClient := &http.Client{Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 
 	return &Client{
-		httpClient:          netClient,
+		httpClient:          &http.Client{Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)},
 		reportingServiceURL: reportingServiceURL,
 		path:                path,
-		region:              conf.GetString("region", ""),
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		label:               conf.GetString("clientName", ""),
 		stats:               stats,

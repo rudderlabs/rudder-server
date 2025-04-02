@@ -165,7 +165,7 @@ func NewErrorDetailReporter(
 		config:               conf,
 
 		useCommonClient: useCommonClient,
-		commonClient:    client.New(reportingServiceURL, client.PathRecordErrors, conf, log, stats),
+		commonClient:    client.New(client.PathRecordErrors, conf, log, stats),
 	}
 }
 
