@@ -293,6 +293,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
+				iterator.Stop()
 				iterationInterrupted = true
 				break
 			}

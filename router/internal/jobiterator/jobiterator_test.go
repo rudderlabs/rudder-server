@@ -252,6 +252,43 @@ func TestJobIterator(t *testing.T) {
 		require.Equal(t, 1, m.count, "expected 1 calls of get jobs to be performed")
 	})
 
+	t.Run("iterate, discard and stop", func(t *testing.T) {
+		m := &mockGetJobs{t: t}
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
+		// first batch will return 2 jobs from workspace A
+		m.jobs = []*jobsdb.JobT{
+			{JobID: 1, WorkspaceId: "A"},
+			{JobID: 2, WorkspaceId: "A"},
+			{JobID: 3, WorkspaceId: "A"},
+		}
+
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
+
+		require.True(t, it.HasNext())
+
+		discardedJobID := int64(2)
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 1}
+
+		var count int
+		var previousJob *jobsdb.JobT
+		for it.HasNext() {
+			job := it.Next()
+			count++
+			if previousJob != nil {
+				require.Greater(t, job.JobID, previousJob.JobID, "jobs should be iterated in order by JobID")
+			}
+			previousJob = job
+			if job.JobID == discardedJobID {
+				it.Discard(job)
+				// stop the iterator
+				it.Stop()
+			}
+		}
+		require.Equal(t, 2, count, "expected 2 jobs to be returned")
+		require.Equal(t, 1, m.count, "expected 1 calls of get jobs to be performed")
+		require.Equal(t, 2, it.Stats().DiscardedJobs, "expected 2 jobs to be discarded")
+	})
+
 	t.Run("error during query causes a panic", func(t *testing.T) {
 		m := &mockGetJobs{t: t}
 		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
