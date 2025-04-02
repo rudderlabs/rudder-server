@@ -44,11 +44,27 @@ type Client struct {
 	reportingServiceURL string
 
 	httpClient *http.Client
+	backoff    backoff.BackOff
 	stats      stats.Stats
 	log        logger.Logger
 
 	moduleName string
 	instanceID string
+}
+
+func backOffFromConfig(conf *config.Config) backoff.BackOff {
+	var opts []backoff.ExponentialBackOffOpts
+	var b backoff.BackOff
+
+	// exponential backoff related config can be added here
+
+	b = backoff.NewExponentialBackOff(opts...)
+
+	if conf.IsSet("Reporting.httpClient.backoff.maxRetries") {
+		b = backoff.WithMaxRetries(b, uint64(conf.GetInt64("Reporting.httpClient.backoff.maxRetries", 0)))
+	}
+
+	return b
 }
 
 // New creates a new reporting client
@@ -57,8 +73,11 @@ func New(path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	return &Client{
-		httpClient:          &http.Client{Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)},
+		httpClient: &http.Client{
+			Timeout: conf.GetDurationVar(1, 60*time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
+		},
 		reportingServiceURL: reportingServiceURL,
+		backoff:             backOffFromConfig(conf),
 		path:                path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
@@ -107,16 +126,16 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("error response body from reporting %w", err)
+			return fmt.Errorf("reading response body from reporting service: %q: %w", c.path, err)
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			err = fmt.Errorf("received unexpected response from reporting service: %q: statusCode: %d body: %v", c.path, resp.StatusCode, string(respBody))
 		}
 		return err
 	}
 
-	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
+	b := backoff.WithContext(c.backoff, ctx)
 	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
 		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
 	})

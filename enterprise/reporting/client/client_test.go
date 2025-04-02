@@ -301,9 +301,10 @@ func TestClient5xx(t *testing.T) {
 
 	// Create a test config
 	conf := config.New()
-	conf.Set("INSTANCE_ID", "test-instance")
+	conf.Set("INSTANCE_ID", "2")
 	conf.Set("clientName", "test-client")
 	conf.Set("REPORTING_URL", server.URL)
+	conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
 
 	// Create the client
 	c := client.New(client.PathMetrics, conf, logger.NOP, statsStore)
@@ -326,18 +327,18 @@ func TestClient5xx(t *testing.T) {
 	// Send the metric and expect an error
 	err = c.Send(context.Background(), metric)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "received response: statusCode:500")
+	require.Contains(t, err.Error(), "received unexpected response from reporting service: \"/metrics?version=v1\": statusCode: 500 body: internal server error")
 
 	// Get server hostname
 	serverURL, _ := url.Parse(server.URL)
 
 	// Expected tags for HTTP metrics
 	expectedHttpTags := stats.Tags{
-		"workspaceId": "test-workspace",
-		"clientName":  "test-client",
-		"instanceId":  "test-instance",
-		"endpoint":    serverURL.Host,
-		"status":      "500",
+		"module":     "test-client",
+		"instanceId": "2",
+		"path":       string(client.PathMetrics),
+		"endpoint":   serverURL.Host,
+		"status":     "500",
 	}
 
 	// Verify HTTP request metric
