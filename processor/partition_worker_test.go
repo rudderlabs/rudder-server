@@ -281,10 +281,11 @@ func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jo
 	return nil
 }
 
-func (m *mockWorkerHandle) jobSplitter(_ context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
+func (m *mockWorkerHandle) jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
 	if !m.shouldProcessMultipleSubJobs {
 		return []subJob{
 			{
+				ctx:           ctx,
 				subJobs:       jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
@@ -293,16 +294,19 @@ func (m *mockWorkerHandle) jobSplitter(_ context.Context, jobs []*jobsdb.JobT, r
 	}
 	return []subJob{
 		{
+			ctx:           ctx,
 			subJobs:       jobs[0 : len(jobs)/3],
 			hasMore:       true,
 			rsourcesStats: rsourcesStats,
 		},
 		{
+			ctx:           ctx,
 			subJobs:       jobs[len(jobs)/3 : 2*len(jobs)/2],
 			hasMore:       true,
 			rsourcesStats: rsourcesStats,
 		},
 		{
+			ctx:           ctx,
 			subJobs:       jobs[2*len(jobs)/2:],
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
@@ -328,8 +332,9 @@ func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*p
 	}, nil
 }
 
-func (m *mockWorkerHandle) pretransformStage(partition string, in *preTransformationMessage) (*transformationMessage, error) {
+func (m *mockWorkerHandle) pretransformStage(_ string, in *preTransformationMessage) (*transformationMessage, error) {
 	return &transformationMessage{
+		ctx:         in.subJobs.ctx,
 		totalEvents: in.totalEvents,
 		hasMore:     in.subJobs.hasMore,
 		trackedUsersReports: []*trackedusers.UsersReport{
@@ -350,6 +355,7 @@ func (m *mockWorkerHandle) userTransformStage(partition string, in *transformati
 	m.log.Infof("usertransformations partition: %s stats: %+v", partition, s)
 
 	return &userTransformData{
+		ctx:                 in.ctx,
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
 		trackedUsersReports: in.trackedUsersReports,
