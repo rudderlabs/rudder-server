@@ -13,11 +13,10 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/bing-ads/common"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClient oauth.Authorizer, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
@@ -29,14 +28,14 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 	}
 
 	token := common.TokenSource{
-		WorkspaceID:     destination.WorkspaceID,
-		DestinationName: destination.Name,
-		AccountID:       destConfig.RudderAccountID,
-		OauthClient:     oauthClient,
-		OauthClientV2:   oauthClientV2,
-		DestinationID:   destination.ID,
+		WorkspaceID:        destination.WorkspaceID,
+		DestinationDefName: destination.DestinationDefinition.Name,
+		AccountID:          destConfig.RudderAccountID,
+		OauthClientV2:      oauthClientV2,
+		DestinationID:      destination.ID,
+		CurrentTime:        time.Now,
 	}
-	secret, err := token.GenerateToken()
+	secret, err := token.GenerateTokenV2()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
 	}
@@ -61,11 +60,10 @@ func NewManager(
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
 ) (*BingAdsBulkUploader, error) {
-	oauthClient := oauth.NewOAuthErrorHandler(backendConfig)
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
 		oauthv2.WithLogger(logger),
 		oauthv2.WithCPConnectorTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
 		oauthv2.WithStats(statsFactory),
 	)
-	return newManagerInternal(logger, statsFactory, destination, oauthClient, oauthClientV2)
+	return newManagerInternal(logger, statsFactory, destination, oauthClientV2)
 }

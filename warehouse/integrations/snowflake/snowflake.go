@@ -832,7 +832,7 @@ func (sf *Snowflake) ShouldMerge(tableName string) bool {
 	shouldAppend := slices.Contains(sf.config.appendOnlyTables, tableName) ||
 		sf.Warehouse.GetPreferAppendSetting()
 
-	return !(shouldAppend && sf.Uploader.CanAppend())
+	return !shouldAppend || !sf.Uploader.CanAppend()
 }
 
 func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
@@ -1167,7 +1167,7 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	))
 
 	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
+		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
 	query = strings.TrimSuffix(queryBuilder.String(), ",") + ";"
@@ -1179,19 +1179,6 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	)
 	log.Infow("Adding columns", lf.Query, query)
 	_, err = sf.DB.ExecContext(ctx, query)
-
-	// Handle error in case of single column
-	if len(columnsInfo) == 1 {
-		if err != nil {
-			if checkAndIgnoreAlreadyExistError(err) {
-				log.Infow("Column already exists",
-					lf.ColumnName, columnsInfo[0].Name,
-					lf.Error, err.Error(),
-				)
-				err = nil
-			}
-		}
-	}
 	return
 }
 

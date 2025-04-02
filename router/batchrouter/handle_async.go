@@ -19,12 +19,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -72,12 +70,7 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 			}
 			tx.Tx().AddSuccessListener(func() {
 				for _, job := range completedJobs {
-					rmetrics.DecreasePendingEvents(
-						"batch_rt",
-						job.WorkspaceId,
-						brt.destType,
-						float64(1),
-					)
+					brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", job.WorkspaceId, brt.destType, float64(1))
 				}
 			})
 			return nil
@@ -339,7 +332,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 }
 
 func (brt *Handle) asyncUploadWorker(ctx context.Context) {
-	if !asynccommon.IsAsyncDestination(brt.destType) {
+	if !common.IsAsyncDestination(brt.destType) {
 		return
 	}
 
@@ -461,7 +454,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		}
 		for _, job := range batchJobs.Jobs {
 			out.SucceededJobIDs = append(out.SucceededJobIDs, job.JobID)
-			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.DisabledEgress.Error()) // skipcq: GO-R4002
+			out.SuccessResponse = fmt.Sprintf(`{"error":"%s"`, rterror.ErrDisabledEgress.Error()) // skipcq: GO-R4002
 		}
 
 		brt.setMultipleJobStatus(setMultipleJobStatusParams{
@@ -476,7 +469,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	_, ok := brt.asyncDestinationStruct[destinationID]
 	if ok {
-		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*asynccommon.InvalidManager); ok {
+		if invalidManager, ok := brt.asyncDestinationStruct[destinationID].Manager.(*common.InvalidManager); ok {
 			failedAsyncJobs := BatchedJobs{
 				Jobs:       batchJobs.Jobs,
 				Connection: batchJobs.Connection,
@@ -620,7 +613,7 @@ func (brt *Handle) getReportMetrics(params getReportMetricsParams) []*utilTypes.
 		workspaceID := status.WorkspaceId
 		eventName := parameters.EventName
 		eventType := parameters.EventType
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, status.JobState, status.ErrorCode, eventName, eventType)
+		key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + status.JobState + ":" + status.ErrorCode + ":" + eventName + ":" + eventType
 		_, ok := connectionDetailsMap[key]
 		if !ok {
 			cd := &utilTypes.ConnectionDetails{
@@ -840,12 +833,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		panic(err)
 	}
 	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
-	rmetrics.DecreasePendingEvents(
-		"batch_rt",
-		workspaceID,
-		brt.destType,
-		float64(len(completedJobsList)),
-	)
+	brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspaceID, brt.destType, float64(len(completedJobsList)))
 	if params.Attempted {
 		var sourceID string
 		if len(statusList) > 0 {

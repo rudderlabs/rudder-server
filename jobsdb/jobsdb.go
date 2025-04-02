@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -185,10 +186,10 @@ type HandleInspector struct {
 
 // DSIndicesList returns the slice of current ds indices
 func (h *HandleInspector) DSIndicesList() []string {
-	h.Handle.dsListLock.RLock()
-	defer h.Handle.dsListLock.RUnlock()
+	h.dsListLock.RLock()
+	defer h.dsListLock.RUnlock()
 	var indicesList []string
-	for _, ds := range h.Handle.getDSList() {
+	for _, ds := range h.getDSList() {
 		indicesList = append(indicesList, ds.Index)
 	}
 
@@ -294,7 +295,7 @@ type JobsDB interface {
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(ctx context.Context) (err error)
+	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
 	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
 	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
@@ -488,6 +489,7 @@ type Handle struct {
 	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
+	migrateDSPaused  atomic.Bool
 	TriggerMigrateDS func() <-chan time.Time
 	TriggerRefreshDS func() <-chan time.Time
 
@@ -519,7 +521,9 @@ type Handle struct {
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
 		MaxDSSize                      config.ValueLoader[int]
-		migration                      struct {
+		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
+
+		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
 			vacuumFullStatusTableThreshold             func() int64
 			vacuumAnalyzeStatusTableThreshold          func() int64
@@ -881,9 +885,17 @@ func (jd *Handle) init() {
 func (jd *Handle) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.noResultsCache = cache.NewNoResultsCache[ParameterFilterT](
+	var defaultLogCacheBranchInvalidation bool
+	switch jd.tablePrefix {
+	case "gw", "rt", "batch_rt", "arc":
+		defaultLogCacheBranchInvalidation = true
+	}
+	jd.noResultsCache = cache.NewNoResultsCache(
 		cacheParameterFilters,
 		func() time.Duration { return jd.conf.cacheExpiration.Load() },
+		cache.WithWarnOnBranchInvalidation[ParameterFilterT](
+			jd.config.GetReloadableBoolVar(defaultLogCacheBranchInvalidation, "JobsDB."+jd.tablePrefix+".logCacheBranchInvalidation", "JobsDB.logCacheBranchInvalidation"),
+			jd.logger),
 	)
 
 	jd.logger.Infon("Connected to DB")
@@ -965,6 +977,8 @@ func (jd *Handle) loadConfig() {
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
 	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, "JobsDB.maxDSSize")
+
+	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, "JobsDB.indexOptimizations")
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1457,6 +1471,11 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
+	jobStatusTablePrimaryKey := ""
+	if !jd.conf.indexOptimizations.Load() { // TODO: Remove this branch after next release
+		jobStatusTablePrimaryKey = `,PRIMARY KEY (job_id, job_state, id)`
+	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
 		job_id BIGINT,
@@ -1466,8 +1485,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB,
-		PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)); err != nil {
+		parameters JSONB DEFAULT '{}'::JSONB%s);`, newDS.JobStatusTable, jobStatusTablePrimaryKey)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 	return nil
@@ -1497,9 +1515,20 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 		)); err != nil {
 		return fmt.Errorf("adding foreign key constraint: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
-		return fmt.Errorf("adding job_id_id index: %w", err)
+	if jd.conf.indexOptimizations.Load() {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_id index: %w", err)
+		}
+		// index used for maxDSRetention during migration
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_js index: %w", err)
+		}
+	} else { // TODO: remove this branch after next release
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+			return fmt.Errorf("adding job_id_id index: %w", err)
+		}
 	}
+
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("create view: %w", err)
 	}
@@ -1783,7 +1812,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 
 		for _, key := range cacheParameterFilters {
 			val := gjson.GetBytes(job.Parameters, key).String()
-			params = append(params, fmt.Sprintf("%s:%s", key, val))
+			params = append(params, key+":"+val)
 			parameterFilters = append(parameterFilters, ParameterFilterT{Name: key, Value: val})
 		}
 
@@ -1810,6 +1839,8 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
@@ -1820,7 +1851,10 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
+func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
+	// pause migration to avoid any read locks being blocked during pileup count
+	jd.migrateDSPaused.Store(true)
+	defer jd.migrateDSPaused.Store(false)
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
 		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
@@ -1831,35 +1865,28 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	queryString := `with joined as (
-		select
-		  j.custom_val as customVal,
-		  j.workspace_id as workspace
-		from
-		  %[1]q j
-		  left join "v_last_%[2]s" s on j.job_id = s.job_id
-		where (
-		  s.job_state not in ('aborted', 'succeeded', 'migrated')
-		  or s.job_id is null
-		)
-	  )
-	  select
-		count(*),
-		customVal,
-		workspace
-	  from
-		joined
-	  group by
-		customVal,
-		workspace;`
+	queryString := `WITH pending AS (
+	SELECT
+		j.workspace_id AS workspace_id,
+		j.custom_val AS custom_val
+	FROM
+		%[1]q j
+		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
+	WHERE 
+		s.job_id is null OR s.job_state = ANY($2) 
+)
+SELECT
+	workspace_id,
+	custom_val,
+	COUNT(*)
+FROM pending GROUP BY workspace_id, custom_val`
 
 	g, ctx := errgroup.WithContext(ctx)
-	defaultConcurrency := 10
-	conc := jd.config.GetInt("jobsdb.pileupcount.parallelism", 10)
+	const defaultConcurrency = 4
+	conc := jd.config.GetIntVar(defaultConcurrency, 1, "JobsDB.pileupCountConcurrency", "jobsdb.pileupcount.parallelism")
 	if conc < 1 || conc > defaultConcurrency {
-		jd.logger.Warnn(
-			"parallelism out of safe bounds. Using default value",
-			logger.NewIntField("parallelism", int64(conc)),
+		jd.logger.Warnn("GetPileUpCounts concurrency out of safe bounds, using default value",
+			logger.NewIntField("concurrency", int64(conc)),
 			logger.NewIntField("default", int64(defaultConcurrency)),
 		)
 		conc = defaultConcurrency
@@ -1868,35 +1895,29 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context) error {
 	for _, ds := range dsList {
 		ds := ds
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(
-				ctx,
-				fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
-			)
+			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+				cutoffTime,
+				pq.Array([]string{Executing.State, Failed.State, Importing.State, Waiting.State}))
 			if err != nil {
-				return fmt.Errorf("query on %s: %w", ds.JobTable, err)
+				return fmt.Errorf("getting pileup counts for %q: %w", ds.JobTable, err)
 			}
 			defer func() {
 				_ = rows.Close()
 			}()
 			for rows.Next() {
-				var count sql.NullInt64
-				var customVal string
-				var workspace string
-				err := rows.Scan(&count, &customVal, &workspace)
-				if err != nil {
-					return fmt.Errorf("rows.Scan(...) on %s: %w", ds.JobTable, err)
+				var (
+					workspace, customVal sql.NullString
+					count                sql.NullInt64
+				)
+				if err := rows.Scan(&workspace, &customVal, &count); err != nil {
+					return fmt.Errorf("scanning pileup counts rows for %q: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					rmetrics.IncreasePendingEvents(
-						jd.tablePrefix,
-						workspace,
-						customVal,
-						float64(count.Int64),
-					)
+					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, float64(count.Int64))
 				}
 			}
 			if err = rows.Err(); err != nil {
-				return fmt.Errorf("rows.Err() on %s: %w", ds.JobTable, err)
+				return fmt.Errorf("iterating pileup counts for %q: %w", ds.JobTable, err)
 			}
 			return nil
 		})
@@ -2299,7 +2320,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			// (a) no jobs are returned by the query or
 			// (b) the state is not present in the resultset and limits have not been reached
 			if _, ok := resultsetStates[state]; len(jobList) == 0 || (!ok && !limitsReached) {
-				cacheTx.Commit()
+				if allEntriesCommitted := cacheTx.Commit(); !allEntriesCommitted {
+					tags := &statTags{
+						StateFilters:     []string{state},
+						CustomValFilters: params.CustomValFilters,
+						WorkspaceID:      params.WorkspaceID,
+						ParameterFilters: params.ParameterFilters,
+					}
+					statTags := tags.getStatsTags(jd.tablePrefix)
+					jd.stats.NewTaggedStat("jobsdb_cache_commit_misses", stats.CountType, statTags).Increment()
+				}
 			}
 		}
 	}
@@ -3134,11 +3164,10 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
 	}
-	defer jd.getTimerStat(
-		"jobsdb_get_jobs_time",
-		tags,
-	).RecordDuration()()
+	defer jd.getTimerStat("jobsdb_get_jobs_time", tags).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -3154,10 +3183,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	limitByEventCount := false
-	if params.EventsLimit > 0 {
-		limitByEventCount = true
-	}
+	limitByEventCount := params.EventsLimit > 0
 
 	limitByPayloadSize := false
 	if params.PayloadSizeLimit > 0 {
@@ -3214,18 +3240,20 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 		}
 	}
 
-	statTags := tags.getStatsTags(jd.tablePrefix)
-	statTags["query"] = "get"
-	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount)
-	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)
-
 	if len(res.Jobs) > 0 {
 		retryAfterJobID := res.Jobs[len(res.Jobs)-1].JobID
 		mtoken.afterJobID = &retryAfterJobID
 	}
 
-	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))
-	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) }))
+	statTags := tags.getStatsTags(jd.tablePrefix)
+	statTags["query"] = "get"
+	jd.stats.NewTaggedStat("jobsdb_tables_queried", stats.CountType, statTags).Count(dsQueryCount) // number of actual ds tables that we queried
+	jd.stats.NewTaggedStat("jobsdb_cache_hits", stats.CountType, statTags).Count(cacheHitCount)    // number of ds tables that we skipped querying due to noResultsCache
+	if len(res.Jobs) == 0 {
+		jd.stats.NewTaggedStat("jobsdb_queried_no_jobs", stats.CountType, statTags).Increment() // number of times that we queried and got no jobs
+	}
+	jd.stats.NewTaggedStat("jobsdb_queried_jobs", stats.CountType, statTags).Count(len(res.Jobs))                                                         // number of jobs that we queried
+	jd.stats.NewTaggedStat("jobsdb_queried_bytes", stats.CountType, statTags).Count(lo.SumBy(res.Jobs, func(j *JobT) int { return len(j.EventPayload) })) // number of bytes that we queried
 	return res, nil
 }
 
@@ -3245,6 +3273,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 		StateFilters:     params.stateFilters,
 		CustomValFilters: params.CustomValFilters,
 		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
 	}
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))

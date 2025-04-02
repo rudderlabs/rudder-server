@@ -79,7 +79,7 @@ func (client *Client) logQuery(query *bigquery.Query, elapsed time.Duration) {
 		return
 	}
 
-	queryStatement := query.QueryConfig.Q
+	queryStatement := query.Q
 
 	keysAndValues := []any{
 		logfield.Query, queryStatement,

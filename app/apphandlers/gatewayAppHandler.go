@@ -34,13 +34,9 @@ type gatewayApp struct {
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
-	config         struct {
-		gatewayDSLimit config.ValueLoader[int]
-	}
 }
 
 func (a *gatewayApp) Setup() error {
-	a.config.gatewayDSLimit = config.GetReloadableIntVar(0, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
@@ -82,7 +78,6 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.gatewayDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
