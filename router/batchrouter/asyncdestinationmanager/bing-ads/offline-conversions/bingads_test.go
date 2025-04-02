@@ -3,7 +3,6 @@ package offline_conversions
 import (
 	"archive/zip"
 	"encoding/json"
-	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -117,14 +116,14 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				FailedReason:        "{\"error\":\"insert:error in uploading the bulk file: unable to get bulk upload url, check your credentials\"}",
 				ImportingJobIDs:     []int64{2, 4, 5, 6},
 				FailedJobIDs:        []int64{1, 3},
-				ImportingParameters: stdjson.RawMessage{},
+				ImportingParameters: json.RawMessage{},
 				ImportingCount:      4,
 				FailedCount:         2,
 			}
 
 			// making upload function call
 			received := bulkUploader.Upload(&asyncDestination)
-			received.ImportingParameters = stdjson.RawMessage{}
+			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)

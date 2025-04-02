@@ -384,9 +384,10 @@ func processPollStatusData(records [][]string) (map[int64]map[string]struct{}, e
 	if len(records) > 0 {
 		header := records[0]
 		for i, column := range header {
-			if column == "Client Id" {
+			switch column {
+			case "Client Id":
 				clientIDIndex = i
-			} else if column == "Error" {
+			case "Error":
 				errorIndex = i
 			}
 		}

@@ -84,7 +84,16 @@ func NewBadgerEventSampler(
 			return nil, fmt.Errorf("removing badger db directory: %w", err)
 		}
 	}
-	db, err := badger.Open(opts)
+
+	openDB := func() (dbase *badger.DB, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic during badgerdb open: %v", r)
+			}
+		}()
+		return badger.Open(opts)
+	}
+	db, err := openDB()
 	if err != nil {
 		// corrupted or incompatible db, clean up the directory and retry
 		log.Errorn("Error while opening event sampler badger db, cleaning up the directory",
@@ -94,7 +103,7 @@ func NewBadgerEventSampler(
 		if err := os.RemoveAll(opts.Dir); err != nil {
 			return nil, fmt.Errorf("removing badger db directory: %w", err)
 		}
-		if db, err = badger.Open(opts); err != nil {
+		if db, err = openDB(); err != nil {
 			return nil, fmt.Errorf("opening badger db: %w", err)
 		}
 	}

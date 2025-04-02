@@ -29,6 +29,14 @@ const (
 	redshiftStringLimit = 512
 )
 
+// Compile-time check to ensure ValidationError struct remains unchanged.
+var _ = struct {
+	Type     string
+	Message  string
+	Meta     map[string]string
+	Property string
+}(types.ValidationError{})
+
 func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *Transformer {
 	t := &Transformer{
 		logger:         logger.Child("warehouse-transformer"),
@@ -50,7 +58,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	return t
 }
 
-func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent, _ int) (res types.Response) {
+func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent) (res types.Response) {
 	if len(clientEvents) == 0 {
 		return
 	}

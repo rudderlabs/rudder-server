@@ -280,22 +280,22 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		metricReport := types.ReportByStatus{StatusDetail: &types.StatusDetail{}}
 		var sampleEvent string
 		err = rows.Scan(
-			&metricReport.InstanceDetails.WorkspaceID, &metricReport.InstanceDetails.Namespace, &metricReport.InstanceDetails.InstanceID,
-			&metricReport.ConnectionDetails.SourceDefinitionID,
-			&metricReport.ConnectionDetails.SourceCategory,
-			&metricReport.ConnectionDetails.SourceID,
-			&metricReport.ConnectionDetails.DestinationDefinitionID,
-			&metricReport.ConnectionDetails.DestinationID,
-			&metricReport.ConnectionDetails.SourceTaskRunID,
-			&metricReport.ConnectionDetails.SourceJobID,
-			&metricReport.ConnectionDetails.SourceJobRunID,
-			&metricReport.ConnectionDetails.TransformationID,
-			&metricReport.ConnectionDetails.TransformationVersionID,
-			&metricReport.ConnectionDetails.TrackingPlanID,
-			&metricReport.ConnectionDetails.TrackingPlanVersion,
-			&metricReport.PUDetails.InPU, &metricReport.PUDetails.PU,
+			&metricReport.WorkspaceID, &metricReport.Namespace, &metricReport.InstanceID,
+			&metricReport.SourceDefinitionID,
+			&metricReport.SourceCategory,
+			&metricReport.SourceID,
+			&metricReport.DestinationDefinitionID,
+			&metricReport.DestinationID,
+			&metricReport.SourceTaskRunID,
+			&metricReport.SourceJobID,
+			&metricReport.SourceJobRunID,
+			&metricReport.TransformationID,
+			&metricReport.TransformationVersionID,
+			&metricReport.TrackingPlanID,
+			&metricReport.TrackingPlanVersion,
+			&metricReport.InPU, &metricReport.PU,
 			&metricReport.StatusDetail.Status,
-			&metricReport.PUDetails.TerminalPU, &metricReport.PUDetails.InitialPU,
+			&metricReport.TerminalPU, &metricReport.InitialPU,
 			&metricReport.StatusDetail.StatusCode,
 			&metricReport.StatusDetail.EventName, &metricReport.StatusDetail.EventType,
 			&metricReport.StatusDetail.ErrorType,
@@ -325,17 +325,17 @@ func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) 
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
 		groupingIdentifiers := []string{
-			report.InstanceDetails.WorkspaceID, report.InstanceDetails.Namespace, report.InstanceDetails.InstanceID,
-			report.ConnectionDetails.SourceID,
-			report.ConnectionDetails.DestinationID,
-			report.ConnectionDetails.SourceTaskRunID,
-			report.ConnectionDetails.SourceJobID,
-			report.ConnectionDetails.SourceJobRunID,
-			report.ConnectionDetails.TransformationID,
-			report.ConnectionDetails.TransformationVersionID,
-			report.ConnectionDetails.TrackingPlanID,
-			strconv.Itoa(report.ConnectionDetails.TrackingPlanVersion),
-			report.PUDetails.InPU, report.PUDetails.PU,
+			report.WorkspaceID, report.Namespace, report.InstanceID,
+			report.SourceID,
+			report.DestinationID,
+			report.SourceTaskRunID,
+			report.SourceJobID,
+			report.SourceJobRunID,
+			report.TransformationID,
+			report.TransformationVersionID,
+			report.TrackingPlanID,
+			strconv.Itoa(report.TrackingPlanVersion),
+			report.InPU, report.PU,
 			strconv.FormatBool(report.TerminalPU), strconv.FormatBool(report.InitialPU),
 			strconv.FormatInt(report.ReportedAt, 10),
 		}
@@ -676,10 +676,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.ConnectionDetails.SourceID)
+		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		metric := *metric
 
-		if metric.ConnectionDetails.SourceCategory == "warehouse" || slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.ConnectionDetails.SourceID) {
+		if metric.SourceCategory == "warehouse" || slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.SourceID) {
 			metric.StatusDetail.EventName = metric.StatusDetail.EventType
 		}
 
@@ -699,23 +699,23 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 
 		_, err = stmt.Exec(
 			workspaceID, r.namespace, r.instanceID,
-			metric.ConnectionDetails.SourceDefinitionID,
-			metric.ConnectionDetails.SourceCategory,
-			metric.ConnectionDetails.SourceID,
-			metric.ConnectionDetails.DestinationDefinitionID,
-			metric.ConnectionDetails.DestinationID,
-			metric.ConnectionDetails.SourceTaskRunID,
-			metric.ConnectionDetails.SourceJobID,
-			metric.ConnectionDetails.SourceJobRunID,
-			metric.ConnectionDetails.TransformationID,
-			metric.ConnectionDetails.TransformationVersionID,
-			metric.ConnectionDetails.TrackingPlanID,
-			metric.ConnectionDetails.TrackingPlanVersion,
-			metric.PUDetails.InPU, metric.PUDetails.PU,
+			metric.SourceDefinitionID,
+			metric.SourceCategory,
+			metric.SourceID,
+			metric.DestinationDefinitionID,
+			metric.DestinationID,
+			metric.SourceTaskRunID,
+			metric.SourceJobID,
+			metric.SourceJobRunID,
+			metric.TransformationID,
+			metric.TransformationVersionID,
+			metric.TrackingPlanID,
+			metric.TrackingPlanVersion,
+			metric.InPU, metric.PU,
 			reportedAt,
 			metric.StatusDetail.Status,
 			metric.StatusDetail.Count, metric.StatusDetail.ViolationCount,
-			metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU,
+			metric.TerminalPU, metric.InitialPU,
 			metric.StatusDetail.StatusCode,
 			sampleResponse, getStringifiedSampleEvent(sampleEvent),
 			metric.StatusDetail.EventName, metric.StatusDetail.EventType,

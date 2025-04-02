@@ -319,10 +319,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 
 			if err == nil && !json.Valid(eventRequest) {
-				err = errors.New(response.InvalidJSON)
+				err = errors.New((response.InvalidJSON))
 			}
 			if err == nil && len(eventRequest) > bt.webhook.config.maxReqSize.Load() {
-				err = errors.New(response.RequestBodyTooLarge)
+				err = errors.New((response.RequestBodyTooLarge))
 			}
 			if err == nil {
 				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
