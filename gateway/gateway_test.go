@@ -1159,14 +1159,14 @@ var _ = Describe("Gateway", func() {
 						stat := statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
-								"source":      "noWriteKey",
-								"sourceID":    "noWriteKey",
-								"workspaceId": "",
-								"writeKey":    "noWriteKey",
-								"reqType":     reqType,
-								"reason":      "failed to read writekey from header",
-								"sourceType":  "",
-								"sdkVersion":  "",
+								"source":        "noWriteKey",
+								"sourceID":      "noWriteKey",
+								"workspaceId":   "",
+								"writeKey":      "noWriteKey",
+								"reqType":       reqType,
+								"reason":        "failed to read writekey from header",
+								"sourceType":    "",
+								"sdkVersion":    "",
 								"sourceDefName": "",
 							},
 						)
