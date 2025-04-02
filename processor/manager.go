@@ -16,6 +16,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -37,7 +38,7 @@ type LifecycleManager struct {
 	clearDB                    *bool
 	ReportingI                 types.Reporting // need not initialize again
 	BackendConfig              backendconfig.BackendConfig
-	Transformer                transformer.Transformer
+	TransformerClients         *transformer.Clients
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	rsourcesService            rsources.JobService
@@ -46,14 +47,15 @@ type LifecycleManager struct {
 	transDebugger              transformationdebugger.TransformationDebugger
 	enrichers                  []enricher.PipelineEnricher
 	trackedUsersReporter       trackedusers.UsersReporter
+	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 }
 
 // Start starts a processor, this is not a blocking call.
 // If the processor is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
 func (proc *LifecycleManager) Start() error {
-	if proc.Transformer != nil {
-		proc.Handle.transformer = proc.Transformer
+	if proc.TransformerClients != nil {
+		proc.Handle.transformerClients = proc.TransformerClients
 	}
 
 	if err := proc.Handle.Setup(
@@ -74,6 +76,7 @@ func (proc *LifecycleManager) Start() error {
 		proc.transDebugger,
 		proc.enrichers,
 		proc.trackedUsersReporter,
+		proc.pendingEventsRegistry,
 	); err != nil {
 		return err
 	}
@@ -83,9 +86,15 @@ func (proc *LifecycleManager) Start() error {
 
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
-	if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
-		return err
-	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
+			proc.Handle.logger.Errorf("Error counting pending events: %v", err)
+		}
+	}()
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -117,12 +126,13 @@ func New(
 	transDebugger transformationdebugger.TransformationDebugger,
 	enrichers []enricher.PipelineEnricher,
 	trackedUsersReporter trackedusers.UsersReporter,
+	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
 		Handle: NewHandle(
 			config.Default,
-			transformer.NewTransformer(
+			transformer.NewClients(
 				config.Default,
 				logger.NewLogger().Child("processor"),
 				stats.Default,
@@ -147,6 +157,7 @@ func New(
 		transDebugger:              transDebugger,
 		enrichers:                  enrichers,
 		trackedUsersReporter:       trackedUsersReporter,
+		pendingEventsRegistry:      pendingEventsRegistry,
 	}
 	for _, opt := range opts {
 		opt(proc)
@@ -165,5 +176,11 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 func WithStats(stats stats.Stats) Opts {
 	return func(l *LifecycleManager) {
 		l.Handle.statsFactory = stats
+	}
+}
+
+func WithTransformerClients(transformerClients transformer.TransformerClients) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.transformerClients = transformerClients
 	}
 }

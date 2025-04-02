@@ -46,11 +46,14 @@ func mergeDataWarehouseIntrOpts(destType string, message map[string]any, opts in
 
 	setOption(srcMap, "jsonPaths", &jsonPaths)
 	if len(jsonPaths) > 0 && utils.IsJSONPathSupportedAsPartOfConfig(destType) {
-		for _, jp := range jsonPaths {
-			if jpStr, ok := jp.(string); ok {
-				opts.jsonPaths = append(opts.jsonPaths, jpStr)
+		mergedJSONPaths := make([]string, 0, len(jsonPaths)+len(opts.jsonPaths))
+		for _, jsonPath := range jsonPaths {
+			if jsonPathStr, ok := jsonPath.(string); ok {
+				mergedJSONPaths = append(mergedJSONPaths, jsonPathStr)
 			}
 		}
+		mergedJSONPaths = append(mergedJSONPaths, opts.jsonPaths...)
+		opts.jsonPaths = mergedJSONPaths
 	}
 	return opts
 }

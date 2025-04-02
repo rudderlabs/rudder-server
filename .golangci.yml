@@ -1,88 +1,82 @@
-run:
-  timeout: 7m
-
+version: "2"
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - typecheck
-    - unused
-    - unparam
-    - unconvert
     - bodyclose
     - decorder
-    - makezero
-    - nilnil
-    - nilerr
-    - rowserrcheck
-    - tenv
-    - wastedassign
-    - unparam
-    - misspell
-    - unconvert
     - depguard
-    - unused
     - forbidigo
-
+    - makezero
+    - misspell
+    - nilerr
+    - nilnil
+    - rowserrcheck
+    - unconvert
+    - unparam
+    - wastedassign
+  settings:
+    depguard:
+      rules:
+        main:
+          files:
+            - $all
+            - '!**/uuid_test.go'
+            - '!**/jsonrs/*.go'
+          deny:
+            - pkg: github.com/gofrs/uuid
+              desc: use github.com/google/uuid instead
+            - pkg: golang.org/x/exp/slices
+              desc: use "slices" instead
+            - pkg: github.com/json-iterator/go
+              desc: use "jsonrs" instead
+            - pkg: github.com/rudderlabs/sonnet
+              desc: use "jsonrs" instead
+    forbidigo:
+      forbid:
+        - pattern: ^json\.Marshal.*$
+          pkg: ^encoding/json$
+          msg: use jsonrs.Marshal instead
+        - pattern: ^json\.Unmarshal$
+          pkg: ^encoding/json$
+          msg: use jsonrs.UnMarshal instead
+        - pattern: ^json\.NewDecoder.*$
+          pkg: ^encoding/json$
+          msg: use jsonrs.NewDecoder instead
+        - pattern: ^json\.NewEncoder.*$
+          pkg: ^encoding/json$
+          msg: use jsonrs.NewEncoder instead
+      analyze-types: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+        path: gateway/webhook/webhook_test.go
+      - linters:
+          - bodyclose
+        path: processor/transformer/transformer.go
+      - linters:
+          - bodyclose
+        path: gateway/gateway_test.go
+      - linters:
+          - bodyclose
+        path: cmd/rudder-cli/status/status.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: true
-  exclude-case-sensitive: false
   max-issues-per-linter: 50
   max-same-issues: 10
   new: false
-  exclude-rules:
-    # False positive httptest.NewRecorder
-    - path: 'gateway/webhook/webhook_test.go'
-      linters:
-        - bodyclose
-
-    # False positive .Close behind if
-    - path: 'processor/transformer/transformer.go'
-      linters:
-        - bodyclose
-
-    # False positive httptest.NewRecorder
-    - path: 'gateway/gateway_test.go'
-      linters:
-        - bodyclose
-
-    - path: 'cmd/rudder-cli/status/status.go'
-      linters:
-        - bodyclose
-
-linters-settings:
-  forbidigo:
-    analyze-types: true
-    forbid:
-      - p: ^json\.Marshal.*$
-        pkg: ^encoding/json$
-        msg: use jsonrs.Marshal instead
-      - p: ^json\.Unmarshal$
-        pkg: ^encoding/json$
-        msg: use jsonrs.UnMarshal instead
-      - p: ^json\.NewDecoder.*$
-        pkg: ^encoding/json$
-        msg: use jsonrs.NewDecoder instead
-      - p: ^json\.NewEncoder.*$
-        pkg: ^encoding/json$
-        msg: use jsonrs.NewEncoder instead
-  depguard:
-    rules:
-      main:
-        files:
-          - $all
-          - "!**/uuid_test.go"
-          - "!**/jsonrs/*.go"
-        deny:
-          - pkg: "github.com/gofrs/uuid"
-            desc: 'use github.com/google/uuid instead'
-          - pkg: "golang.org/x/exp/slices"
-            desc: 'use "slices" instead'
-          - pkg: "github.com/json-iterator/go"
-            desc: 'use "jsonrs" instead'
-          - pkg: "github.com/rudderlabs/sonnet"
-            desc: 'use "jsonrs" instead'
-
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

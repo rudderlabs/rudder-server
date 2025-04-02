@@ -55,22 +55,23 @@ type Handle struct {
 	destType string
 	// dependencies
 
-	conf               *config.Config
-	logger             logger.Logger
-	netHandle          *http.Client
-	jobsDB             jobsdb.JobsDB
-	errorDB            jobsdb.JobsDB
-	reporting          types.Reporting
-	backendConfig      backendconfig.BackendConfig
-	fileManagerFactory filemanager.Factory
-	transientSources   transientsource.Service
-	rsourcesService    rsources.JobService
-	warehouseClient    *client.Warehouse
-	debugger           destinationdebugger.DestinationDebugger
-	Diagnostics        diagnostics.DiagnosticsI
-	adaptiveLimit      func(int64) int64
-	isolationStrategy  isolation.Strategy
-	now                func() time.Time
+	conf                  *config.Config
+	logger                logger.Logger
+	netHandle             *http.Client
+	jobsDB                jobsdb.JobsDB
+	errorDB               jobsdb.JobsDB
+	reporting             types.Reporting
+	backendConfig         backendconfig.BackendConfig
+	fileManagerFactory    filemanager.Factory
+	transientSources      transientsource.Service
+	rsourcesService       rsources.JobService
+	warehouseClient       *client.Warehouse
+	debugger              destinationdebugger.DestinationDebugger
+	Diagnostics           diagnostics.DiagnosticsI
+	pendingEventsRegistry rmetrics.PendingEventsRegistry
+	adaptiveLimit         func(int64) int64
+	isolationStrategy     isolation.Strategy
+	now                   func() time.Time
 
 	// configuration
 
@@ -82,6 +83,7 @@ type Handle struct {
 	asyncUploadWorkerTimeout     config.ValueLoader[time.Duration]
 	retryTimeWindow              config.ValueLoader[time.Duration]
 	sourcesRetryTimeWindow       config.ValueLoader[time.Duration]
+	schemaGenerationWorkers      config.ValueLoader[int]
 	reportingEnabled             bool
 	jobQueryBatchSize            config.ValueLoader[int]
 	pollStatusLoopSleep          config.ValueLoader[time.Duration]
@@ -261,7 +263,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 // upload the given batch of jobs to the given object storage provider
 func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse bool) UploadResult {
 	if brt.disableEgress {
-		return UploadResult{Error: rterror.DisabledEgress}
+		return UploadResult{Error: rterror.ErrDisabledEgress}
 	}
 
 	var localTmpDirName string
@@ -494,32 +496,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 // pingWarehouse notifies the warehouse about a new data upload (staging files)
 func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (err error) {
-	schemaMap := make(map[string]map[string]interface{})
-	for _, job := range batchJobs.Jobs {
-		var payload map[string]interface{}
-		err := jsonrs.Unmarshal(job.EventPayload, &payload)
-		if err != nil {
-			panic(err)
-		}
-		var ok bool
-		tableName, ok := payload["metadata"].(map[string]interface{})["table"].(string)
-		if !ok {
-			brt.logger.Errorf(`BRT: tableName not found in event metadata: %v`, payload["metadata"])
-			return nil
-		}
-		if _, ok = schemaMap[tableName]; !ok {
-			schemaMap[tableName] = make(map[string]interface{})
-		}
-		columns := payload["metadata"].(map[string]interface{})["columns"].(map[string]interface{})
-		for columnName, columnType := range columns {
-			if _, ok := schemaMap[tableName][columnName]; !ok {
-				schemaMap[tableName][columnName] = columnType
-			} else if columnType == "text" && schemaMap[tableName][columnName] == "string" {
-				// this condition is required for altering string to text. if schemaMap[tableName][columnName] has string and in the next job if it has text type then we change schemaMap[tableName][columnName] to text
-				schemaMap[tableName][columnName] = columnType
-			}
-		}
-	}
+	schemaMap := brt.generateSchemaMap(batchJobs)
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
@@ -556,6 +533,51 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	return
 }
 
+func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]string {
+	// First group jobs by table name
+	jobsByTable := make(map[string][]*jobsdb.JobT)
+	metaDataByJob := make(map[int64]map[string]gjson.Result)
+	for _, job := range batchJobs.Jobs {
+		metadata := gjson.GetBytes(job.EventPayload, "metadata").Map()
+		tableName := metadata["table"].String()
+		if tableName == "" {
+			continue
+		}
+		jobsByTable[tableName] = append(jobsByTable[tableName], job)
+		metaDataByJob[job.JobID] = metadata
+	}
+
+	g := errgroup.Group{}
+	g.SetLimit(brt.schemaGenerationWorkers.Load())
+	finalSchema := make(map[string]map[string]string, len(jobsByTable))
+	var finalSchemaMu sync.Mutex
+	// Process each table's jobs in parallel
+	for tableName, jobs := range jobsByTable {
+		g.Go(func() error {
+			// Process all jobs for this table
+			tableSchema := make(map[string]string)
+			for _, job := range jobs {
+				metadata := metaDataByJob[job.JobID]
+				columns := metadata["columns"].Map()
+				for columnName, columnType := range columns {
+					if existingType, ok := tableSchema[columnName]; !ok {
+						tableSchema[columnName] = columnType.String()
+					} else if columnType.String() == "text" && existingType == "string" {
+						tableSchema[columnName] = columnType.String()
+					}
+				}
+			}
+			finalSchemaMu.Lock()
+			finalSchema[tableName] = tableSchema
+			finalSchemaMu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	return finalSchema
+}
+
 // updateJobStatus updates the statuses for the provided batch of jobs in jobsDB
 func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, errOccurred error, notifyWarehouseErr bool) {
 	var (
@@ -567,7 +589,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
 		switch {
-		case errors.Is(errOccurred, rterror.DisabledEgress):
+		case errors.Is(errOccurred, rterror.ErrDisabledEgress):
 			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.Connection.Source.ID,
 				time.Now().Format("01-02-2006"))
 			batchJobState = jobsdb.Succeeded.State
@@ -710,7 +732,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			if !ok {
 				sampleEvent := job.EventPayload
 				if brt.transientSources.Apply(parameters.SourceID) {
-					sampleEvent = []byte(`{}`)
+					sampleEvent = nil
 				}
 				sd = &types.StatusDetail{
 					Status:         jobState,
@@ -739,12 +761,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	}
 
 	for workspace, jobCount := range batchRouterWorkspaceJobStatusCount {
-		rmetrics.DecreasePendingEvents(
-			"batch_rt",
-			workspace,
-			brt.destType,
-			float64(jobCount),
-		)
+		brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(jobCount))
 	}
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {

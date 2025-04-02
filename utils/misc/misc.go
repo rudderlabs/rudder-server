@@ -28,6 +28,7 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/cenkalti/backoff"
 	"github.com/google/uuid"
+	"github.com/spaolacci/murmur3"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -265,8 +266,8 @@ func Copy(dst, src interface{}) {
 	}
 }
 
-//  Returns chronological timestamp of the event using the formula
-//  timestamp = receivedAt - (sentAt - originalTimestamp)
+// Returns chronological timestamp of the event using the formula
+// timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
@@ -304,7 +305,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 		return intArr, nil
 	}
 	typeInterface := reflect.TypeOf(interfaceT).Kind()
-	if !(typeInterface != reflect.Slice) && !(typeInterface != reflect.Array) {
+	if typeInterface == reflect.Slice || typeInterface == reflect.Array {
 		return intArr, errors.New("didn't receive array from transformer")
 	}
 
@@ -944,4 +945,14 @@ func SanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 
 func SanitizeString(input string) string {
 	return strings.ReplaceAll(input, "\u0000", "")
+}
+
+// GetMurmurHash returns murmur3 hash of the input string with a default seed of 0
+func GetMurmurHash(input string) uint64 {
+	return GetMurmurHashWithSeed(input, 0)
+}
+
+// GetMurmurHashWithSeed returns murmur3 hash of the input string with the provided seed
+func GetMurmurHashWithSeed(input string, seed uint32) uint64 {
+	return murmur3.Sum64WithSeed([]byte(input), seed)
 }

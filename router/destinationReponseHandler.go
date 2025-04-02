@@ -66,13 +66,14 @@ func NewResponseHandler(logger logger.Logger, responseRules map[string]interface
 	retryableRules := getRulesArrForKey("retryable", rules)
 	throttledRules := getRulesArrForKey("throttled", rules)
 
-	if responseRules["responseType"].(string) == "JSON" {
+	switch responseRules["responseType"].(string) {
+	case "JSON":
 		return &jsonResponseHandler{logger: logger.Child("jsonResponseHandler"), abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
-	} else if responseRules["responseType"].(string) == "TXT" {
+	case "TXT":
 		return &txtResponseHandler{abortRules: abortRules, retryableRules: retryableRules, throttledRules: throttledRules}
+	default:
+		return nil
 	}
-
-	return nil
 }
 
 func getStringifiedVal(val interface{}) string {

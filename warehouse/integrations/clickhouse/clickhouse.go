@@ -146,8 +146,8 @@ type Clickhouse struct {
 		writeTimeout                string
 		compress                    bool
 		disableNullable             bool
-		execTimeOutInSeconds        time.Duration
-		commitTimeOutInSeconds      time.Duration
+		execTimeout                 time.Duration
+		commitTimeout               time.Duration
 		loadTableFailureRetries     int
 		numWorkersDownloadLoadFiles int
 		s3EngineEnabledWorkspaceIDs []string
@@ -222,8 +222,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.writeTimeout = conf.GetString("Warehouse.clickhouse.writeTimeout", "1800")
 	ch.config.compress = conf.GetBool("Warehouse.clickhouse.compress", false)
 	ch.config.disableNullable = conf.GetBool("Warehouse.clickhouse.disableNullable", false)
-	ch.config.execTimeOutInSeconds = conf.GetDuration("Warehouse.clickhouse.execTimeOutInSeconds", 600, time.Second)
-	ch.config.commitTimeOutInSeconds = conf.GetDuration("Warehouse.clickhouse.commitTimeOutInSeconds", 600, time.Second)
+	ch.config.execTimeout = conf.GetDuration("Warehouse.clickhouse.execTimeOutInSeconds", 600, time.Second)
+	ch.config.commitTimeout = conf.GetDuration("Warehouse.clickhouse.commitTimeOutInSeconds", 600, time.Second)
 	ch.config.loadTableFailureRetries = conf.GetInt("Warehouse.clickhouse.loadTableFailureRetries", 3)
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
@@ -350,7 +350,7 @@ func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns model.Table
 
 func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName string) string {
 	if columnType == "datetime" {
-		if ch.config.disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
+		if ch.config.disableNullable && (tableName != warehouseutils.IdentifiesTable && tableName != warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
 	}
@@ -726,7 +726,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				err = fmt.Errorf("%s Timed out exec table for objectFileName: %s", ch.GetLogIdentifier(tableName), objectFileName)
 				terr.enableRetry = true
 				chStats.execTimeouts.Count(1)
-			}, ch.config.execTimeOutInSeconds)
+			}, ch.config.execTimeout)
 
 			if err != nil {
 				err = fmt.Errorf("%s Error in inserting statement for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
@@ -757,7 +757,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		err = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
 		terr.enableRetry = true
 		chStats.commitTimeouts.Count(1)
-	}, ch.config.commitTimeOutInSeconds)
+	}, ch.config.commitTimeout)
 
 	if err != nil {
 		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)

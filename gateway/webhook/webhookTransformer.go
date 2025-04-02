@@ -133,7 +133,7 @@ func prepareTransformerEventRequestV1(req *http.Request, sourceType string, sour
 
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, errors.New(response.RequestBodyReadFailed)
+		return nil, errors.New(strings.ToLower(response.RequestBodyReadFailed))
 	}
 
 	if len(body) == 0 {

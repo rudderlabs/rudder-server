@@ -197,7 +197,7 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSet
 		valueToBeInserted = "{}"
 	}
 
-	var mergeFrom string = inputArgs.jsonVal.String() // transformed value
+	mergeFrom := inputArgs.jsonVal.String() // transformed value
 	if !isRootInsert {
 		nestedJsonVal, setErr := sjson.Set("{}", inputArgs.path, inputArgs.jsonVal.Value())
 		if setErr != nil {
