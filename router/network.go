@@ -254,8 +254,9 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	// https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	// Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	network.logger.Info("forceHTTP1: ", getRouterConfigBool("forceHTTP1", destID, false))
-	if getRouterConfigBool("forceHTTP1", destID, false) {
+	forceHTTP1 := getRouterConfigBool("forceHTTP1", destID, false)
+	network.logger.Info("forceHTTP1: ", forceHTTP1)
+	if forceHTTP1 {
 		network.logger.Info("Forcing HTTP1 connection for ", destID)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config

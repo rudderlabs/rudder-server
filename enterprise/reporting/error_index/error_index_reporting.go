@@ -128,7 +128,7 @@ func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PURe
 				DestinationID:    metric.DestinationID,
 				TransformationID: metric.TransformationID,
 				TrackingPlanID:   metric.TrackingPlanID,
-				FailedStage:      metric.PUDetails.PU,
+				FailedStage:      metric.PU,
 				EventName:        metric.StatusDetail.EventName,
 				EventType:        metric.StatusDetail.EventType,
 			}

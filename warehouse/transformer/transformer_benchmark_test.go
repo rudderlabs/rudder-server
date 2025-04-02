@@ -35,7 +35,7 @@ func Benchmark_Transformer(b *testing.B) {
 		require.NoError(t, err)
 
 		batchSize := 1000
-		events := lo.Times(batchSize, func(index int) types.TransformerEvent {
+		events := lo.Times(batchSize, func(int) types.TransformerEvent {
 			return types.TransformerEvent{
 				Message:     singularEvent,
 				Metadata:    metadata,
@@ -48,7 +48,7 @@ func Benchmark_Transformer(b *testing.B) {
 		b.StartTimer()
 
 		for i := 0; i < t.N; i++ {
-			wResponse := warehouseTransformer.Transform(ctx, events, batchSize)
+			wResponse := warehouseTransformer.Transform(ctx, events)
 			require.Len(b, wResponse.Events, 2*batchSize)
 			require.Nil(b, wResponse.FailedEvents)
 		}

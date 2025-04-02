@@ -28,26 +28,26 @@ const EventsProcessedMetricName = "events_processed_total"
 
 func (es *EventStatsReporter) Record(metrics []*types.PUReportedMetric) {
 	for index := range metrics {
-		sourceCategory := metrics[index].ConnectionDetails.SourceCategory
+		sourceCategory := metrics[index].SourceCategory
 		if sourceCategory == "" {
 			sourceCategory = EventStream
 		}
-		terminal := strconv.FormatBool(metrics[index].PUDetails.TerminalPU)
+		terminal := strconv.FormatBool(metrics[index].TerminalPU)
 		status := metrics[index].StatusDetail.Status
 		if status == jobsdb.Aborted.State {
 			terminal = "true"
 		}
 		tags := stats.Tags{
-			"workspaceId":     es.configSubscriber.WorkspaceIDFromSource(metrics[index].ConnectionDetails.SourceID),
-			"sourceId":        metrics[index].ConnectionDetails.SourceID,
-			"destinationId":   metrics[index].ConnectionDetails.DestinationID,
-			"reportedBy":      metrics[index].PUDetails.PU,
+			"workspaceId":     es.configSubscriber.WorkspaceIDFromSource(metrics[index].SourceID),
+			"sourceId":        metrics[index].SourceID,
+			"destinationId":   metrics[index].DestinationID,
+			"reportedBy":      metrics[index].PU,
 			"sourceCategory":  sourceCategory,
 			"statusCode":      strconv.Itoa(metrics[index].StatusDetail.StatusCode),
 			"terminal":        terminal,
-			"destinationType": es.configSubscriber.GetDestDetail(metrics[index].ConnectionDetails.DestinationID).destType,
+			"destinationType": es.configSubscriber.GetDestDetail(metrics[index].DestinationID).destType,
 			"status":          status,
-			"trackingPlanId":  metrics[index].ConnectionDetails.TrackingPlanID,
+			"trackingPlanId":  metrics[index].TrackingPlanID,
 		}
 		es.stats.NewTaggedStat(EventsProcessedMetricName, stats.CountType, tags).Count(int(metrics[index].StatusDetail.Count))
 	}

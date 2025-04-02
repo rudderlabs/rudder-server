@@ -9,12 +9,12 @@ import (
 const (
 	// StdLib is the JSON implementation of package/json.
 	StdLib = "std"
-	// SonnetLib is the JSON implementation of github.com/sugawarayuuta/sonnet.
+	// SonnetLib is the JSON implementation of github.com/rudderlabs/sonnet.
 	SonnetLib = "sonnet"
 	// JsoniterLib is the JSON implementation of github.com/json-iterator/go.
 	JsoniterLib = "jsoniter"
 	// DefaultLib is the default JSON implementation.
-	DefaultLib = JsoniterLib
+	DefaultLib = SonnetLib
 )
 
 var Default = New(config.Default)
