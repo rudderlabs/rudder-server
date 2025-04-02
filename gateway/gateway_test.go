@@ -2403,6 +2403,7 @@ var _ = Describe("Gateway", func() {
 
 		It("validations", func() {
 			gateway.config.Set("gateway.enableMsgValidator", true)
+			gateway.config.Set("gateway.enableBatchEnrichment", false)
 
 			properties := stream.MessageProperties{
 				RequestType:   "track",
