@@ -81,6 +81,7 @@ type ErrorDetailReporter struct {
 	maxOpenConnections    int
 	vacuumFull            config.ValueLoader[bool]
 
+	// DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
 	httpClient *http.Client
 
 	errorDetailExtractor *ExtractorHandle
@@ -95,8 +96,8 @@ type ErrorDetailReporter struct {
 	stats  stats.Stats
 	config *config.Config
 
-	useCommonClient *config.Reloadable[bool]
-	client          *client.Client
+	useCommonClient config.ValueLoader[bool]
+	commonClient    *client.Client
 }
 
 func NewErrorDetailReporter(
@@ -105,12 +106,13 @@ func NewErrorDetailReporter(
 	stats stats.Stats,
 	conf *config.Config,
 ) *ErrorDetailReporter {
+	// DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
 	tr := &http.Transport{}
+	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.useCommonClient")
 
-	netClient := &http.Client{Transport: tr, Timeout: conf.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	mainLoopSleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := conf.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := conf.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
@@ -163,7 +165,7 @@ func NewErrorDetailReporter(
 		config:               conf,
 
 		useCommonClient: useCommonClient,
-		client:          client.New(reportingServiceURL, client.PathRecordErrors, conf, log, stats),
+		commonClient:    client.New(reportingServiceURL, client.PathRecordErrors, conf, log, stats),
 	}
 }
 
@@ -751,9 +753,10 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 	return edrortingMetrics
 }
 
+// DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
 func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
 	if edr.useCommonClient.Load() {
-		return edr.client.Send(ctx, metric)
+		return edr.commonClient.Send(ctx, metric)
 	}
 
 	payload, err := jsonrs.Marshal(metric)

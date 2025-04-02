@@ -82,8 +82,8 @@ type DefaultReporter struct {
 	eventSamplingDuration config.ValueLoader[time.Duration]
 	eventSampler          event_sampler.EventSampler
 
-	useCommonClient *config.Reloadable[bool]
-	client          *client.Client
+	useCommonClient config.ValueLoader[bool]
+	commonClient    *client.Client
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -146,7 +146,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
 		useCommonClient:                      useCommonClient,
-		client:                               client.New(reportingServiceURL, client.PathMetrics, conf, log, stats),
+		commonClient:                         client.New(reportingServiceURL, client.PathMetrics, conf, log, stats),
 	}
 }
 
@@ -422,8 +422,10 @@ func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfi
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.configSubscriber.Wait()
 
+	// DEPRECATED: Remove this after migration to commonClient, use r.commonClient.Send instead.
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+
 	tags := r.getTags(c.Label)
 	mainLoopTimer := r.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := r.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
@@ -596,9 +598,10 @@ func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tag
 	return nil
 }
 
+// DEPRECATED: in favor of commonClient. Remove this after migration to commonClient, use r.commonClient.Send instead.
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
 	if r.useCommonClient.Load() {
-		return r.client.Send(ctx, metric)
+		return r.commonClient.Send(ctx, metric)
 	}
 
 	payload, err := jsonrs.Marshal(metric)
