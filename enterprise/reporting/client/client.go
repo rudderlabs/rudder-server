@@ -74,7 +74,7 @@ func New(path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *
 
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: conf.GetDurationVar(1, 60*time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
+			Timeout: conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
 		},
 		reportingServiceURL: reportingServiceURL,
 		backoff:             backOffFromConfig(conf),
