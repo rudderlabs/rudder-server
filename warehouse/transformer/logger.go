@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -16,12 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func (t *Transformer) CompareAndLog(
-	events []types.TransformerEvent,
-	pResponse, wResponse types.Response,
-	metadata *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-) {
+func (t *Transformer) CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response) {
 	if len(events) == 0 {
 		return
 	}
@@ -35,16 +31,13 @@ func (t *Transformer) CompareAndLog(
 
 	t.stats.comparisonTime.RecordDuration()()
 
-	differingEvents, sampleDiff := t.differingEvents(events, pResponse, wResponse, eventsByMessageID)
-	if len(differingEvents) == 0 {
+	sampleDiff := t.sampleDiff(events, pResponse, wResponse)
+	if len(sampleDiff) == 0 {
 		return
 	}
 
-	logEntries := lo.Map(differingEvents, func(item types.SingularEventT, index int) string {
-		return stringify.Any(types.TransformerEvent{
-			Message:  item,
-			Metadata: *metadata,
-		})
+	logEntries := lo.Map(events, func(item types.TransformerEvent, index int) string {
+		return stringify.Any(item)
 	})
 	if err := t.write(append([]string{sampleDiff}, logEntries...)); err != nil {
 		t.logger.Warnn("Error logging events", obskit.Error(err))
@@ -55,24 +48,21 @@ func (t *Transformer) CompareAndLog(
 	t.loggedEvents += int64(len(logEntries))
 }
 
-func (t *Transformer) differingEvents(
-	eventsToTransform []types.TransformerEvent,
-	pResponse, wResponse types.Response,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-) ([]types.SingularEventT, string) {
+func (t *Transformer) sampleDiff(eventsToTransform []types.TransformerEvent, pResponse, wResponse types.Response) string {
+	sortTransformerResponsesByJobID(pResponse.Events)
+	sortTransformerResponsesByJobID(pResponse.FailedEvents)
+	sortTransformerResponsesByJobID(wResponse.Events)
+	sortTransformerResponsesByJobID(wResponse.FailedEvents)
+
 	// If the event counts differ, return all events in the transformation
 	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
-		events := lo.Map(eventsToTransform, func(e types.TransformerEvent, _ int) types.SingularEventT {
-			return eventsByMessageID[e.Metadata.MessageID].SingularEvent
-		})
-		t.stats.mismatchedEvents.Observe(float64(len(events)))
-		return events, ""
+		t.stats.mismatchedEvents.Observe(float64(len(eventsToTransform)))
+		return "Mismatch in response for events or failed events"
 	}
 
 	var (
-		differedSampleEvents []types.SingularEventT
-		differedEventsCount  int
-		sampleDiff           string
+		differedEventsCount int
+		sampleDiff          string
 	)
 
 	for i := range pResponse.Events {
@@ -80,19 +70,20 @@ func (t *Transformer) differingEvents(
 		if len(diff) == 0 {
 			continue
 		}
-
 		if differedEventsCount == 0 {
-			// Collect the mismatched messages and break (sample only)
-			differedSampleEvents = append(differedSampleEvents, lo.Map(pResponse.Events[i].Metadata.GetMessagesIDs(), func(msgID string, _ int) types.SingularEventT {
-				return eventsByMessageID[msgID].SingularEvent
-			})...)
 			sampleDiff = diff
 		}
 		differedEventsCount++
 	}
 	t.stats.matchedEvents.Observe(float64(len(pResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
-	return differedSampleEvents, sampleDiff
+	return sampleDiff
+}
+
+func sortTransformerResponsesByJobID(responses []types.TransformerResponse) {
+	slices.SortStableFunc(responses, func(a, b types.TransformerResponse) int {
+		return int(a.Metadata.JobID - b.Metadata.JobID)
+	})
 }
 
 func (t *Transformer) write(data []string) error {
