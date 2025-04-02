@@ -42,6 +42,7 @@ var (
 		misc.RFC3339Milli,
 		time.DateTime,
 		time.DateOnly,
+		time.RFC3339Nano,
 	}
 	validTimestampFormatsMaxLength = len(lo.MaxBy(validTimestampFormats, func(a, b string) bool {
 		return len(a) > len(b)
