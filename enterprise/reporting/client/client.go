@@ -42,7 +42,7 @@ type Path string
 type Client struct {
 	httpClient          *http.Client
 	reportingServiceURL string
-	label               string
+	moduleName          string
 	stats               stats.Stats
 	log                 logger.Logger
 	instanceID          string
@@ -59,7 +59,7 @@ func New(path Path, conf *config.Config, log logger.Logger, stats stats.Stats) *
 		reportingServiceURL: reportingServiceURL,
 		path:                path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
-		label:               conf.GetString("clientName", ""),
+		moduleName:          conf.GetString("clientName", ""),
 		stats:               stats,
 		log:                 log,
 	}
@@ -128,7 +128,7 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 func (c *Client) getTags() stats.Tags {
 	serverURL, _ := url.Parse(c.reportingServiceURL)
 	return stats.Tags{
-		"module":     c.label,
+		"module":     c.moduleName,
 		"instanceId": c.instanceID,
 		"endpoint":   serverURL.Host,
 		"path":       string(c.path),
