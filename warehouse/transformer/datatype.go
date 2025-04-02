@@ -1,8 +1,6 @@
 package transformer
 
 import (
-	"reflect"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
@@ -74,20 +72,24 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 	if val == nil {
 		return model.StringDataType
 	}
-	switch reflect.TypeOf(val).Kind() {
-	case reflect.Slice, reflect.Array:
-		if jsonVal, _ := jsonrs.Marshal(val); len(jsonVal) > redshiftStringLimit {
-			return model.TextDataType
-		}
-		return model.StringDataType
-	case reflect.String:
-		if len(val.(string)) > redshiftStringLimit {
-			return model.TextDataType
-		}
-		return model.StringDataType
-	default:
-		return model.StringDataType
+	if shouldUseTextForRedshift(val) {
+		return model.TextDataType
 	}
+	return model.StringDataType
+}
+
+func shouldUseTextForRedshift(data any) bool {
+	switch v := data.(type) {
+	case []any, []types.ValidationError, map[string]any:
+		if jsonVal, _ := jsonrs.Marshal(v); len(jsonVal) > redshiftStringLimit {
+			return true
+		}
+	case string:
+		if len(v) > redshiftStringLimit {
+			return true
+		}
+	}
+	return false
 }
 
 func convertValIfDateTime(val any, colType string) any {
