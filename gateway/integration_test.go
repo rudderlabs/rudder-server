@@ -300,6 +300,7 @@ func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID, workspa
 	sendEvent(t, httpPort, payload1, "identify", writeKey)
 	internalBatchPayload := fmt.Sprintf(`[{
 			"properties": {
+				"requestType": "track",
 				"messageID": "messageID",
 				"routingKey": "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
 				"workspaceID": %q,

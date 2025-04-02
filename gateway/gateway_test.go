@@ -2400,6 +2400,100 @@ var _ = Describe("Gateway", func() {
 				Expect(job.Batch[0].Type).To(ContainSubstring("dummyType"))
 			}
 		})
+
+		It("validations", func() {
+			gateway.config.Set("gateway.enableMsgValidator", true)
+			gateway.config.Set("gateway.enableBatchEnrichment", false)
+
+			properties := stream.MessageProperties{
+				RequestType:   "track",
+				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:   "workspaceID",
+				SourceID:      "sourceID",
+				ReceivedAt:    time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:     "dummyIP",
+				DestinationID: "destinationID",
+			}
+
+			// Test case: valid payload
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+
+			// Test case: missing messageID
+			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+
+			// Test case: missing required properties
+			msg.Properties = stream.MessageProperties{}
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+
+			// Test case: missing receivedAt in payload
+			msg.Properties = properties
+			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "rudderId": "dummyRudderID"}`)
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+
+			// Test case: missing type in payload
+			msg.Payload = []byte(`{"event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+
+			// Test case: missing request_ip in payload
+			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "messageId": "dummyMessageID", "rudderId": "dummyRudderID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+
+			// Test case: missing rudderId in payload
+			msg.Payload = []byte(`{"type": "track", "event": "test-1", "userId": "user1", "request_ip": "dummyIP", "messageId": "dummyMessageID", "receivedAt": "2024-01-01T01:01:01.001Z"}`)
+			messages = []stream.Message{msg}
+			payload, err = jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req.requestPayload = payload
+			_, err = gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(Not(BeNil()))
+			Expect(err.Error()).To(Equal(response.NotRudderEvent))
+		})
 	})
 })
 
