@@ -39,6 +39,7 @@ type worker struct {
 func (w *worker) Work() bool {
 	brt := w.brt
 	workerJobs := brt.getWorkerJobs(w.partition)
+	brt.logger.Infof("Worker %s has %v jobs to process", w.partition, len(workerJobs))
 	if len(workerJobs) == 0 {
 		return false
 	}
@@ -46,6 +47,7 @@ func (w *worker) Work() bool {
 	for _, workerJob := range workerJobs {
 		w.routeJobsToBuffer(workerJob)
 	}
+	brt.logger.Infof("returning true for worker %s", w.partition)
 	return true
 }
 
@@ -136,6 +138,9 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 	// Mark jobs as executing in a single batch operation
 	if len(statusList) > 0 {
+		brt.logger.Info("Calling DB Status update for %v jobs", len(statusList))
+		brt.logger.Info("Calling for destination: %s", destWithSources.Destination.ID)
+		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
 		}, brt.sendRetryUpdateStats)

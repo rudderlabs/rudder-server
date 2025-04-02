@@ -62,10 +62,10 @@ func (w *internalWorker) start() {
 
 			w.setIdleSince(time.Time{})
 			if w.delegate.Work() {
-				w.logger.Debugf("worker %q produced work", w.partition)
+				w.logger.Infof("worker %q produced work", w.partition)
 				exponentialSleep.Reset()
 			} else {
-				w.logger.Debugf("worker %q didn't produce any work", w.partition)
+				w.logger.Infof("worker %q didn't produce any work", w.partition)
 				if err := misc.SleepCtx(w.lifecycle.ctx, exponentialSleep.Next(w.delegate.SleepDurations())); err != nil {
 					w.logger.Debugf("worker %q sleep interrupted: %v", w.partition, err)
 					return
@@ -94,7 +94,9 @@ func (w *internalWorker) Ping() {
 	}
 	select {
 	case w.ping <- struct{}{}:
+		w.logger.Infof("worker %q pinged", w.partition)
 	default:
+		w.logger.Infof("worker %q pinged but channel was full", w.partition)
 	}
 }
 
