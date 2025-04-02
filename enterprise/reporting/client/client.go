@@ -40,13 +40,15 @@ type Path string
 
 // Client handles sending metrics to the reporting service
 type Client struct {
-	httpClient          *http.Client
-	reportingServiceURL string
-	moduleName          string
-	stats               stats.Stats
-	log                 logger.Logger
-	instanceID          string
 	path                Path
+	reportingServiceURL string
+
+	httpClient *http.Client
+	stats      stats.Stats
+	log        logger.Logger
+
+	moduleName string
+	instanceID string
 }
 
 // New creates a new reporting client
