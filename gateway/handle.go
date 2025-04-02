@@ -45,6 +45,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+type messageValidator interface {
+	Validate(payload []byte, message *stream.MessageProperties) (bool, error)
+}
+
 type Handle struct {
 	// dependencies
 
@@ -118,12 +122,17 @@ type Handle struct {
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
+		enableInternalBatchValidator         config.ValueLoader[bool]
+		enableInternalBatchEnrichment        config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
 	internalHttpHandlers map[string]http.Handler
 
 	streamMsgValidator func(message *stream.Message) error
+
+	// internal batch validator
+	msgValidator messageValidator
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -779,68 +788,115 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		return nil, errors.New((response.NotRudderEvent))
 	}
 
+	internalBatchValidatorEnabled := gw.conf.enableInternalBatchValidator.Load()
+	internalBatchEnrichmentEnabled := gw.conf.enableInternalBatchEnrichment.Load()
+
 	res = make([]jobWithStat, 0, len(messages))
 
 	for _, msg := range messages {
+		var messageID string
 		stat := gwstats.SourceStat{ReqType: reqType}
-		err := gw.streamMsgValidator(&msg)
-		if err != nil {
-			loggerFields := msg.Properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("invalid message in request",
-				loggerFields...)
-			stat.RequestEventsFailed(1, (response.InvalidStreamMessage))
-			stat.Report(gw.stats)
-			return nil, errors.New((response.InvalidStreamMessage))
-		}
-		// TODO: get rid of this check
-		if msg.Properties.RequestType != "" {
-			switch msg.Properties.RequestType {
-			case "batch", "replay", "retl", "import":
-			default:
-				msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
+
+		if internalBatchEnrichmentEnabled {
+			err = gw.streamMsgValidator(&msg)
+			if err != nil {
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("invalid message in request",
+					loggerFields...)
+				stat.RequestEventsFailed(1, (response.InvalidStreamMessage))
+				stat.Report(gw.stats)
+				return nil, errors.New((response.InvalidStreamMessage))
+			}
+			// TODO: get rid of this check
+			if msg.Properties.RequestType != "" {
+				switch msg.Properties.RequestType {
+				case "batch", "replay", "retl", "import":
+				default:
+					msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
+					if err != nil {
+						stat.RequestEventsFailed(1, (response.NotRudderEvent))
+						stat.Report(gw.stats)
+						loggerFields := msg.Properties.LoggerFields()
+						loggerFields = append(loggerFields, obskit.Error(err))
+						gw.logger.Errorn("failed to set type in message", loggerFields...)
+						return nil, errors.New((response.NotRudderEvent))
+					}
+				}
+			}
+
+			anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
+			userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
+			var changed bool
+			messageID, changed = getMessageID(msg.Payload)
+			if changed {
+				msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
 				if err != nil {
-					stat.RequestEventsFailed(1, (response.NotRudderEvent))
+					stat.RequestFailed((response.NotRudderEvent))
 					stat.Report(gw.stats)
-					loggerFields := msg.Properties.LoggerFields()
-					loggerFields = append(loggerFields, obskit.Error(err))
-					gw.logger.Errorn("failed to set type in message", loggerFields...)
+					gw.logger.Errorn("failed to set messageID in message",
+						obskit.Error(err))
 					return nil, errors.New((response.NotRudderEvent))
 				}
 			}
-		}
-
-		anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
-		userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
-		messageID, changed := getMessageID(msg.Payload)
-		if changed {
-			msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
+			rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
 			if err != nil {
 				stat.RequestFailed((response.NotRudderEvent))
 				stat.Report(gw.stats)
-				gw.logger.Errorn("failed to set messageID in message",
+				gw.logger.Errorn("failed to get rudderId",
 					obskit.Error(err))
 				return nil, errors.New((response.NotRudderEvent))
 			}
+			msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
+			if err != nil {
+				stat.RequestFailed((response.NotRudderEvent))
+				stat.Report(gw.stats)
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("failed to set rudderId in message",
+					loggerFields...)
+				return nil, errors.New((response.NotRudderEvent))
+			}
+
+			msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
+			if err != nil {
+				err = fmt.Errorf("filling receivedAt: %w", err)
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to fill receivedAt in message",
+					obskit.Error(err))
+				return nil, fmt.Errorf("filling receivedAt: %w", err)
+			}
+			msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
+			if err != nil {
+				err = fmt.Errorf("filling request_ip: %w", err)
+				stat.RequestEventsFailed(1, err.Error())
+				stat.Report(gw.stats)
+				gw.logger.Errorn("failed to fill request_ip in message",
+					obskit.Error(err))
+				return nil, fmt.Errorf("filling request_ip: %w", err)
+			}
 		}
-		rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
-		if err != nil {
-			stat.RequestFailed((response.NotRudderEvent))
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to get rudderId",
-				obskit.Error(err))
-			return nil, errors.New((response.NotRudderEvent))
+
+		if internalBatchValidatorEnabled {
+			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
+			if err != nil || !ok {
+				errMsg := "validations failed"
+				if err != nil {
+					errMsg = err.Error()
+				} else {
+					err = errors.New(errMsg)
+				}
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("invalid message in request",
+					loggerFields...)
+				stat.RequestEventsFailed(1, errMsg)
+				stat.Report(gw.stats)
+				return nil, errors.New(response.NotRudderEvent)
+			}
 		}
-		msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
-		if err != nil {
-			stat.RequestFailed((response.NotRudderEvent))
-			stat.Report(gw.stats)
-			loggerFields := msg.Properties.LoggerFields()
-			loggerFields = append(loggerFields, obskit.Error(err))
-			gw.logger.Errorn("failed to set rudderId in message",
-				loggerFields...)
-			return nil, errors.New((response.NotRudderEvent))
-		}
+
 		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
@@ -890,25 +946,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			marshalledParams = []byte(
 				`{"error": "rudder-server gateway failed to marshal params"}`,
 			)
-		}
-
-		msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
-		if err != nil {
-			err = fmt.Errorf("filling receivedAt: %w", err)
-			stat.RequestEventsFailed(1, err.Error())
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to fill receivedAt in message",
-				obskit.Error(err))
-			return nil, fmt.Errorf("filling receivedAt: %w", err)
-		}
-		msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
-		if err != nil {
-			err = fmt.Errorf("filling request_ip: %w", err)
-			stat.RequestEventsFailed(1, err.Error())
-			stat.Report(gw.stats)
-			gw.logger.Errorn("failed to fill request_ip in message",
-				obskit.Error(err))
-			return nil, fmt.Errorf("filling request_ip: %w", err)
 		}
 
 		eventBatch := singularEventBatch{
