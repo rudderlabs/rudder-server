@@ -167,6 +167,7 @@ func (w *pipelineWorker) start() {
 			// Initialize the merged job with the first subjob
 			if firstSubJob {
 				mergedJob = &storeMessage{
+					ctx:                   subJob.ctx,
 					rsourcesStats:         subJob.rsourcesStats,
 					dedupKeys:             make(map[string]struct{}),
 					procErrorJobsByDestID: make(map[string][]*jobsdb.JobT),

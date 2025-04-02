@@ -368,6 +368,7 @@ func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userT
 	m.log.Infof("destinationtransformations partition: %s stats: %+v", partition, s)
 
 	return &storeMessage{
+		ctx:                 context.Background(),
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
 		trackedUsersReports: in.trackedUsersReports,
