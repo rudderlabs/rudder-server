@@ -1,9 +1,10 @@
 package transformer
 
 import (
-	"reflect"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -71,25 +72,71 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 	if val == nil {
 		return model.StringDataType
 	}
-	switch reflect.TypeOf(val).Kind() {
-	case reflect.Slice, reflect.Array:
-		if jsonVal, _ := jsonrs.Marshal(val); len(jsonVal) > redshiftStringLimit {
-			return model.TextDataType
-		}
-		return model.StringDataType
-	case reflect.String:
-		if len(val.(string)) > redshiftStringLimit {
-			return model.TextDataType
-		}
-		return model.StringDataType
-	default:
-		return model.StringDataType
+	if shouldUseTextForRedshift(val) {
+		return model.TextDataType
 	}
+	return model.StringDataType
+}
+
+func shouldUseTextForRedshift(data any) bool {
+	switch v := data.(type) {
+	case []any, []types.ValidationError, map[string]any:
+		if jsonVal, _ := jsonrs.Marshal(v); len(jsonVal) > redshiftStringLimit {
+			return true
+		}
+	case string:
+		if len(v) > redshiftStringLimit {
+			return true
+		}
+	}
+	return false
 }
 
 func convertValIfDateTime(val any, colType string) any {
 	if colType == model.DateTimeDataType {
 		return utils.ToTimestamp(val)
+	}
+	return val
+}
+
+func convertToFloat64IfInteger(val any) any {
+	switch v := val.(type) {
+	case int:
+		return float64(v)
+	case int8:
+		return float64(v)
+	case int16:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case uint8:
+		return float64(v)
+	case uint16:
+		return float64(v)
+	case uint32:
+		return float64(v)
+	case uint64:
+		return float64(v)
+	}
+	return val
+}
+
+func convertToSliceIfViolationErrors(val any) any {
+	if validationErrors, ok := val.([]types.ValidationError); ok {
+		result := make([]any, len(validationErrors))
+		for i, e := range validationErrors {
+			result[i] = map[string]any{
+				"type":     e.Type,
+				"message":  e.Message,
+				"meta":     lo.MapValues(e.Meta, func(value, _ string) any { return value }),
+				"property": e.Property,
+			}
+		}
+		return result
 	}
 	return val
 }

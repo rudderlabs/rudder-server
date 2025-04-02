@@ -15,7 +15,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
-	"github.com/trinodb/trino-go-client/trino"
+	trino "github.com/trinodb/trino-go-client/trino"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/reader"
@@ -45,8 +45,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	_ "github.com/trinodb/trino-go-client/trino"
 )
 
 func TestIntegration(t *testing.T) {

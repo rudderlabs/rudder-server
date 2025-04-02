@@ -170,7 +170,7 @@ func (st *transformer) getSchema(flattenedEvent map[string]interface{}) map[stri
 		reflectType := reflect.TypeOf(v)
 		if reflectType != nil {
 			schema[k] = reflectType.String()
-		} else if !(v == nil && !st.captureNilAsUnknowns) {
+		} else if v != nil || st.captureNilAsUnknowns {
 			schema[k] = "unknown"
 		}
 	}

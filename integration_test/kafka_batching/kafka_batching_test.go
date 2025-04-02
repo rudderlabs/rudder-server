@@ -454,5 +454,5 @@ type testLogger struct{ testing.TB }
 func (t *testLogger) Log(args ...interface{}) { t.Helper(); t.TB.Log(args...) }
 func (t *testLogger) Printf(format string, args ...interface{}) {
 	t.Helper()
-	t.TB.Logf(format, args...)
+	t.Logf(format, args...)
 }

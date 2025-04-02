@@ -567,7 +567,7 @@ func IdentityMappingsUniqueMappingConstraintName(warehouse model.Warehouse) stri
 }
 
 func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
-	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
+	return destType + ":" + sourceID + ":" + destinationID
 }
 
 func DoubleQuoteAndJoinByComma(elems []string) string {

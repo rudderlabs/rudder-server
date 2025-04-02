@@ -36,6 +36,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -100,9 +101,8 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
-
+	mockTransformerClients := mocksTransformer.NewMockTransformerClients(mockCtrl)
 	gwDB := jobsdb.NewForReadWrite("gw", jobsdb.WithStats(stats.NOP))
 	defer gwDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch", jobsdb.WithStats(stats.NOP))
@@ -146,9 +146,10 @@ func TestDynamicClusterManager(t *testing.T) {
 		transformationdebugger.NewNoOpService(),
 		[]enricher.PipelineEnricher{},
 		trackedusers.NewNoopDataCollector(),
+		rmetrics.NewPendingEventsRegistry(),
+		processor.WithTransformerClients(mockTransformerClients),
 	)
 	processor.BackendConfig = mockBackendConfig
-	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
 	rtFactory := &router.Factory{

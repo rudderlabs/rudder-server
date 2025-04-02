@@ -35,6 +35,10 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 	for {
 		select {
 		case <-jd.TriggerMigrateDS():
+			if jd.migrateDSPaused.Load() {
+				jd.logger.Debugn("migration loop paused")
+				continue
+			}
 		case <-ctx.Done():
 			return
 		}

@@ -24,7 +24,7 @@ type StagingFile struct {
 	DestinationID string
 	Location      string
 
-	Schema map[string]map[string]interface{}
+	Schema map[string]map[string]string
 
 	FirstEventAt          string
 	LastEventAt           string
@@ -42,7 +42,7 @@ type StagingFile struct {
 // legacyPayload is used to maintain backwards compatibility with the /v1 endpoint.
 type legacyPayload struct {
 	WorkspaceID      string
-	Schema           map[string]map[string]interface{}
+	Schema           map[string]map[string]string
 	BatchDestination stagingFileBatchDestination
 
 	Location              string

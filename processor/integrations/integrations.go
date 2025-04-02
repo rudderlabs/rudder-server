@@ -1,28 +1,11 @@
 package integrations
 
 import (
-	"errors"
-	"fmt"
-	"strings"
-
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
-var postParametersTFields []string
-
-func init() {
-	// This is called in init and it should be a one time call. Making reflect calls during runtime is not a great idea.
-	// We unmarshal json response from transformer into PostParametersT struct.
-	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
-	// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
-	postParametersTFields = misc.GetMandatoryJSONFieldNames(PostParametersT{})
-}
 
 // PostParametersT is a struct for holding all the values from transformerResponse and use them to publish an event to a destination
 // optional is a custom tag introduced by us and is handled by GetMandatoryJSONFieldNames. Its intentionally added
@@ -63,29 +46,6 @@ func CollectIntgTransformErrorStats(input []byte) {
 			}
 		}
 	}
-}
-
-// GetPostInfo parses the transformer response
-func ValidatePostInfo(transformRawParams PostParametersT) error {
-	transformRaw, err := jsonrs.Marshal(transformRawParams)
-	if err != nil {
-		return err
-	}
-	parsedJSON := gjson.ParseBytes(transformRaw)
-	errorMessages := make([]string, 0)
-	for _, v := range postParametersTFields {
-		if !parsedJSON.Get(v).Exists() {
-			errMessage := fmt.Sprintf("missing expected field : %s", v)
-			errorMessages = append(errorMessages, errMessage)
-		}
-	}
-	if len(errorMessages) > 0 {
-		errorMessages = append(errorMessages, fmt.Sprintf("in transformer response : %v", parsedJSON))
-		err := errors.New(strings.Join(errorMessages, "\n"))
-		return err
-	}
-
-	return nil
 }
 
 // FilterClientIntegrations parses the destination names from the

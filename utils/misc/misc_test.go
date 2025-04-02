@@ -17,6 +17,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/spaolacci/murmur3"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -872,6 +874,47 @@ func TestSanitizeString(t *testing.T) {
 			t.Parallel()
 
 			require.Equal(t, tc.expected, SanitizeString(tc.input))
+		})
+	}
+}
+
+func TestGetMurmurHash(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected uint64
+	}{
+		{
+			name:     "empty string",
+			input:    "",
+			expected: murmur3.Sum64WithSeed([]byte(""), 0),
+		},
+		{
+			name:     "simple string",
+			input:    "test",
+			expected: murmur3.Sum64WithSeed([]byte("test"), 0),
+		},
+		{
+			name:     "string with special characters",
+			input:    "test@123!#$",
+			expected: murmur3.Sum64WithSeed([]byte("test@123!#$"), 0),
+		},
+		{
+			name:     "unicode string",
+			input:    "测试",
+			expected: murmur3.Sum64WithSeed([]byte("测试"), 0),
+		},
+		{
+			name:     "long string",
+			input:    "this is a very long string that should still generate a fixed length hash value",
+			expected: murmur3.Sum64WithSeed([]byte("this is a very long string that should still generate a fixed length hash value"), 0),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetMurmurHash(tt.input)
+			require.Equal(t, tt.expected, result, "Hash values should match for input: %s", tt.input)
 		})
 	}
 }

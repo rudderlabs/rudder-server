@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 
@@ -185,6 +186,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
+				rmetrics.NewPendingEventsRegistry(),
 			)
 		})
 	})
@@ -208,6 +210,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
+				rmetrics.NewPendingEventsRegistry(),
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -326,6 +329,7 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.New(),
+				rmetrics.NewPendingEventsRegistry(),
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -494,9 +498,10 @@ func TestPostToWarehouse(t *testing.T) {
 			t.Cleanup(ts.Close)
 
 			job := Handle{
-				netHandle:       ts.Client(),
-				logger:          logger.NOP,
-				warehouseClient: client.NewWarehouse(ts.URL, stats.NOP),
+				netHandle:               ts.Client(),
+				logger:                  logger.NOP,
+				warehouseClient:         client.NewWarehouse(ts.URL, stats.NOP),
+				schemaGenerationWorkers: config.GetReloadableIntVar(4, 1, "BatchRouter.processingWorkers"),
 			}
 			batchJobs := BatchedJobs{
 				Jobs: []*jobsdb.JobT{
@@ -640,6 +645,7 @@ func TestBatchRouter(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		c,
+		rmetrics.NewPendingEventsRegistry(),
 	)
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
