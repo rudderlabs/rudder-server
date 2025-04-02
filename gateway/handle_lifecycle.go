@@ -108,7 +108,7 @@ func (gw *Handle) Setup(
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
 	// enable internal batch validator
 	// this is used to validate the batch request before sending it to the db writer
-	gw.conf.enableInternalBatchValidator = config.GetReloadableBoolVar(false, "gateway.enableMsgValidator")
+	gw.conf.enableInternalBatchValidator = config.GetReloadableBoolVar(true, "gateway.enableMsgValidator")
 	// enable internal batch enrichment
 	// this is used to enrich the event before sending it to the db writer
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")

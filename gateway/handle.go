@@ -797,25 +797,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		var messageID string
 		stat := gwstats.SourceStat{ReqType: reqType}
 
-		if internalBatchValidatorEnabled {
-			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
-			if err != nil || !ok {
-				errMsg := "validations failed"
-				if err != nil {
-					errMsg = err.Error()
-				} else {
-					err = errors.New(errMsg)
-				}
-				loggerFields := msg.Properties.LoggerFields()
-				loggerFields = append(loggerFields, obskit.Error(err))
-				gw.logger.Errorn("invalid message in request",
-					loggerFields...)
-				stat.RequestEventsFailed(1, errMsg)
-				stat.Report(gw.stats)
-				return nil, errors.New(response.NotRudderEvent)
-			}
-		}
-
 		if internalBatchEnrichmentEnabled {
 			err = gw.streamMsgValidator(&msg)
 			if err != nil {
@@ -846,7 +827,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 			anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
 			userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
-			changed := false
+			var changed bool
 			messageID, changed = getMessageID(msg.Payload)
 			if changed {
 				msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
@@ -894,6 +875,25 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				gw.logger.Errorn("failed to fill request_ip in message",
 					obskit.Error(err))
 				return nil, fmt.Errorf("filling request_ip: %w", err)
+			}
+		}
+
+		if internalBatchValidatorEnabled {
+			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
+			if err != nil || !ok {
+				errMsg := "validations failed"
+				if err != nil {
+					errMsg = err.Error()
+				} else {
+					err = errors.New(errMsg)
+				}
+				loggerFields := msg.Properties.LoggerFields()
+				loggerFields = append(loggerFields, obskit.Error(err))
+				gw.logger.Errorn("invalid message in request",
+					loggerFields...)
+				stat.RequestEventsFailed(1, errMsg)
+				stat.Report(gw.stats)
+				return nil, errors.New(response.NotRudderEvent)
 			}
 		}
 
