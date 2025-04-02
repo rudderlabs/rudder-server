@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -139,6 +140,11 @@ func (jb *JobBuffer) processAndUploadBatch(sourceID, destID string, jobs []*jobs
 	if len(jobs) == 0 {
 		return
 	}
+
+	// Sort jobs by ID to ensure consistent processing
+	slices.SortFunc(jobs, func(a, b *jobsdb.JobT) int {
+		return int(a.JobID - b.JobID)
+	})
 
 	// Track metrics for batch processing
 	processedBatchSizeStat := jb.createStat("batch_router_processed_batch_size", stats.GaugeType, sourceID, destID)
