@@ -106,8 +106,12 @@ func (gw *Handle) Setup(
 	gw.conf.maxHeaderBytes = config.GetIntVar(524288, 1, "MaxHeaderBytes")
 	// if set to '0', it means disabled.
 	gw.conf.maxConcurrentRequests = config.GetIntVar(50000, 1, "Gateway.maxConcurrentRequests")
+	// enable internal batch validator
+	// this is used to validate the batch request before sending it to the db writer
 	gw.conf.enableInternalBatchValidator = config.GetReloadableBoolVar(false, "gateway.enableMsgValidator")
-
+	// enable internal batch enrichment
+	// this is used to enrich the event before sending it to the db writer
+	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)

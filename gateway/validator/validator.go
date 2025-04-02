@@ -39,8 +39,10 @@ func (m *Mediator) Validate(payload []byte, properties *stream.MessageProperties
 		if ok, err := validator.Validate(payload, properties); err != nil || !ok {
 			loggerFields := properties.LoggerFields()
 			loggerFields = append(loggerFields,
-				logger.NewStringField("validator", validator.ValidatorName()),
-				obskit.Error(err))
+				logger.NewStringField("validator", validator.ValidatorName()))
+			if err != nil {
+				loggerFields = append(loggerFields, obskit.Error(err))
+			}
 			m.log.Errorn("failed to validate", loggerFields...)
 			return false, err
 		}
