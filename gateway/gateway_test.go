@@ -92,6 +92,7 @@ var (
 		SourceID:       SourceIDEnabled,
 		WorkspaceID:    WorkspaceID,
 		SourceCategory: sourceType2,
+		SourceDefName:  SourceIDEnabled,
 	}
 	testTimeout = 15 * time.Second
 	sdkContext  = fmt.Sprintf(
@@ -302,13 +303,14 @@ var _ = Describe("Gateway Enterprise", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_suppressed_requests",
 						map[string]string{
-							"source":      rCtxEnabled.SourceTag(),
-							"sourceID":    rCtxEnabled.SourceID,
-							"workspaceId": rCtxEnabled.WorkspaceID,
-							"writeKey":    rCtxEnabled.WriteKey,
-							"reqType":     "batch",
-							"sourceType":  rCtxEnabled.SourceCategory,
-							"sdkVersion":  "",
+							"source":        rCtxEnabled.SourceTag(),
+							"sourceID":      rCtxEnabled.SourceID,
+							"workspaceId":   rCtxEnabled.WorkspaceID,
+							"writeKey":      rCtxEnabled.WriteKey,
+							"reqType":       "batch",
+							"sourceType":    rCtxEnabled.SourceCategory,
+							"sdkVersion":    "",
+							"sourceDefName": rCtxEnabled.SourceDefName,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -367,13 +369,14 @@ var _ = Describe("Gateway Enterprise", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
-							"source":      rCtxEnabled.SourceTag(),
-							"sourceID":    rCtxEnabled.SourceID,
-							"workspaceId": rCtxEnabled.WorkspaceID,
-							"writeKey":    rCtxEnabled.WriteKey,
-							"reqType":     "batch",
-							"sourceType":  rCtxEnabled.SourceCategory,
-							"sdkVersion":  sdkStatTag,
+							"source":        rCtxEnabled.SourceTag(),
+							"sourceID":      rCtxEnabled.SourceID,
+							"workspaceId":   rCtxEnabled.WorkspaceID,
+							"writeKey":      rCtxEnabled.WriteKey,
+							"reqType":       "batch",
+							"sourceType":    rCtxEnabled.SourceCategory,
+							"sdkVersion":    sdkStatTag,
+							"sourceDefName": rCtxEnabled.SourceDefName,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -674,13 +677,14 @@ var _ = Describe("Gateway", func() {
 							stat := statsStore.Get(
 								"gateway.write_key_successful_requests",
 								map[string]string{
-									"source":      rCtxEnabled.SourceTag(),
-									"sourceID":    rCtxEnabled.SourceID,
-									"workspaceId": rCtxEnabled.WorkspaceID,
-									"writeKey":    rCtxEnabled.WriteKey,
-									"reqType":     handlerType,
-									"sourceType":  rCtxEnabled.SourceCategory,
-									"sdkVersion":  sdkStatTag,
+									"source":        rCtxEnabled.SourceTag(),
+									"sourceID":      rCtxEnabled.SourceID,
+									"workspaceId":   rCtxEnabled.WorkspaceID,
+									"writeKey":      rCtxEnabled.WriteKey,
+									"reqType":       handlerType,
+									"sourceType":    rCtxEnabled.SourceCategory,
+									"sdkVersion":    sdkStatTag,
+									"sourceDefName": rCtxEnabled.SourceDefName,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
@@ -736,13 +740,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
-							"source":      "_source",
-							"sourceID":    ReplaySourceID,
-							"workspaceId": WorkspaceID,
-							"writeKey":    ReplayWriteKey,
-							"reqType":     "replay",
-							"sourceType":  "eventStream",
-							"sdkVersion":  sdkStatTag,
+							"source":        "_source",
+							"sourceID":      ReplaySourceID,
+							"workspaceId":   WorkspaceID,
+							"writeKey":      ReplayWriteKey,
+							"reqType":       "replay",
+							"sourceType":    "eventStream",
+							"sdkVersion":    sdkStatTag,
+							"sourceDefName": SourceIDEnabled,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -789,13 +794,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_events",
 						map[string]string{
-							"source":      "_source",
-							"sourceID":    RETLSourceID,
-							"workspaceId": WorkspaceID,
-							"writeKey":    RETLWriteKey,
-							"reqType":     "retl",
-							"sourceType":  "retl",
-							"sdkVersion":  "",
+							"source":        "_source",
+							"sourceID":      RETLSourceID,
+							"workspaceId":   WorkspaceID,
+							"writeKey":      RETLWriteKey,
+							"reqType":       "retl",
+							"sourceType":    "retl",
+							"sdkVersion":    "",
+							"sourceDefName": SourceIDEnabled,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -819,13 +825,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_events",
 						map[string]string{
-							"source":      "_source",
-							"sourceID":    RETLSourceID,
-							"workspaceId": WorkspaceID,
-							"writeKey":    RETLWriteKey,
-							"reqType":     "retl",
-							"sourceType":  "retl",
-							"sdkVersion":  "",
+							"source":        "_source",
+							"sourceID":      RETLSourceID,
+							"workspaceId":   WorkspaceID,
+							"writeKey":      RETLWriteKey,
+							"reqType":       "retl",
+							"sourceType":    "retl",
+							"sdkVersion":    "",
+							"sourceDefName": SourceIDEnabled,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(2)
@@ -941,13 +948,14 @@ var _ = Describe("Gateway", func() {
 			)
 
 			tags := stats.Tags{
-				"source":      rCtxEnabled.SourceTag(),
-				"sourceID":    rCtxEnabled.SourceID,
-				"workspaceId": rCtxEnabled.WorkspaceID,
-				"writeKey":    rCtxEnabled.WriteKey,
-				"reqType":     "batch",
-				"sourceType":  rCtxEnabled.SourceCategory,
-				"sdkVersion":  sdkStatTag,
+				"source":        rCtxEnabled.SourceTag(),
+				"sourceID":      rCtxEnabled.SourceID,
+				"workspaceId":   rCtxEnabled.WorkspaceID,
+				"writeKey":      rCtxEnabled.WriteKey,
+				"reqType":       "batch",
+				"sourceType":    rCtxEnabled.SourceCategory,
+				"sdkVersion":    sdkStatTag,
+				"sourceDefName": rCtxEnabled.SourceDefName,
 			}
 			GinkgoWriter.Println("tags: %v", tags)
 
@@ -1024,13 +1032,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_successful_requests",
 						map[string]string{
-							"source":      rCtxEnabled.SourceTag(),
-							"sourceID":    rCtxEnabled.SourceID,
-							"workspaceId": rCtxEnabled.WorkspaceID,
-							"writeKey":    rCtxEnabled.WriteKey,
-							"reqType":     "alias",
-							"sourceType":  rCtxEnabled.SourceCategory,
-							"sdkVersion":  sdkStatTag,
+							"source":        rCtxEnabled.SourceTag(),
+							"sourceID":      rCtxEnabled.SourceID,
+							"workspaceId":   rCtxEnabled.WorkspaceID,
+							"writeKey":      rCtxEnabled.WriteKey,
+							"reqType":       "alias",
+							"sourceType":    rCtxEnabled.SourceCategory,
+							"sdkVersion":    sdkStatTag,
+							"sourceDefName": rCtxEnabled.SourceDefName,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -1053,13 +1062,14 @@ var _ = Describe("Gateway", func() {
 					stat := statsStore.Get(
 						"gateway.write_key_dropped_requests",
 						map[string]string{
-							"source":      rCtxEnabled.SourceTag(),
-							"sourceID":    rCtxEnabled.SourceID,
-							"workspaceId": rCtxEnabled.WorkspaceID,
-							"writeKey":    rCtxEnabled.WriteKey,
-							"reqType":     "alias",
-							"sourceType":  rCtxEnabled.SourceCategory,
-							"sdkVersion":  "",
+							"source":        rCtxEnabled.SourceTag(),
+							"sourceID":      rCtxEnabled.SourceID,
+							"workspaceId":   rCtxEnabled.WorkspaceID,
+							"writeKey":      rCtxEnabled.WriteKey,
+							"reqType":       "alias",
+							"sourceType":    rCtxEnabled.SourceCategory,
+							"sdkVersion":    "",
+							"sourceDefName": rCtxEnabled.SourceDefName,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -1117,14 +1127,15 @@ var _ = Describe("Gateway", func() {
 						stat := statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
-								"source":      "noWriteKey",
-								"sourceID":    "noWriteKey",
-								"workspaceId": "",
-								"writeKey":    "noWriteKey",
-								"reqType":     reqType,
-								"reason":      "failed to read writekey from header",
-								"sourceType":  "",
-								"sdkVersion":  "",
+								"source":        "noWriteKey",
+								"sourceID":      "noWriteKey",
+								"workspaceId":   "",
+								"writeKey":      "noWriteKey",
+								"reqType":       reqType,
+								"reason":        "failed to read writekey from header",
+								"sourceType":    "",
+								"sdkVersion":    "",
+								"sourceDefName": "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -1148,14 +1159,15 @@ var _ = Describe("Gateway", func() {
 						stat := statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
-								"source":      "noWriteKey",
-								"sourceID":    "noWriteKey",
-								"workspaceId": "",
-								"writeKey":    "noWriteKey",
-								"reqType":     reqType,
-								"reason":      "failed to read writekey from header",
-								"sourceType":  "",
-								"sdkVersion":  "",
+								"source":        "noWriteKey",
+								"sourceID":      "noWriteKey",
+								"workspaceId":   "",
+								"writeKey":      "noWriteKey",
+								"reqType":       reqType,
+								"reason":        "failed to read writekey from header",
+								"sourceType":    "",
+								"sdkVersion":    "",
+								"sourceDefName": "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -1191,14 +1203,15 @@ var _ = Describe("Gateway", func() {
 						stat := statsStore.Get(
 							"gateway.write_key_failed_requests",
 							map[string]string{
-								"source":      rCtxEnabled.SourceTag(),
-								"sourceID":    rCtxEnabled.SourceID,
-								"workspaceId": rCtxEnabled.WorkspaceID,
-								"writeKey":    rCtxEnabled.WriteKey,
-								"reqType":     reqType,
-								"reason":      response.NotRudderEvent,
-								"sourceType":  rCtxEnabled.SourceCategory,
-								"sdkVersion":  "",
+								"source":        rCtxEnabled.SourceTag(),
+								"sourceID":      rCtxEnabled.SourceID,
+								"workspaceId":   rCtxEnabled.WorkspaceID,
+								"writeKey":      rCtxEnabled.WriteKey,
+								"reqType":       reqType,
+								"reason":        response.NotRudderEvent,
+								"sourceType":    rCtxEnabled.SourceCategory,
+								"sdkVersion":    "",
+								"sourceDefName": rCtxEnabled.SourceDefName,
 							},
 						)
 						// multiple `handlerType` are mapped to batch `reqType`
@@ -1239,14 +1252,15 @@ var _ = Describe("Gateway", func() {
 							stat := statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
-									"source":      rCtxEnabled.SourceTag(),
-									"sourceID":    rCtxEnabled.SourceID,
-									"workspaceId": rCtxEnabled.WorkspaceID,
-									"writeKey":    rCtxEnabled.WriteKey,
-									"reqType":     reqType,
-									"reason":      response.NonIdentifiableRequest,
-									"sourceType":  rCtxEnabled.SourceCategory,
-									"sdkVersion":  "",
+									"source":        rCtxEnabled.SourceTag(),
+									"sourceID":      rCtxEnabled.SourceID,
+									"workspaceId":   rCtxEnabled.WorkspaceID,
+									"writeKey":      rCtxEnabled.WriteKey,
+									"reqType":       reqType,
+									"reason":        response.NonIdentifiableRequest,
+									"sourceType":    rCtxEnabled.SourceCategory,
+									"sdkVersion":    "",
+									"sourceDefName": rCtxEnabled.SourceDefName,
 								},
 							)
 							// multiple `handlerType` are mapped to batch `reqType`
@@ -1341,14 +1355,15 @@ var _ = Describe("Gateway", func() {
 							stat := statsStore.Get(
 								"gateway.write_key_failed_requests",
 								map[string]string{
-									"source":      rCtxEnabled.SourceTag(),
-									"sourceID":    rCtxEnabled.SourceID,
-									"workspaceId": rCtxEnabled.WorkspaceID,
-									"writeKey":    rCtxEnabled.WriteKey,
-									"reqType":     handlerType,
-									"reason":      "storeFailed",
-									"sourceType":  rCtxEnabled.SourceCategory,
-									"sdkVersion":  sdkStatTag,
+									"source":        rCtxEnabled.SourceTag(),
+									"sourceID":      rCtxEnabled.SourceID,
+									"workspaceId":   rCtxEnabled.WorkspaceID,
+									"writeKey":      rCtxEnabled.WriteKey,
+									"reqType":       handlerType,
+									"reason":        "storeFailed",
+									"sourceType":    rCtxEnabled.SourceCategory,
+									"sdkVersion":    sdkStatTag,
+									"sourceDefName": rCtxEnabled.SourceDefName,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
@@ -1844,13 +1859,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_events",
 					Tags: map[string]string{
-						"source":      "",
-						"writeKey":    WriteKeyEnabled,
-						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "",
+						"writeKey":      WriteKeyEnabled,
+						"reqType":       "internalBatch",
+						"workspaceId":   WorkspaceID,
+						"sourceID":      SourceIDEnabled,
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": SourceIDEnabled,
 					},
 					Value: 1,
 				},
@@ -1859,13 +1875,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_successful_events",
 					Tags: map[string]string{
-						"source":      "",
-						"writeKey":    WriteKeyEnabled,
-						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "",
+						"writeKey":      WriteKeyEnabled,
+						"reqType":       "internalBatch",
+						"workspaceId":   WorkspaceID,
+						"sourceID":      SourceIDEnabled,
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": SourceIDEnabled,
 					},
 					Value: 1,
 				},
@@ -1874,13 +1891,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_requests",
 					Tags: map[string]string{
-						"workspaceId": "",
-						"sourceID":    "",
-						"sourceType":  "",
-						"sdkVersion":  "",
-						"source":      "",
-						"writeKey":    "",
-						"reqType":     "internalBatch",
+						"workspaceId":   "",
+						"sourceID":      "",
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"source":        "",
+						"writeKey":      "",
+						"reqType":       "internalBatch",
+						"sourceDefName": "",
 					},
 					Value: 1,
 				},
@@ -1889,13 +1907,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_successful_requests",
 					Tags: map[string]string{
-						"source":      "",
-						"writeKey":    "",
-						"reqType":     "internalBatch",
-						"workspaceId": "",
-						"sourceID":    "",
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "",
+						"writeKey":      "",
+						"reqType":       "internalBatch",
+						"workspaceId":   "",
+						"sourceID":      "",
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": "",
 					},
 					Value: 1,
 				},
@@ -1904,13 +1923,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_failed_requests",
 					Tags: map[string]string{
-						"source":      "",
-						"writeKey":    "",
-						"reqType":     "internalBatch",
-						"workspaceId": "",
-						"sourceID":    "",
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "",
+						"writeKey":      "",
+						"reqType":       "internalBatch",
+						"workspaceId":   "",
+						"sourceID":      "",
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": "",
 					},
 					Value: 0,
 				},
@@ -1919,13 +1939,14 @@ var _ = Describe("Gateway", func() {
 				{
 					Name: "gateway.write_key_failed_events",
 					Tags: map[string]string{
-						"source":      "",
-						"writeKey":    WriteKeyEnabled,
-						"reqType":     "internalBatch",
-						"workspaceId": WorkspaceID,
-						"sourceID":    SourceIDEnabled,
-						"sourceType":  "",
-						"sdkVersion":  "",
+						"source":        "",
+						"writeKey":      WriteKeyEnabled,
+						"reqType":       "internalBatch",
+						"workspaceId":   WorkspaceID,
+						"sourceID":      SourceIDEnabled,
+						"sourceType":    "",
+						"sdkVersion":    "",
+						"sourceDefName": SourceIDEnabled,
 					},
 					Value: 0,
 				},
@@ -1953,14 +1974,15 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.NotRudderEvent))
 			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"reason":      response.NotRudderEvent,
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"reason":        response.NotRudderEvent,
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": "",
 			})
 			Expect(failedRequestStat).To(Not(BeNil()))
 			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
@@ -1977,26 +1999,28 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(string(respData)).Should(ContainSubstring(response.InvalidJSON))
 			failedRequestStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"reason":      response.InvalidJSON,
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"reason":        response.InvalidJSON,
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": "",
 			})
 			Expect(failedRequestStat).To(Not(BeNil()))
 			Expect(failedRequestStat.Values()).To(Equal([]float64{1}))
 			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"reason":      response.InvalidJSON,
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"reason":        response.InvalidJSON,
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": "",
 			})
 			Expect(failedEventStat).To(BeNil())
 		})
@@ -2009,13 +2033,14 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": "",
 			})
 			Expect(successfulReqStat).To(Not(BeNil()))
 			Expect(successfulReqStat.Values()).To(Equal([]float64{1}))
@@ -2031,35 +2056,38 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusOK, resp.StatusCode)
 			successfulReqStat := statStore.Get("gateway.write_key_successful_requests", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": "",
 			})
 			Expect(successfulReqStat).To(Not(BeNil()))
 			Expect(successfulReqStat.LastValue()).To(Equal(float64(1)))
 			successfulEventStat := statStore.Get("gateway.write_key_successful_events", map[string]string{
-				"writeKey":    WriteKeyEnabled,
-				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      WriteKeyEnabled,
+				"reqType":       "internalBatch",
+				"workspaceId":   WorkspaceID,
+				"sourceID":      SourceIDEnabled,
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": SourceIDEnabled,
 			})
 			Expect(successfulEventStat).To(Not(BeNil()))
 			Expect(successfulEventStat.LastValue()).To(Equal(float64(2)))
 			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
-				"writeKey":    WriteKeyEnabled,
-				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      WriteKeyEnabled,
+				"reqType":       "internalBatch",
+				"workspaceId":   WorkspaceID,
+				"sourceID":      SourceIDEnabled,
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": SourceIDEnabled,
 			})
 			Expect(eventsStat).To(Not(BeNil()))
 			Expect(eventsStat.Values()).To(Equal([]float64{1, 2}))
@@ -2074,37 +2102,40 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 			Expect(http.StatusInternalServerError, resp.StatusCode)
 			failedReqStat := statStore.Get("gateway.write_key_failed_requests", map[string]string{
-				"writeKey":    "",
-				"reqType":     "internalBatch",
-				"workspaceId": "",
-				"sourceID":    "",
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
-				"reason":      "storeFailed",
+				"writeKey":      "",
+				"reqType":       "internalBatch",
+				"workspaceId":   "",
+				"sourceID":      "",
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"reason":        "storeFailed",
+				"sourceDefName": "",
 			})
 			Expect(failedReqStat).To(Not(BeNil()))
 			Expect(failedReqStat.Values()).To(Equal([]float64{1}))
 			failedEventStat := statStore.Get("gateway.write_key_failed_events", map[string]string{
-				"writeKey":    WriteKeyEnabled,
-				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
-				"reason":      "storeFailed",
+				"writeKey":      WriteKeyEnabled,
+				"reqType":       "internalBatch",
+				"workspaceId":   WorkspaceID,
+				"sourceID":      SourceIDEnabled,
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"reason":        "storeFailed",
+				"sourceDefName": SourceIDEnabled,
 			})
 			Expect(failedEventStat).To(Not(BeNil()))
 			Expect(failedEventStat.Values()).To(Equal([]float64{1}))
 			eventsStat := statStore.Get("gateway.write_key_events", map[string]string{
-				"writeKey":    WriteKeyEnabled,
-				"reqType":     "internalBatch",
-				"workspaceId": WorkspaceID,
-				"sourceID":    SourceIDEnabled,
-				"sourceType":  "",
-				"sdkVersion":  "",
-				"source":      "",
+				"writeKey":      WriteKeyEnabled,
+				"reqType":       "internalBatch",
+				"workspaceId":   WorkspaceID,
+				"sourceID":      SourceIDEnabled,
+				"sourceType":    "",
+				"sdkVersion":    "",
+				"source":        "",
+				"sourceDefName": SourceIDEnabled,
 			})
 			Expect(eventsStat).To(Not(BeNil()))
 			Expect(eventsStat.Values()).To(Equal([]float64{1}))
