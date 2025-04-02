@@ -313,7 +313,7 @@ func TestClient5xx(t *testing.T) {
 		t.Run(fmt.Sprintf("status_%d", statusCode), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(statusCode)
-				_, _ = w.Write([]byte(fmt.Sprintf("error with status %d", statusCode)))
+				_, _ = fmt.Fprintf(w, "error with status %d", statusCode)
 			}))
 			defer server.Close()
 

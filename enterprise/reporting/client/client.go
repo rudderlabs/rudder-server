@@ -25,7 +25,7 @@ import (
 
 const (
 	StatRequestTotalBytes     = "reporting_client_http_request_total_bytes"
-	StatTotalDurationsSeconds = "reporting_client_http_total_durations_seconds"
+	StatTotalDurationsSeconds = "reporting_client_http_total_duration_seconds"
 	StatRequestLatency        = "reporting_client_http_request_latency"
 	StatHttpRequest           = "reporting_client_http_request"
 )
