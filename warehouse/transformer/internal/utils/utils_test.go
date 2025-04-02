@@ -104,8 +104,8 @@ func TestToString(t *testing.T) {
 		{123.45, "123.45"},                       // float
 		{true, "true"},                           // bool true
 		{false, "false"},                         // bool false
-		{[]int{1, 2, 3}, "[1 2 3]"},              // slice
-		{map[string]int{"key": 1}, "map[key:1]"}, // map
+		{[]any{1, 2, 3}, "[1 2 3]"},              // slice
+		{map[string]any{"key": 1}, "map[key:1]"}, // map
 		{struct{}{}, "{}"},                       // empty struct
 		{struct{ Field string }{"value"}, "{value}"},                     // struct with field
 		{Person{Name: "Alice", Age: 30}, "Person(Name: Alice, Age: 30)"}, // struct with String method
