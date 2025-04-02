@@ -57,7 +57,7 @@ func (t *Transformer) sampleDiff(eventsToTransform []types.TransformerEvent, pRe
 	// If the event counts differ, return all events in the transformation
 	if len(pResponse.Events) != len(wResponse.Events) || len(pResponse.FailedEvents) != len(wResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(eventsToTransform)))
-		return ""
+		return "Mismatch in response for events or failed events"
 	}
 
 	var (
