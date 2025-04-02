@@ -2363,7 +2363,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 	}()
 	for traceParent, tags := range in.traces {
 		ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-		_, span := proc.tracer.Trace(ctx, "proc.destination_transformations", tracing.WithTraceTags(tags))
+		_, span := proc.tracer.Trace(ctx, "destination_transformations", tracing.WithTraceTags(tags))
 		spans = append(spans, span)
 	}
 
