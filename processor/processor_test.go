@@ -51,6 +51,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/tracing"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -5394,6 +5395,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 	Expect(err).To(BeNil())
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
+	processor.tracer = tracing.New(stats.NOPTracer)
 }
 
 func handlePendingGatewayJobs(processor *Handle) {

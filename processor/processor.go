@@ -3396,7 +3396,8 @@ func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
 func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
-	unprocessedList := proc.getJobsStage(context.TODO(), partition) // context is used for tracing
+	ctx := context.TODO()
+	unprocessedList := proc.getJobsStage(ctx, partition) // context is used for tracing
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
@@ -3410,6 +3411,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	preTransMessage, err := proc.preprocessStage(
 		partition,
 		subJob{
+			ctx:           ctx,
 			subJobs:       unprocessedList.Jobs,
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
