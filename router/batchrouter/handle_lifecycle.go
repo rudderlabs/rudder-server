@@ -326,83 +326,81 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 }
 
 func (brt *Handle) crashRecover() {
-	if slices.Contains(objectStoreDestinations, brt.destType) {
-		brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
-		entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
-		for _, entry := range entries {
-			var object ObjectStorageDefinition
-			if err := jsonrs.Unmarshal(entry.OpPayload, &object); err != nil {
-				panic(err)
-			}
-			if len(object.Config) == 0 {
-				// Backward compatibility. If old entries dont have config, just delete journal entry
-				brt.jobsDB.JournalDeleteEntry(entry.OpID)
-				continue
-			}
-			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
-				Provider: object.Provider,
-				Config:   object.Config,
-			})
-			if err != nil {
-				panic(err)
-			}
-
-			localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-			tmpDirPath, err := misc.CreateTMPDIR()
-			if err != nil {
-				panic(err)
-			}
-			jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
-
-			err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
-			if err != nil {
-				panic(err)
-			}
-			jsonFile, err := os.Create(jsonPath)
-			if err != nil {
-				panic(err)
-			}
-
-			brt.logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
-
-			var objKey string
-			if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
-				objKey += fmt.Sprintf("/%s", strings.TrimSpace(prefix.(string)))
-			}
-			objKey += object.Key
-
-			err = downloader.Download(context.TODO(), jsonFile, objKey)
-			if err != nil {
-				brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
-				brt.jobsDB.JournalDeleteEntry(entry.OpID)
-				continue
-			}
-
-			_ = jsonFile.Close()
-			defer func() { _ = os.Remove(jsonPath) }()
-			rawf, err := os.Open(jsonPath)
-			if err != nil {
-				panic(err)
-			}
-			reader, err := gzip.NewReader(rawf)
-			if err != nil {
-				panic(err)
-			}
-
-			sc := bufio.NewScanner(reader)
-
-			brt.logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
-			for sc.Scan() {
-				lineBytes := sc.Bytes()
-				eventID := gjson.GetBytes(lineBytes, "messageId").String()
-				if _, ok := brt.uploadedRawDataJobsCache[object.DestinationID]; !ok {
-					brt.uploadedRawDataJobsCache[object.DestinationID] = make(map[string]bool)
-				}
-				brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
-			}
-			_ = reader.Close()
-			brt.jobsDB.JournalDeleteEntry(entry.OpID)
+	brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
+	entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
+	for _, entry := range entries {
+		var object ObjectStorageDefinition
+		if err := jsonrs.Unmarshal(entry.OpPayload, &object); err != nil {
+			panic(err)
 		}
+		if len(object.Config) == 0 {
+			// Backward compatibility. If old entries dont have config, just delete journal entry
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
+			continue
+		}
+		downloader, err := brt.fileManagerFactory(&filemanager.Settings{
+			Provider: object.Provider,
+			Config:   object.Config,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
+		tmpDirPath, err := misc.CreateTMPDIR()
+		if err != nil {
+			panic(err)
+		}
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
+
+		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+		jsonFile, err := os.Create(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+
+		brt.logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
+
+		var objKey string
+		if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
+			objKey += fmt.Sprintf("/%s", strings.TrimSpace(prefix.(string)))
+		}
+		objKey += object.Key
+
+		err = downloader.Download(context.TODO(), jsonFile, objKey)
+		if err != nil {
+			brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+			brt.jobsDB.JournalDeleteEntry(entry.OpID)
+			continue
+		}
+
+		_ = jsonFile.Close()
+		defer func() { _ = os.Remove(jsonPath) }()
+		rawf, err := os.Open(jsonPath)
+		if err != nil {
+			panic(err)
+		}
+		reader, err := gzip.NewReader(rawf)
+		if err != nil {
+			panic(err)
+		}
+
+		sc := bufio.NewScanner(reader)
+
+		brt.logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
+		for sc.Scan() {
+			lineBytes := sc.Bytes()
+			eventID := gjson.GetBytes(lineBytes, "messageId").String()
+			if _, ok := brt.uploadedRawDataJobsCache[object.DestinationID]; !ok {
+				brt.uploadedRawDataJobsCache[object.DestinationID] = make(map[string]bool)
+			}
+			brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
+		}
+		_ = reader.Close()
+		brt.jobsDB.JournalDeleteEntry(entry.OpID)
 	}
 }
 
