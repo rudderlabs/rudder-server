@@ -60,11 +60,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 	drainStatsbyDest := make(map[string]*routerutils.DrainStats)
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 
-	// Sort jobs by ID to ensure consistent processing order
-	slices.SortFunc(destinationJobs.jobs, func(a, b *jobsdb.JobT) int {
-		return int(a.JobID - b.JobID)
-	})
-
 	// Organize jobs by destination and source
 	type jobEntry struct {
 		job      *jobsdb.JobT

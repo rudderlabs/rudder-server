@@ -2,7 +2,6 @@ package batchrouter
 
 import (
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -141,11 +140,6 @@ func (jb *JobBuffer) processAndUploadBatch(sourceID, destID string, jobs []*jobs
 		return
 	}
 
-	// Sort jobs by ID to ensure consistent processing
-	slices.SortFunc(jobs, func(a, b *jobsdb.JobT) int {
-		return int(a.JobID - b.JobID)
-	})
-
 	// Track metrics for batch processing
 	processedBatchSizeStat := jb.createStat("batch_router_processed_batch_size", stats.GaugeType, sourceID, destID)
 	processedBatchSizeStat.Gauge(len(jobs))
@@ -244,6 +238,6 @@ func (jb *JobBuffer) processAndUploadBatch(sourceID, destID string, jobs []*jobs
 	default:
 		// Handle any other destination types
 		jb.brt.logger.Warnf("Unsupported destination type %s for job buffer. Attempting generic processing.", jb.brt.destType)
-		processObjectStorageUpload(jb.brt.destType, false)
+		panic(fmt.Sprintf("Unsupported destination type %s for job buffer. Attempting generic processing.", jb.brt.destType))
 	}
 }
