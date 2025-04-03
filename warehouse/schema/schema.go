@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -242,16 +243,16 @@ func (sh *schema) getSchema(ctx context.Context) (model.Schema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
+	if whSchema.ExpiresAt.Before(sh.now()) {
+		sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
+		return sh.fetchSchemaFromWarehouse(ctx)
+	}
 	if whSchema.Schema == nil {
 		sh.cachedSchemaMu.Lock()
 		defer sh.cachedSchemaMu.Unlock()
 		sh.cachedSchema = model.Schema{}
 		sh.cacheExpiry = sh.now().Add(sh.ttlInMinutes)
 		return sh.cachedSchema, nil
-	}
-	if whSchema.ExpiresAt.Before(sh.now()) {
-		sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
-		return sh.fetchSchemaFromWarehouse(ctx)
 	}
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
