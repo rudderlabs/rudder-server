@@ -98,7 +98,7 @@ func TestTracing(t *testing.T) {
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -214,7 +214,7 @@ func TestTracing(t *testing.T) {
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -278,7 +278,7 @@ func TestTracing(t *testing.T) {
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -410,7 +410,7 @@ func TestTracing(t *testing.T) {
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -478,7 +478,7 @@ func TestTracing(t *testing.T) {
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
