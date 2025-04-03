@@ -59,7 +59,7 @@ type pipelineWorker struct {
 	}
 	channel struct { // worker channels
 		preprocess           chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
-		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, each and tracking plan validation
+		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, event schema and tracking plan validation
 		usertransform        chan *transformationMessage    // userTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		destinationtransform chan *userTransformData        // destinationTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		store                chan *storeMessage             // store channel is used to send jobs to store asynchronously when pipelining is enabled

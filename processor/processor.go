@@ -1704,10 +1704,10 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		var span stats.TraceSpan
 		traceParent := eventParams.TraceParent
 		if traceParent == "" {
-			proc.logger.Debugn("Missing traceParent in processJobsForDest", logger.NewIntField("jobId", batchEvent.JobID))
+			proc.logger.Debugn("Missing traceParent in preprocessStage", logger.NewIntField("jobId", batchEvent.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
-			_, span = proc.tracer.Trace(ctx, "processJobsForDest", tracing.WithTraceKind(stats.SpanKindConsumer),
+			_, span = proc.tracer.Trace(ctx, "preprocessStage", tracing.WithTraceKind(stats.SpanKindConsumer),
 				tracing.WithTraceTags(stats.Tags{
 					"workspaceId": batchEvent.WorkspaceId,
 					"sourceId":    eventParams.SourceId,
