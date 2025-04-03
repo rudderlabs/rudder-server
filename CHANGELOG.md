@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.1](https://github.com/rudderlabs/rudder-server/compare/v1.46.0...v1.46.1) (2025-04-03)
+
+
+### Bug Fixes
+
+* **router:** applying excessive read pressure to the database when jobs are being throttled ([#5685](https://github.com/rudderlabs/rudder-server/issues/5685)) ([58246cf](https://github.com/rudderlabs/rudder-server/commit/58246cfbd8ef20571f456f3bb45eefe69dbab8e5))
+
 ## [1.46.0](https://github.com/rudderlabs/rudder-server/compare/v1.45.0...v1.46.0) (2025-04-01)
 
 
