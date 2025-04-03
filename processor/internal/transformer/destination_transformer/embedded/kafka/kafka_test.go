@@ -806,19 +806,19 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				FailedEvents: []types.TransformerResponse{
 					{
-						Error:      "Topic is required for Kafka destination",
+						Error:      "topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
 						StatTags:   destinationWithNoConfigTopicStatTags,
 					},
 					{
-						Error:      "Topic is required for Kafka destination",
+						Error:      "topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
 						StatTags:   destinationWithNoConfigTopicStatTags,
 					},
 					{
-						Error:      "Topic is required for Kafka destination",
+						Error:      "topic is required for Kafka destination",
 						Metadata:   metadataWithRudderID,
 						StatusCode: http.StatusInternalServerError,
 						StatTags:   destinationWithNoConfigTopicStatTags,
