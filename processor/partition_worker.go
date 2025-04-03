@@ -6,14 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/tracing"
 )
 
 type partitionWorker struct {
@@ -21,22 +22,24 @@ type partitionWorker struct {
 	pipelines []*pipelineWorker
 	logger    logger.Logger
 	stats     *processorStats
+	tracer    *tracing.Tracer
 	handle    workerHandle
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *partitionWorker {
 	w := &partitionWorker{
 		partition: partition,
 		logger:    h.logger().Child(partition),
 		stats:     h.stats(),
+		tracer:    tracing.New(t, tracing.WithNamePrefix("partitionWorker")),
 		handle:    h,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
 	w.pipelines = make([]*pipelineWorker, pipelinesPerPartition)
-	for i := range pipelinesPerPartition {
-		w.pipelines[i] = newPipelineWorker(partition, h)
+	for i := 0; i < pipelinesPerPartition; i++ {
+		w.pipelines[i] = newPipelineWorker(partition, h, tracing.New(t, tracing.WithNamePrefix("pipelineWorker")))
 	}
 
 	return w
@@ -51,16 +54,21 @@ func (w *partitionWorker) Work() bool {
 	}
 
 	start := time.Now()
+	spanTags := stats.Tags{"partition": w.partition}
+	ctx, span := w.tracer.Trace(context.Background(), "Work", tracing.WithTraceTags(spanTags))
+	defer span.End()
+
 	// Get jobs for this partition
-	jobs := w.handle.getJobsStage(w.partition)
+	jobs := w.handle.getJobsStage(ctx, w.partition)
 
 	// If no jobs were found, return false
 	if len(jobs.Jobs) == 0 {
+		span.SetStatus(stats.SpanStatusOk, "No jobs found")
 		return false
 	}
 
 	// Mark jobs as executing
-	if err := w.handle.markExecuting(w.partition, jobs.Jobs); err != nil {
+	if err := w.handle.markExecuting(ctx, w.partition, jobs.Jobs); err != nil {
 		w.logger.Error("Error marking jobs as executing", "error", err)
 		panic(err)
 	}
@@ -71,32 +79,8 @@ func (w *partitionWorker) Work() bool {
 	})
 
 	// Create an errGroup to handle cancellation and manage goroutines
-	g, gCtx := errgroup.WithContext(context.Background())
-
-	// Send jobs to their respective partitions for processing
-	for pipelineIdx, pipelineJobs := range jobsByPipeline {
-		partition := pipelineIdx
-		jobs := pipelineJobs
-		// Initialize rsources stats
-		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
-		rsourcesStats.BeginProcessing(jobs)
-
-		g.Go(func() error {
-			subJobs := w.handle.jobSplitter(jobs, rsourcesStats)
-			for _, subJob := range subJobs {
-				select {
-				case <-gCtx.Done():
-					return gCtx.Err()
-				case w.pipelines[partition].channel.preprocess <- subJob:
-					// Job successfully sent to worker
-				}
-			}
-			return nil
-		})
-	}
-
-	// Wait for all goroutines to complete or for context to be cancelled
-	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+	err := w.sendToPreProcess(ctx, jobsByPipeline)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		w.logger.Error("Error while processing jobs", "error", err)
 		panic(err)
 	}
@@ -106,11 +90,14 @@ func (w *partitionWorker) Work() bool {
 		readLoopSleep := w.handle.config().readLoopSleep
 		if elapsed := time.Since(start); elapsed < readLoopSleep.Load() {
 			// Sleep for the remaining time, respecting context cancellation
-			if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
-				panic(err)
-			}
+			_ = w.tracer.TraceFunc(ctx, "Work.sleep", func(ctx context.Context) {
+				if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
+					panic(err)
+				}
+			}, tracing.WithTraceTags(spanTags))
 		}
 	}
+
 	return true
 }
 
@@ -130,4 +117,39 @@ func (w *partitionWorker) Stop() {
 		}(pipeline)
 	}
 	wg.Wait() // Wait for all stop operations to complete
+}
+
+func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline map[int][]*jobsdb.JobT) error {
+	spanTags := stats.Tags{"partition": w.partition}
+	_, span := w.tracer.Trace(ctx, "Work.sendToPreProcess", tracing.WithTraceTags(spanTags))
+	defer span.End()
+
+	g, gCtx := errgroup.WithContext(context.Background())
+
+	// Send jobs to their respective partitions for processing
+	for pipelineIdx, pipelineJobs := range jobsByPipeline {
+		partition := pipelineIdx
+		jobs := pipelineJobs
+		// Initialize rsources stats
+		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
+		rsourcesStats.BeginProcessing(jobs)
+
+		g.Go(func() error {
+			subJobs := w.handle.jobSplitter(ctx, jobs, rsourcesStats)
+			for _, subJob := range subJobs {
+				waitStart := time.Now()
+				select {
+				case <-gCtx.Done():
+					return gCtx.Err()
+				case w.pipelines[partition].channel.preprocess <- subJob:
+					// Job successfully sent to worker
+					w.tracer.RecordSpan(ctx, "Work.preprocessCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+				}
+			}
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to complete or for context to be cancelled
+	return g.Wait()
 }

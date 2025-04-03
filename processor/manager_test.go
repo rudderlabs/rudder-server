@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -23,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
