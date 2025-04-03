@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.46.0](https://github.com/rudderlabs/rudder-server/compare/v1.45.0...v1.46.0) (2025-04-01)
+
+
+### Features
+
+* introduce workers per partition in processor ([#5607](https://github.com/rudderlabs/rudder-server/issues/5607)) ([46d61b0](https://github.com/rudderlabs/rudder-server/commit/46d61b06106eb0ef999d3eaa34286bb9bea64f10))
+* move async batch router destinations to use OAuth v2 flow ([#5574](https://github.com/rudderlabs/rudder-server/issues/5574)) ([3e35b23](https://github.com/rudderlabs/rudder-server/commit/3e35b234ebd36a28926cade2b77134894db34428))
+* option for disabling view creation for bigquery ([#5630](https://github.com/rudderlabs/rudder-server/issues/5630)) ([c804547](https://github.com/rudderlabs/rudder-server/commit/c8045476b88fc2ee096e30f732a078423a312cf2))
+* **processor:** break down transformations step ([#5639](https://github.com/rudderlabs/rudder-server/issues/5639)) ([379fcbd](https://github.com/rudderlabs/rudder-server/commit/379fcbd9f9d22366dc067088608069df9685dd2e))
+* **processor:** count pending events without blocking ([#5605](https://github.com/rudderlabs/rudder-server/issues/5605)) ([a41c63d](https://github.com/rudderlabs/rudder-server/commit/a41c63db2ec4c2032a29901a13e26be9bfc42248))
+
+
+### Bug Fixes
+
+* compilation error in events_test.go ([#5671](https://github.com/rudderlabs/rudder-server/issues/5671)) ([e3ead37](https://github.com/rudderlabs/rudder-server/commit/e3ead3766594adfe75cea9e0643cd5c1cd9f8d40))
+* increased archival table count alert firing after starting using dslimit ([#5649](https://github.com/rudderlabs/rudder-server/issues/5649)) ([ff799d4](https://github.com/rudderlabs/rudder-server/commit/ff799d4c5222e69a5b3dced38f2499b418866172))
+* remove the noisy combination for version deprecation detection ([#5629](https://github.com/rudderlabs/rudder-server/issues/5629)) ([4516a40](https://github.com/rudderlabs/rudder-server/commit/4516a40cd96592aedf1eb41964eff23800773f09))
+* sonnet panic while unmarshalling float64 types ([#5616](https://github.com/rudderlabs/rudder-server/issues/5616)) ([c1236e4](https://github.com/rudderlabs/rudder-server/commit/c1236e44ab6756b1550feaba2ff887bc65321430))
+* warehouse transformations for data_warehouse json paths ([#5653](https://github.com/rudderlabs/rudder-server/issues/5653)) ([2bbe140](https://github.com/rudderlabs/rudder-server/commit/2bbe140adcc5464f7e9af88b66fde592f1fc94fd))
+* warehouse transformations for mandatory fields ([#5658](https://github.com/rudderlabs/rudder-server/issues/5658)) ([5019422](https://github.com/rudderlabs/rudder-server/commit/501942241596a5909fbd267ca21903697a55a6d4))
+* warehouse transformations for tracking plans ([#5662](https://github.com/rudderlabs/rudder-server/issues/5662)) ([3692063](https://github.com/rudderlabs/rudder-server/commit/369206379dc78e8235e172ea28f9e5a788f37483))
+
+
+### Miscellaneous
+
+* add limiter to pretransform ([#5622](https://github.com/rudderlabs/rudder-server/issues/5622)) ([57ba242](https://github.com/rudderlabs/rudder-server/commit/57ba2429c3bb32d97167f02fbe98eef23a8a7d4a))
+* badger configuration tuning ([#5634](https://github.com/rudderlabs/rudder-server/issues/5634)) ([1936b98](https://github.com/rudderlabs/rudder-server/commit/1936b983ba1c6c9e663951cdf919b9be42af18ff))
+* bump sqlconnect-go to 1.18.1 ([#5635](https://github.com/rudderlabs/rudder-server/issues/5635)) ([f4d78bf](https://github.com/rudderlabs/rudder-server/commit/f4d78bf82b2f0ea1fb8d463d47814cd3a3c28b14))
+* dedup service improvements ([#5602](https://github.com/rudderlabs/rudder-server/issues/5602)) ([2e7497e](https://github.com/rudderlabs/rudder-server/commit/2e7497e5d6c618c7c577eb9561ec80d712232e27))
+* **deps:** bump docker/login-action from 3.3.0 to 3.4.0 ([#5604](https://github.com/rudderlabs/rudder-server/issues/5604)) ([7e5cea3](https://github.com/rudderlabs/rudder-server/commit/7e5cea3ba5795369e70fe688bce3c5fc44e23dc9))
+* **deps:** bump github.com/golang-jwt/jwt/v5 from 5.2.1 to 5.2.2 in the go_modules group ([#5643](https://github.com/rudderlabs/rudder-server/issues/5643)) ([4510413](https://github.com/rudderlabs/rudder-server/commit/45104130ac5ffc9b4f12431c8c8152f6e67f9261))
+* **deps:** bump golangci/golangci-lint-action from 6 to 7 ([#5641](https://github.com/rudderlabs/rudder-server/issues/5641)) ([1110b6a](https://github.com/rudderlabs/rudder-server/commit/1110b6a6f327eb78703296e2c15b3d9e276f5ae5))
+* **deps:** bump the go-deps group across 1 directory with 5 updates ([#5633](https://github.com/rudderlabs/rudder-server/issues/5633)) ([a5a8978](https://github.com/rudderlabs/rudder-server/commit/a5a8978e5024e324fc1362b25d3ae3847af5ec42))
+* **deps:** bump the go-deps group across 1 directory with 5 updates ([#5642](https://github.com/rudderlabs/rudder-server/issues/5642)) ([89070bd](https://github.com/rudderlabs/rudder-server/commit/89070bd6b355cbb9f229725219f895d015e65934))
+* increase max idle connections per host for kinesis ([#5652](https://github.com/rudderlabs/rudder-server/issues/5652)) ([6fd8e7c](https://github.com/rudderlabs/rudder-server/commit/6fd8e7cc5fa2b17dad7125d89c46c0e3f5f6cc44))
+* migrate sample event column to text for reporting ([#5503](https://github.com/rudderlabs/rudder-server/issues/5503)) ([7d6cbf9](https://github.com/rudderlabs/rudder-server/commit/7d6cbf9771155c82a2fa6feaae82b4bd2c7cbb16))
+* optimise schema generation function ([#5597](https://github.com/rudderlabs/rudder-server/issues/5597)) ([f1818d0](https://github.com/rudderlabs/rudder-server/commit/f1818d08a2ac97a47c52b9edbc79ff9ff42a2c87))
+* recover from badgerdb panic ([#5678](https://github.com/rudderlabs/rudder-server/issues/5678)) ([9a47bbd](https://github.com/rudderlabs/rudder-server/commit/9a47bbd90679bee8710507e760eea63e28c6f4c7))
+* remove transformations v2 flag ([#5650](https://github.com/rudderlabs/rudder-server/issues/5650)) ([3182f9a](https://github.com/rudderlabs/rudder-server/commit/3182f9ad1599e447ef980ff11430205175a1ede4))
+* sync release v1.45.0 to main branch ([#5617](https://github.com/rudderlabs/rudder-server/issues/5617)) ([3669407](https://github.com/rudderlabs/rudder-server/commit/3669407a37f6aa8ea5309d47a1dde73f471bec6f))
+* use rss for calculating used memory in adaptive payload limiter ([#5656](https://github.com/rudderlabs/rudder-server/issues/5656)) ([63ff163](https://github.com/rudderlabs/rudder-server/commit/63ff16326bac892a0cfcb10b8882e50b8ad318ee))
+* use sonnet as the default json library ([#5657](https://github.com/rudderlabs/rudder-server/issues/5657)) ([4c6e5e0](https://github.com/rudderlabs/rudder-server/commit/4c6e5e0c30296d520592fd120737c33559674adc))
+* version deprecation detection avoid regex ([#5625](https://github.com/rudderlabs/rudder-server/issues/5625)) ([0d0e7dd](https://github.com/rudderlabs/rudder-server/commit/0d0e7dd251fc8c0e124d1b05e2a99fbcc8316f99))
+* version deprecation detection logic ([#5644](https://github.com/rudderlabs/rudder-server/issues/5644)) ([345162a](https://github.com/rudderlabs/rudder-server/commit/345162a284e424afec2959773adeab5d2a328fc3))
+
 ## [1.45.3](https://github.com/rudderlabs/rudder-server/compare/v1.45.2...v1.45.3) (2025-03-26)
 
 
