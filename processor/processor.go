@@ -2471,7 +2471,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	}
 
 	if proc.limiter.store != nil {
-		defer proc.limiter.store.BeginWithPriority("", proc.getLimiterPriority(partition))()
+		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 		defer proc.stats.statStoreStageCount(partition).Count(len(in.statusList))
 	}
 
