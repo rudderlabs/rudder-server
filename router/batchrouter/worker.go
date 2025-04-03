@@ -39,7 +39,6 @@ type worker struct {
 func (w *worker) Work() bool {
 	brt := w.brt
 	workerJobs := brt.getWorkerJobs(w.partition)
-	brt.logger.Infof("Worker %s has %v jobs to process", w.partition, len(workerJobs))
 	if len(workerJobs) == 0 {
 		return false
 	}

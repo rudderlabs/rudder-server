@@ -180,11 +180,6 @@ func (brt *Handle) Setup(
 		return nil
 	}))
 
-	brt.backgroundGroup.Go(crash.Wrapper(func() error {
-		brt.mainLoop(ctx)
-		return nil
-	}))
-
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck batch router
 	brt.backgroundGroup.Go(func() error {
