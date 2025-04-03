@@ -81,7 +81,7 @@ type trackedUsersReporter interface {
 
 type warehouseTransformer interface {
 	transformer.DestinationClient
-	CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response, metadata *types.Metadata, eventsByMessageID map[string]types.SingularEventWithReceivedAt)
+	CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response)
 }
 
 // Handle is a handle to the processor module
@@ -3003,7 +3003,7 @@ func (proc *Handle) destTransform(
 			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
 			s := time.Now()
 			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
-			proc.handleWarehouseTransformations(ctx, data.eventsToTransform, response, data.commonMetaData, eventsByMessageID)
+			proc.handleWarehouseTransformations(ctx, data.eventsToTransform, response, data.commonMetaData)
 
 			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
 			destTransformationStat.transformTime.Since(s)
@@ -3170,7 +3170,6 @@ func (proc *Handle) handleWarehouseTransformations(
 	eventsToTransform []types.TransformerEvent,
 	pResponse types.Response,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 ) {
 	if len(eventsToTransform) == 0 {
 		return
@@ -3183,7 +3182,7 @@ func (proc *Handle) handleWarehouseTransformations(
 	}
 
 	wResponse := proc.warehouseTransformer.Transform(ctx, eventsToTransform)
-	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse, commonMetaData, eventsByMessageID)
+	proc.warehouseTransformer.CompareAndLog(eventsToTransform, pResponse, wResponse)
 }
 
 func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.JobT, tx *Tx) error {
