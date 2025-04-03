@@ -35,7 +35,7 @@ func Benchmark_Transformer(b *testing.B) {
 		require.NoError(t, err)
 
 		batchSize := 1000
-		events := lo.Times(batchSize, func(index int) types.TransformerEvent {
+		events := lo.Times(batchSize, func(int) types.TransformerEvent {
 			return types.TransformerEvent{
 				Message:     singularEvent,
 				Metadata:    metadata,
