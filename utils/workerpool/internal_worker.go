@@ -62,7 +62,7 @@ func (w *internalWorker) start() {
 
 			w.setIdleSince(time.Time{})
 			if w.delegate.Work() {
-				w.logger.Infof("worker %q produced work", w.partition)
+				w.logger.Debugf("worker %q produced work", w.partition)
 				exponentialSleep.Reset()
 			} else {
 				w.logger.Debugf("worker %q didn't produce any work", w.partition)
