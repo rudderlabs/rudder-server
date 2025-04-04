@@ -937,7 +937,7 @@ func TestIntegration(t *testing.T) {
 				err = ch.CreateTable(ctx, tableName, testColumns)
 				require.NoError(t, err)
 
-				err = ch.LoadTestTable(ctx, "", tableName, payload, "")
+				err = ch.TestLoadTable(ctx, "", tableName, payload, "")
 				if tc.wantError != nil {
 					require.ErrorContains(t, err, tc.wantError.Error())
 					return

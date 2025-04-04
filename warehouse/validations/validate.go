@@ -297,7 +297,7 @@ func (cat *createAlterTable) Validate(ctx context.Context) error {
 func (fs *fetchSchema) Validate(ctx context.Context) error {
 	defer fs.manager.Cleanup(ctx)
 
-	if _, err := fs.manager.FetchSchema(ctx); err != nil {
+	if err := fs.manager.TestFetchSchema(ctx); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil
@@ -329,7 +329,7 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 
 	defer func() { _ = lt.manager.DropTable(ctx, lt.table) }()
 
-	if err = lt.manager.LoadTestTable(ctx, uploadOutput.Location, lt.table, payloadMap, loadFileType); err != nil {
+	if err = lt.manager.TestLoadTable(ctx, uploadOutput.Location, lt.table, payloadMap, loadFileType); err != nil {
 		return fmt.Errorf("load test table: %w", err)
 	}
 
