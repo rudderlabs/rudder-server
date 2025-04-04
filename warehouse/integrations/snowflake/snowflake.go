@@ -1497,7 +1497,7 @@ func (sf *Snowflake) TestFetchSchema(ctx context.Context) error {
 		return !filteredPrivilegesMap[privilege]
 	})
 	if len(missingPrivileges) > 0 {
-		return fmt.Errorf("missing privileges: %v", missingPrivileges)
+		return fmt.Errorf("missing privileges: %v on schema %s", missingPrivileges, schemaIdentifier)
 	}
 	return nil
 }

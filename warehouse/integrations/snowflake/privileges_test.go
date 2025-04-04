@@ -22,8 +22,6 @@ import (
 func TestPrivileges(t *testing.T) {
 	type credentials struct {
 		Account              string `json:"account"`
-		User                 string `json:"user"`
-		Role                 string `json:"role"`
 		Database             string `json:"database"`
 		Warehouse            string `json:"warehouse"`
 		UseKeyPairAuth       bool   `json:"useKeyPairAuth"`
@@ -42,7 +40,7 @@ func TestPrivileges(t *testing.T) {
 			u6 -> r6 -> OWNERSHIP privilege
 		*/
 
-		testKey := "SNOWFLAKE_FETCH_SCHEMA_INTEGRATION_TEST_CREDENTIALS"
+		testKey := "SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS"
 		rawCredentials, exists := os.LookupEnv(testKey)
 		if !exists {
 			if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
@@ -90,6 +88,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_1"}, roles)
@@ -109,6 +108,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_5"}, roles)
@@ -127,7 +127,7 @@ func TestPrivileges(t *testing.T) {
 				{"WAREHOUSE_INTEGRATION_TESTS.FETCH_SCHEMA_TEST", "MONITOR", "SCHEMA", "FETCH_SCHEMA_TEST_ROLE_5"},
 				{"WAREHOUSE_INTEGRATION_TESTS.FETCH_SCHEMA_TEST", "OWNERSHIP", "SCHEMA", "FETCH_SCHEMA_TEST_ROLE_6"},
 			}, schemaPrivileges)
-			require.ErrorContains(t, sf.TestFetchSchema(ctx), "missing privileges: [USAGE]")
+			require.ErrorContains(t, sf.TestFetchSchema(ctx), "missing privileges: [USAGE] on schema \"FETCH_SCHEMA_TEST\"")
 		})
 		t.Run("Configured Role: Single role - Has privilege", func(t *testing.T) {
 			w := th.Clone(t, warehouse)
@@ -137,6 +137,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_2"}, roles)
@@ -158,6 +159,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_6"}, roles)
@@ -179,6 +181,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_1"}, roles)
@@ -198,6 +201,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_2"}, roles)
@@ -219,6 +223,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_1", "FETCH_SCHEMA_TEST_ROLE_3"}, roles)
@@ -238,6 +243,7 @@ func TestPrivileges(t *testing.T) {
 			sf := New(conf, logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, w, whutils.NewNoOpUploader())
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 			roles, err := sf.getGrantedRoles(ctx)
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{"FETCH_SCHEMA_TEST_ROLE_2", "FETCH_SCHEMA_TEST_ROLE_4"}, roles)
