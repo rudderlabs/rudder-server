@@ -109,6 +109,8 @@ type Handle struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
+	jobBuffer *JobBuffer // Added for channel-based job buffering
+
 	backendConfigInitializedOnce sync.Once
 	backendConfigInitialized     chan bool
 
@@ -621,6 +623,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	brt.failingDestinationsMu.Lock()
 	brt.failingDestinations[batchJobs.Connection.Destination.ID] = batchReqMetric.batchRequestFailed > 0
 	brt.failingDestinationsMu.Unlock()
+
 	var statusList []*jobsdb.JobStatusT
 
 	if isWarehouse && notifyWarehouseErr {

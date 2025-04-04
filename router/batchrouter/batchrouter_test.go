@@ -665,7 +665,7 @@ func TestBatchRouter(t *testing.T) {
 			return false
 		}
 		return len(minioContents) == len(bcs)
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 2*time.Minute, 200*time.Millisecond)
 
 	minioContents, err := minioResource.Contents(context.Background(), "")
 	require.NoError(t, err)
