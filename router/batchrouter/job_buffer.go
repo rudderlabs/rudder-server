@@ -73,7 +73,12 @@ func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsd
 		uploadFreq = jb.brt.uploadFreq.Load()
 	}
 
-	jb.brt.logger.Debugf("Starting job consumer for %s:%s with upload frequency %s", sourceID, destID, uploadFreq)
+	// Create a semaphore to limit concurrent uploads
+	maxConcurrentUploads := jb.brt.conf.GetIntVar(1, 1, "BatchRouter."+jb.brt.destType+".maxConcurrentUploads", "BatchRouter.maxConcurrentUploads")
+	uploadSemaphore := make(chan struct{}, maxConcurrentUploads)
+
+	jb.brt.logger.Debugf("Starting job consumer for %s:%s with upload frequency %s and max concurrent uploads %d",
+		sourceID, destID, uploadFreq, maxConcurrentUploads)
 
 	// Start timer for this source-destination pair
 	timer := time.NewTimer(uploadFreq)
@@ -92,13 +97,26 @@ func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsd
 		timer.Reset(uploadFreq)
 	}
 
-	// Helper function to upload batch and clear it
-	processBatch := func() {
-		if len(jobBatch) > 0 {
-			batchSize := len(jobBatch)
-			jb.brt.logger.Debugf("Processing batch of %d jobs for %s:%s", batchSize, sourceID, destID)
-			jb.processAndUploadBatch(sourceID, destID, jobBatch)
-			jobBatch = make([]*jobsdb.JobT, 0)
+	// Helper function to upload batch asynchronously
+	processAsyncBatch := func(batch []*jobsdb.JobT) {
+		// Try to acquire a slot from the semaphore, block if all slots are used
+		select {
+		case uploadSemaphore <- struct{}{}:
+			// We got a slot, launch the upload in a goroutine
+			go func(jobsToProcess []*jobsdb.JobT) {
+				defer func() { <-uploadSemaphore }() // Release the semaphore when done
+
+				if len(jobsToProcess) > 0 {
+					batchSize := len(jobsToProcess)
+					jb.brt.logger.Debugf("Processing batch of %d jobs for %s:%s asynchronously",
+						batchSize, sourceID, destID)
+					jb.processAndUploadBatch(sourceID, destID, jobsToProcess)
+				}
+			}(batch)
+		case <-jb.brt.backgroundCtx.Done():
+			// Context canceled, don't start new uploads
+			jb.brt.logger.Debugf("Context canceled while waiting for upload slot for %s:%s", sourceID, destID)
+			return
 		}
 	}
 
@@ -108,7 +126,12 @@ func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsd
 			// Channel closed or context cancelled
 			if !ok {
 				jb.brt.logger.Debugf("Channel closed for %s:%s, processing remaining jobs and exiting", sourceID, destID)
-				processBatch()
+				if len(jobBatch) > 0 {
+					// Make a copy of the batch to avoid race conditions
+					batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
+					copy(batchToProcess, jobBatch)
+					processAsyncBatch(batchToProcess)
+				}
 				return
 			}
 			jobBatch = append(jobBatch, job)
@@ -116,20 +139,46 @@ func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsd
 			// Check if batch size threshold is reached
 			if len(jobBatch) >= jb.brt.maxEventsInABatch {
 				jb.brt.logger.Debugf("Batch size threshold reached for %s:%s: %d jobs", sourceID, destID, len(jobBatch))
-				processBatch()
+
+				// Make a copy of the batch to avoid race conditions
+				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
+				copy(batchToProcess, jobBatch)
+				processAsyncBatch(batchToProcess)
+
+				// Clear the batch and reset timer
+				jobBatch = make([]*jobsdb.JobT, 0)
 				resetTimer()
 			}
 
 		case <-timer.C:
 			// Upload on timer expiry if we have jobs
 			jb.brt.logger.Debugf("Timer expired for %s:%s with %d jobs in batch", sourceID, destID, len(jobBatch))
-			processBatch()
+
+			if len(jobBatch) > 0 {
+				// Make a copy of the batch to avoid race conditions
+				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
+				copy(batchToProcess, jobBatch)
+				processAsyncBatch(batchToProcess)
+
+				// Clear the batch
+				jobBatch = make([]*jobsdb.JobT, 0)
+			}
+
 			timer.Reset(uploadFreq)
 
 		case <-jb.brt.backgroundCtx.Done():
 			// Clean shutdown
 			jb.brt.logger.Debugf("Shutting down job consumer for %s:%s with %d jobs in batch", sourceID, destID, len(jobBatch))
-			processBatch()
+
+			if len(jobBatch) > 0 {
+				// Make a copy of the batch to avoid race conditions
+				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
+				copy(batchToProcess, jobBatch)
+
+				// Process synchronously during shutdown to ensure all jobs are handled
+				jb.processAndUploadBatch(sourceID, destID, batchToProcess)
+			}
+
 			return
 		}
 	}
