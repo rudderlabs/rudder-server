@@ -43,7 +43,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := getAggregationBucketMinute(c.reportedAt, 1)
+			bs, be := GetAggregationBucketMinute(c.reportedAt, 1)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
@@ -103,7 +103,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := getAggregationBucketMinute(c.reportedAt, 5)
+			bs, be := GetAggregationBucketMinute(c.reportedAt, 5)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
@@ -138,7 +138,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := getAggregationBucketMinute(c.reportedAt, 15)
+			bs, be := GetAggregationBucketMinute(c.reportedAt, 15)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
@@ -178,7 +178,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := getAggregationBucketMinute(c.reportedAt, c.interval)
+			bs, be := GetAggregationBucketMinute(c.reportedAt, c.interval)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
@@ -218,7 +218,7 @@ func TestGetAggregationBucket(t *testing.T) {
 		}
 
 		for _, c := range cases {
-			bs, be := getAggregationBucketMinute(c.reportedAt, c.interval)
+			bs, be := GetAggregationBucketMinute(c.reportedAt, c.interval)
 			require.Equal(t, c.bucketStart, bs)
 			require.Equal(t, c.bucketEnd, be)
 		}
