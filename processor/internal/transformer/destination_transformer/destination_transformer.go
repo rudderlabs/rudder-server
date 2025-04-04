@@ -25,6 +25,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -54,6 +55,16 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
 
+	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Processor.DestinationTransformer.maxLoggedEvents")
+
+	handle.stats.comparisonTime = handle.stat.NewStat("embedded_destination_transform_comparison_time", stats.TimerType)
+	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
+	handle.stats.mismatchedEvents = handle.stat.NewStat("embedded_destination_transform_mismatched_events", stats.CountType)
+
+	handle.loggedEvents = 0
+	handle.loggedEventsMu = sync.Mutex{}
+	handle.loggedFileName = generateLogFileName()
+
 	for _, opt := range opts {
 		opt(handle)
 	}
@@ -70,15 +81,27 @@ type Client struct {
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
 		batchSize               config.ValueLoader[int]
+
+		maxLoggedEvents config.ValueLoader[int]
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
 	log              logger.Logger
 	stat             stats.Stats
 	client           transformerclient.Client
+
+	stats struct {
+		comparisonTime   stats.Timer
+		matchedEvents    stats.Counter
+		mismatchedEvents stats.Counter
+	}
+
+	loggedEventsMu sync.Mutex
+	loggedEvents   int64
+	loggedFileName string
 }
 
-func (d *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
 	batchSize := d.config.batchSize.Load()
 	if len(clientEvents) == 0 {
 		return types.Response{}
@@ -327,4 +350,34 @@ func (d *Client) destTransformURL(destType string) string {
 		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, d.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
+}
+
+type transformer func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
+
+var embeddedTransformerImpls = map[string]transformer{
+	"GOOGLEPUBSUB": pubsub.Transform,
+}
+
+func (c *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+	if len(clientEvents) == 0 {
+		return types.Response{}
+	}
+
+	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	impl, ok := embeddedTransformerImpls[destType]
+	if !ok {
+		return c.transform(ctx, clientEvents)
+	}
+	if !c.conf.GetBoolVar(false, "Processor.Transformer.Embedded."+destType+".Enabled") {
+		return c.transform(ctx, clientEvents)
+	}
+	if c.conf.GetBoolVar(true, "Processor.Transformer.Embedded."+destType+".Verify") {
+		legacyTransformerResponse := c.transform(ctx, clientEvents)
+		embeddedTransformerResponse := impl(ctx, clientEvents)
+
+		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
+
+		return legacyTransformerResponse
+	}
+	return impl(ctx, clientEvents)
 }
