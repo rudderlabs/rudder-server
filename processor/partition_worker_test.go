@@ -56,7 +56,9 @@ func TestWorkerPool(t *testing.T) {
 		defer poolCancel()
 
 		// create a worker pool
-		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) }, logger.NOP)
+		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
 		var wg sync.WaitGroup
@@ -133,7 +135,9 @@ func TestWorkerPoolIdle(t *testing.T) {
 
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
-		func(partition string) workerpool.Worker { return newPartitionWorker(partition, wh) },
+		func(partition string) workerpool.Worker {
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
 		workerpool.WithIdleTimeout(200*time.Millisecond))
@@ -180,10 +184,6 @@ type mockWorkerHandle struct {
 	shouldProcessMultipleSubJobs bool
 }
 
-func (m *mockWorkerHandle) tracer() stats.Tracer {
-	return stats.NOP.NewTracer("")
-}
-
 func (m *mockWorkerHandle) validate(t *testing.T) {
 	m.statsMu.RLock()
 	defer m.statsMu.RUnlock()
@@ -217,12 +217,13 @@ func (*mockWorkerHandle) rsourcesService() rsources.JobService {
 }
 
 func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
-	jobs := m.getJobsStage(partition)
+	ctx := context.Background()
+	jobs := m.getJobsStage(ctx, partition)
 	if len(jobs.Jobs) > 0 {
-		_ = m.markExecuting(partition, jobs.Jobs)
+		_ = m.markExecuting(ctx, partition, jobs.Jobs)
 	}
 	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
-	for _, subJob := range m.jobSplitter(jobs.Jobs, rsourcesStats) {
+	for _, subJob := range m.jobSplitter(ctx, jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
 		preTransMessage, err := m.preprocessStage(partition, subJob)
@@ -244,7 +245,7 @@ func (*mockWorkerHandle) stats() *processorStats {
 	return &processorStats{}
 }
 
-func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
+func (m *mockWorkerHandle) getJobsStage(_ context.Context, partition string) jobsdb.JobsResult {
 	if m.limiters.query != nil {
 		defer m.limiters.query.Begin("")()
 	}
@@ -269,7 +270,7 @@ func (m *mockWorkerHandle) getJobsStage(partition string) jobsdb.JobsResult {
 	}
 }
 
-func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) error {
+func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jobs []*jobsdb.JobT) error {
 	m.statsMu.Lock()
 	defer m.statsMu.Unlock()
 	s := m.partitionStats[partition]
@@ -280,10 +281,11 @@ func (m *mockWorkerHandle) markExecuting(partition string, jobs []*jobsdb.JobT) 
 	return nil
 }
 
-func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
+func (m *mockWorkerHandle) jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
 	if !m.shouldProcessMultipleSubJobs {
 		return []subJob{
 			{
+				ctx:           ctx,
 				subJobs:       jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
@@ -292,16 +294,19 @@ func (m *mockWorkerHandle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsourc
 	}
 	return []subJob{
 		{
+			ctx:           ctx,
 			subJobs:       jobs[0 : len(jobs)/3],
 			hasMore:       true,
 			rsourcesStats: rsourcesStats,
 		},
 		{
+			ctx:           ctx,
 			subJobs:       jobs[len(jobs)/3 : 2*len(jobs)/2],
 			hasMore:       true,
 			rsourcesStats: rsourcesStats,
 		},
 		{
+			ctx:           ctx,
 			subJobs:       jobs[2*len(jobs)/2:],
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
@@ -327,8 +332,9 @@ func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*p
 	}, nil
 }
 
-func (m *mockWorkerHandle) pretransformStage(partition string, in *preTransformationMessage) (*transformationMessage, error) {
+func (m *mockWorkerHandle) pretransformStage(_ string, in *preTransformationMessage) (*transformationMessage, error) {
 	return &transformationMessage{
+		ctx:         in.subJobs.ctx,
 		totalEvents: in.totalEvents,
 		hasMore:     in.subJobs.hasMore,
 		trackedUsersReports: []*trackedusers.UsersReport{
@@ -349,6 +355,7 @@ func (m *mockWorkerHandle) userTransformStage(partition string, in *transformati
 	m.log.Infof("usertransformations partition: %s stats: %+v", partition, s)
 
 	return &userTransformData{
+		ctx:                 in.ctx,
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
 		trackedUsersReports: in.trackedUsersReports,
@@ -367,6 +374,7 @@ func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userT
 	m.log.Infof("destinationtransformations partition: %s stats: %+v", partition, s)
 
 	return &storeMessage{
+		ctx:                 context.Background(),
 		totalEvents:         in.totalEvents,
 		hasMore:             in.hasMore,
 		trackedUsersReports: in.trackedUsersReports,

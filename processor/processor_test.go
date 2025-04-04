@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -38,7 +35,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mockDedup "github.com/rudderlabs/rudder-server/mocks/services/dedup"
-	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
+	mockFeatures "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	mockreportingtypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -54,7 +51,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/tracing"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type mockObserver struct {
@@ -3157,7 +3156,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 	Context("MainLoop Tests", func() {
 		It("Should not handle jobs when transformer features are not set", func() {
-			mockTransformerFeaturesService := mock_features.NewMockFeaturesService(c.mockCtrl)
+			mockTransformerFeaturesService := mockFeatures.NewMockFeaturesService(c.mockCtrl)
 			mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).AnyTimes()
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
@@ -5396,6 +5395,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 	Expect(err).To(BeNil())
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
+	processor.tracer = tracing.New(stats.NOPTracer)
 }
 
 func handlePendingGatewayJobs(processor *Handle) {
@@ -5403,138 +5403,88 @@ func handlePendingGatewayJobs(processor *Handle) {
 	Expect(didWork).To(Equal(true))
 }
 
-var _ = Describe("TestJobSplitter", func() {
-	jobs := []*jobsdb.JobT{
-		{
-			JobID: 1,
-		},
-		{
-			JobID: 2,
-		},
-		{
-			JobID: 3,
-		},
-		{
-			JobID: 4,
-		},
-		{
-			JobID: 5,
-		},
+func TestJobSplitter(t *testing.T) {
+	inputJobs := func() []*jobsdb.JobT {
+		return []*jobsdb.JobT{
+			{JobID: 1}, {JobID: 2}, {JobID: 3}, {JobID: 4}, {JobID: 5},
+		}
 	}
-	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
-		It("default subJobSize: 2k", func() {
-			proc := NewHandle(config.Default, nil)
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
+	t.Run("default subJobSize: 2k", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		expectedSubJobs := []subJob{
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 1}, {JobID: 2}, {JobID: 3}, {JobID: 4}, {JobID: 5},
 				},
-			}
-			Expect(len(proc.jobSplitter(jobs, nil))).To(Equal(len(expectedSubJobs)))
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			proc := NewHandle(config.Default, nil)
-			proc.config.subJobSize = 1
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
-		})
-		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			proc := NewHandle(config.Default, nil)
-			proc.config.subJobSize = 2
-			expectedSubJobs := []subJob{
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 1,
-						},
-						{
-							JobID: 2,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 3,
-						},
-						{
-							JobID: 4,
-						},
-					},
-					hasMore: true,
-				},
-				{
-					subJobs: []*jobsdb.JobT{
-						{
-							JobID: 5,
-						},
-					},
-					hasMore: false,
-				},
-			}
-			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
-		})
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
 	})
-})
+	t.Run("subJobSize: 1, i.e. dividing read jobs into batch of 1", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		proc.config.subJobSize = 1
+		expectedSubJobs := []subJob{
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 1}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 2}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 3}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 4}},
+				hasMore: true,
+			},
+			{
+				ctx:     context.Background(),
+				subJobs: []*jobsdb.JobT{{JobID: 5}},
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
+	})
+	t.Run("subJobSize: 2, i.e. dividing read jobs into batch of 2", func(t *testing.T) {
+		proc := NewHandle(config.Default, nil)
+		proc.config.subJobSize = 2
+		expectedSubJobs := []subJob{
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 1},
+					{JobID: 2},
+				},
+				hasMore: true,
+			},
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 3},
+					{JobID: 4},
+				},
+				hasMore: true,
+			},
+			{
+				ctx: context.Background(),
+				subJobs: []*jobsdb.JobT{
+					{JobID: 5},
+				},
+				hasMore: false,
+			},
+		}
+		require.Equal(t, expectedSubJobs, proc.jobSplitter(context.Background(), inputJobs(), nil))
+	})
+}
 
 var _ = Describe("TestConfigFilter", func() {
 	Context("testing config filter", func() {
@@ -5822,6 +5772,7 @@ func TestStoreMessageMerge(t *testing.T) {
 	}
 
 	sm3 := &storeMessage{
+		context.Background(),
 		[]*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
 		[]*jobsdb.JobStatusT{{JobID: 3}},
 		[]*jobsdb.JobT{{JobID: 3}},

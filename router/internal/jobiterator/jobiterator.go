@@ -29,6 +29,7 @@ func WithDiscardedPercentageTolerance(discardedPercentageTolerance int) Iterator
 // Iterator is a job iterator with support for fetching more than the original set of jobs requested,
 // in case some of these jobs get discarded, according to the configured discarded percentage tolerance.
 type Iterator struct {
+	stopped                      bool
 	params                       jobsdb.GetQueryParams
 	maxQueries                   int
 	discardedPercentageTolerance int
@@ -83,6 +84,9 @@ func New(params jobsdb.GetQueryParams, getJobsFn func(context.Context, jobsdb.Ge
 
 // HasNext returns true when there are more jobs to be fetched by Next(), false otherwise.
 func (ji *Iterator) HasNext() bool {
+	if ji.stopped {
+		return false
+	}
 	jobsLength := len(ji.state.jobs)
 	if jobsLength > ji.state.idx { // we have more jobs in the current batch
 		return true
@@ -157,10 +161,22 @@ func (ji *Iterator) Next() *jobsdb.JobT {
 
 // Discard is called when a job is not processed.
 // By discarding a job we are allowing the iterator to fetch more jobs from jobsDB.
-func (ji *Iterator) Discard(job *jobsdb.JobT) {
+func (ji *Iterator) Discard(_ *jobsdb.JobT) {
 	ji.state.stats.DiscardedJobs++
 	ji.state.discarded++
 	ji.state.jobsLimit++
+}
+
+// Stop marks the iterator as stopped and prevents it from fetching more jobs.
+// Any jobs that are not yet processed will be discarded.
+func (ji *Iterator) Stop() {
+	ji.stopped = true
+	for i := ji.state.idx; i < len(ji.state.jobs); i++ {
+		ji.state.stats.DiscardedJobs++
+		ji.state.discarded++
+		ji.state.jobsLimit++
+		ji.state.idx++
+	}
 }
 
 func (ji *Iterator) Stats() IteratorStats {

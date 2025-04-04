@@ -40,7 +40,7 @@ var defaultTransformerFeatures = `{
 	},
 	"regulations": ["AM"],
 	"supportSourceTransformV1": true,
-	"upgradedToSourceTransformV2": false,
+	"upgradedToSourceTransformV2": true,
   }`
 
 func NewFeaturesService(ctx context.Context, config *config.Config, featConfig FeaturesServiceOptions) FeaturesService {
