@@ -1111,7 +1111,7 @@ func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Clickhouse) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1147,6 +1147,11 @@ func (ch *Clickhouse) LoadTestTable(ctx context.Context, _, tableName string, pa
 		return
 	}
 	return
+}
+
+func (ch *Clickhouse) TestFetchSchema(ctx context.Context) error {
+	_, err := ch.FetchSchema(ctx)
+	return err
 }
 
 func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {

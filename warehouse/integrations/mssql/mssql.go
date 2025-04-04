@@ -1059,7 +1059,7 @@ func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.C
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (ms *MSSQL) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ms *MSSQL) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		ms.namespace,
 		tableName,
@@ -1068,6 +1068,11 @@ func (ms *MSSQL) LoadTestTable(ctx context.Context, _, tableName string, payload
 	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return
+}
+
+func (ms *MSSQL) TestFetchSchema(ctx context.Context) error {
+	_, err := ms.FetchSchema(ctx)
+	return err
 }
 
 func (ms *MSSQL) SetConnectionTimeout(timeout time.Duration) {

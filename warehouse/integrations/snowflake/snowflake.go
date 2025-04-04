@@ -51,6 +51,8 @@ var partitionKeyMap = map[string]string{
 	discardsTable:   `"ROW_ID", "COLUMN_NAME", "TABLE_NAME"`,
 }
 
+var errNoGrants = errors.New("no grants found")
+
 var (
 	usersTable              = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.UsersTable)
 	identifiesTable         = whutils.ToProviderCase(whutils.SNOWFLAKE, whutils.IdentifiesTable)
@@ -131,6 +133,9 @@ type duplicateMessage struct {
 	id         string
 	receivedAt time.Time
 }
+type privilegeGrant struct {
+	name, privilege, grantedOn, granteeName string
+}
 
 func (m *duplicateMessage) String() string {
 	return `{"id": "` + m.id + `", "receivedAt": "` + m.receivedAt.Format("2006-01-02 15:04:05") + `", "lag": "` + time.Since(m.receivedAt).String() + `"}`
@@ -158,6 +163,13 @@ type Snowflake struct {
 		debugDuplicateTables         []string
 		debugDuplicateIntervalInDays int
 		debugDuplicateLimit          int
+
+		privileges struct {
+			fetchSchema struct {
+				required []string
+				enabled  bool
+			}
+		}
 	}
 }
 
@@ -181,6 +193,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
 		return strings.ToUpper(item)
 	})
+	sf.config.privileges.fetchSchema.required = conf.GetStringSlice("Warehouse.snowflake.privileges.fetchSchema.required", []string{"USAGE"})
+	sf.config.privileges.fetchSchema.enabled = conf.GetBool("Warehouse.snowflake.privileges.fetchSchema.enabled", false)
 
 	return sf
 }
@@ -1432,9 +1446,9 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (sf *Snowflake) LoadTestTable(
+func (sf *Snowflake) TestLoadTable(
 	ctx context.Context, location, tableName string, _ map[string]interface{}, _ string,
-) (err error) {
+) error {
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
@@ -1446,8 +1460,179 @@ func (sf *Snowflake) LoadTestTable(
 		sf.authString(),
 	)
 
-	_, err = sf.DB.ExecContext(ctx, sqlStatement)
-	return
+	_, err := sf.DB.ExecContext(ctx, sqlStatement)
+	return err
+}
+
+func (sf *Snowflake) TestFetchSchema(ctx context.Context) error {
+	if !sf.config.privileges.fetchSchema.enabled {
+		_, err := sf.FetchSchema(ctx)
+		return err
+	}
+
+	roles, err := sf.getRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("getting roles: %w", err)
+	}
+	rolesSet := lo.SliceToMap(roles, func(item string) (string, bool) {
+		return item, true
+	})
+
+	schemaIdentifier := sf.schemaIdentifier()
+	showGrantsStatement := fmt.Sprintf(`SHOW GRANTS ON SCHEMA %s;`, schemaIdentifier)
+	privileges, err := sf.getShowGrantsPrivileges(ctx, showGrantsStatement)
+	if err != nil {
+		return fmt.Errorf("getting show grants privileges: %w", err)
+	}
+	filteredPrivilegesMap := lo.FilterSliceToMap(privileges, func(item privilegeGrant) (string, bool, bool) {
+		if _, ok := rolesSet[item.granteeName]; !ok {
+			return "", false, false
+		}
+		return item.privilege, true, true
+	})
+	if hasOwnershipPrivileges := filteredPrivilegesMap["OWNERSHIP"]; hasOwnershipPrivileges {
+		return nil
+	}
+	missingPrivileges := lo.Filter(sf.config.privileges.fetchSchema.required, func(privilege string, index int) bool {
+		return !filteredPrivilegesMap[privilege]
+	})
+	if len(missingPrivileges) > 0 {
+		return fmt.Errorf("missing privileges: %v on schema %s", missingPrivileges, schemaIdentifier)
+	}
+	return nil
+}
+
+func (sf *Snowflake) getRoles(ctx context.Context) ([]string, error) {
+	role := sf.Warehouse.GetStringDestinationConfig(sf.conf, model.RoleSetting)
+	if len(role) != 0 {
+		return []string{role}, nil
+	}
+	return sf.getGrantedRoles(ctx)
+}
+
+func (sf *Snowflake) getGrantedRoles(ctx context.Context) ([]string, error) {
+	user := sf.Warehouse.GetStringDestinationConfig(sf.conf, model.UserSetting)
+	sqlStatement := fmt.Sprintf("SHOW GRANTS TO USER %q;", user)
+
+	rows, err := sf.DB.QueryContext(ctx, sqlStatement)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errNoGrants
+		}
+		return nil, fmt.Errorf("fetching grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("getting columns: %w", err)
+	}
+
+	_, roleIndex, found := lo.FindIndexOf(columns, func(item string) bool {
+		return strings.EqualFold(item, "role")
+	})
+	if !found {
+		return nil, fmt.Errorf(`"ROLE" column not found in result: %v`, columns)
+	}
+
+	var roles []string
+	err = scanRows(rows, columns, func(rowData []any) error {
+		roleName, ok := rowData[roleIndex].(string)
+		if !ok {
+			return fmt.Errorf("invalid data type for 'role'")
+		}
+		roles = append(roles, roleName)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scanning grants: %w", err)
+	}
+	return roles, nil
+}
+
+func (sf *Snowflake) getShowGrantsPrivileges(ctx context.Context, sqlStatement string) ([]privilegeGrant, error) {
+	rows, err := sf.DB.QueryContext(ctx, sqlStatement)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errNoGrants
+		}
+		return nil, fmt.Errorf("fetching grants: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("getting columns: %w", err)
+	}
+
+	columnIndices := map[string]int{
+		"name": -1, "privilege": -1, "granted_on": -1, "grantee_name": -1,
+	}
+	for i, col := range columns {
+		lowerCol := strings.ToLower(col)
+		if _, ok := columnIndices[lowerCol]; ok {
+			columnIndices[lowerCol] = i
+		}
+	}
+	for k, v := range columnIndices {
+		if v == -1 {
+			return nil, fmt.Errorf(`column "%s" not found in result for show grant privileges`, k)
+		}
+	}
+
+	var privileges []privilegeGrant
+	err = scanRows(rows, columns, func(rowData []any) error {
+		var name, privilege, grantedOn, granteeName string
+
+		if val, ok := rowData[columnIndices["name"]].(string); ok {
+			name = val
+		} else {
+			return fmt.Errorf("invalid data type for 'name'")
+		}
+		if val, ok := rowData[columnIndices["privilege"]].(string); ok {
+			privilege = val
+		} else {
+			return fmt.Errorf("invalid data type for 'privilege'")
+		}
+		if val, ok := rowData[columnIndices["granted_on"]].(string); ok {
+			grantedOn = val
+		} else {
+			return fmt.Errorf("invalid data type for 'granted_on'")
+		}
+		if val, ok := rowData[columnIndices["grantee_name"]].(string); ok {
+			granteeName = val
+		} else {
+			return fmt.Errorf("invalid data type for 'grantee_name'")
+		}
+		privileges = append(privileges, privilegeGrant{
+			name: name, privilege: privilege, grantedOn: grantedOn, granteeName: granteeName,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scanning grants: %w", err)
+	}
+	return privileges, nil
+}
+
+func scanRows(rows *sqlmw.Rows, columns []string, processRow func([]any) error) error {
+	for rows.Next() {
+		rowData := make([]any, len(columns))
+		rowPointers := make([]any, len(columns))
+		for i := range rowData {
+			rowPointers[i] = &rowData[i]
+		}
+		if err := rows.Scan(rowPointers...); err != nil {
+			return fmt.Errorf("scanning row: %w", err)
+		}
+		if err := processRow(rowData); err != nil {
+			return fmt.Errorf("processing row: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating rows: %w", err)
+	}
+	return nil
 }
 
 func (sf *Snowflake) SetConnectionTimeout(timeout time.Duration) {

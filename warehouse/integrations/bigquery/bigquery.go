@@ -1201,7 +1201,7 @@ func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 	return client.Client{Type: client.BQClient, BQ: dbClient.Client}, err
 }
 
-func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) error {
+func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) error {
 	gcsLocation := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 
 	var gcsReference string
@@ -1242,6 +1242,11 @@ func (bq *BigQuery) LoadTestTable(ctx context.Context, location, tableName strin
 		return fmt.Errorf("status for test data load job: %w", status.Err())
 	}
 	return nil
+}
+
+func (bq *BigQuery) TestFetchSchema(ctx context.Context) error {
+	_, err := bq.FetchSchema(ctx)
+	return err
 }
 
 func loadFolder(objectLocation string) string {

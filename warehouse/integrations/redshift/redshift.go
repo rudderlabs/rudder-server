@@ -1358,7 +1358,7 @@ func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {
+func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		rs.logger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
@@ -1413,6 +1413,11 @@ func (rs *Redshift) LoadTestTable(ctx context.Context, location, tableName strin
 	_, err = rs.DB.ExecContext(ctx, sqlStatement)
 
 	return normalizeError(err)
+}
+
+func (rs *Redshift) TestFetchSchema(ctx context.Context) error {
+	_, err := rs.FetchSchema(ctx)
+	return err
 }
 
 func (rs *Redshift) SetConnectionTimeout(timeout time.Duration) {

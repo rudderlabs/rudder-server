@@ -1038,7 +1038,7 @@ func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (c
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (as *AzureSynapse) LoadTestTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		as.namespace,
 		tableName,
@@ -1047,6 +1047,11 @@ func (as *AzureSynapse) LoadTestTable(ctx context.Context, _, tableName string, 
 	)
 	_, err = as.db.ExecContext(ctx, sqlStatement)
 	return
+}
+
+func (as *AzureSynapse) TestFetchSchema(ctx context.Context) error {
+	_, err := as.FetchSchema(ctx)
+	return err
 }
 
 func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
