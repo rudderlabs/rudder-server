@@ -165,6 +165,7 @@ type Handle struct {
 		nonEventStreamSources           map[string]bool
 		enableWarehouseTransformations  config.ValueLoader[bool]
 		enableUpdatedEventNameReporting config.ValueLoader[bool]
+		enableConcurrentStore           config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -738,6 +739,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
+	proc.config.enableConcurrentStore = config.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
 }
 
 type connection struct {
@@ -2507,43 +2509,50 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
+	g, ctx := errgroup.WithContext(context.Background())
+	enableConcurrentStore := proc.config.enableConcurrentStore.Load()
+	if !enableConcurrentStore {
+		g.SetLimit(1)
+	}
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
-		err := misc.RetryWithNotify(
-			context.Background(),
-			proc.jobsDBCommandTimeout.Load(),
-			proc.jobdDBMaxRetries.Load(),
-			func(ctx context.Context) error {
-				return proc.batchRouterDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
-						if err != nil {
-							return fmt.Errorf("storing batch router jobs: %w", err)
-						}
+		g.Go(func() error {
+			err := misc.RetryWithNotify(
+				ctx,
+				proc.jobsDBCommandTimeout.Load(),
+				proc.jobdDBMaxRetries.Load(),
+				func(ctx context.Context) error {
+					return proc.batchRouterDB.WithStoreSafeTx(
+						ctx,
+						func(tx jobsdb.StoreSafeTx) error {
+							err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+							if err != nil {
+								return fmt.Errorf("storing batch router jobs: %w", err)
+							}
 
-						// rsources stats
-						err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
-						if err != nil {
-							return fmt.Errorf("publishing rsources stats for batch router: %w", err)
-						}
-						return nil
-					})
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
-
-		proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
-		proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
-		proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
-			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
-		)
+							// rsources stats
+							err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
+							if err != nil {
+								return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+							}
+							return nil
+						})
+				}, proc.sendRetryStoreStats)
+			if err != nil {
+				return err
+			}
+			proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
+			proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
+			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
+			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
+				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+			)
+			return nil
+		})
 	}
 
 	if len(destJobs) > 0 {
-		func() {
+		g.Go(func() error {
 			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
 			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
 			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
@@ -2564,7 +2573,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 					))
 			}
 			err := misc.RetryWithNotify(
-				context.Background(),
+				ctx,
 				proc.jobsDBCommandTimeout.Load(),
 				proc.jobdDBMaxRetries.Load(),
 				func(ctx context.Context) error {
@@ -2585,7 +2594,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 						})
 				}, proc.sendRetryStoreStats)
 			if err != nil {
-				panic(err)
+				return err
 			}
 			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
@@ -2593,25 +2602,34 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 			)
-		}()
+			return nil
+		})
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
 	if len(in.procErrorJobs) > 0 {
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-		}, proc.sendRetryStoreStats)
-		if err != nil {
-			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
-			panic(err)
-		}
-		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+		g.Go(func() error {
+			err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+				return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
+			}, proc.sendRetryStoreStats)
+			if err != nil {
+				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
+				proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
+				return err
+			}
+			proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+			return nil
+		})
 	}
 
+	if !enableConcurrentStore {
+		if err := g.Wait(); err != nil {
+			panic(err)
+		}
+	}
 	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
@@ -2640,7 +2658,9 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
-
+			if enableConcurrentStore {
+				return g.Wait()
+			}
 			return nil
 		})
 	}, proc.sendRetryUpdateStats)
