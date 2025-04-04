@@ -624,11 +624,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	brt.failingDestinations[batchJobs.Connection.Destination.ID] = batchReqMetric.batchRequestFailed > 0
 	brt.failingDestinationsMu.Unlock()
 
-	// Sort jobs by ID to ensure consistent processing order
-	slices.SortFunc(batchJobs.Jobs, func(a, b *jobsdb.JobT) int {
-		return int(a.JobID - b.JobID)
-	})
-
 	var statusList []*jobsdb.JobStatusT
 
 	if isWarehouse && notifyWarehouseErr {
