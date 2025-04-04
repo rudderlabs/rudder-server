@@ -99,23 +99,17 @@ func filterConfigTopics(message types.SingularEventT, destination backendconfig.
 
 		switch messageType {
 		case "identify", "screen", "page", "group", "alias":
-			{
-				if topic, ok := eventTypeToTopicMap[messageType]; ok {
-					return topic, true
-				}
-				break
+			if topic, ok := eventTypeToTopicMap[messageType]; ok {
+				return topic, true
 			}
 		case "track":
-			{
-				eventName, ok := message["event"].(string)
-				if !ok || eventName == "" {
-					return "", false
-				}
+			eventName, ok := message["event"].(string)
+			if !ok || eventName == "" {
+				return "", false
+			}
 
-				if topic, ok := eventToTopicMap[eventName]; ok {
-					return topic, true
-				}
-				break
+			if topic, ok := eventToTopicMap[eventName]; ok {
+				return topic, true
 			}
 		}
 	}
