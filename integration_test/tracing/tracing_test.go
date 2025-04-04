@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
-
 	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -35,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -95,11 +94,11 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -156,7 +155,7 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Empty(t, zipkinTraces)
 
 		cancel()
@@ -211,11 +210,11 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -275,11 +274,11 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -333,7 +332,7 @@ func TestTracing(t *testing.T) {
 			require.Error(t, err)
 		}
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway", "otel.status_code": "ERROR", "error": response.RequestBodyTooLarge}, 1)
@@ -407,11 +406,11 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, 2*eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1", "otel.scope.name": "gateway"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "destinationId": "destination-1", "otel.scope.name": "processor"}, 1)
@@ -475,11 +474,11 @@ func TestTracing(t *testing.T) {
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, tc.postgresResource.DB, "rt", jobsdb.Succeeded.State, 3*eventsCount)
 
-		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL)
+		zipkinTraces := getZipkinTraces(t, tc.zipkinTracesURL, "gw.webrequesthandler")
 		require.Len(t, zipkinTraces, eventsCount)
 		for _, zipkinTrace := range zipkinTraces {
 			requireTags(t, zipkinTrace, "gw.webrequesthandler", map[string]string{"reqType": "batch", "path": "/v1/batch", "sourceId": "source-1"}, 1)
-			requireTags(t, zipkinTrace, "proc.processjobsfordest", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
+			requireTags(t, zipkinTrace, "proc.preprocessstage", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.user_transformations", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.destination_transformations", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
 			requireTags(t, zipkinTrace, "proc.store", map[string]string{"sourceId": "source-1", "otel.scope.name": "processor"}, 1)
@@ -669,7 +668,7 @@ func requireJobsCount(
 	)
 }
 
-func getZipkinTraces(t *testing.T, zipkinTracesURL string) [][]tracemodel.ZipkinTrace {
+func getZipkinTraces(t *testing.T, zipkinTracesURL string, parentTraceFilters ...string) [][]tracemodel.ZipkinTrace {
 	t.Helper()
 
 	getTracesReq, err := http.NewRequest(http.MethodGet, zipkinTracesURL, nil)
@@ -679,6 +678,20 @@ func getZipkinTraces(t *testing.T, zipkinTracesURL string) [][]tracemodel.Zipkin
 
 	var zipkinTraces [][]tracemodel.ZipkinTrace
 	require.NoError(t, jsonrs.Unmarshal([]byte(spansBody), &zipkinTraces))
+
+	if len(parentTraceFilters) > 0 {
+		zipkinTraces = lo.Filter(zipkinTraces, func(traces []tracemodel.ZipkinTrace, index int) bool {
+			if len(traces) == 0 {
+				return false
+			}
+			for _, filter := range parentTraceFilters {
+				if traces[0].Name == filter {
+					return true
+				}
+			}
+			return false
+		})
+	}
 
 	for _, zipkinTrace := range zipkinTraces {
 		slices.SortFunc(zipkinTrace, func(a, b tracemodel.ZipkinTrace) int {
