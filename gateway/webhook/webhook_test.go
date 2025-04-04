@@ -13,6 +13,8 @@ import (
 	"testing"
 	"testing/iotest"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -26,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	gwStats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
