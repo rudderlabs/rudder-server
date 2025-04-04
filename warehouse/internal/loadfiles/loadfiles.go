@@ -310,6 +310,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 						SourceID:              job.Upload.SourceID,
 						DestinationID:         job.Upload.DestinationID,
 						DestinationType:       job.Upload.DestinationType,
+						UploadID:              &job.Upload.ID,
 					})
 				}
 
