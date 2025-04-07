@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/samber/lo"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -12,7 +14,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
 
@@ -237,6 +238,15 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		ReplaySource:   s.IsReplaySource(),
 		Source:         s,
 	}
+	arctx.SourceDetails.SourceDefinition = s.SourceDefinition
+	arctx.SourceDetails.ID = s.ID
+	arctx.SourceDetails.OriginalID = s.OriginalID
+	arctx.SourceDetails.Name = s.Name
+	arctx.SourceDetails.Enabled = s.Enabled
+	arctx.SourceDetails.WorkspaceID = s.WorkspaceID
+	arctx.SourceDetails.WriteKey = s.WriteKey
+	arctx.SourceDetails.Config = s.Config
+	arctx.SourceDetails.Transient = s.Transient
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory
 	}
