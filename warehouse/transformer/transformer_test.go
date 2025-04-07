@@ -558,8 +558,8 @@ func TestTransformer(t *testing.T) {
 			},
 		},
 		{
-			name:         "Empty array and object",
-			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4", "empty_array":[],"empty_object":{},"nil":null}}`,
+			name:         "Empty slice and object",
+			eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4", "empty_slice":[],"empty_object":{},"nil":null}}`,
 			metadata:     getTrackMetadata("POSTGRES", "webhook"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: types.Response{
@@ -661,13 +661,6 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	trans := New(c, logger.NOP, statsStore)
 	trans.loggedFileName = tmpFile.Name()
 
-	metadata := &types.Metadata{
-		SourceID:        "sourceID",
-		DestinationID:   "destinationID",
-		SourceType:      "sourceType",
-		DestinationType: "destinationType",
-	}
-
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
 	for index := 0; index < 50; index++ {
 		eventsByMessageID[strconv.Itoa(index)] = types.SingularEventWithReceivedAt{
@@ -722,7 +715,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 			}),
 		}
 
-		trans.CompareAndLog(events, pResponse, wResponse, metadata, eventsByMessageID)
+		trans.CompareAndLog(events, pResponse, wResponse)
 	}
 
 	f, err := os.OpenFile(tmpFile.Name(), os.O_RDWR, 0o644)
@@ -741,7 +734,7 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	require.Len(t, differingEvents, maxLoggedEvents)
 
 	for i := 0; i < maxLoggedEvents; i++ {
-		require.Contains(t, differingEvents[i], "track"+strconv.Itoa(i))
+		require.Contains(t, differingEvents[i], "track")
 	}
 	require.EqualValues(t, []float64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
 }
