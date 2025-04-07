@@ -283,6 +283,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					GinkgoT().Log("statuses in update job status", statuses)
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, `{}`, 1)
 				}).Return(nil)
@@ -294,6 +295,7 @@ var _ = Describe("BatchRouter", func() {
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+					GinkgoT().Log("statuses in update job status in tx", statuses)
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
