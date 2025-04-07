@@ -1311,7 +1311,7 @@ func (d *Deltalake) Connect(_ context.Context, warehouse model.Warehouse) (wareh
 }
 
 // LoadTestTable loads the test table
-func (d *Deltalake) LoadTestTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) error {
+func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) error {
 	auth, err := d.authQuery()
 	if err != nil {
 		return fmt.Errorf("auth query: %w", err)
@@ -1374,6 +1374,11 @@ func (d *Deltalake) LoadTestTable(ctx context.Context, location, tableName strin
 	}
 
 	return nil
+}
+
+func (d *Deltalake) TestFetchSchema(ctx context.Context) error {
+	_, err := d.FetchSchema(ctx)
+	return err
 }
 
 // SetConnectionTimeout sets the connection timeout

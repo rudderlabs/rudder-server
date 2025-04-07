@@ -39,12 +39,14 @@ type Manager interface {
 	LoadIdentityMappingsTable(ctx context.Context) error
 	Cleanup(ctx context.Context)
 	IsEmpty(ctx context.Context, warehouse model.Warehouse) (bool, error)
-	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZipWriter) error
 	Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error)
-	LoadTestTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
 	ErrorMappings() []model.JobError
+
+	TestConnection(ctx context.Context, warehouse model.Warehouse) error
+	TestFetchSchema(ctx context.Context) error
+	TestLoadTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 }
 
 type WarehouseDelete interface {
