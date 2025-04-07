@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
@@ -18,23 +20,25 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 type Gateway interface {
 	TrackRequestMetrics(errorMessage string)
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
-	NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat
+	NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
 type WebHookI interface {
 	RequestHandler(w http.ResponseWriter, r *http.Request)
 	Register(name string)
+}
+
+type TransformerFeaturesService interface {
+	SourceTransformerVersion() string
+	Wait() chan struct{}
 }
 
 func newWebhookStats(stat stats.Stats) *webhookStatsT {
@@ -47,7 +51,7 @@ func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
 	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")

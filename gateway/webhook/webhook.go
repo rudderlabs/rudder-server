@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
@@ -23,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jsonrs"
@@ -128,7 +129,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
 			stat.RequestFailed("couldNotParseForm")
 			stat.Report(webhook.stats)
 
@@ -144,7 +145,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
 			stat.RequestFailed("couldNotParseMultiform")
 			stat.Report(webhook.stats)
 
@@ -166,7 +167,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = jsonrs.Marshal(multipartForm)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -181,7 +182,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if len(postFrom) != 0 {
 		jsonByte, err = jsonrs.Marshal(postFrom)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -219,7 +220,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
-	ss := webhook.gwHandle.NewSourceStat(arctx, reqType)
+	ss := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
 
 	if resp.Err != "" {
 		code := http.StatusBadRequest
@@ -476,11 +477,10 @@ func (webhook *HandleT) Shutdown() error {
 }
 
 func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.AuthRequestContext, reason string, statusCode, count int) {
-	stat := webhook.gwHandle.NewSourceStat(arctx, "webhook")
 	webhook.stats.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
 		"writeKey":    arctx.WriteKey,
-		"workspaceId": stat.WorkspaceID,
-		"sourceID":    stat.SourceID,
+		"workspaceId": arctx.WorkspaceID,
+		"sourceID":    arctx.SourceID,
 		"statusCode":  strconv.Itoa(statusCode),
 		"sourceType":  sourceType,
 		"reason":      reason,

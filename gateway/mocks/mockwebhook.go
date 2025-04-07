@@ -13,8 +13,7 @@ import (
 	http "net/http"
 	reflect "reflect"
 
-	stats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	types "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	types "github.com/rudderlabs/rudder-server/gateway/types"
 	model "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,18 +42,18 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
 }
 
-// NewSourceStat mocks base method.
-func (m *MockGateway) NewSourceStat(arctx *types.AuthRequestContext, reqType string) *stats.SourceStat {
+// NewSourceStatReporter mocks base method.
+func (m *MockGateway) NewSourceStatReporter(arctx *types.AuthRequestContext, reqType string) types.StatReporter {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewSourceStat", arctx, reqType)
-	ret0, _ := ret[0].(*stats.SourceStat)
+	ret := m.ctrl.Call(m, "NewSourceStatReporter", arctx, reqType)
+	ret0, _ := ret[0].(types.StatReporter)
 	return ret0
 }
 
-// NewSourceStat indicates an expected call of NewSourceStat.
-func (mr *MockGatewayMockRecorder) NewSourceStat(arctx, reqType any) *gomock.Call {
+// NewSourceStatReporter indicates an expected call of NewSourceStatReporter.
+func (mr *MockGatewayMockRecorder) NewSourceStatReporter(arctx, reqType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStat", reflect.TypeOf((*MockGateway)(nil).NewSourceStat), arctx, reqType)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStatReporter", reflect.TypeOf((*MockGateway)(nil).NewSourceStatReporter), arctx, reqType)
 }
 
 // ProcessWebRequest mocks base method.

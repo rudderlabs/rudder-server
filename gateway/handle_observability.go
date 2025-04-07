@@ -4,7 +4,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -18,6 +18,17 @@ func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType strin
 		WorkspaceID:   arctx.WorkspaceID,
 		SourceType:    arctx.SourceCategory,
 		SourceDefName: arctx.SourceDefName,
+	}
+}
+
+func (gw *Handle) NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter {
+	return &gwstats.SourceStat{
+		Source:      arctx.SourceTag(),
+		SourceID:    arctx.SourceID,
+		WriteKey:    arctx.WriteKey,
+		ReqType:     reqType,
+		WorkspaceID: arctx.WorkspaceID,
+		SourceType:  arctx.SourceCategory,
 	}
 }
 
