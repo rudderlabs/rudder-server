@@ -46,7 +46,6 @@ func (w *worker) Work() bool {
 	for _, workerJob := range workerJobs {
 		w.routeJobsToBuffer(workerJob)
 	}
-	brt.logger.Infof("returning true for worker %s", w.partition)
 	return true
 }
 
@@ -79,6 +78,45 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			SourceID:      sourceID,
 			DestinationID: destinationID,
 		}
+		sourceFound := false
+		for _, s := range destWithSources.Sources {
+			if s.ID == sourceID {
+				sourceFound = true
+				break
+			}
+		}
+		if !sourceFound {
+			status := jobsdb.JobStatusT{
+				JobID:         job.JobID,
+				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
+				JobState:      jobsdb.Aborted.State,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", "source_not_found"),
+				Parameters:    []byte(`{}`),
+				JobParameters: job.Parameters,
+				WorkspaceId:   job.WorkspaceId,
+			}
+			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
+			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", "source_not_found")
+			drainList = append(drainList, &status)
+			drainJobList = append(drainJobList, job)
+			drainJobList = append(drainJobList, job)
+			if _, ok := drainStatsbyDest[destinationID]; !ok {
+				drainStatsbyDest[destinationID] = &routerutils.DrainStats{
+					Count:     0,
+					Reasons:   []string{},
+					Workspace: job.WorkspaceId,
+				}
+			}
+			drainStatsbyDest[destinationID].Count = drainStatsbyDest[destinationID].Count + 1
+			if !slices.Contains(drainStatsbyDest[destinationID].Reasons, "source_not_found") {
+				drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, "source_not_found")
+			}
+			continue
+		}
+
 		if drain, reason := brt.drainer.Drain(
 			job.CreatedAt,
 			destWithSources.Destination.ID,
@@ -137,6 +175,7 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 	// Mark jobs as executing in a single batch operation
 	if len(statusList) > 0 {
+		w.brt.logger.Info("statusList", statusList)
 		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
@@ -155,6 +194,7 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 	// Mark the drainList jobs as Aborted
 	if len(drainList) > 0 {
+		w.brt.logger.Info("drainList", drainList)
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.errorDB.Store(ctx, drainJobList)
 		}, brt.sendRetryStoreStats)
