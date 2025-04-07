@@ -211,7 +211,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		sourceID:    arctx.SourceID,
 		authContext: arctx,
 	}
-	if len(jsonByte) > webhook.config.maxReqSize.Load() {
+	if webhook.config.webhookV2HandlerEnabled {
 		webhook.enqueue(sourceDefName, &req)
 	} else {
 		webhook.requestQMu.RLock()
