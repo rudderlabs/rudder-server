@@ -14,6 +14,9 @@ import (
 )
 
 func (gw *Handle) webhookHandler() http.HandlerFunc {
+	if gw.conf.webhookV2HandlerEnabled {
+		return gw.callType("webhook", gw.webhookAuthMiddleware.AuthHandler(gw.webhook.RequestHandler))
+	}
 	return gw.callType("webhook", gw.webhookAuth(gw.webhook.RequestHandler))
 }
 

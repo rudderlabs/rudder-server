@@ -70,6 +70,8 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 			return strings.ToLower(item), struct{}{}
 		},
 	)
+	// enable webhook v2 handler
+	webhook.config.webhookV2HandlerEnabled = config.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
 
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {

@@ -12,6 +12,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/gateway/validator"
 
+	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
+
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"golang.org/x/sync/errgroup"
@@ -112,6 +114,9 @@ func (gw *Handle) Setup(
 	// enable internal batch enrichment
 	// this is used to enrich the event before sending it to the db writer
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
+	// enable webhook v2 handler. enabled by default
+	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
+
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
@@ -153,6 +158,8 @@ func (gw *Handle) Setup(
 	gw.streamMsgValidator = streamMsgValidator
 
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
+
+	gw.webhookAuthMiddleware = auth.NewWebhookAuth(gw.handleHttpError, gw.authRequestContextForWriteKey)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -236,8 +243,10 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
 				sourceIDSourceMap[source.ID] = source
-				if source.Enabled && source.SourceDefinition.Category == "webhook" {
-					gw.webhook.Register(source.SourceDefinition.Name)
+				if !gw.conf.webhookV2HandlerEnabled {
+					if source.Enabled && source.SourceDefinition.Category == "webhook" {
+						gw.webhook.Register(source.SourceDefinition.Name)
+					}
 				}
 			}
 		}

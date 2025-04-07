@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/samber/lo"
@@ -125,6 +127,7 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
+		webhookV2HandlerEnabled              bool
 	}
 
 	// additional internal http handlers
@@ -134,6 +137,8 @@ type Handle struct {
 
 	// internal batch validator
 	msgValidator messageValidator
+
+	webhookAuthMiddleware *auth.WebhookAuth
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
