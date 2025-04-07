@@ -10,12 +10,12 @@ import (
 )
 
 type WebhookAuth struct {
-	onFailure             func(w http.ResponseWriter, errMsg string)
+	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string)
 	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext
 }
 
 func NewWebhookAuth(
-	onFailure func(w http.ResponseWriter, errMsg string),
+	onFailure func(w http.ResponseWriter, r *http.Request, errorMessage string),
 	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext,
 ) *WebhookAuth {
 	return &WebhookAuth{
@@ -29,7 +29,7 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 		var arctx *gwtypes.AuthRequestContext
 		var errorMessage string
 		defer func() {
-			wa.onFailure(w, errorMessage)
+			wa.onFailure(w, r, errorMessage)
 		}()
 
 		var writeKey string

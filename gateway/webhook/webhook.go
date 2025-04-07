@@ -73,6 +73,7 @@ type HandleT struct {
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
+		webhookV2HandlerEnabled    bool
 	}
 }
 
@@ -210,10 +211,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		sourceID:    arctx.SourceID,
 		authContext: arctx,
 	}
-	webhook.requestQMu.RLock()
-	requestQ := webhook.requestQ[sourceDefName]
-	requestQ <- &req
-	webhook.requestQMu.RUnlock()
+	if len(jsonByte) > webhook.config.maxReqSize.Load() {
+		webhook.enqueue(sourceDefName, &req)
+	} else {
+		webhook.requestQMu.RLock()
+		requestQ := webhook.requestQ[sourceDefName]
+		requestQ <- &req
+		webhook.requestQMu.RUnlock()
+	}
 
 	// Wait for batcher process to be done
 	resp := <-done
@@ -460,6 +465,22 @@ func (webhook *HandleT) Register(name string) {
 			webhook.batchRequests(name, requestQ)
 		})()
 	}
+}
+
+func (webhook *HandleT) enqueue(name string, req *webhookT) {
+	webhook.requestQMu.Lock()
+	defer webhook.requestQMu.Unlock()
+	if _, ok := webhook.requestQ[name]; !ok {
+		requestQ := make(chan *webhookT)
+		webhook.requestQ[name] = requestQ
+
+		webhook.batchRequestsWg.Add(1)
+		go (func() {
+			defer webhook.batchRequestsWg.Done()
+			webhook.batchRequests(name, requestQ)
+		})()
+	}
+	webhook.requestQ[name] <- req
 }
 
 func (webhook *HandleT) Shutdown() error {
