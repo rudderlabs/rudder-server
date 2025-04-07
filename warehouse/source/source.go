@@ -45,7 +45,7 @@ type Manager struct {
 func New(conf *config.Config, log logger.Logger, db *sqlmw.DB, publisher publisher) *Manager {
 	m := &Manager{
 		logger:           log.Child("source"),
-		tableUploadsRepo: repo.NewTableUploads(db),
+		tableUploadsRepo: repo.NewTableUploads(db, conf),
 		sourceRepo:       repo.NewSource(db),
 		publisher:        publisher,
 	}
