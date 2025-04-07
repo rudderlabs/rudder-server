@@ -28,7 +28,8 @@ const (
 		table_name,
 		total_events,
 		metadata,
-		created_at
+		created_at,
+		upload_id
 `
 )
 
@@ -78,6 +79,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 				"total_events",
 				"created_at",
 				"metadata",
+				"upload_id",
 			),
 		)
 		if err != nil {
@@ -87,7 +89,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 
 		for _, loadFile := range loadFiles {
 			metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
-			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, lf.now(), metadata)
+			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, lf.now(), metadata, loadFile.UploadID)
 			if err != nil {
 				return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 			}
@@ -165,9 +167,10 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		ContentLength         int64  `json:"content_length"`
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
-
-	var metadataRaw jsonstd.RawMessage
-
+	var (
+		metadataRaw jsonstd.RawMessage
+		uploadID    sql.NullInt64
+	)
 	err := scan(
 		&loadFile.ID,
 		&loadFile.StagingFileID,
@@ -179,9 +182,13 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		&loadFile.TotalRows,
 		&metadataRaw,
 		&loadFile.CreatedAt,
+		&uploadID,
 	)
 	if err != nil {
 		return fmt.Errorf(`scanning row: %w`, err)
+	}
+	if uploadID.Valid {
+		loadFile.UploadID = &uploadID.Int64
 	}
 
 	var metadata metadataSchema
