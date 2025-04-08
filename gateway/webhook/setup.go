@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
@@ -20,12 +21,15 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 type Gateway interface {
 	RequestMetricsTracker
+	WebhookHandler
+}
+
+type WebhookHandler interface {
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
 	NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
