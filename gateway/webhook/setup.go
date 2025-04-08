@@ -25,10 +25,15 @@ import (
 )
 
 type Gateway interface {
-	TrackRequestMetrics(errorMessage string)
+	RequestMetricsTracker
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
 	NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
+}
+
+// RequestMetricsTracker is used to track webhook request metrics on a request basis for OSS customers
+type RequestMetricsTracker interface {
+	TrackRequestMetrics(errorMessage string)
 }
 
 type WebHookI interface {
