@@ -508,7 +508,7 @@ type Handle struct {
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
 		refreshDSTimeout               config.ValueLoader[time.Duration]
-		jobMaxAge                      func() time.Duration
+		jobMaxAge                      config.ValueLoader[time.Duration]
 		writeCapacity                  chan struct{}
 		readCapacity                   chan struct{}
 		enableWriterQueue              bool
@@ -525,10 +525,11 @@ type Handle struct {
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
-			vacuumFullStatusTableThreshold             func() int64
-			vacuumAnalyzeStatusTableThreshold          func() int64
-			jobDoneMigrateThres, jobStatusMigrateThres func() float64
-			jobMinRowsMigrateThres                     func() float64
+			vacuumFullStatusTableThreshold             config.ValueLoader[int64]
+			vacuumAnalyzeStatusTableThreshold          config.ValueLoader[int64]
+			jobDoneMigrateThres, jobStatusMigrateThres config.ValueLoader[float64]
+			jobMinRowsMigrateThres                     config.ValueLoader[float64]
+			jobMinRowsLeftMigrateThres                 config.ValueLoader[float64]
 			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
 			migrateDSTimeout                           config.ValueLoader[time.Duration]
 		}
@@ -712,9 +713,9 @@ func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 	}
 }
 
-func WithJobMaxAge(maxAgeFunc func() time.Duration) OptsFunc {
+func WithJobMaxAge(jobMaxAge config.ValueLoader[time.Duration]) OptsFunc {
 	return func(jd *Handle) {
-		jd.conf.jobMaxAge = maxAgeFunc
+		jd.conf.jobMaxAge = jobMaxAge
 	}
 }
 
@@ -907,78 +908,56 @@ func (jd *Handle) workersAndAuxSetup() {
 
 func (jd *Handle) loadConfig() {
 	// maxTableSizeInMB: Maximum Table size in MB
-	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(300, 1000000, "JobsDB.maxTableSizeInMB")
-	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(300, 1000000, "JobsDB."+jd.tablePrefix+".maxTableSizeInMB", "JobsDB.maxTableSizeInMB")
+	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, "JobsDB."+jd.tablePrefix+".cacheExpiration", "JobsDB.cacheExpiration")
 	// addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
-	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, []string{"JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS"}...)
+	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, "JobsDB."+jd.tablePrefix+".addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDuration", "JobsDB.addNewDSLoopSleepDurationInS")
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
-	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
+	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, "JobsDB."+jd.tablePrefix+".refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS")
 
-	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
-	jd.conf.enableWriterQueue = jd.config.GetBoolVar(true, enableWriterQueueKeys...)
-	enableReaderQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableReaderQueue", "JobsDB." + "enableReaderQueue"}
-	jd.conf.enableReaderQueue = jd.config.GetBoolVar(true, enableReaderQueueKeys...)
-	maxWritersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxWriters", "JobsDB." + "maxWriters"}
-	jd.conf.maxWriters = jd.config.GetIntVar(3, 1, maxWritersKeys...)
-	maxReadersKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxReaders", "JobsDB." + "maxReaders"}
-	jd.conf.maxReaders = jd.config.GetIntVar(6, 1, maxReadersKeys...)
-	maxOpenConnectionsKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "JobsDB." + "maxOpenConnections"}
-	jd.conf.maxOpenConnections = jd.config.GetIntVar(20, 1, maxOpenConnectionsKeys...)
-	analyzeThresholdKeys := []string{"JobsDB." + jd.tablePrefix + "." + "analyzeThreshold", "JobsDB." + "analyzeThreshold"}
-	jd.conf.analyzeThreshold = jd.config.GetReloadableIntVar(30000, 1, analyzeThresholdKeys...)
-	minDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "minDSRetention", "JobsDB." + "minDSRetention"}
-	jd.conf.minDSRetentionPeriod = jd.config.GetReloadableDurationVar(0, time.Minute, minDSRetentionPeriodKeys...)
-	maxDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxDSRetention", "JobsDB." + "maxDSRetention"}
-	jd.conf.maxDSRetentionPeriod = jd.config.GetReloadableDurationVar(90, time.Minute, maxDSRetentionPeriodKeys...)
-	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, "JobsDB.refreshDS.timeout")
+	jd.conf.enableWriterQueue = jd.config.GetBoolVar(true, "JobsDB."+jd.tablePrefix+".enableWriterQueue", "JobsDB.enableWriterQueue")
+	jd.conf.enableReaderQueue = jd.config.GetBoolVar(true, "JobsDB."+jd.tablePrefix+".enableReaderQueue", "JobsDB.enableReaderQueue")
+	jd.conf.maxWriters = jd.config.GetIntVar(3, 1, "JobsDB."+jd.tablePrefix+".maxWriters", "JobsDB.maxWriters")
+	jd.conf.maxReaders = jd.config.GetIntVar(6, 1, "JobsDB."+jd.tablePrefix+".maxReaders", "JobsDB.maxReaders")
+	jd.conf.maxOpenConnections = jd.config.GetIntVar(20, 1, "JobsDB."+jd.tablePrefix+".maxOpenConnections", "JobsDB.maxOpenConnections")
+	jd.conf.analyzeThreshold = jd.config.GetReloadableIntVar(30000, 1, "JobsDB."+jd.tablePrefix+".analyzeThreshold", "JobsDB.analyzeThreshold")
+	jd.conf.minDSRetentionPeriod = jd.config.GetReloadableDurationVar(0, time.Minute, "JobsDB."+jd.tablePrefix+".minDSRetention", "JobsDB.minDSRetention")
+	jd.conf.maxDSRetentionPeriod = jd.config.GetReloadableDurationVar(90, time.Minute, "JobsDB."+jd.tablePrefix+".maxDSRetention", "JobsDB.maxDSRetention")
+	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, "JobsDB."+jd.tablePrefix+".refreshDS.timeout", "JobsDB.refreshDS.timeout")
 
 	// migrationConfig
 
 	// migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
-	jd.conf.migration.migrateDSLoopSleepDuration = jd.config.GetReloadableDurationVar(
-		30, time.Second,
-		[]string{
-			"JobsDB.migrateDSLoopSleepDuration",
-			"JobsDB.migrateDSLoopSleepDurationInS",
-		}...,
-	)
-	jd.conf.migration.migrateDSTimeout = jd.config.GetReloadableDurationVar(
-		10, time.Minute, "JobsDB.migrateDS.timeout",
-	)
+	jd.conf.migration.migrateDSLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, "JobsDB."+jd.tablePrefix+".migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDuration", "JobsDB.migrateDSLoopSleepDurationInS")
+	jd.conf.migration.migrateDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, "JobsDB."+jd.tablePrefix+".migrateDS.timeout", "JobsDB.migrateDS.timeout")
 	// jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
-	jd.conf.migration.jobDoneMigrateThres = func() float64 { return jd.config.GetFloat64("JobsDB.jobDoneMigrateThreshold", 0.7) }
+	jd.conf.migration.jobDoneMigrateThres = jd.config.GetReloadableFloat64Var(0.8, "JobsDB."+jd.tablePrefix+".jobDoneMigrateThreshold", "JobsDB.jobDoneMigrateThreshold")
 	// jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
-	jd.conf.migration.jobStatusMigrateThres = func() float64 { return jd.config.GetFloat64("JobsDB.jobStatusMigrateThreshold", 3) }
-	// jobMinRowsMigrateThres: A DS with a low number of rows should be eligible for migration if the number of rows are
-	// less than jobMinRowsMigrateThres percent of maxDSSize (e.g. if jobMinRowsMigrateThres is 5
-	// then DSs that have less than 5% of maxDSSize are eligible for migration)
-	jd.conf.migration.jobMinRowsMigrateThres = func() float64 { return jd.config.GetFloat64("JobsDB.jobMinRowsMigrateThreshold", 0.2) }
+	jd.conf.migration.jobStatusMigrateThres = jd.config.GetReloadableFloat64Var(3, "JobsDB."+jd.tablePrefix+".jobStatusMigrateThreshold", "JobsDB.jobStatusMigrateThreshold")
+	// jobMinRowsMigrateThres: A DS with a low number of total rows should be eligible for migration if the number of total rows are
+	// less than jobMinRowsMigrateThres percent of maxDSSize (e.g. if jobMinRowsMigrateThres is 0.2
+	// then DSs that have less than 20% of maxDSSize total rows are eligible for migration)
+	jd.conf.migration.jobMinRowsMigrateThres = jd.config.GetReloadableFloat64Var(0.2, "JobsDB."+jd.tablePrefix+".jobMinRowsMigrateThreshold", "JobsDB.jobMinRowsMigrateThreshold")
+	// jobMinRowsMigrateThres: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
+	// less than jobMinRowsLeftMigrateThres percent of maxDSSize (e.g. if jobMinRowsLeftMigrateThres is 0.5
+	// then DSs that have less than 50% of maxDSSize pending rows are eligible for migration)
+	jd.conf.migration.jobMinRowsLeftMigrateThres = jd.config.GetReloadableFloat64Var(0.4, "JobsDB."+jd.tablePrefix+".jobMinRowsLeftMigrateThres", "JobsDB.jobMinRowsLeftMigrateThres")
 	// maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
-	jd.conf.migration.maxMigrateOnce = jd.config.GetReloadableIntVar(
-		10, 1, "JobsDB.maxMigrateOnce",
-	)
+	jd.conf.migration.maxMigrateOnce = jd.config.GetReloadableIntVar(10, 1, "JobsDB."+jd.tablePrefix+".maxMigrateOnce", "JobsDB.maxMigrateOnce")
 	// maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
-	jd.conf.migration.maxMigrateDSProbe = jd.config.GetReloadableIntVar(
-		10, 1, "JobsDB.maxMigrateDSProbe",
-	)
-	jd.conf.migration.vacuumFullStatusTableThreshold = func() int64 {
-		return jd.config.GetInt64("JobsDB.vacuumFullStatusTableThreshold", 500*bytesize.MB)
-	}
-	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = func() int64 {
-		return jd.config.GetInt64("JobsDB.vacuumAnalyzeStatusTableThreshold", 30000)
-	}
+	jd.conf.migration.maxMigrateDSProbe = jd.config.GetReloadableIntVar(10, 1, "JobsDB."+jd.tablePrefix+".maxMigrateDSProbe", "JobsDB.maxMigrateDSProbe")
+	jd.conf.migration.vacuumFullStatusTableThreshold = jd.config.GetReloadableInt64Var(500*bytesize.MB, 1, "JobsDB."+jd.tablePrefix+".vacuumFullStatusTableThreshold", "JobsDB.vacuumFullStatusTableThreshold")
+	jd.conf.migration.vacuumAnalyzeStatusTableThreshold = jd.config.GetReloadableInt64Var(30000, 1, "JobsDB."+jd.tablePrefix+".vacuumAnalyzeStatusTableThreshold", "JobsDB.vacuumAnalyzeStatusTableThreshold")
 
 	// masterBackupEnabled = true => all the jobsdb are eligible for backup
-	jd.conf.backup.masterBackupEnabled = jd.config.GetReloadableBoolVar(
-		true, "JobsDB.backup.enabled",
-	)
+	jd.conf.backup.masterBackupEnabled = jd.config.GetReloadableBoolVar(true, "JobsDB.backup.enabled")
 
 	// maxDSSize: Maximum size of a DS. The process which adds new DS runs in the background
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
-	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, "JobsDB.maxDSSize")
+	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, "JobsDB."+jd.tablePrefix+".maxDSSize", "JobsDB.maxDSSize")
 
-	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, "JobsDB.indexOptimizations")
+	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, "JobsDB."+jd.tablePrefix+".indexOptimizations", "JobsDB.indexOptimizations")
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -999,9 +978,7 @@ func (jd *Handle) loadConfig() {
 	}
 
 	if jd.conf.jobMaxAge == nil {
-		jd.conf.jobMaxAge = func() time.Duration {
-			return jd.config.GetDuration("JobsDB.jobMaxAge", 720, time.Hour)
-		}
+		jd.conf.jobMaxAge = jd.config.GetReloadableDurationVar(720, time.Hour, "JobsDB.jobMaxAge", "JobsDB."+jd.tablePrefix+".jobMaxAge")
 	}
 }
 

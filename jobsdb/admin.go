@@ -173,7 +173,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 	jobState := "aborted"
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
-	maxAge := jd.conf.jobMaxAge()
+	maxAge := jd.conf.jobMaxAge.Load()
 	for _, ds := range dsList {
 		res, err := jd.dbHandle.ExecContext(
 			ctx,
