@@ -500,6 +500,7 @@ type Handle struct {
 
 	config *config.Config
 	conf   struct {
+		usePayloadSizeColumnToQuery    bool
 		payloadColumnType              payloadColumnType
 		maxTableSize                   config.ValueLoader[int64]
 		cacheExpiration                config.ValueLoader[time.Duration]
@@ -906,6 +907,7 @@ func (jd *Handle) workersAndAuxSetup() {
 }
 
 func (jd *Handle) loadConfig() {
+	jd.conf.usePayloadSizeColumnToQuery = jd.config.GetBoolVar(false, "JobsDB.usePayloadSizeColumnToQuery")
 	// maxTableSizeInMB: Maximum Table size in MB
 	jd.conf.maxTableSize = jd.config.GetReloadableInt64Var(300, 1000000, "JobsDB.maxTableSizeInMB")
 	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, []string{"JobsDB.cacheExpiration"}...)
@@ -1467,6 +1469,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		custom_val VARCHAR(64) NOT NULL,
 		event_payload `+string(columnType)+` NOT NULL,
 		event_count INTEGER NOT NULL DEFAULT 1,
+		payload_size INTEGER NOT NULL DEFAULT 0,
 		created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
@@ -2045,7 +2048,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		var stmt *sql.Stmt
 		var err error
 
-		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "payload_size", "workspace_id"))
 		if err != nil {
 			return err
 		}
@@ -2057,7 +2060,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 				eventCount = job.EventCount
 			}
 
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, len(job.EventPayload), job.WorkspaceId); err != nil {
 				return err
 			}
 		}
@@ -2196,6 +2199,10 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		// If we are querying only for unprocessed jobs, we should join with the status table instead of the view (performance reasons)
 		joinTable = ds.JobStatusTable
 	}
+	sizeLimitClause := "sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size"
+	if jd.conf.usePayloadSizeColumnToQuery {
+		sizeLimitClause = "sum(jobs.payload_size) over (order by jobs.job_id asc) as running_payload_size"
+	}
 
 	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
@@ -2203,7 +2210,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 									jobs.created_at, jobs.expire_at, jobs.workspace_id,
 									pg_column_size(jobs.event_payload) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
-									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
+									%[6]s,
 									job_latest_state.job_state, job_latest_state.attempt,
 									job_latest_state.exec_time, job_latest_state.retry_time,
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
@@ -2212,7 +2219,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 									%[2]s JOIN %[3]q job_latest_state ON jobs.job_id=job_latest_state.job_id
 								    %[4]s
 									ORDER BY jobs.job_id %[5]s`,
-		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
+		ds.JobTable, joinType, joinTable, filterQuery, limitQuery, sizeLimitClause)
 
 	var args []interface{}
 

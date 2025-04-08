@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -1534,6 +1535,86 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, parameterValues, 3)
 	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
+}
+
+func TestPayloadSizeColumnQueries(t *testing.T) {
+	pgContainer := startPostgres(t)
+	customVal := "CUSTOMVAL"
+	workspaceID := "workspaceID"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters: []byte(fmt.Sprintf(
+					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
+					destinationID,
+				)),
+				EventPayload: []byte(`{"key": "value"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+				WorkspaceId:  workspaceID,
+			}
+		}
+		return js
+	}
+
+	destinationID := strings.ToLower(rsRand.String(5))
+	jobsDB := &Handle{dbHandle: pgContainer.DB}
+	tablePrefix := strings.ToLower(rsRand.String(5))
+	t.Setenv("RSERVER_JOBS_DB_PAYLOAD_COLUMN_TYPE", "text")
+	require.NoError(t, jobsDB.Setup(
+		ReadWrite,
+		true,
+		tablePrefix,
+	))
+
+	// run cleanup once with an empty db
+	require.NoError(t, jobsDB.doCleanup(context.Background()))
+
+	// store some jobs
+	require.NoError(
+		t,
+		jobsDB.Store(
+			context.Background(),
+			generateJobs(5000, destinationID),
+		),
+	)
+
+	unprocessed, err := jobsDB.GetUnprocessed(
+		context.Background(),
+		GetQueryParams{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			JobsLimit:        1000,
+			PayloadSizeLimit: 1024 * bytesize.B,
+		})
+	require.NoError(t, err)
+	require.Equal(t, 60, len(unprocessed.Jobs))
+
+	jobsDB.Stop()
+	t.Setenv("RSERVER_JOBS_DB_USE_PAYLOAD_SIZE_COLUMN_TO_QUERY", "true")
+	require.NoError(t, jobsDB.Setup(
+		ReadWrite,
+		false,
+		tablePrefix,
+	))
+	unprocessed, err = jobsDB.GetUnprocessed(
+		context.Background(),
+		GetQueryParams{
+			CustomValFilters: []string{customVal},
+			ParameterFilters: []ParameterFilterT{
+				{Name: "destination_id", Value: destinationID},
+			},
+			JobsLimit:        1000,
+			PayloadSizeLimit: 1024 * bytesize.B,
+		})
+	require.NoError(t, err)
+	require.Equal(t, 64, len(unprocessed.Jobs))
+	jobsDB.TearDown()
 }
 
 type testingT interface {
