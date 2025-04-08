@@ -157,9 +157,5 @@ func (c *Client) getTags() stats.Tags {
 }
 
 func (f *Client) isHTTPRequestSuccessful(status int) bool {
-	if status == 429 {
-		return false
-	}
-
-	return status >= 200 && status < 500
+	return status >= 200 && status < 300
 }

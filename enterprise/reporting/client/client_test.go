@@ -307,6 +307,7 @@ func TestClient5xx(t *testing.T) {
 	statusCodes := []int{
 		http.StatusInternalServerError,
 		http.StatusTooManyRequests,
+		http.StatusBadRequest,
 	}
 
 	for _, statusCode := range statusCodes {
