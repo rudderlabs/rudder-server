@@ -24,8 +24,8 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.66.2
-	cloud.google.com/go/pubsub v1.48.0
+	cloud.google.com/go/bigquery v1.67.0
+	cloud.google.com/go/pubsub v1.49.0
 	cloud.google.com/go/storage v1.51.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -110,8 +110,8 @@ require (
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/oauth2 v0.29.0
 	golang.org/x/sync v0.13.0
-	google.golang.org/api v0.226.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb
+	google.golang.org/api v0.227.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4
 	google.golang.org/grpc v1.71.1
 	google.golang.org/protobuf v1.36.6
 )
@@ -120,11 +120,11 @@ require github.com/moby/sys/capability v0.4.0 // indirect
 
 require (
 	cel.dev/expr v0.19.2 // indirect
-	cloud.google.com/go v0.119.0 // indirect
+	cloud.google.com/go v0.120.0 // indirect
 	cloud.google.com/go/auth v0.15.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.7 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
-	cloud.google.com/go/iam v1.4.1 // indirect
+	cloud.google.com/go/iam v1.4.2 // indirect
 	cloud.google.com/go/monitoring v1.24.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -228,7 +228,7 @@ require (
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.5 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
 	github.com/hamba/avro/v2 v2.27.0 // indirect
@@ -341,7 +341,7 @@ require (
 	golang.org/x/tools v0.31.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20250303144028-a0af3efb3deb // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
