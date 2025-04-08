@@ -724,6 +724,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			loadTableStat, err := sf.LoadTable(ctx, tableName)
 			require.Error(t, err)
@@ -740,6 +741,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			err = sf.CreateSchema(ctx)
 			require.NoError(t, err)
@@ -763,6 +765,7 @@ func TestIntegration(t *testing.T) {
 				sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 				err := sf.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
+				defer func() { sf.Cleanup(ctx) }()
 
 				err = sf.CreateSchema(ctx)
 				require.NoError(t, err)
@@ -809,6 +812,7 @@ func TestIntegration(t *testing.T) {
 				sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 				err := sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
+				defer func() { sf.Cleanup(ctx) }()
 
 				err = sf.CreateSchema(ctx)
 				require.NoError(t, err)
@@ -871,6 +875,7 @@ func TestIntegration(t *testing.T) {
 				sf := snowflake.New(c, logger.NOP, stats.NOP)
 				err := sf.Setup(ctx, warehouse, mockUploader)
 				require.NoError(t, err)
+				defer func() { sf.Cleanup(ctx) }()
 
 				err = sf.CreateSchema(ctx)
 				require.NoError(t, err)
@@ -926,6 +931,7 @@ func TestIntegration(t *testing.T) {
 				sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 				err := sf.Setup(ctx, appendWarehouse, mockUploader)
 				require.NoError(t, err)
+				defer func() { sf.Cleanup(ctx) }()
 
 				err = sf.CreateSchema(ctx)
 				require.NoError(t, err)
@@ -982,6 +988,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			err = sf.CreateSchema(ctx)
 			require.NoError(t, err)
@@ -1004,6 +1011,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			err = sf.CreateSchema(ctx)
 			require.NoError(t, err)
@@ -1048,6 +1056,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			err = sf.CreateSchema(ctx)
 			require.NoError(t, err)
@@ -1074,6 +1083,7 @@ func TestIntegration(t *testing.T) {
 			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
 			err := sf.Setup(ctx, warehouse, mockUploader)
 			require.NoError(t, err)
+			defer func() { sf.Cleanup(ctx) }()
 
 			err = sf.CreateSchema(ctx)
 			require.NoError(t, err)
