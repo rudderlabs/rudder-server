@@ -30,6 +30,7 @@ type FeaturesService interface {
 	SourceTransformerVersion() string
 	RouterTransform(destType string) bool
 	TransformerProxyVersion() string
+	SupportDestTransformCompactedPayloadV1() bool
 	Wait() chan struct{}
 }
 
@@ -91,5 +92,9 @@ func (*noopService) Wait() chan struct{} {
 }
 
 func (*noopService) RouterTransform(_ string) bool {
+	return false
+}
+
+func (*noopService) SupportDestTransformCompactedPayloadV1() bool {
 	return false
 }
