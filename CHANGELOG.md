@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.46.2](https://github.com/rudderlabs/rudder-server/compare/v1.46.1...v1.46.2) (2025-04-07)
+
+
+### Bug Fixes
+
+* snowflake fetch schema privileges ([#5692](https://github.com/rudderlabs/rudder-server/issues/5692)) ([2ef6133](https://github.com/rudderlabs/rudder-server/commit/2ef61338ed2815bd71019db042ce334f83c20f51))
+* warehouse transformations comparisions ([#5694](https://github.com/rudderlabs/rudder-server/issues/5694)) ([0539987](https://github.com/rudderlabs/rudder-server/commit/0539987f184e188d6ed920bc76429d6bb8bfe7b4))
+
 ## [1.46.1](https://github.com/rudderlabs/rudder-server/compare/v1.46.0...v1.46.1) (2025-04-03)
 
 
