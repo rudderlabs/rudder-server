@@ -468,19 +468,26 @@ func (webhook *HandleT) Register(name string) {
 }
 
 func (webhook *HandleT) enqueue(name string, req *webhookT) {
-	webhook.requestQMu.Lock()
-	defer webhook.requestQMu.Unlock()
-	if _, ok := webhook.requestQ[name]; !ok {
-		requestQ := make(chan *webhookT)
-		webhook.requestQ[name] = requestQ
+	webhook.requestQMu.RLock()
+	requestQ, ok := webhook.requestQ[name]
+	webhook.requestQMu.RUnlock()
 
-		webhook.batchRequestsWg.Add(1)
-		go (func() {
-			defer webhook.batchRequestsWg.Done()
-			webhook.batchRequests(name, requestQ)
-		})()
+	if !ok {
+		webhook.requestQMu.Lock()
+		if requestQ, ok = webhook.requestQ[name]; !ok { // Double-check to avoid race conditions
+			requestQ = make(chan *webhookT)
+			webhook.requestQ[name] = requestQ
+
+			webhook.batchRequestsWg.Add(1)
+			go func() {
+				defer webhook.batchRequestsWg.Done()
+				webhook.batchRequests(name, requestQ)
+			}()
+		}
+		webhook.requestQMu.Unlock()
 	}
-	webhook.requestQ[name] <- req
+
+	requestQ <- req
 }
 
 func (webhook *HandleT) Shutdown() error {
