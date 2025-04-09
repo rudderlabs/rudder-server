@@ -1,14 +1,18 @@
 package types
 
 import (
+	"bytes"
+	"fmt"
 	"reflect"
 	"strconv"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -193,75 +197,28 @@ type Response struct {
 
 // Equal compares two Response structs and returns true if they are equal
 // regardless of the order of elements in the Events and FailedEvents slices
-func (r *Response) Equal(v *Response) bool {
-	// Check if both are nil or both are not nil
-	if (r == nil) != (v == nil) {
-		return false
-	}
-
-	// If both are nil, they're equal
-	if r == nil {
-		return true
-	}
-
-	// Check if Events slices have the same length
+func (r *Response) Equal(v *Response) (string, bool) {
 	if len(r.Events) != len(v.Events) {
-		return false
+		return fmt.Sprintf("Expected Events length %d, got %d", len(r.Events), len(v.Events)), false
 	}
 
-	// Check if FailedEvents slices have the same length
 	if len(r.FailedEvents) != len(v.FailedEvents) {
-		return false
+		return fmt.Sprintf("Expected FailedEvents length %d, got %d", len(r.FailedEvents), len(v.FailedEvents)), false
 	}
 
-	// Check if each event in r.Events is present in v.Events
-	if !containsSameEvents(r.Events, v.Events) {
-		return false
+	extraA, extraB := diffLists(r.Events, v.Events)
+	if len(extraA) > 0 || len(extraB) > 0 {
+		diff := formatListDiff(r.Events, v.Events, extraA, extraB)
+		return diff, false
 	}
 
-	// Check if each failed event in r.FailedEvents is present in v.FailedEvents
-	if !containsSameEvents(r.FailedEvents, v.FailedEvents) {
-		return false
+	extraA, extraB = diffLists(r.FailedEvents, v.FailedEvents)
+	if len(extraA) > 0 || len(extraB) > 0 {
+		diff := formatListDiff(r.FailedEvents, v.FailedEvents, extraA, extraB)
+		return diff, false
 	}
 
-	return true
-}
-
-// containsSameEvents checks if two slices contain the same TransformerResponse elements,
-// regardless of order
-func containsSameEvents(a, b []TransformerResponse) bool {
-	// Create a map to mark events in b that have been matched
-	matched := make([]bool, len(b))
-
-	// For each event in a, find a matching event in b
-	for _, eventA := range a {
-		found := false
-		for j, eventB := range b {
-			if !matched[j] && eventsEqual(eventA, eventB) {
-				matched[j] = true
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-
-	// Ensure all events in b have been matched
-	for _, m := range matched {
-		if !m {
-			return false
-		}
-	}
-
-	return true
-}
-
-// eventsEqual checks if two TransformerResponse objects are equal
-func eventsEqual(a, b TransformerResponse) bool {
-	// TODO we might have to skip fields containing dates and times, double check this.
-	return reflect.DeepEqual(a, b)
+	return "", true
 }
 
 type EventParams struct {
@@ -321,4 +278,70 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 		logger.NewStringField("transformationId", t.TransformationID),
 		logger.NewBoolField("mirroring", t.Mirroring),
 	}
+}
+
+func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
+	aValue := reflect.ValueOf(listA)
+	bValue := reflect.ValueOf(listB)
+
+	aLen := aValue.Len()
+	bLen := bValue.Len()
+
+	// Mark indexes in bValue that we already used
+	visited := make([]bool, bLen)
+	for i := 0; i < aLen; i++ {
+		element := aValue.Index(i).Interface()
+		found := false
+		for j := 0; j < bLen; j++ {
+			if visited[j] {
+				continue
+			}
+			if assert.ObjectsAreEqual(bValue.Index(j).Interface(), element) {
+				visited[j] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			extraA = append(extraA, element)
+		}
+	}
+
+	for j := 0; j < bLen; j++ {
+		if visited[j] {
+			continue
+		}
+		extraB = append(extraB, bValue.Index(j).Interface())
+	}
+
+	return
+}
+
+var spewConfig = spew.ConfigState{
+	Indent:                  " ",
+	DisablePointerAddresses: true,
+	DisableCapacities:       true,
+	SortKeys:                true,
+	DisableMethods:          true,
+	MaxDepth:                10,
+}
+
+func formatListDiff(listA, listB interface{}, extraA, extraB []interface{}) string {
+	var msg bytes.Buffer
+
+	msg.WriteString("elements differ")
+	if len(extraA) > 0 {
+		msg.WriteString("\n\nextra elements in list A:\n")
+		msg.WriteString(spewConfig.Sdump(extraA))
+	}
+	if len(extraB) > 0 {
+		msg.WriteString("\n\nextra elements in list B:\n")
+		msg.WriteString(spewConfig.Sdump(extraB))
+	}
+	msg.WriteString("\n\nlistA:\n")
+	msg.WriteString(spewConfig.Sdump(listA))
+	msg.WriteString("\n\nlistB:\n")
+	msg.WriteString(spewConfig.Sdump(listB))
+
+	return msg.String()
 }
