@@ -16,9 +16,9 @@ import (
 type mockNotifier struct {
 	t *testing.T
 
-	requests []loadfiles.WorkerJobRequest
+	requests   []loadfiles.WorkerJobRequest
 	requestsV2 []loadfiles.WorkerJobRequestV2
-	tables   []string
+	tables     []string
 }
 
 func (n *mockNotifier) Publish(_ context.Context, payload *notifier.PublishRequest) (<-chan *notifier.PublishResponse, error) {
