@@ -7,7 +7,8 @@ package mocks_transformer_clients
 import (
 	reflect "reflect"
 
-	gomock "github.com/golang/mock/gomock"
+	gomock "go.uber.org/mock/gomock"
+
 	transformer "github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
