@@ -66,7 +66,7 @@ type Handle struct {
 	reloadableConfig                   *reloadableConfig
 	destType                           string
 	guaranteeUserEventOrder            bool
-	netClientTimeout                   time.Duration
+	netClientTimeout                   config.ValueLoader[time.Duration]
 	transformerTimeout                 time.Duration
 	enableBatching                     bool
 	noOfWorkers                        int
