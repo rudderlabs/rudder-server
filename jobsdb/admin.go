@@ -152,7 +152,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 			fmt.Sprintf(
 				deleteStmt,
 				jd.tablePrefix,
-				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
+				jd.config.GetIntVar(10, 1, jd.configKeys("archivalTimeInDays")...),
 			),
 		)
 		if err != nil {
