@@ -441,7 +441,8 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &ProducerManager{p: p, timeout: o.Timeout,
+	return &ProducerManager{
+		p: p, timeout: o.Timeout,
 		enableBatching: config.GetBoolVar(false, "Router.AZURE_EVENT_HUB.enableBatching"),
 	}, nil
 }
@@ -492,7 +493,8 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &ProducerManager{p: p, timeout: o.Timeout,
+	return &ProducerManager{
+		p: p, timeout: o.Timeout,
 		enableBatching: config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching"),
 	}, nil
 }
