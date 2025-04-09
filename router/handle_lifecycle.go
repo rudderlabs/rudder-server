@@ -87,12 +87,12 @@ func (rt *Handle) Setup(
 	if rt.netHandle == nil {
 		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false)}
 		netHandle.logger = rt.logger.Child("network")
-		netHandle.Setup(destType, rt.netClientTimeout)
+		netHandle.Setup(destType, rt.netClientTimeout.Load())
 		rt.netHandle = netHandle
 	}
 
 	rt.customDestinationManager = customDestinationManager.New(destType, customDestinationManager.Opts{
-		Timeout: rt.netClientTimeout,
+		Timeout: rt.netClientTimeout.Load(),
 	})
 	rt.telemetry = &Diagnostic{}
 	rt.telemetry.failuresMetric = make(map[string]map[string]int)
@@ -125,7 +125,7 @@ func (rt *Handle) Setup(
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
-	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
+	rt.transformer = transformer.NewTransformer(rt.netClientTimeout.Load(), rt.transformerTimeout,
 		backendConfig, rt.reloadableConfig.oauthV2Enabled,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 		rt.transformerFeaturesService,
@@ -320,7 +320,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, "Router."+rt.destType+".oauthV2Enabled", "Router.oauthV2Enabled")
 	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, "Router."+rt.destType+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff")
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
-	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
+	rt.netClientTimeout = config.GetReloadableDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",
 		"Router."+rt.destType+".httpTimeoutInS",
 		"Router.httpTimeout", "Router.httpTimeoutInS")
