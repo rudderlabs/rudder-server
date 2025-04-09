@@ -2882,9 +2882,8 @@ func (proc *Handle) userTransformAndFilter(
 			if utMirroringEnabled && utMirroringSanityChecks != nil {
 				go func() {
 					mirroredResponse := <-utMirroringSanityChecks
-					if !response.Equal(&mirroredResponse) {
-						// TODO how to check the actual diff?
-						proc.logger.Errorn("UserTransform sanity check failed")
+					if diff, equal := response.Equal(&mirroredResponse); !equal {
+						proc.logger.Errorn("UserTransform sanity check failed", logger.NewStringField("diff", diff))
 					}
 				}()
 			}
