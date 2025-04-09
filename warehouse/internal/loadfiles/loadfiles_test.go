@@ -64,6 +64,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		Notifier:  notifier,
 		StageRepo: stageRepo,
 		LoadRepo:  loadRepo,
+		Conf:      config.New(),
 
 		ControlPlaneClient: controlPlane,
 	}
@@ -191,6 +192,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Notifier:  notifer,
 			StageRepo: stageRepo,
 			LoadRepo:  loadRepo,
+			Conf:      config.New(),
 
 			ControlPlaneClient: controlPlane,
 		}
@@ -233,6 +235,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Notifier:  notifer,
 			StageRepo: stageRepo,
 			LoadRepo:  loadRepo,
+			Conf:      config.New(),
 
 			ControlPlaneClient: controlPlane,
 		}
@@ -249,7 +252,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Upload:       upload,
 			StagingFiles: stagingFiles,
 		})
-		require.EqualError(t, err, "no load files generated. Sample error: staging file location is empty")
+		require.EqualError(t, err, "no load files generated")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
 	})
@@ -271,6 +274,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		Notifier:  notifer,
 		StageRepo: stageRepo,
 		LoadRepo:  loadRepo,
+		Conf:      config.New(),
 
 		ControlPlaneClient: controlPlane,
 	}
@@ -478,4 +482,201 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			require.Equal(t, lf.GetLoadFilePrefix(timeWindow, tc.warehouse), tc.expected)
 		})
 	}
+}
+
+func TestV2CreateLoadFiles(t *testing.T) {
+	t.Parallel()
+	notifier := &mockNotifier{
+		t:      t,
+		tables: []string{"track", "identify"},
+	}
+	stageRepo := &mockStageFilesRepo{}
+	loadRepo := &mockLoadFilesRepo{}
+	controlPlane := &mockControlPlaneClient{}
+
+	lf := loadfiles.LoadFileGenerator{
+		Logger:    logger.NOP,
+		Notifier:  notifier,
+		StageRepo: stageRepo,
+		LoadRepo:  loadRepo,
+		Conf:      config.New(),
+
+		ControlPlaneClient: controlPlane,
+	}
+
+	// Enable feature flag
+	lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+	ctx := context.Background()
+
+	stagingFiles := getStagingFiles()
+	for _, file := range stagingFiles {
+		file.BytesPerTable = map[string]int64{
+			"track":    100,
+			"identify": 200,
+		}
+	}
+
+	job := model.UploadJob{
+		Warehouse: model.Warehouse{
+			WorkspaceID: "",
+			Source:      backendconfig.SourceT{},
+			Destination: backendconfig.DestinationT{
+				ID:         "destination_id",
+				RevisionID: "revision_id",
+			},
+			Namespace:  "",
+			Type:       warehouseutils.SNOWFLAKE,
+			Identifier: "",
+		},
+		Upload: model.Upload{
+			DestinationID:    "destination_id",
+			DestinationType:  "RS",
+			SourceID:         "source_id",
+			UseRudderStorage: true,
+		},
+		StagingFiles: stagingFiles,
+	}
+
+	t.Run("all files with BytesPerTable", func(t *testing.T) {
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), startID)
+		require.Equal(t, int64(20), endID)
+
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
+		require.Len(t, stageRepo.store, len(stagingFiles))
+	})
+
+	t.Run("mixed staging files", func(t *testing.T) {
+		// Remove BytesPerTable from some files to force mixed v1/v2 jobs
+		for i := 0; i < len(stagingFiles)/2; i++ {
+			stagingFiles[i].BytesPerTable = nil
+		}
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
+		require.NoError(t, err)
+		require.Equal(t, int64(21), startID)
+		require.Equal(t, int64(40), endID)
+
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
+		require.Len(t, stageRepo.store, len(stagingFiles))
+	})
+}
+
+func TestV2CreateLoadFiles_Failure(t *testing.T) {
+	t.Parallel()
+
+	tables := []string{"track", "identify"}
+
+	warehouse := model.Warehouse{
+		WorkspaceID: "",
+		Source:      backendconfig.SourceT{},
+		Destination: backendconfig.DestinationT{
+			ID:         "destination_id",
+			RevisionID: "revision_id",
+		},
+		Namespace:  "",
+		Type:       warehouseutils.SNOWFLAKE,
+		Identifier: "",
+	}
+
+	upload := model.Upload{
+		DestinationID:    "destination_id",
+		DestinationType:  "RS",
+		SourceID:         "source_id",
+		UseRudderStorage: true,
+	}
+
+	ctx := context.Background()
+
+	t.Run("worker partial failure", func(t *testing.T) {
+		notifier := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifier,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+			Conf:      config.New(),
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		// Enable feature flag
+		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+		stagingFiles := getStagingFiles()
+		for _, file := range stagingFiles {
+			file.BytesPerTable = map[string]int64{
+				"track":    100,
+				"identify": 200,
+			}
+		}
+
+		stagingFiles[0].Location = "abort"
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), startID)
+
+		require.Len(t,
+			loadRepo.store,
+			len(tables)*(len(stagingFiles)-1),
+		)
+
+		require.Equal(t, loadRepo.store[0].ID, startID)
+		require.Equal(t, loadRepo.store[len(loadRepo.store)-1].ID, endID)
+	})
+
+	t.Run("worker failures for all", func(t *testing.T) {
+		notifier := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifier,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+			Conf:      config.New(),
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		// Enable feature flag
+		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+		stagingFiles := getStagingFiles()
+		for _, file := range stagingFiles {
+			file.BytesPerTable = map[string]int64{
+				"track":    100,
+				"identify": 200,
+			}
+			file.Location = "abort"
+		}
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.EqualError(t, err, "no load files generated")
+		require.Zero(t, startID)
+		require.Zero(t, endID)
+	})
 }
