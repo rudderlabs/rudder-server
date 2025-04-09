@@ -2,7 +2,7 @@ package gateway
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,14 +21,14 @@ func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType strin
 	}
 }
 
-func (gw *Handle) newSourceStatTagsWithReason(s *backendconfig.SourceT, reqType, reason string) stats.Tags {
+func (gw *Handle) newSourceStatTagsWithReason(properties stream.MessageProperties, reqType, reason, writeKey, name string) stats.Tags {
 	tags := stats.Tags{
-		"source":       misc.GetTagName(s.WriteKey, s.Name),
-		"source_id":    s.ID,
-		"write_key":    s.WriteKey,
+		"source":       misc.GetTagName(writeKey, name),
+		"source_id":    properties.SourceID,
+		"write_key":    writeKey,
 		"req_type":     reqType,
-		"workspace_id": s.WorkspaceID,
-		"source_type":  s.SourceDefinition.Category,
+		"workspace_id": properties.WorkspaceID,
+		"source_type":  properties.SourceType,
 	}
 	if reason != "" {
 		tags["reason"] = reason

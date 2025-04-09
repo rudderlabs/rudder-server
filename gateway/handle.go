@@ -904,11 +904,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				logger.NewStringField("messageId", messageID),
 				obskit.SourceID(msg.Properties.SourceID))
 		}
-		sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
+		sourceDefinition := gw.getSourceDefinitionFromSourceID(msg.Properties.SourceID)
 		stat.SourceID = msg.Properties.SourceID
 		stat.WorkspaceID = msg.Properties.WorkspaceID
 		stat.WriteKey = writeKey
-		stat.SourceDefName = sourceConfig.SourceDefinition.Name
+		stat.SourceDefName = sourceDefinition.Name
 
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
@@ -916,10 +916,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
 				logger.NewStringField("userIDFromReq", msg.Properties.UserID),
 			)
+			sourceName := gw.getSourceNameFromSourceID(msg.Properties.SourceID)
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReason(&sourceConfig, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReason(msg.Properties, reqType, errEventSuppressed.Error(), writeKey, sourceName),
 			).Increment()
 			continue
 		}
@@ -1035,6 +1036,24 @@ func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.Sou
 		return s
 	}
 	return backendconfig.SourceT{}
+}
+
+func (gw *Handle) getSourceDefinitionFromSourceID(sourceID string) backendconfig.SourceDefinitionT {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s.SourceDefinition
+	}
+	return backendconfig.SourceDefinitionT{}
+}
+
+func (gw *Handle) getSourceNameFromSourceID(sourceID string) string {
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
+		return s.Name
+	}
+	return ""
 }
 
 func (gw *Handle) getWriteKeyFromSourceID(sourceID string) (string, bool) {
