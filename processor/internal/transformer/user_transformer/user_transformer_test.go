@@ -42,7 +42,13 @@ type fakeTransformer struct {
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqBody []types.TransformerEvent
-	require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+		var ctr types.CompactedTransformRequest
+		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&ctr))
+		reqBody = ctr.ToTransformerEvents()
+	} else {
+		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	}
 
 	t.requests = append(t.requests, reqBody)
 

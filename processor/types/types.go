@@ -80,6 +80,21 @@ type CompactedTransformRequest struct {
 	Connections  map[string]backendconfig.Connection   `json:"connections"`
 }
 
+func (ctr *CompactedTransformRequest) ToTransformerEvents() []TransformerEvent {
+	events := make([]TransformerEvent, len(ctr.Input))
+	for i, input := range ctr.Input {
+		events[i] = TransformerEvent{
+			Message:     input.Message,
+			Metadata:    input.Metadata,
+			Destination: ctr.Destinations[input.Metadata.DestinationID],
+			Connection:  ctr.Connections[input.Metadata.SourceID+":"+input.Metadata.DestinationID],
+			Libraries:   input.Libraries,
+			Credentials: input.Credentials,
+		}
+	}
+	return events
+}
+
 // ToUserTransformerEvent removes the connection from the event
 // along with pruning the destination to only include the transformation ID and VersionID
 // before sending it to the transformer thereby reducing the payload size
