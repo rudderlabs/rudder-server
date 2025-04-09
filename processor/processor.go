@@ -142,43 +142,47 @@ type Handle struct {
 		store        kitsync.Limiter
 	}
 	config struct {
-		isolationMode                   isolation.Mode
-		mainLoopTimeout                 time.Duration
-		enablePipelining                bool
-		pipelineBufferedItems           int
-		subJobSize                      int
-		pipelinesPerPartition           int
-		pingerSleep                     config.ValueLoader[time.Duration]
-		readLoopSleep                   config.ValueLoader[time.Duration]
-		maxLoopSleep                    config.ValueLoader[time.Duration]
-		storeTimeout                    config.ValueLoader[time.Duration]
-		maxEventsToProcess              config.ValueLoader[int]
-		transformBatchSize              config.ValueLoader[int]
-		userTransformBatchSize          config.ValueLoader[int]
-		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
-		sourceIdSourceMap               map[string]backendconfig.SourceT
-		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		oneTrustConsentCategoriesMap    map[string][]string
-		connectionConfigMap             map[connection]backendconfig.Connection
-		ketchConsentCategoriesMap       map[string][]string
-		genericConsentManagementMap     SourceConsentMap
-		batchDestinations               []string
-		configSubscriberLock            sync.RWMutex
-		enableDedup                     bool
-		enableEventCount                config.ValueLoader[bool]
-		transformTimesPQLength          int
-		captureEventNameStats           config.ValueLoader[bool]
-		transformerURL                  string
-		GWCustomVal                     string
-		asyncInit                       *misc.AsyncInit
-		eventSchemaV2Enabled            bool
-		archivalEnabled                 config.ValueLoader[bool]
-		eventAuditEnabled               map[string]bool
-		credentialsMap                  map[string][]types.Credential
-		nonEventStreamSources           map[string]bool
-		enableWarehouseTransformations  config.ValueLoader[bool]
-		enableUpdatedEventNameReporting config.ValueLoader[bool]
-		enableConcurrentStore           config.ValueLoader[bool]
+		isolationMode                             isolation.Mode
+		mainLoopTimeout                           time.Duration
+		enablePipelining                          bool
+		pipelineBufferedItems                     int
+		subJobSize                                int
+		pipelinesPerPartition                     int
+		pingerSleep                               config.ValueLoader[time.Duration]
+		readLoopSleep                             config.ValueLoader[time.Duration]
+		maxLoopSleep                              config.ValueLoader[time.Duration]
+		storeTimeout                              config.ValueLoader[time.Duration]
+		maxEventsToProcess                        config.ValueLoader[int]
+		transformBatchSize                        config.ValueLoader[int]
+		userTransformBatchSize                    config.ValueLoader[int]
+		sourceIdDestinationMap                    map[string][]backendconfig.DestinationT
+		sourceIdSourceMap                         map[string]backendconfig.SourceT
+		workspaceLibrariesMap                     map[string]backendconfig.LibrariesT
+		oneTrustConsentCategoriesMap              map[string][]string
+		connectionConfigMap                       map[connection]backendconfig.Connection
+		ketchConsentCategoriesMap                 map[string][]string
+		genericConsentManagementMap               SourceConsentMap
+		batchDestinations                         []string
+		configSubscriberLock                      sync.RWMutex
+		enableDedup                               bool
+		enableEventCount                          config.ValueLoader[bool]
+		transformTimesPQLength                    int
+		captureEventNameStats                     config.ValueLoader[bool]
+		transformerURL                            string
+		GWCustomVal                               string
+		asyncInit                                 *misc.AsyncInit
+		eventSchemaV2Enabled                      bool
+		archivalEnabled                           config.ValueLoader[bool]
+		eventAuditEnabled                         map[string]bool
+		credentialsMap                            map[string][]types.Credential
+		nonEventStreamSources                     map[string]bool
+		enableWarehouseTransformations            config.ValueLoader[bool]
+		enableUpdatedEventNameReporting           config.ValueLoader[bool]
+		enableConcurrentStore                     config.ValueLoader[bool]
+		userTransformationMirroringEnabled        config.ValueLoader[bool]
+		userTransformationMirroringEndpoint       string
+		userTransformationMirroringSanitySampling config.ValueLoader[float64]
+		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -735,6 +739,12 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
+
+	// UserTransformation mirroring settings
+	proc.config.userTransformationMirroringEnabled = config.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.enabled")
+	proc.config.userTransformationMirroringEndpoint = config.GetString("Processor.userTransformationMirroring.endpoint", "")
+	proc.config.userTransformationMirroringSanitySampling = config.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
+	proc.config.userTransformationMirroringFireAndForget = config.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 }
 
 func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
