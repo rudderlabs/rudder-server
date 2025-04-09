@@ -64,14 +64,7 @@ func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsd
 	key := getSourceDestKey(sourceID, destID)
 	jobBatch := make([]*jobsdb.JobT, 0)
 
-	// Configure upload frequency from settings
-	jb.brt.configSubscriberMu.RLock()
-	uploadFreq := jb.brt.uploadIntervalMap[destID]
-	jb.brt.configSubscriberMu.RUnlock()
-
-	if uploadFreq == 0 {
-		uploadFreq = jb.brt.uploadFreq.Load()
-	}
+	uploadFreq := jb.brt.uploadFreq.Load()
 
 	// Create a semaphore to limit concurrent uploads
 	maxConcurrentUploads := jb.brt.conf.GetIntVar(1, 1, "BatchRouter."+jb.brt.destType+".maxConcurrentUploads", "BatchRouter.maxConcurrentUploads")
