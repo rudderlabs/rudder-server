@@ -114,7 +114,7 @@ func TestSchema(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	t.Run("Test IsSchemaEmpty", func(t *testing.T) {
+	t.Run("IsSchemaEmpty", func(t *testing.T) {
 		sch := newSchema(warehouse, &mockSchemaRepo{
 			schemaMap: make(map[string]model.WHSchema),
 		})
@@ -132,7 +132,7 @@ func TestSchema(t *testing.T) {
 		require.False(t, sch.IsSchemaEmpty(ctx))
 	})
 
-	t.Run("Test GetTableSchema", func(t *testing.T) {
+	t.Run("GetTableSchema", func(t *testing.T) {
 		sch := newSchema(warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
@@ -156,7 +156,7 @@ func TestSchema(t *testing.T) {
 		}, tableSchema)
 	})
 
-	t.Run("Test ttl", func(t *testing.T) {
+	t.Run("ttl", func(t *testing.T) {
 		sch := newSchema(warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
