@@ -427,8 +427,13 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 				Libraries:   data[i].Libraries,
 				Credentials: data[i].Credentials,
 			})
-			ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
-			ctr.Connections[data[i].Metadata.SourceID+":"+data[i].Metadata.DestinationID] = data[i].Connection
+			if _, ok := ctr.Destinations[data[i].Metadata.DestinationID]; !ok {
+				ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
+			}
+			connectionKey := data[i].Metadata.SourceID + ":" + data[i].Metadata.DestinationID
+			if _, ok := ctr.Connections[connectionKey]; !ok {
+				ctr.Connections[connectionKey] = data[i].Connection
+			}
 		}
 		return jsonrs.Marshal(&ctr)
 

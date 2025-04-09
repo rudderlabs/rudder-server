@@ -116,8 +116,13 @@ func (tm *TransformMessageT) Compacted() *CompactedTransformMessageT {
 	for i := range tm.Data {
 		res.Data[i].Message = tm.Data[i].Message
 		res.Data[i].JobMetadata = tm.Data[i].JobMetadata
-		res.Destinations[tm.Data[i].JobMetadata.DestinationID] = tm.Data[i].Destination
-		res.Connections[tm.Data[i].JobMetadata.SourceID+":"+tm.Data[i].JobMetadata.DestinationID] = tm.Data[i].Connection
+		if _, ok := res.Destinations[tm.Data[i].JobMetadata.DestinationID]; !ok {
+			res.Destinations[tm.Data[i].JobMetadata.DestinationID] = tm.Data[i].Destination
+		}
+		connectionKey := tm.Data[i].JobMetadata.SourceID + ":" + tm.Data[i].JobMetadata.DestinationID
+		if _, ok := res.Connections[connectionKey]; !ok {
+			res.Connections[connectionKey] = tm.Data[i].Connection
+		}
 	}
 	return &res
 }
