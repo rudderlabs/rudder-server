@@ -1,6 +1,8 @@
 package types
 
 import (
+	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -189,6 +191,79 @@ type Response struct {
 	FailedEvents []TransformerResponse
 }
 
+// Equal compares two Response structs and returns true if they are equal
+// regardless of the order of elements in the Events and FailedEvents slices
+func (r *Response) Equal(v *Response) bool {
+	// Check if both are nil or both are not nil
+	if (r == nil) != (v == nil) {
+		return false
+	}
+
+	// If both are nil, they're equal
+	if r == nil {
+		return true
+	}
+
+	// Check if Events slices have the same length
+	if len(r.Events) != len(v.Events) {
+		return false
+	}
+
+	// Check if FailedEvents slices have the same length
+	if len(r.FailedEvents) != len(v.FailedEvents) {
+		return false
+	}
+
+	// Check if each event in r.Events is present in v.Events
+	if !containsSameEvents(r.Events, v.Events) {
+		return false
+	}
+
+	// Check if each failed event in r.FailedEvents is present in v.FailedEvents
+	if !containsSameEvents(r.FailedEvents, v.FailedEvents) {
+		return false
+	}
+
+	return true
+}
+
+// containsSameEvents checks if two slices contain the same TransformerResponse elements,
+// regardless of order
+func containsSameEvents(a, b []TransformerResponse) bool {
+	// Create a map to mark events in b that have been matched
+	matched := make([]bool, len(b))
+
+	// For each event in a, find a matching event in b
+	for _, eventA := range a {
+		found := false
+		for j, eventB := range b {
+			if !matched[j] && eventsEqual(eventA, eventB) {
+				matched[j] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	// Ensure all events in b have been matched
+	for _, m := range matched {
+		if !m {
+			return false
+		}
+	}
+
+	return true
+}
+
+// eventsEqual checks if two TransformerResponse objects are equal
+func eventsEqual(a, b TransformerResponse) bool {
+	// TODO we might have to skip fields containing dates and times, double check this.
+	return reflect.DeepEqual(a, b)
+}
+
 type EventParams struct {
 	SourceJobRunId  string `json:"source_job_run_id"`
 	SourceId        string `json:"source_id"`
@@ -207,6 +282,7 @@ type TransformerMetricLabels struct {
 	SourceID         string // source identifier
 	DestinationID    string // destination identifier
 	TransformationID string // transformation identifier
+	Mirroring        bool
 }
 
 // ToStatsTag converts transformerMetricLabels to stats.Tags and includes legacy tags for backwards compatibility
@@ -221,6 +297,7 @@ func (t TransformerMetricLabels) ToStatsTag() stats.Tags {
 		"destinationId":    t.DestinationID,
 		"sourceId":         t.SourceID,
 		"transformationId": t.TransformationID,
+		"mirroring":        strconv.FormatBool(t.Mirroring),
 
 		// Legacy tags: to be removed
 		"dest_type": t.DestinationType,
@@ -242,5 +319,6 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 		obskit.DestinationID(t.DestinationID),
 		obskit.SourceID(t.SourceID),
 		logger.NewStringField("transformationId", t.TransformationID),
+		logger.NewBoolField("mirroring", t.Mirroring),
 	}
 }
