@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"sync"
@@ -199,10 +200,13 @@ func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSc
 }
 
 func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) (model.Schema, error) {
+	start := sh.now()
 	warehouseSchema, err := sh.fetchSchemaRepo.FetchSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
+	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
+	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
 	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
 	return warehouseSchema, sh.saveSchema(ctx, warehouseSchema)
 }
@@ -231,6 +235,7 @@ func (sh *schema) getSchema(ctx context.Context) (model.Schema, error) {
 	sh.cachedSchemaMu.RLock()
 	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
 		defer sh.cachedSchemaMu.RUnlock()
+		sh.log.Debugn("Returning cached schema", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type))
 		return sh.cachedSchema, nil
 	}
 	sh.cachedSchemaMu.RUnlock()
