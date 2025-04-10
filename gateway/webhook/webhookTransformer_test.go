@@ -42,7 +42,25 @@ func TestV1Adapter(t *testing.T) {
 
 		v1Adapter := newSourceTransformAdapter(transformer.V1)
 
-		retBody, err := v1Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{Source: mockSrc}, testBody)
+		retBody, err := v1Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{
+			Source: mockSrc,
+			SourceDetails: struct {
+				ID               string
+				OriginalID       string
+				Name             string
+				SourceDefinition struct {
+					ID       string
+					Name     string
+					Category string
+					Type     string
+				}
+				Enabled     bool
+				WorkspaceID string
+				WriteKey    string
+				Config      map[string]interface{}
+				Transient   bool
+			}{ID: testSrcId},
+		}, testBody)
 		require.Nil(t, err)
 
 		v1TransformerEvent := V1TransformerEvent{
@@ -80,10 +98,29 @@ func TestV2Adapter(t *testing.T) {
 			ID:           testSrcId,
 			Destinations: []backendconfig.DestinationT{{ID: "testDestId"}},
 		}
+		arCtx := &gwtypes.AuthRequestContext{
+			Source: mockSrc,
+			SourceDetails: struct {
+				ID               string
+				OriginalID       string
+				Name             string
+				SourceDefinition struct {
+					ID       string
+					Name     string
+					Category string
+					Type     string
+				}
+				Enabled     bool
+				WorkspaceID string
+				WriteKey    string
+				Config      map[string]interface{}
+				Transient   bool
+			}{ID: testSrcId},
+		}
 
 		v2Adapter := newSourceTransformAdapter(transformer.V2)
 
-		retBody, err := v2Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{Source: mockSrc}, testBody)
+		retBody, err := v2Adapter.getTransformerEvent(arCtx, testBody)
 		require.Nil(t, err)
 
 		v2TransformerEvent := V2TransformerEvent{

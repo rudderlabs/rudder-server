@@ -29,7 +29,9 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 		var arctx *gwtypes.AuthRequestContext
 		var errorMessage string
 		defer func() {
-			wa.onFailure(w, r, errorMessage)
+			if errorMessage != "" {
+				wa.onFailure(w, r, errorMessage)
+			}
 		}()
 
 		var writeKey string

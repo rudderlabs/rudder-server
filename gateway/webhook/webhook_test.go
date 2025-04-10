@@ -166,7 +166,7 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 	arctx := &gwtypes.AuthRequestContext{
 		SourceDefName: sourceDefName,
@@ -211,7 +211,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
@@ -254,7 +254,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
@@ -415,45 +415,13 @@ func TestRecordWebhookErrors(t *testing.T) {
 	require.NoError(t, err)
 	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
 	reqs := []*webhookT{
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w3"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2", SourceID: "sourceID2", WorkspaceID: "workspaceID2", SourceCategory: "webhook2"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w3", SourceID: "sourceID3", WorkspaceID: "workspaceID3", SourceCategory: "webhook3"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2", SourceID: "sourceID2", WorkspaceID: "workspaceID2", SourceCategory: "webhook2"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
 	}
-	mockGW.EXPECT().NewSourceStatReporter(gomock.Any(), gomock.Any()).DoAndReturn(func(arctx *gwtypes.AuthRequestContext, reqType string) *gwStats.SourceStat {
-		switch arctx.WriteKey {
-		case "w1":
-			return &gwStats.SourceStat{
-				Source:      "source1",
-				SourceID:    "sourceID1",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID1",
-				SourceType:  "webhook1",
-			}
-		case "w2":
-			return &gwStats.SourceStat{
-				Source:      "source2",
-				SourceID:    "sourceID2",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID2",
-				SourceType:  "webhook2",
-			}
-		case "w3":
-			return &gwStats.SourceStat{
-				Source:      "source3",
-				SourceID:    "sourceID3",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID3",
-				SourceType:  "webhook3",
-			}
-		}
-		return nil
-	}).Times(3)
 
 	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
 
