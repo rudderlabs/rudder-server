@@ -301,9 +301,11 @@ func TestIntegrationWebhook(t *testing.T) {
 				}
 
 				batch.Batch[0], err = sjson.SetBytes(batch.Batch[0], "receivedAt", "2006-01-02T15:04:05.000Z07:00")
+				require.NoError(t, err)
 
 				batch.Batch[0], err = sjson.DeleteBytes(batch.Batch[0], "context.url")
 				require.NoError(t, err)
+
 				p, err = sjson.DeleteBytes(p, "context.url")
 				require.NoError(t, err)
 
