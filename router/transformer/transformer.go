@@ -782,16 +782,12 @@ func getEndpointFromURL(urlStr string) string {
 }
 
 func (trans *handle) compactRequestPayloads() bool {
-	if trans.compactionSupported && trans.compactionEnabled.Load() {
-		return true
-	}
-	return trans.forceCompactionEnabled
+	return (trans.compactionSupported && trans.compactionEnabled.Load()) || trans.forceCompactionEnabled
 }
 
 func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {
 	if compactRequestPayloads {
-		compacted := data.Compacted()
-		return jsonrs.Marshal(compacted)
+		return jsonrs.Marshal(data.Compacted())
 	}
 	return jsonrs.Marshal(&data)
 }

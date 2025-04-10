@@ -407,10 +407,7 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (d *Client) compactRequestPayloads() bool {
-	if d.config.compactionSupported && d.config.compactionEnabled.Load() {
-		return true
-	}
-	return d.config.forceCompactionEnabled
+	return (d.config.compactionSupported && d.config.compactionEnabled.Load()) || d.config.forceCompactionEnabled
 }
 
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
