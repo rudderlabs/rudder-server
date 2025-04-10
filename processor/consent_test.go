@@ -106,12 +106,14 @@ func TestFilterDestinations(t *testing.T) {
 	testCases := []struct {
 		description     string
 		event           types.SingularEventT
+		sourceId        string
 		destinations    []backendconfig.DestinationT
 		expectedDestIDs []string
 	}{
 		{
 			description: "no denied consent categories",
 			event:       types.SingularEventT{},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -135,6 +137,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -245,6 +248,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -331,6 +335,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -452,6 +457,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -540,6 +546,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -638,6 +645,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -709,6 +717,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -807,6 +816,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -874,6 +884,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -978,6 +989,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -1082,6 +1094,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
+			sourceId:     "sourceID-1",
 			destinations: []backendconfig.DestinationT{
 				{
 					ID: "destID-1",
@@ -1111,16 +1124,17 @@ func TestFilterDestinations(t *testing.T) {
 			proc := &Handle{}
 			proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
-			proc.config.destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
+			proc.config.destGenericConsentManagementMap = make(map[string]map[string]map[string]GenericConsentManagementProviderData)
+			proc.config.destGenericConsentManagementMap[tc.sourceId] = make(map[string]map[string]GenericConsentManagementProviderData)
 			proc.logger = logger.NewLogger().Child("processor")
 
 			for _, dest := range tc.destinations {
 				proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
 				proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
-				proc.config.destGenericConsentManagementMap[dest.ID], _ = getGenericConsentManagementData(&dest)
+				proc.config.destGenericConsentManagementMap[tc.sourceId][dest.ID], _ = getGenericConsentManagementData(&dest)
 			}
 
-			filteredDestinations := proc.getConsentFilteredDestinations(tc.event, tc.destinations)
+			filteredDestinations := proc.getConsentFilteredDestinations(tc.event, tc.sourceId, tc.destinations)
 
 			require.EqualValues(t, tc.expectedDestIDs, lo.Map(filteredDestinations, func(dest backendconfig.DestinationT, _ int) string {
 				return dest.ID

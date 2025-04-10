@@ -148,7 +148,7 @@ type Handle struct {
 		oneTrustConsentCategoriesMap    map[string][]string
 		connectionConfigMap             map[connection]backendconfig.Connection
 		ketchConsentCategoriesMap       map[string][]string
-		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
+		destGenericConsentManagementMap map[string]map[string]map[string]GenericConsentManagementProviderData
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
@@ -754,7 +754,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			oneTrustConsentCategoriesMap    = make(map[string][]string)
 			ketchConsentCategoriesMap       = make(map[string][]string)
-			destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
+			destGenericConsentManagementMap = make(map[string]map[string]map[string]GenericConsentManagementProviderData)
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
@@ -772,13 +772,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
+					destGenericConsentManagementMap[source.ID] = make(map[string]map[string]GenericConsentManagementProviderData)
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
 						var err error
-						destGenericConsentManagementMap[destination.ID], err = getGenericConsentManagementData(destination)
+						destGenericConsentManagementMap[source.ID][destination.ID], err = getGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
 						}
@@ -2129,6 +2130,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				destType := &enabledDestTypes[i]
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
+					sourceId,
 					lo.Filter(proc.getEnabledDestinations(sourceId, *destType), func(item backendconfig.DestinationT, index int) bool {
 						destId := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
 						if destId != "" {
@@ -3531,6 +3533,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 
 	if enabledDestinationsList := lo.Filter(proc.getConsentFilteredDestinations(
 		event,
+		sourceId,
 		lo.Flatten(
 			lo.Map(
 				enabledDestTypes,
