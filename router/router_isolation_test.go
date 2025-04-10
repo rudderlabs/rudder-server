@@ -232,7 +232,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 	config.Set("RUDDER_TMPDIR", os.TempDir())
 
 	t.Logf("Seeding rt jobsdb with jobs")
-	m.seedRtDB(t, spec, webhook.Server.URL)
+	m.seedRtDB(t, spec)
 
 	t.Logf("Starting rudder server")
 	svcDone := make(chan struct{})
@@ -296,7 +296,7 @@ type rtIsolationJobSpec struct {
 	userID      string
 }
 
-func (jobSpec *rtIsolationJobSpec) payload(url string) []byte {
+func (jobSpec *rtIsolationJobSpec) payload() []byte {
 	json := fmt.Sprintf(`{
 		"userId": %[1]q,
 		"anonymousId": %[2]q,
@@ -319,25 +319,7 @@ func (jobSpec *rtIsolationJobSpec) payload(url string) []byte {
 		"timestamp": "2020-02-02T00:23:09.544Z",
 		"receivedAt": %[5]q
 	}`, jobSpec.userID, jobSpec.userID, jobSpec.id, jobSpec.workspaceID, time.Now().Format(misc.RFC3339Milli))
-
-	return []byte(fmt.Sprintf(`{
-		"body": {
-			"XML": {},
-			"FORM": {},
-			"JSON": %[1]s,
-			"JSON_ARRAY": {}
-		},
-		"type": "REST",
-		"files": {},
-		"method": "POST",
-		"params": {},
-		"userId": "",
-		"headers": {
-			"content-type": "application/json"
-		},
-		"version": "1",
-		"endpoint": %[2]q
-	}`, json, url))
+	return []byte(json)
 }
 
 // Using a struct to keep router_test package clean and
@@ -364,21 +346,21 @@ func (rtIsolationMethods) newMockConfigBackend(t testing.TB, path string) *httpt
 }
 
 // seedRtDB seeds the router database with jobs based on the provided spec
-func (m rtIsolationMethods) seedRtDB(t testing.TB, spec *RtIsolationScenarioSpec, url string) {
+func (m rtIsolationMethods) seedRtDB(t testing.TB, spec *RtIsolationScenarioSpec) {
 	rtJobsDB := jobsdb.NewForWrite("rt", jobsdb.WithStats(stats.NOP))
 	require.NoError(t, rtJobsDB.Start(), "it should be able to start the jobsdb")
 	defer rtJobsDB.Stop()
-	for _, batch := range m.generateJobs(spec.jobs, url, 100) {
+	for _, batch := range m.generateJobs(spec.jobs, 100) {
 		require.NoError(t, rtJobsDB.Store(context.Background(), batch), "it should be able to store the batch of jobs in the jobsdb")
 	}
 }
 
 // generateJobs creates batches of jobs from the same workspace, shuffled so that
 // batches for the same workspace are not consecutive.
-func (rtIsolationMethods) generateJobs(jobs []*rtIsolationJobSpec, url string, batchSize int) [][]*jobsdb.JobT {
+func (rtIsolationMethods) generateJobs(jobs []*rtIsolationJobSpec, batchSize int) [][]*jobsdb.JobT {
 	wsBatches := map[string][]*jobsdb.JobT{}
 	for _, job := range jobs {
-		payload := job.payload(url)
+		payload := job.payload()
 		wsBatches[job.workspaceID] = append(wsBatches[job.workspaceID], &jobsdb.JobT{
 			UUID:        uuid.New(),
 			JobID:       job.id,
@@ -388,7 +370,8 @@ func (rtIsolationMethods) generateJobs(jobs []*rtIsolationJobSpec, url string, b
 				"source_id": %[1]q,
 				"destination_id": %[1]q,
 				"receivedAt": %[2]q,
-				"workspaceId": %[3]q
+				"workspaceId": %[3]q,
+				"transform_at": "router"
 			}`, job.workspaceID, time.Now().Format(misc.RFC3339Milli), job.workspaceID)),
 			CustomVal:    "WEBHOOK",
 			EventPayload: payload,
