@@ -42,6 +42,7 @@ func (m *SimpleMockTrackingPlanClient) Validate(_ context.Context, _ []types.Tra
 // SimpleClients is a minimal implementation of TransformerClients
 type SimpleClients struct {
 	userClient         UserClient
+	userMirrorClient   UserClient
 	destinationClient  DestinationClient
 	trackingPlanClient TrackingPlanClient
 }
@@ -50,6 +51,12 @@ type SimpleClients struct {
 func NewSimpleClients() *SimpleClients {
 	return &SimpleClients{
 		userClient: &SimpleMockUserClient{
+			TransformOutput: types.Response{
+				Events:       []types.TransformerResponse{},
+				FailedEvents: []types.TransformerResponse{},
+			},
+		},
+		userMirrorClient: &SimpleMockUserClient{
 			TransformOutput: types.Response{
 				Events:       []types.TransformerResponse{},
 				FailedEvents: []types.TransformerResponse{},
@@ -74,6 +81,8 @@ func NewSimpleClients() *SimpleClients {
 func (s *SimpleClients) User() UserClient {
 	return s.userClient
 }
+
+func (s *SimpleClients) UserMirror() UserClient { return s.userMirrorClient }
 
 // Destination returns the destination client
 func (s *SimpleClients) Destination() DestinationClient {

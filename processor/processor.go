@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -129,42 +130,44 @@ type Handle struct {
 		store        kitsync.Limiter
 	}
 	config struct {
-		isolationMode                   isolation.Mode
-		mainLoopTimeout                 time.Duration
-		enablePipelining                bool
-		pipelineBufferedItems           int
-		subJobSize                      int
-		pipelinesPerPartition           int
-		pingerSleep                     config.ValueLoader[time.Duration]
-		readLoopSleep                   config.ValueLoader[time.Duration]
-		maxLoopSleep                    config.ValueLoader[time.Duration]
-		storeTimeout                    config.ValueLoader[time.Duration]
-		maxEventsToProcess              config.ValueLoader[int]
-		transformBatchSize              config.ValueLoader[int]
-		userTransformBatchSize          config.ValueLoader[int]
-		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
-		sourceIdSourceMap               map[string]backendconfig.SourceT
-		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		oneTrustConsentCategoriesMap    map[string][]string
-		connectionConfigMap             map[connection]backendconfig.Connection
-		ketchConsentCategoriesMap       map[string][]string
-		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
-		batchDestinations               []string
-		configSubscriberLock            sync.RWMutex
-		enableDedup                     bool
-		enableEventCount                config.ValueLoader[bool]
-		transformTimesPQLength          int
-		captureEventNameStats           config.ValueLoader[bool]
-		transformerURL                  string
-		GWCustomVal                     string
-		asyncInit                       *misc.AsyncInit
-		eventSchemaV2Enabled            bool
-		archivalEnabled                 config.ValueLoader[bool]
-		eventAuditEnabled               map[string]bool
-		credentialsMap                  map[string][]types.Credential
-		nonEventStreamSources           map[string]bool
-		enableWarehouseTransformations  config.ValueLoader[bool]
-		enableUpdatedEventNameReporting config.ValueLoader[bool]
+		isolationMode                             isolation.Mode
+		mainLoopTimeout                           time.Duration
+		enablePipelining                          bool
+		pipelineBufferedItems                     int
+		subJobSize                                int
+		pipelinesPerPartition                     int
+		pingerSleep                               config.ValueLoader[time.Duration]
+		readLoopSleep                             config.ValueLoader[time.Duration]
+		maxLoopSleep                              config.ValueLoader[time.Duration]
+		storeTimeout                              config.ValueLoader[time.Duration]
+		maxEventsToProcess                        config.ValueLoader[int]
+		transformBatchSize                        config.ValueLoader[int]
+		userTransformBatchSize                    config.ValueLoader[int]
+		sourceIdDestinationMap                    map[string][]backendconfig.DestinationT
+		sourceIdSourceMap                         map[string]backendconfig.SourceT
+		workspaceLibrariesMap                     map[string]backendconfig.LibrariesT
+		oneTrustConsentCategoriesMap              map[string][]string
+		connectionConfigMap                       map[connection]backendconfig.Connection
+		ketchConsentCategoriesMap                 map[string][]string
+		destGenericConsentManagementMap           map[string]map[string]GenericConsentManagementProviderData
+		batchDestinations                         []string
+		configSubscriberLock                      sync.RWMutex
+		enableDedup                               bool
+		enableEventCount                          config.ValueLoader[bool]
+		transformTimesPQLength                    int
+		captureEventNameStats                     config.ValueLoader[bool]
+		transformerURL                            string
+		GWCustomVal                               string
+		asyncInit                                 *misc.AsyncInit
+		eventSchemaV2Enabled                      bool
+		archivalEnabled                           config.ValueLoader[bool]
+		eventAuditEnabled                         map[string]bool
+		credentialsMap                            map[string][]types.Credential
+		nonEventStreamSources                     map[string]bool
+		enableWarehouseTransformations            config.ValueLoader[bool]
+		enableUpdatedEventNameReporting           config.ValueLoader[bool]
+		userTransformationMirroringSanitySampling config.ValueLoader[float64]
+		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -279,12 +282,15 @@ func buildStatTags(sourceID, workspaceID string, destination *backendconfig.Dest
 	}
 }
 
-func (proc *Handle) newUserTransformationStat(sourceID, workspaceID string, destination *backendconfig.DestinationT) *DestStatT {
+func (proc *Handle) newUserTransformationStat(
+	sourceID, workspaceID string, destination *backendconfig.DestinationT, mirroring bool,
+) *DestStatT {
 	tags := buildStatTags(sourceID, workspaceID, destination, UserTransformation)
 
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 	tags["error"] = "false"
+	tags["mirroring"] = strconv.FormatBool(mirroring)
 
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
@@ -738,6 +744,9 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
 	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
+	// UserTransformation mirroring settings
+	proc.config.userTransformationMirroringSanitySampling = config.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
+	proc.config.userTransformationMirroringFireAndForget = config.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 }
 
 type connection struct {
@@ -2797,15 +2806,52 @@ func (proc *Handle) userTransformAndFilter(
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
-		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination)
-		userTransformationStat.numEvents.Count(len(eventList))
-		proc.logger.Debug("Custom Transform input size", len(eventList))
+		noOfEvents := len(eventList)
+		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
+		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
+		var userTransformationMirroringStat *DestStatT
+		userTransformationStat.numEvents.Count(noOfEvents)
+		if utMirroringEnabled {
+			userTransformationMirroringStat = proc.newUserTransformationStat(sourceID, workspaceID, destination, true)
+			userTransformationMirroringStat.numEvents.Count(noOfEvents)
+		}
+		proc.logger.Debug("Custom Transform input size", noOfEvents)
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
+
+			if utMirroringEnabled {
+				go func() {
+					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
+					d := time.Since(startedAt)
+					userTransformationMirroringStat.transformTime.SendTiming(d)
+					userTransformationMirroringStat.numOutputSuccessEvents.Count(len(response.Events))
+					filtered := lo.GroupBy(response.FailedEvents,
+						func(event types.TransformerResponse) bool {
+							return event.StatusCode == reportingtypes.FilterEventCode
+						},
+					)
+					userTransformationMirroringStat.numOutputFailedEvents.Count(len(filtered[false]))
+					userTransformationMirroringStat.numOutputFilteredEvents.Count(len(filtered[true]))
+					if utMirroringSanityChecks != nil {
+						utMirroringSanityChecks <- response
+						close(utMirroringSanityChecks)
+					}
+				}()
+			}
+
 			response = proc.transformerClients.User().Transform(ctx, eventList)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
+
+			if utMirroringEnabled && utMirroringSanityChecks != nil {
+				go func() {
+					mirroredResponse := <-utMirroringSanityChecks
+					if diff, equal := response.Equal(&mirroredResponse); !equal {
+						proc.logger.Errorn("UserTransform sanity check failed", logger.NewStringField("diff", diff))
+					}
+				}()
+			}
 
 			var successMetrics []*reportingtypes.PUReportedMetric
 			var successCountMap map[string]int64
@@ -2820,7 +2866,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
 			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 			userTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+			proc.logger.Debugn("Custom Transform output size", logger.NewField("size", len(eventsToTransform)))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
 			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
@@ -2853,7 +2899,7 @@ func (proc *Handle) userTransformAndFilter(
 			inPU = reportingtypes.USER_TRANSFORMER // for the next step in the pipeline
 		})
 	} else {
-		proc.logger.Debug("No custom transformation")
+		proc.logger.Debugn("No custom transformation")
 		eventsToTransform = eventList
 	}
 
@@ -3198,6 +3244,36 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 		return rsourcesStats.Publish(ctx, tx.Tx)
 	}
 	return nil
+}
+
+func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response) {
+	mirroringSanityChecksSampling := proc.config.userTransformationMirroringSanitySampling.Load()
+	mirroringFireAndForget := proc.config.userTransformationMirroringFireAndForget.Load()
+
+	if !mirroringFireAndForget && mirroringSanityChecksSampling <= 0 {
+		return false, nil // Mirroring is disabled.
+	}
+	if mirroringFireAndForget && mirroringSanityChecksSampling > 0 {
+		proc.logger.Errorn(
+			"UT mirroring sanity checks and fire&forget are enabled (they are mutually exclusive). Disabling UT mirroring.",
+		)
+		return false, nil
+	}
+
+	if mirroringFireAndForget { // Mirroring is enabled in fire&forget mode and no sanity checks
+		return true, nil
+	}
+
+	// Determine if mirroring should be enabled based on sampling percentage.
+	// Sampling percentage precision can be with two decimals like 12.34%
+	randomValue := float64(rand.Intn(10000)) / 100
+	if randomValue > mirroringSanityChecksSampling {
+		// Sanity checks were enabled but the random value was less than the sampling percentage.
+		// Disabling mirroring altogether.
+		return false, nil
+	}
+
+	return true, make(chan types.Response, 1)
 }
 
 func ConvertToFilteredTransformerResponse(
