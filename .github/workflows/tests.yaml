@@ -123,6 +123,8 @@ jobs:
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: tests
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
+        env:
+          RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -190,6 +192,7 @@ jobs:
           SNOWPIPE_STREAMING_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWPIPE_STREAMING_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS }}
+          RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
         run: |
