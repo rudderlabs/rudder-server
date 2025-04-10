@@ -12,6 +12,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -85,7 +86,7 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 var ttl = 10 * time.Minute
 
 func newSchema(warehouse model.Warehouse, schemaRepo schemaRepo) *schema {
-	return &schema{
+	sch := &schema{
 		warehouse:                        warehouse,
 		log:                              logger.NOP,
 		ttlInMinutes:                     ttl,
@@ -94,6 +95,8 @@ func newSchema(warehouse model.Warehouse, schemaRepo schemaRepo) *schema {
 		now:                              timeutil.Now,
 		stagingFilesSchemaPaginationSize: 2,
 	}
+	sch.stats.schemaSize = stats.NOP.NewStat("warehouse_schema_size", stats.HistogramType)
+	return sch
 }
 
 func TestSchema(t *testing.T) {
@@ -111,30 +114,25 @@ func TestSchema(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	t.Run("SyncRemoteSchema", func(t *testing.T) {
-		schema, err := sch.getSchema(ctx)
-		require.NoError(t, err)
-		require.Equal(t, model.Schema{}, schema)
-		require.True(t, sch.IsWarehouseSchemaEmpty(ctx))
-
-		_, err = sch.SyncRemoteSchema(ctx, nil, 0)
-		require.NoError(t, err)
-		schema, err = sch.getSchema(ctx)
-		require.NoError(t, err)
-		require.Equal(t, model.Schema{
+	t.Run("IsSchemaEmpty", func(t *testing.T) {
+		sch := newSchema(warehouse, &mockSchemaRepo{
+			schemaMap: make(map[string]model.WHSchema),
+		})
+		require.True(t, sch.IsSchemaEmpty(ctx))
+		err := sch.UpdateSchema(ctx, model.Schema{
 			"table1": {
 				"column1": "string",
 				"column2": "int",
 			},
 			"table2": {
 				"column11": "string",
-				"column12": "int",
-				"column13": "int",
 			},
-		}, schema)
+		})
+		require.NoError(t, err)
+		require.False(t, sch.IsSchemaEmpty(ctx))
 	})
 
-	t.Run("Test ttl", func(t *testing.T) {
+	t.Run("GetTableSchema", func(t *testing.T) {
 		sch := newSchema(warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
@@ -151,25 +149,44 @@ func TestSchema(t *testing.T) {
 				},
 			},
 		})
-		count, err := sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		tableSchema := sch.GetTableSchema(ctx, "table1")
+		require.Equal(t, model.TableSchema{
+			"column1": "string",
+			"column2": "int",
+		}, tableSchema)
+	})
+
+	t.Run("ttl", func(t *testing.T) {
+		sch := newSchema(warehouse, &mockSchemaRepo{
+			schemaMap: map[string]model.WHSchema{
+				"source_id_dest_id_namespace": {
+					Schema: model.Schema{
+						"table1": {
+							"column1": "string",
+							"column2": "int",
+						},
+						"table2": {
+							"column11": "string",
+						},
+					},
+					ExpiresAt: timeutil.Now().Add(10 * time.Minute),
+				},
+			},
+		})
+		count, err := sch.GetColumnsCount(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 1, count)
-		_, err = sch.SyncRemoteSchema(ctx, nil, 0)
-		require.NoError(t, err)
-		count, err = sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
-		require.NoError(t, err)
-		require.Equal(t, 3, count)
 
 		sch.now = func() time.Time {
 			return timeutil.Now().Add(ttl * 2)
 		}
-		count, err = sch.GetColumnsCountInWarehouseSchema(ctx, "table2")
+		count, err = sch.GetColumnsCount(ctx, "table2")
 		require.NoError(t, err)
-		require.Equal(t, 4, count)
+		require.Equal(t, 3, count)
 	})
 
 	t.Run("TableSchemaDiff", func(t *testing.T) {
-		err := sch.UpdateWarehouseTableSchema(ctx, "table2", model.TableSchema{
+		err := sch.UpdateTableSchema(ctx, "table2", model.TableSchema{
 			"column11": "string",
 			"column12": "int",
 			"column13": "int",
@@ -192,7 +209,7 @@ func TestSchema(t *testing.T) {
 		}, diff)
 	})
 
-	t.Run("ConsolidateStagingFilesUsingLocalSchema", func(t *testing.T) {
+	t.Run("ConsolidateStagingFilesSchema", func(t *testing.T) {
 		sourceID := "test_source_id"
 		destinationID := "test_destination_id"
 		namespace := "test_namespace"
@@ -1238,7 +1255,7 @@ func TestSchema(t *testing.T) {
 				sch.now = func() time.Time {
 					return time.Time{}
 				}
-				uploadSchema, err := sch.ConsolidateStagingFilesUsingLocalSchema(ctx, stagingFiles)
+				uploadSchema, err := sch.ConsolidateStagingFilesSchema(ctx, stagingFiles)
 				if tc.wantError == nil {
 					require.NoError(t, err)
 				} else {

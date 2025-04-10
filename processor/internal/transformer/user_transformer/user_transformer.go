@@ -83,25 +83,11 @@ type Client struct {
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
-	batchSize := u.config.batchSize.Load()
-	var dehydratedClientEvents []types.TransformerEvent
-	for _, clientEvent := range clientEvents {
-		dehydratedClientEvent := clientEvent.GetVersionsOnly()
-		dehydratedClientEvents = append(dehydratedClientEvents, *dehydratedClientEvent)
-	}
-
-	if len(dehydratedClientEvents) == 0 {
+	if len(clientEvents) == 0 {
 		return types.Response{}
 	}
-	// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
-	// flip back afterward
-	for i := range dehydratedClientEvents {
-		if dehydratedClientEvents[i].Metadata.OriginalSourceID != "" {
-			dehydratedClientEvents[i].Metadata.OriginalSourceID, dehydratedClientEvents[i].Metadata.SourceID = dehydratedClientEvents[i].Metadata.SourceID, dehydratedClientEvents[i].Metadata.OriginalSourceID
-		}
-	}
-
-	transformationID := ""
+	batchSize := u.config.batchSize.Load()
+	var transformationID string
 	if len(clientEvents[0].Destination.Transformations) > 0 {
 		transformationID = clientEvents[0].Destination.Transformations[0].ID
 	}
@@ -130,7 +116,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		trackWg.Done()
 	}()
 
-	batches := lo.Chunk(dehydratedClientEvents, batchSize)
+	batches := lo.Chunk(clientEvents, batchSize)
 
 	u.stat.NewTaggedStat(
 		"processor.transformer_request_batch_count",
@@ -184,21 +170,30 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 }
 
-func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
-	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, clientEvents []types.TransformerEvent) []types.TransformerResponse {
+	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
+	if len(clientEvents) == 0 {
+		return nil
+	}
 	// Call remote transformation
 	var (
 		rawJSON []byte
 		err     error
 	)
 
+	data := lo.Map(clientEvents, func(clientEvent types.TransformerEvent, index int) types.UserTransformerEvent {
+		res := *clientEvent.ToUserTransformerEvent()
+		// flip sourceID and originalSourceID if it's a replay source for the purpose of any user transformation
+		// flip back afterward
+		if res.Metadata.OriginalSourceID != "" {
+			res.Metadata.OriginalSourceID, res.Metadata.SourceID = res.Metadata.SourceID, res.Metadata.OriginalSourceID
+		}
+		return res
+	})
+
 	rawJSON, err = jsonrs.Marshal(data)
 	if err != nil {
 		panic(err)
-	}
-
-	if len(data) == 0 {
-		return nil
 	}
 
 	var (
@@ -228,15 +223,15 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		endlessBackoff,
 		func(err error, t time.Duration) {
 			var transformationID, transformationVersionID string
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-				transformationVersionID = data[0].Destination.Transformations[0].VersionID
+			if len(clientEvents[0].Destination.Transformations) > 0 {
+				transformationID = clientEvents[0].Destination.Transformations[0].ID
+				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
 			}
 			u.log.Errorn("JS HTTP connection error",
 				obskit.Error(err),
-				obskit.SourceID(data[0].Metadata.SourceID),
-				obskit.WorkspaceID(data[0].Metadata.WorkspaceID),
-				obskit.DestinationID(data[0].Metadata.DestinationID),
+				obskit.SourceID(clientEvents[0].Metadata.SourceID),
+				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
+				obskit.DestinationID(clientEvents[0].Metadata.DestinationID),
 				logger.NewStringField("url", url),
 				logger.NewStringField("transformationID", transformationID),
 				logger.NewStringField("transformationVersionID", transformationVersionID),

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   transformer:
-    image: "rudderstack/develop-rudder-transformer:fix.snowpipe-streaming-users"
+    image: "rudderstack/rudder-transformer:latest"
     ports:
       - "9090:9090"
     healthcheck:

@@ -59,6 +59,11 @@ func (t *featuresService) Regulations() []string {
 	return []string{}
 }
 
+// SupportDestTransformCompactedPayloadV1 checks if the transformer supports compacted payload for destination transformation
+func (t *featuresService) SupportDestTransformCompactedPayloadV1() bool {
+	return gjson.GetBytes(t.features, "supportDestTransformCompactedPayloadV1").Bool()
+}
+
 func (t *featuresService) Wait() chan struct{} {
 	return t.waitChan
 }

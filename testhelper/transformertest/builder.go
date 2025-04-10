@@ -151,6 +151,15 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+			var ctr types.CompactedTransformRequest
+			if err := jsonrs.Unmarshal(data, &ctr); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = jsonrs.NewEncoder(w).Encode(h(ctr.ToTransformerEvents()))
+			return
+		}
 		var request []types.TransformerEvent
 		if err := jsonrs.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -165,6 +174,19 @@ func routerTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+			request, err := routerCompactedTransformMessageToTransformMessage(data)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = jsonrs.NewEncoder(w).Encode(struct {
+				Output []routerTypes.DestinationJobT `json:"output"`
+			}{
+				Output: h(request),
+			})
 			return
 		}
 		var request routerTypes.TransformMessageT
@@ -188,6 +210,15 @@ func routerBatchTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+			request, err := routerCompactedTransformMessageToTransformMessage(data)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_ = jsonrs.NewEncoder(w).Encode(h(request))
+			return
+		}
 		var request routerTypes.TransformMessageT
 		if err := jsonrs.Unmarshal(data, &request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -202,4 +233,22 @@ func apiVersionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Add("apiVersion", "2")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func routerCompactedTransformMessageToTransformMessage(data []byte) (routerTypes.TransformMessageT, error) {
+	var ctm routerTypes.CompactedTransformMessageT
+	if err := jsonrs.Unmarshal(data, &ctm); err != nil {
+		return routerTypes.TransformMessageT{}, err
+	}
+	var request routerTypes.TransformMessageT
+	for _, event := range ctm.Data {
+		request.Data = append(request.Data, routerTypes.RouterJobT{
+			Message:     event.Message,
+			JobMetadata: event.JobMetadata,
+			Destination: ctm.Destinations[event.JobMetadata.DestinationID],
+			Connection:  ctm.Connections[event.JobMetadata.SourceID+":"+event.JobMetadata.DestinationID],
+		})
+	}
+	request.DestType = ctm.DestType
+	return request, nil
 }
