@@ -56,6 +56,15 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// Custom type definitions for deeply nested map
+type DestinationID string
+type SourceID string
+type ConsentProviderKey string
+
+type ConsentProviderMap map[ConsentProviderKey]GenericConsentManagementProviderData
+type DestConsentMap map[DestinationID]ConsentProviderMap
+type SourceConsentMap map[SourceID]DestConsentMap
+
 const (
 	MetricKeyDelimiter    = "!<<#>>!"
 	UserTransformation    = "USER_TRANSFORMATION"
@@ -148,7 +157,7 @@ type Handle struct {
 		oneTrustConsentCategoriesMap    map[string][]string
 		connectionConfigMap             map[connection]backendconfig.Connection
 		ketchConsentCategoriesMap       map[string][]string
-		destGenericConsentManagementMap map[string]map[string]map[string]GenericConsentManagementProviderData
+		destGenericConsentManagementMap SourceConsentMap
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
@@ -754,7 +763,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			oneTrustConsentCategoriesMap    = make(map[string][]string)
 			ketchConsentCategoriesMap       = make(map[string][]string)
-			destGenericConsentManagementMap = make(map[string]map[string]map[string]GenericConsentManagementProviderData)
+			destGenericConsentManagementMap = make(SourceConsentMap)
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
@@ -772,14 +781,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
-					destGenericConsentManagementMap[source.ID] = make(map[string]map[string]GenericConsentManagementProviderData)
+					destGenericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
 						var err error
-						destGenericConsentManagementMap[source.ID][destination.ID], err = getGenericConsentManagementData(destination)
+						destGenericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
 						}

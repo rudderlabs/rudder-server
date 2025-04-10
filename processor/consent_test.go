@@ -1380,15 +1380,15 @@ func TestFilterDestinations(t *testing.T) {
 			proc := &Handle{}
 			proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
-			proc.config.destGenericConsentManagementMap = make(map[string]map[string]map[string]GenericConsentManagementProviderData)
+			proc.config.destGenericConsentManagementMap = make(SourceConsentMap)
 			proc.logger = logger.NewLogger().Child("processor")
 
 			for _, connectionInfo := range tc.connectionInfo {
-				proc.config.destGenericConsentManagementMap[connectionInfo.sourceId] = make(map[string]map[string]GenericConsentManagementProviderData)
+				proc.config.destGenericConsentManagementMap[SourceID(connectionInfo.sourceId)] = make(DestConsentMap)
 				for _, dest := range connectionInfo.destinations {
 					proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
 					proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
-					proc.config.destGenericConsentManagementMap[connectionInfo.sourceId][dest.ID], _ = getGenericConsentManagementData(&dest)
+					proc.config.destGenericConsentManagementMap[SourceID(connectionInfo.sourceId)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
 				}
 			}
 
@@ -1617,10 +1617,10 @@ func TestGetGenericConsentManagementData(t *testing.T) {
 	type testCaseT struct {
 		description string
 		input       *backendconfig.DestinationT
-		expected    map[string]GenericConsentManagementProviderData
+		expected    ConsentProviderMap
 	}
 
-	defGenericConsentManagementData := make(map[string]GenericConsentManagementProviderData)
+	defGenericConsentManagementData := make(ConsentProviderMap)
 	testCases := []testCaseT{
 		{
 			description: "should return empty generic consent management data when no consent management config is present",
@@ -1712,7 +1712,7 @@ func TestGetGenericConsentManagementData(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string]GenericConsentManagementProviderData{
+			expected: ConsentProviderMap{
 				"oneTrust": {
 					Consents: []string{
 						"consent category 1",
@@ -1776,7 +1776,7 @@ func TestGetGenericConsentManagementData(t *testing.T) {
 					},
 				},
 			},
-			expected: map[string]GenericConsentManagementProviderData{
+			expected: ConsentProviderMap{
 				"oneTrust": {
 					Consents: []string{
 						"consent category 1",
