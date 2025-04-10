@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"testing"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/stretchr/testify/require"
@@ -15,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 )
 
 func TestAuth(t *testing.T) {

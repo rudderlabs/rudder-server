@@ -4,15 +4,19 @@ import (
 	"context"
 	"net/http"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/google/uuid"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 func (gw *Handle) webhookHandler() http.HandlerFunc {
+	if gw.conf.webhookV2HandlerEnabled {
+		return gw.callType("webhook", gw.webhookAuthMiddleware.AuthHandler(gw.webhook.RequestHandler))
+	}
 	return gw.callType("webhook", gw.webhookAuth(gw.webhook.RequestHandler))
 }
 

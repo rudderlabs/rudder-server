@@ -4,12 +4,23 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // NewSourceStat creates a new source stat for a gateway request
 func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat {
+	return &gwstats.SourceStat{
+		Source:      arctx.SourceTag(),
+		SourceID:    arctx.SourceID,
+		WriteKey:    arctx.WriteKey,
+		ReqType:     reqType,
+		WorkspaceID: arctx.WorkspaceID,
+		SourceType:  arctx.SourceCategory,
+	}
+}
+
+func (gw *Handle) NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter {
 	return &gwstats.SourceStat{
 		Source:      arctx.SourceTag(),
 		SourceID:    arctx.SourceID,
