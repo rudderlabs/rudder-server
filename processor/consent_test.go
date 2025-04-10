@@ -11,6 +11,12 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
+type ConnectionInfo struct {
+	sourceId        string
+	destinations    []backendconfig.DestinationT
+	expectedDestIDs []string
+}
+
 func TestGetOneTrustConsentCategories(t *testing.T) {
 	testCases := []struct {
 		description string
@@ -106,20 +112,12 @@ func TestFilterDestinations(t *testing.T) {
 	testCases := []struct {
 		description    string
 		event          types.SingularEventT
-		connectionInfo []struct {
-			sourceId        string
-			destinations    []backendconfig.DestinationT
-			expectedDestIDs []string
-		}
+		connectionInfo []ConnectionInfo
 	}{
 		{
 			description: "no denied consent categories",
 			event:       types.SingularEventT{},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -147,11 +145,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -266,11 +260,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -361,11 +351,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -491,11 +477,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -588,11 +570,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -756,11 +734,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -858,11 +832,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -1026,11 +996,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -1127,11 +1093,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -1240,11 +1202,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{
@@ -1353,11 +1311,7 @@ func TestFilterDestinations(t *testing.T) {
 					},
 				},
 			},
-			connectionInfo: []struct {
-				sourceId        string
-				destinations    []backendconfig.DestinationT
-				expectedDestIDs []string
-			}{
+			connectionInfo: []ConnectionInfo{
 				{
 					sourceId: "sourceID-1",
 					destinations: []backendconfig.DestinationT{

@@ -37,8 +37,9 @@ type GenericConsentManagementProviderConfig struct {
 Filters and returns destinations based on the consents configured for the destination and the user consents present in the event.
 
 Supports legacy and generic consent management.
+For GCM based filtering, uses source and destination IDs to fetch the appropriate GCM data from the config.
 */
-func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, sourceId string, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
+func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, sourceID string, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
 	// If the event does not have denied consent IDs, do not filter any destinations
 	consentManagementInfo, err := getConsentManagementInfo(event)
 	if err != nil {
@@ -52,7 +53,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// Generic consent management
-		if cmpData := proc.getGCMData(sourceId, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
+		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
 			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 
@@ -103,12 +104,12 @@ func (proc *Handle) getKetchConsentData(destinationID string) []string {
 	return proc.config.ketchConsentCategoriesMap[destinationID]
 }
 
-func (proc *Handle) getGCMData(sourceId, destinationID, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) getGCMData(sourceID, destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 
 	defRetVal := GenericConsentManagementProviderData{}
-	destinationData, ok := proc.config.destGenericConsentManagementMap[sourceId][destinationID]
+	destinationData, ok := proc.config.destGenericConsentManagementMap[sourceID][destinationID]
 	if !ok {
 		return defRetVal
 	}
