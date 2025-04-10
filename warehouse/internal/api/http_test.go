@@ -61,7 +61,7 @@ func filterPayload(text, match string) string {
 }
 
 func TestAPI_Process(t *testing.T) {
-	body := loadFile(t, "./testdata/process_request.json")
+	body := loadFile(t, "./testdata/process_request_v2.json")
 	expectedStagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
 			ID:                    0,
@@ -77,6 +77,7 @@ func TestAPI_Process(t *testing.T) {
 			DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
 			TotalEvents:           2,
 			TotalBytes:            2000,
+			BytesPerTable:         map[string]int64{"product_track": 1000, "tracks": 1000},
 			SourceTaskRunID:       "<source-task-run-id>",
 			SourceJobID:           "<source-job-id>",
 			SourceJobRunID:        "<source-job-run-id>",

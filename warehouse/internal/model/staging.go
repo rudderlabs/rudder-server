@@ -24,6 +24,7 @@ type StagingFile struct {
 	DestinationRevisionID string
 	TotalEvents           int
 	TotalBytes            int
+	BytesPerTable         map[string]int64
 	// cloud sources specific info
 	SourceTaskRunID string
 	SourceJobID     string

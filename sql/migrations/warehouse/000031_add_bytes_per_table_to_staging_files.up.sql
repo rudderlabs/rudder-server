@@ -1,0 +1,1 @@
+ALTER TABLE wh_staging_files ADD COLUMN bytes_per_table JSONB; 
