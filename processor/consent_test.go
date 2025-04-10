@@ -1380,15 +1380,15 @@ func TestFilterDestinations(t *testing.T) {
 			proc := &Handle{}
 			proc.config.oneTrustConsentCategoriesMap = make(map[string][]string)
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
-			proc.config.destGenericConsentManagementMap = make(SourceConsentMap)
+			proc.config.genericConsentManagementMap = make(SourceConsentMap)
 			proc.logger = logger.NewLogger().Child("processor")
 
 			for _, connectionInfo := range tc.connectionInfo {
-				proc.config.destGenericConsentManagementMap[SourceID(connectionInfo.sourceId)] = make(DestConsentMap)
+				proc.config.genericConsentManagementMap[SourceID(connectionInfo.sourceId)] = make(DestConsentMap)
 				for _, dest := range connectionInfo.destinations {
 					proc.config.oneTrustConsentCategoriesMap[dest.ID] = getOneTrustConsentCategories(&dest)
 					proc.config.ketchConsentCategoriesMap[dest.ID] = getKetchConsentCategories(&dest)
-					proc.config.destGenericConsentManagementMap[SourceID(connectionInfo.sourceId)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
+					proc.config.genericConsentManagementMap[SourceID(connectionInfo.sourceId)][DestinationID(dest.ID)], _ = getGenericConsentManagementData(&dest)
 				}
 			}
 

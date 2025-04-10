@@ -157,7 +157,7 @@ type Handle struct {
 		oneTrustConsentCategoriesMap    map[string][]string
 		connectionConfigMap             map[connection]backendconfig.Connection
 		ketchConsentCategoriesMap       map[string][]string
-		destGenericConsentManagementMap SourceConsentMap
+		genericConsentManagementMap SourceConsentMap
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
@@ -763,7 +763,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		var (
 			oneTrustConsentCategoriesMap    = make(map[string][]string)
 			ketchConsentCategoriesMap       = make(map[string][]string)
-			destGenericConsentManagementMap = make(SourceConsentMap)
+			genericConsentManagementMap = make(SourceConsentMap)
 			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
 			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
 			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
@@ -781,14 +781,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
-					destGenericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
+					genericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
 						var err error
-						destGenericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
+						genericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
 						}
@@ -813,7 +813,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.connectionConfigMap = connectionConfigMap
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
 		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
-		proc.config.destGenericConsentManagementMap = destGenericConsentManagementMap
+		proc.config.genericConsentManagementMap = genericConsentManagementMap
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap

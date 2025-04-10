@@ -109,7 +109,7 @@ func (proc *Handle) getGCMData(sourceID, destinationID, provider string) Generic
 	defer proc.config.configSubscriberLock.RUnlock()
 
 	defRetVal := GenericConsentManagementProviderData{}
-	destinationData, ok := proc.config.destGenericConsentManagementMap[SourceID(sourceID)][DestinationID(destinationID)]
+	destinationData, ok := proc.config.genericConsentManagementMap[SourceID(sourceID)][DestinationID(destinationID)]
 	if !ok {
 		return defRetVal
 	}
