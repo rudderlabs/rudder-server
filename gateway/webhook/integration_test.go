@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -50,17 +49,6 @@ import (
 	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
 
-var webhookVersion string
-
-func init() {
-	flag.StringVar(&webhookVersion, "webhookversion", "v1", "webhook version: v1 or v2 (v0 is deprecated)")
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	os.Exit(m.Run())
-}
-
 func TestIntegrationWebhook(t *testing.T) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -84,11 +72,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	})
 
 	g.Go(func() (err error) {
-		if webhookVersion == "v2" {
-			transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithEnv("UPGRADED_TO_SOURCE_TRANSFORM_V2=true"))
-		} else {
-			transformerContainer, err = transformertest.Setup(pool, t)
-		}
+		transformerContainer, err = transformertest.Setup(pool, t)
 		if err != nil {
 			return fmt.Errorf("starting transformer: %w", err)
 		}
@@ -325,48 +309,31 @@ func TestIntegrationWebhook(t *testing.T) {
 			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
 				var errPayload []byte
-				// expected error payload stored in errDB is dependant on the webhook transformation version
-				if webhookVersion == "v1" {
-					errPayload, err = jsonrs.Marshal(struct {
-						Event  json.RawMessage       `json:"event"`
-						Source backendconfig.SourceT `json:"source"`
-					}{
-						Source: sConfig,
-						Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
-					})
-				} else {
-					var requestPayload *requesttojson.RequestJSON
-					var requestPayloadBytes []byte
 
-					// set defaults assigned by go http client
-					req.Body = io.NopCloser(bytes.NewReader(p))
-					req.Method = "POST"
-					req.Proto = "HTTP/1.1"
-					req.Header.Set("Accept-Encoding", "gzip")
-					req.Header.Set("Content-Length", strconv.Itoa(len(p)))
-					req.Header.Set("User-Agent", "Go-http-client/1.1")
+				var requestPayload *requesttojson.RequestJSON
+				var requestPayloadBytes []byte
 
-					requestPayload, err = requesttojson.RequestToJSON(req, "{}")
-					requestPayloadBytes, err = jsonrs.Marshal(requestPayload)
+				// set defaults assigned by go http client
+				req.Body = io.NopCloser(bytes.NewReader(p))
+				req.Method = "POST"
+				req.Proto = "HTTP/1.1"
+				req.Header.Set("Accept-Encoding", "gzip")
+				req.Header.Set("Content-Length", strconv.Itoa(len(p)))
+				req.Header.Set("User-Agent", "Go-http-client/1.1")
 
-					errPayload, err = jsonrs.Marshal(struct {
-						Request json.RawMessage       `json:"request"`
-						Source  backendconfig.SourceT `json:"source"`
-					}{
-						Source: sConfig,
-						// Event:  bytes.ReplaceAll(p, []byte(`{{.WriteKey}}`), []byte(sConfig.WriteKey)),
-						Request: requestPayloadBytes,
-					})
-				}
+				requestPayload, err = requesttojson.RequestToJSON(req, "{}")
+				requestPayloadBytes, err = jsonrs.Marshal(requestPayload)
+
+				errPayload, err = jsonrs.Marshal(struct {
+					Request json.RawMessage       `json:"request"`
+					Source  backendconfig.SourceT `json:"source"`
+				}{
+					Source:  sConfig,
+					Request: requestPayloadBytes,
+				})
 				require.NoError(t, err)
 				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
 				require.NoError(t, err)
-
-				errPayloadWriteKey := gjson.GetBytes(p, "query_parameters.writeKey").Value()
-				if errPayloadWriteKey != nil && webhookVersion == "v1" {
-					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "event.query_parameters.writeKey", errPayloadWriteKey)
-					require.NoError(t, err)
-				}
 
 				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
