@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -44,6 +45,10 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		now:            timeutil.Now,
 		uuidGenerator:  uuid.NewString,
 		loggedFileName: generateLogFileName(),
+		sorter: func(x []string) []string {
+			sort.Strings(x)
+			return x
+		},
 	}
 
 	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
@@ -203,6 +208,7 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 		destOpts:      &destOpts,
 		jsonPathsInfo: &jsonPathsInfo,
 		cache:         cache,
+		sorter:        t.sorter,
 	}
 
 	switch eventType {
