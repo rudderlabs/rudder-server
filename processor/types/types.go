@@ -43,22 +43,76 @@ type TransformerEvent struct {
 	Credentials []Credential               `json:"credentials"`
 }
 
-// GetVersionsOnly removes the connection and credentials from the event
-// along with pruning the destination to only include the transformation versionID
+// UserTransformerEvent is the event sent to the user transformer, which is similar to a
+// [TransformerEvent] but without the connection and with a simplified destination structure
+type UserTransformerEvent struct {
+	Message     SingularEventT `json:"message"`
+	Metadata    Metadata       `json:"metadata"`
+	Destination struct {
+		Transformations []struct {
+			VersionID string
+		}
+	} `json:"destination"`
+	Libraries   []backendconfig.LibraryT `json:"libraries,omitempty"`
+	Credentials []Credential             `json:"credentials,omitempty"`
+}
+
+// CompactedTransformerEvent is similar to a [TransformerEvent] but without the connection and destination fields
+type CompactedTransformerEvent struct {
+	Message     SingularEventT           `json:"message"`
+	Metadata    Metadata                 `json:"metadata"`
+	Libraries   []backendconfig.LibraryT `json:"libraries,omitempty"`
+	Credentials []Credential             `json:"credentials,omitempty"`
+}
+
+// CompactedTransformRequest is the request structure for a compacted transformer request payload.
+// It contains a list of [CompactedTransformerEvent]s and two lookup maps,
+// one for destinations and one for connections.
+//
+// The destinations and connections are used to look up the actual destination and connection
+// objects based on their IDs, which are included in the [CompactedTransformerEvent]s.
+//
+// This allows for a more compact representation of the request payload, as the full destination
+// and connection objects do not need to be included in each event.
+type CompactedTransformRequest struct {
+	Input        []CompactedTransformerEvent           `json:"input"`
+	Destinations map[string]backendconfig.DestinationT `json:"destinations"`
+	Connections  map[string]backendconfig.Connection   `json:"connections"`
+}
+
+func (ctr *CompactedTransformRequest) ToTransformerEvents() []TransformerEvent {
+	events := make([]TransformerEvent, len(ctr.Input))
+	for i, input := range ctr.Input {
+		events[i] = TransformerEvent{
+			Message:     input.Message,
+			Metadata:    input.Metadata,
+			Destination: ctr.Destinations[input.Metadata.DestinationID],
+			Connection:  ctr.Connections[input.Metadata.SourceID+":"+input.Metadata.DestinationID],
+			Libraries:   input.Libraries,
+			Credentials: input.Credentials,
+		}
+	}
+	return events
+}
+
+// ToUserTransformerEvent removes the connection from the event
+// along with pruning the destination to only include the transformation ID and VersionID
 // before sending it to the transformer thereby reducing the payload size
-func (e *TransformerEvent) GetVersionsOnly() *TransformerEvent {
-	tmCopy := *e
-	transformations := make([]backendconfig.TransformationT, 0, len(e.Destination.Transformations))
+func (e *TransformerEvent) ToUserTransformerEvent() *UserTransformerEvent {
+	ute := &UserTransformerEvent{
+		Message:     e.Message,
+		Metadata:    e.Metadata,
+		Libraries:   e.Libraries,
+		Credentials: e.Credentials,
+	}
 	for _, t := range e.Destination.Transformations {
-		transformations = append(transformations, backendconfig.TransformationT{
+		ute.Destination.Transformations = append(ute.Destination.Transformations, struct {
+			VersionID string
+		}{
 			VersionID: t.VersionID,
 		})
 	}
-	tmCopy.Destination = backendconfig.DestinationT{
-		Transformations: transformations,
-	}
-	tmCopy.Connection = backendconfig.Connection{}
-	return &tmCopy
+	return ute
 }
 
 type Credential struct {
@@ -73,35 +127,35 @@ type Metadata struct {
 	SourceName          string                            `json:"sourceName"`
 	OriginalSourceID    string                            `json:"originalSourceId"`
 	WorkspaceID         string                            `json:"workspaceId"`
-	Namespace           string                            `json:"namespace"`
-	InstanceID          string                            `json:"instanceId"`
+	Namespace           string                            `json:"namespace,omitempty"`
+	InstanceID          string                            `json:"instanceId,omitempty"`
 	SourceType          string                            `json:"sourceType"`
 	SourceCategory      string                            `json:"sourceCategory"`
-	TrackingPlanID      string                            `json:"trackingPlanId"`
-	TrackingPlanVersion int                               `json:"trackingPlanVersion"`
-	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
-	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
+	TrackingPlanID      string                            `json:"trackingPlanId,omitempty"`
+	TrackingPlanVersion int                               `json:"trackingPlanVersion,omitempty"`
+	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig,omitempty"`
+	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig,omitempty"`
 	DestinationID       string                            `json:"destinationId"`
 	JobID               int64                             `json:"jobId"`
-	SourceJobID         string                            `json:"sourceJobId"`
-	SourceJobRunID      string                            `json:"sourceJobRunId"`
-	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
-	RecordID            interface{}                       `json:"recordId"`
+	SourceJobID         string                            `json:"sourceJobId,omitempty"`
+	SourceJobRunID      string                            `json:"sourceJobRunId,omitempty"`
+	SourceTaskRunID     string                            `json:"sourceTaskRunId,omitempty"`
+	RecordID            interface{}                       `json:"recordId,omitempty"`
 	DestinationType     string                            `json:"destinationType"`
 	DestinationName     string                            `json:"destinationName"`
 	MessageID           string                            `json:"messageId"`
-	OAuthAccessToken    string                            `json:"oauthAccessToken"`
-	TraceParent         string                            `json:"traceparent"`
+	OAuthAccessToken    string                            `json:"oauthAccessToken,omitempty"`
+	TraceParent         string                            `json:"traceparent,omitempty"`
 	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs              []string `json:"messageIds"`
-	RudderID                string   `json:"rudderId"`
-	ReceivedAt              string   `json:"receivedAt"`
-	EventName               string   `json:"eventName"`
-	EventType               string   `json:"eventType"`
-	SourceDefinitionID      string   `json:"sourceDefinitionId"`
-	DestinationDefinitionID string   `json:"destinationDefinitionId"`
-	TransformationID        string   `json:"transformationId"`
-	TransformationVersionID string   `json:"transformationVersionId"`
+	MessageIDs              []string `json:"messageIds,omitempty"`
+	RudderID                string   `json:"rudderId,omitempty"`
+	ReceivedAt              string   `json:"receivedAt,omitempty"`
+	EventName               string   `json:"eventName,omitempty"`
+	EventType               string   `json:"eventType,omitempty"`
+	SourceDefinitionID      string   `json:"sourceDefinitionId,omitempty"`
+	DestinationDefinitionID string   `json:"destinationDefinitionId,omitempty"`
+	TransformationID        string   `json:"transformationId,omitempty"`
+	TransformationVersionID string   `json:"transformationVersionId,omitempty"`
 	SourceDefinitionType    string   `json:"-"`
 }
 
