@@ -2,6 +2,7 @@ package transformer
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 
 	"github.com/google/go-cmp/cmp"
@@ -102,5 +103,7 @@ func (t *Transformer) write(data []string) error {
 }
 
 func generateLogFileName() string {
-	return fmt.Sprintf("warehouse_transformations_debug_%s.log.gz", uuid.NewString())
+	fileName := fmt.Sprintf("warehouse_transformations_debug_%s.log.gz", uuid.NewString())
+	tmpDirPath, _ := misc.CreateTMPDIR()
+	return filepath.Join(tmpDirPath, fileName)
 }
