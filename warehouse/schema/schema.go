@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -45,27 +47,21 @@ type fetchSchemaRepo interface {
 }
 
 type Handler interface {
-	// Synchronizes the schema with the schema from the warehouse
-	SyncRemoteSchema(ctx context.Context, fetchSchemaRepo fetchSchemaRepo, uploadID int64) (bool, error)
 	// Check if schema exists for the namespace
-	IsWarehouseSchemaEmpty(ctx context.Context) bool
+	IsSchemaEmpty(ctx context.Context) bool
 	// Retrieves the schema for a specific table
-	GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema
+	GetTableSchema(ctx context.Context, tableName string) model.TableSchema
 	// Updates the schema with the provided schema definition
-	UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error
+	UpdateSchema(ctx context.Context, updatedSchema model.Schema) error
 	// Updates the schema for a specific table
-	UpdateWarehouseTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error
+	UpdateTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error
 	// Returns the number of columns present in the schema for a given table
-	GetColumnsCountInWarehouseSchema(ctx context.Context, tableName string) (int, error)
+	GetColumnsCount(ctx context.Context, tableName string) (int, error)
 	// Merges schemas from staging files with the schema to produce a consolidated schema.
-	ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error)
-	// TODO: Remove this method as it's no longer needed.
-	UpdateLocalSchemaWithWarehouse(ctx context.Context) error
+	ConsolidateStagingFilesSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error)
 	// Computes the difference between the existing schema of a table and a newly provided schema.
 	// Returns details of added and modified columns
 	TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error)
-	// Synchronizes the schema with the schema from the warehouse
-	FetchSchemaFromWarehouse(ctx context.Context, repo fetchSchemaRepo) error
 }
 
 type schema struct {
@@ -116,11 +112,7 @@ func New(
 	return schema
 }
 
-func (sh *schema) SyncRemoteSchema(ctx context.Context, _ fetchSchemaRepo, uploadID int64) (bool, error) {
-	return false, sh.FetchSchemaFromWarehouse(ctx, sh.fetchSchemaRepo)
-}
-
-func (sh *schema) IsWarehouseSchemaEmpty(ctx context.Context) bool {
+func (sh *schema) IsSchemaEmpty(ctx context.Context) bool {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
 		sh.log.Warnn("error getting schema", obskit.Error(err))
@@ -129,7 +121,7 @@ func (sh *schema) IsWarehouseSchemaEmpty(ctx context.Context) bool {
 	return len(schema) == 0
 }
 
-func (sh *schema) GetTableSchemaInWarehouse(ctx context.Context, tableName string) model.TableSchema {
+func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.TableSchema {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
 		sh.log.Warnn("error getting schema", obskit.Error(err))
@@ -138,7 +130,7 @@ func (sh *schema) GetTableSchemaInWarehouse(ctx context.Context, tableName strin
 	return schema[tableName]
 }
 
-func (sh *schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Schema) error {
+func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
 	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
@@ -147,7 +139,7 @@ func (sh *schema) UpdateLocalSchema(ctx context.Context, updatedSchema model.Sch
 	return sh.saveSchema(ctx, updatedSchema)
 }
 
-func (sh *schema) UpdateWarehouseTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error {
+func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("getting schema: %w", err)
@@ -164,7 +156,7 @@ func (sh *schema) UpdateWarehouseTableSchema(ctx context.Context, tableName stri
 	return nil
 }
 
-func (sh *schema) GetColumnsCountInWarehouseSchema(ctx context.Context, tableName string) (int, error) {
+func (sh *schema) GetColumnsCount(ctx context.Context, tableName string) (int, error) {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("getting schema: %w", err)
@@ -172,7 +164,7 @@ func (sh *schema) GetColumnsCountInWarehouseSchema(ctx context.Context, tableNam
 	return len(schema[tableName]), nil
 }
 
-func (sh *schema) ConsolidateStagingFilesUsingLocalSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
+func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
 	consolidatedSchema := model.Schema{}
 	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
@@ -199,11 +191,6 @@ func (sh *schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
-func (sh *schema) UpdateLocalSchemaWithWarehouse(ctx context.Context) error {
-	// no-op
-	return nil
-}
-
 func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error) {
 	schema, err := sh.getSchema(ctx)
 	if err != nil {
@@ -212,16 +199,14 @@ func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSc
 	return tableSchemaDiff(tableName, schema, tableSchema), nil
 }
 
-func (sh *schema) FetchSchemaFromWarehouse(ctx context.Context, _ fetchSchemaRepo) error {
-	_, err := sh.fetchSchemaFromWarehouse(ctx)
-	return err
-}
-
 func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) (model.Schema, error) {
+	start := sh.now()
 	warehouseSchema, err := sh.fetchSchemaRepo.FetchSchema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching schema: %w", err)
 	}
+	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
+	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
 	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
 	return warehouseSchema, sh.saveSchema(ctx, warehouseSchema)
 }
@@ -250,6 +235,7 @@ func (sh *schema) getSchema(ctx context.Context) (model.Schema, error) {
 	sh.cachedSchemaMu.RLock()
 	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
 		defer sh.cachedSchemaMu.RUnlock()
+		sh.log.Debugn("Returning cached schema", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type))
 		return sh.cachedSchema, nil
 	}
 	sh.cachedSchemaMu.RUnlock()

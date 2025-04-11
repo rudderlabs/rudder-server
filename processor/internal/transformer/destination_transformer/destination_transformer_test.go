@@ -41,7 +41,13 @@ type fakeTransformer struct {
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var reqBody []types.TransformerEvent
-	require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+		var ctr types.CompactedTransformRequest
+		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&ctr))
+		reqBody = ctr.ToTransformerEvents()
+	} else {
+		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	}
 
 	t.requests = append(t.requests, reqBody)
 
@@ -84,7 +90,13 @@ func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	elt.retryCount++
 
 	var reqBody []types.TransformerEvent
-	require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+		var ctr types.CompactedTransformRequest
+		require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&ctr))
+		reqBody = ctr.ToTransformerEvents()
+	} else {
+		require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	}
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 
@@ -123,7 +135,13 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 
 	var reqBody []types.TransformerEvent
-	require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	if r.Header.Get("X-Content-Format") == "json+compactedv1" {
+		var ctr types.CompactedTransformRequest
+		require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&ctr))
+		reqBody = ctr.ToTransformerEvents()
+	} else {
+		require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	}
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 

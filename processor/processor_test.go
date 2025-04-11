@@ -957,6 +957,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
+			processor.config.enableConcurrentStore = config.SingleValueLoader(false)
 			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1033,6 +1034,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			processor := NewHandle(config.Default, mockTransformerClients)
 			processor.isolationStrategy = isolationStrategy
 			processor.config.archivalEnabled = config.SingleValueLoader(false)
+			processor.config.enableConcurrentStore = config.SingleValueLoader(false)
 			Setup(processor, c, false, false)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -1120,6 +1122,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
+		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
 		return proc
 	}
 
@@ -1318,6 +1321,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.archivalDB = c.mockArchivalDB
 		proc.config.archivalEnabled = config.SingleValueLoader(true)
+		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
@@ -1657,6 +1661,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
+		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
 		return proc
 	}
 	BeforeEach(func() {
@@ -1976,6 +1981,7 @@ var _ = Describe("Processor", Ordered, func() {
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		Expect(err).To(BeNil())
 		proc.isolationStrategy = isolationStrategy
+		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
 		return proc
 	}
 	BeforeEach(func() {
