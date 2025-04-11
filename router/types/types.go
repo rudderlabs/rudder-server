@@ -103,6 +103,40 @@ type TransformMessageT struct {
 	DestType string       `json:"destType"`
 }
 
+func (tm *TransformMessageT) Compacted() *CompactedTransformMessageT {
+	res := CompactedTransformMessageT{
+		Data: make([]struct {
+			Message     json.RawMessage `json:"message"`
+			JobMetadata JobMetadataT    `json:"metadata"`
+		}, len(tm.Data)),
+		DestType:     tm.DestType,
+		Destinations: make(map[string]backendconfig.DestinationT),
+		Connections:  make(map[string]backendconfig.Connection),
+	}
+	for i := range tm.Data {
+		res.Data[i].Message = tm.Data[i].Message
+		res.Data[i].JobMetadata = tm.Data[i].JobMetadata
+		if _, ok := res.Destinations[tm.Data[i].JobMetadata.DestinationID]; !ok {
+			res.Destinations[tm.Data[i].JobMetadata.DestinationID] = tm.Data[i].Destination
+		}
+		connectionKey := tm.Data[i].JobMetadata.SourceID + ":" + tm.Data[i].JobMetadata.DestinationID
+		if _, ok := res.Connections[connectionKey]; !ok {
+			res.Connections[connectionKey] = tm.Data[i].Connection
+		}
+	}
+	return &res
+}
+
+type CompactedTransformMessageT struct {
+	Data []struct {
+		Message     json.RawMessage `json:"message"`
+		JobMetadata JobMetadataT    `json:"metadata"`
+	} `json:"input"`
+	DestType     string                                `json:"destType"`
+	Destinations map[string]backendconfig.DestinationT `json:"destinations"`
+	Connections  map[string]backendconfig.Connection   `json:"connections"`
+}
+
 // Dehydrate JobT information from RouterJobT.JobMetadata returning the dehydrated message along with the jobs
 func (tm *TransformMessageT) Dehydrate() (*TransformMessageT, map[int64]lo.Tuple2[*jobsdb.JobT, routerutils.JobParameters]) {
 	jobs := make(map[int64]lo.Tuple2[*jobsdb.JobT, routerutils.JobParameters])

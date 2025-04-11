@@ -27,6 +27,7 @@
                         "transformations": [],
                         "destinationDefinition": {
                             "config": {
+                                "cdkV2Enabled": true,
                                 "destConfig": {
                                     "defaultConfig": [
                                         "webhookUrl",

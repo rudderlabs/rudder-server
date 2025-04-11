@@ -8,7 +8,7 @@ import (
 )
 
 func (job *UploadJob) generateUploadSchema() error {
-	uploadSchema, err := job.schemaHandle.ConsolidateStagingFilesUsingLocalSchema(job.ctx, job.stagingFiles)
+	uploadSchema, err := job.schemaHandle.ConsolidateStagingFilesSchema(job.ctx, job.stagingFiles)
 	if err != nil {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
