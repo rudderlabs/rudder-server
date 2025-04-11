@@ -642,7 +642,13 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 	maxSizeBytes := int64(maxSizeMB) * 1024 * 1024 // Convert MB to bytes
 	// Sort by the largest table size in each file
 	slices.SortFunc(files, func(a, b *fileWithMaxSize) int {
-		return int(b.maxSize - a.maxSize)
+		// Not going with b.maxSize - a.maxSize to avoid int overflow
+		if b.maxSize > a.maxSize {
+			return 1
+		} else if b.maxSize < a.maxSize {
+			return -1
+		}
+		return 0
 	})
 
 	var result [][]*model.StagingFile

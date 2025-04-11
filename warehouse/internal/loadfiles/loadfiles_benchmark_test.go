@@ -34,15 +34,15 @@ func BenchmarkGroupBySize(b *testing.B) {
 	}
 
 	manyTables := map[string]int64{
-		"table1": 100 * 1024,
-		"table2": 200 * 1024,
-		"table3": 300 * 1024,
-		"table4": 400 * 1024,
-		"table5": 500 * 1024,
-		"table6": 600 * 1024,
-		"table7": 700 * 1024,
-		"table8": 800 * 1024,
-		"table9": 900 * 1024,
+		"table1":  100 * 1024,
+		"table2":  200 * 1024,
+		"table3":  300 * 1024,
+		"table4":  400 * 1024,
+		"table5":  500 * 1024,
+		"table6":  600 * 1024,
+		"table7":  700 * 1024,
+		"table8":  800 * 1024,
+		"table9":  900 * 1024,
 		"table10": 1000 * 1024,
 	}
 	testCases := []struct {
@@ -69,17 +69,17 @@ func BenchmarkGroupBySize(b *testing.B) {
 		{
 			name:      "many_tables_few_files",
 			fileCount: 960,
-			tables: manyTables,
+			tables:    manyTables,
 		},
 		{
 			name:      "many_tables_many_files",
 			fileCount: 9600,
-			tables: manyTables,
+			tables:    manyTables,
 		},
 		{
 			name:      "many_tables_many_many_files",
 			fileCount: 96000,
-			tables: manyTables,
+			tables:    manyTables,
 		},
 	}
 

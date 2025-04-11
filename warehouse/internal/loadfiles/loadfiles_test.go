@@ -836,9 +836,9 @@ func TestV2CreateLoadFiles(t *testing.T) {
 		require.Equal(t, int64(3), startID)
 		require.Equal(t, int64(14), endID)
 
-		v1LoadFiles := (len(stagingFiles)*len(notifier.tables))/2
+		v1LoadFiles := (len(stagingFiles) * len(notifier.tables)) / 2
 		v2LoadFiles := len(notifier.tables)
-		require.Len(t, loadRepo.store, v1LoadFiles + v2LoadFiles)
+		require.Len(t, loadRepo.store, v1LoadFiles+v2LoadFiles)
 		require.Len(t, stageRepo.store, len(stagingFiles))
 	})
 }
