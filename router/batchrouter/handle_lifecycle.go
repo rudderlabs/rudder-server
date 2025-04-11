@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -141,15 +142,6 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
-		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
-		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
-			return time.After(limiterStatsPeriod)
-		}),
-	)
 	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
 		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
 		stats.Default,
@@ -162,7 +154,30 @@ func (brt *Handle) Setup(
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
+	// Initialize job buffer
+	brt.jobBuffer = &JobBuffer{
+		sourceDestMap: make(map[string]chan *jobsdb.JobT),
+		uploadTimers:  make(map[string]*time.Timer),
+		batchWorkers:  make(map[string]*batchWorker),
+		brt:           brt,
+		workerPool: workerpool.New(context.Background(), func(key string) workerpool.Worker {
+			return &batchWorker{
+				partition: key,
+				jobBuffer: brt.jobBuffer,
+			}
+		}, brt.logger),
+	}
+
 	brt.crashRecover()
+
+	if asynccommon.IsAsyncDestination(brt.destType) {
+		brt.startAsyncDestinationManager()
+	}
+
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
+		brt.backendConfigSubscriber()
+		return nil
+	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck batch router
@@ -189,15 +204,6 @@ func (brt *Handle) Setup(
 
 	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.collectMetrics(brt.backgroundCtx)
-		return nil
-	}))
-
-	if asynccommon.IsAsyncDestination(destType) {
-		brt.startAsyncDestinationManager()
-	}
-
-	brt.backgroundGroup.Go(crash.Wrapper(func() error {
-		brt.backendConfigSubscriber()
 		return nil
 	}))
 }
@@ -262,8 +268,21 @@ func (brt *Handle) Start() {
 
 // Shutdown stops the batch router
 func (brt *Handle) Shutdown() {
+	// Signal all goroutines to stop via context cancellation
+	brt.logger.Info("Initiating batch router shutdown")
 	brt.backgroundCancel()
+
+	// Stop all job buffer timers and workerPool
+	if brt.jobBuffer != nil {
+		brt.logger.Debug("Stopping JobBuffer and its resources")
+
+		// Stop the job buffer (which will also stop the worker pool)
+		brt.jobBuffer.Stop()
+	}
+
+	// Wait for all background goroutines to complete
 	_ = brt.backgroundWait()
+	brt.logger.Info("Batch router shutdown complete")
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
@@ -399,7 +418,9 @@ func (brt *Handle) backendConfigSubscriber() {
 						if destination.DestinationDefinition.Name == brt.destType && destination.Enabled {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
-								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								if asynccommon.IsAsyncDestination(brt.destType) {
+									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
 							brt.refreshDestination(destination)

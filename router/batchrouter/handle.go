@@ -109,6 +109,8 @@ type Handle struct {
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error
 
+	jobBuffer *JobBuffer // Added for channel-based job buffering
+
 	backendConfigInitializedOnce sync.Once
 	backendConfigInitialized     chan bool
 
@@ -121,9 +123,8 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    kitsync.Limiter
-		process kitsync.Limiter
-		upload  kitsync.Limiter
+		read   kitsync.Limiter
+		upload kitsync.Limiter
 	}
 
 	lastExecTimesMu sync.RWMutex
@@ -190,8 +191,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	if brt.skipFetchingJobs(partition) {
 		return
 	}
-
-	defer brt.limiter.read.Begin("")()
+	defer brt.limiter.read.Begin(partition)()
 
 	brt.configSubscriberMu.RLock()
 	destinationsMap := brt.destinationsMap
@@ -621,6 +621,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	brt.failingDestinationsMu.Lock()
 	brt.failingDestinations[batchJobs.Connection.Destination.ID] = batchReqMetric.batchRequestFailed > 0
 	brt.failingDestinationsMu.Unlock()
+
 	var statusList []*jobsdb.JobStatusT
 
 	if isWarehouse && notifyWarehouseErr {
