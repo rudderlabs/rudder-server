@@ -12,6 +12,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -38,7 +39,10 @@ const (
 )
 
 // TableUploads is a repository for table uploads
-type TableUploads repo
+type TableUploads struct {
+	*repo
+	queryLoadFilesWithUploadID config.ValueLoader[bool]
+}
 
 type TableUploadSetOptions struct {
 	Status       *string
@@ -48,23 +52,23 @@ type TableUploadSetOptions struct {
 	TotalEvents  *int64
 }
 
-func NewTableUploads(db *sqlmiddleware.DB, opts ...Opt) *TableUploads {
+func NewTableUploads(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *TableUploads {
 	r := &TableUploads{
-		db:  db,
-		now: timeutil.Now,
+		repo:                       &repo{db: db, now: timeutil.Now},
+		queryLoadFilesWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
 	}
 	for _, opt := range opts {
-		opt((*repo)(r))
+		opt(r.repo)
 	}
 	return r
 }
 
 func (tu *TableUploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
-	return (*repo)(tu).WithTx(ctx, f)
+	return tu.repo.WithTx(ctx, f)
 }
 
 func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
-	return (*repo)(tu).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	return tu.repo.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO `+tableUploadTableName+` (
 		  wh_upload_id, table_name, status,
@@ -186,7 +190,38 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 // PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
 // by summing the 'total_events' from load files associated with specific staging file IDs.
 func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
-	subQuery := `
+	var subQuery string
+	var queryArgs []any
+	if tu.queryLoadFilesWithUploadID.Load() {
+		subQuery = `
+		WITH row_numbered_load_files as (
+		  SELECT
+			total_events,
+			row_number() OVER (
+			  PARTITION BY upload_id,
+			  table_name
+			  ORDER BY
+				id DESC
+			) AS row_number
+		  FROM
+			` + loadTableName + `
+		  WHERE
+			upload_id = $1
+			AND table_name = $2
+		)
+		SELECT
+		  sum(total_events) as total
+		FROM
+		  row_numbered_load_files
+		WHERE
+		  row_number = 1
+`
+		queryArgs = []any{
+			uploadId,
+			tableName,
+		}
+	} else {
+		subQuery = `
 		WITH row_numbered_load_files as (
 		  SELECT
 			total_events,
@@ -209,6 +244,13 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 		WHERE
 		  row_number = 1
 `
+		queryArgs = []any{
+			uploadId,
+			tableName,
+			pq.Array(stagingFileIDs),
+		}
+	}
+
 	query := `
 		UPDATE
 			` + tableUploadTableName + `
@@ -220,11 +262,6 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 		  wh_upload_id = $1 AND
 		  table_name = $2;
 `
-	queryArgs := []any{
-		uploadId,
-		tableName,
-		pq.Array(stagingFileIDs),
-	}
 	result, err := tx.ExecContext(
 		ctx,
 		query,

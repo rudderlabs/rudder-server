@@ -170,7 +170,7 @@ func New(
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,
 			StageRepo:          r.stagingRepo,
-			LoadRepo:           repo.NewLoadFiles(db),
+			LoadRepo:           repo.NewLoadFiles(db, r.conf),
 			ControlPlaneClient: controlPlaneClient,
 		},
 		encodingFactory: encodingFactory,
