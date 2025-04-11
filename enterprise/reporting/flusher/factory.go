@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -44,6 +45,9 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 			return &NOPCronRunner{}, nil
 		}
 
+		commonClient := client.New(client.PathTrackedUsers, conf, log, stats)
+
+		// DEPRECATED: Remove this after migration to commonClient.
 		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 		parsedURL, err := url.Parse(reportingBaseURL)
 		if err != nil {
@@ -53,7 +57,7 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 		reportingURL := parsedURL.String()
 
 		a := aggregator.NewTrackedUsersInAppAggregator(db, stats, conf, module)
-		f, err := NewFlusher(db, log, stats, conf, table, reportingURL, a, module)
+		f, err := NewFlusher(db, log, stats, conf, table, reportingURL, commonClient, a, module)
 		if err != nil {
 			return nil, fmt.Errorf("error creating flusher %w", err)
 		}
