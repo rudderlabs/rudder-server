@@ -3355,6 +3355,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsents,
+					SourceIDOneTrustConsent,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
@@ -3366,6 +3367,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsents,
+					SourceIDOneTrustConsent,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
@@ -3377,6 +3379,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
+					SourceIDOneTrustConsent,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
@@ -3388,6 +3391,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
+					SourceIDOneTrustConsent,
 					processor.getEnabledDestinations(
 						SourceIDOneTrustConsent,
 						"destination-definition-name-enabled",
@@ -3438,6 +3442,7 @@ var _ = Describe("Processor", Ordered, func() {
 
 			filteredDestinations := processor.getConsentFilteredDestinations(
 				event,
+				SourceIDKetchConsent,
 				processor.getEnabledDestinations(
 					SourceIDKetchConsent,
 					"destination-definition-name-enabled",
@@ -3604,6 +3609,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutConsentManagementData,
+					SourceIDGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
@@ -3615,6 +3621,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithoutDeniedConsentsGCM,
+					SourceIDGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
@@ -3626,6 +3633,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithCustomConsentsGCM,
+					SourceIDGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
@@ -3637,6 +3645,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCM,
+					SourceIDGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
@@ -3648,6 +3657,7 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(
 				len(processor.getConsentFilteredDestinations(
 					eventWithDeniedConsentsGCMKetch,
+					SourceIDGCM,
 					processor.getEnabledDestinations(
 						SourceIDGCM,
 						"destination-definition-name-enabled",
