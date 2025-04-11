@@ -360,7 +360,6 @@ func TestIntegrationWebhook(t *testing.T) {
 				require.NoError(t, err)
 
 				payload := gjson.GetBytes(r.Jobs[i].EventPayload, "request.body").String()
-				fmt.Println("payload", payload)
 				if !gjson.ValidBytes([]byte(payload)) {
 					marshaledPayload, err := jsonrs.Marshal(payload)
 					require.NoError(t, err)
