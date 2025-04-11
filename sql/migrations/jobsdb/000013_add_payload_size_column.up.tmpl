@@ -1,0 +1,3 @@
+{{range .Datasets}}
+    ALTER TABLE "{{$.Prefix}}_jobs_{{.}}" ADD COLUMN IF NOT EXISTS payload_size INTEGER NOT NULL DEFAULT '0';
+{{end}}
