@@ -1,6 +1,8 @@
 package stats
 
 import (
+	"strings"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -9,12 +11,13 @@ import (
 type SourceStat struct {
 	Source string
 
-	WriteKey    string
-	ReqType     string
-	SourceID    string
-	WorkspaceID string
-	SourceType  string
-	Version     string
+	WriteKey      string
+	ReqType       string
+	SourceID      string
+	WorkspaceID   string
+	SourceType    string
+	Version       string
+	SourceDefName string
 
 	reason string
 
@@ -97,13 +100,14 @@ func (ss *SourceStat) RequestEventsBot(num int) {
 // Report captured stats
 func (ss *SourceStat) Report(s stats.Stats) {
 	tags := stats.Tags{
-		"source":      ss.Source,
-		"writeKey":    ss.WriteKey,
-		"reqType":     ss.ReqType,
-		"workspaceId": ss.WorkspaceID,
-		"sourceID":    ss.SourceID,
-		"sourceType":  ss.SourceType,
-		"sdkVersion":  ss.Version,
+		"source":        ss.Source,
+		"writeKey":      ss.WriteKey,
+		"reqType":       ss.ReqType,
+		"workspaceId":   ss.WorkspaceID,
+		"sourceID":      ss.SourceID,
+		"sourceType":    ss.SourceType,
+		"sdkVersion":    ss.Version,
+		"sourceDefName": strings.ToLower(ss.SourceDefName),
 	}
 
 	failedTags := lo.Assign(tags)

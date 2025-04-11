@@ -38,6 +38,7 @@ var MirroringRouterTransformerHandler RouterTransformerHandler = func(request ty
 			Message:          req.Message,
 			JobMetadataArray: []types.JobMetadataT{req.JobMetadata},
 			Destination:      req.Destination,
+			Connection:       req.Connection,
 			StatusCode:       http.StatusOK,
 		}
 	}

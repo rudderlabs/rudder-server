@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/trackingplan_validation"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 type DestinationClient interface {
@@ -38,10 +39,22 @@ type TransformerClients interface {
 	TrackingPlan() TrackingPlanClient
 }
 
-func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats) TransformerClients {
+// WithFeatureService is used to set the feature service for the destination transformer.
+func WithFeatureService(featuresService transformerfs.FeaturesService) func(*opts) {
+	return func(o *opts) {
+		o.destinationOpts = append(o.destinationOpts, destination_transformer.WithFeatureService(featuresService))
+	}
+}
+
+// NewClients creates a new instance of TransformerClients.
+func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats, options ...func(*opts)) TransformerClients {
+	var opts opts
+	for _, option := range options {
+		option(&opts)
+	}
 	return &Clients{
 		user:         user_transformer.New(conf, log, statsFactory),
-		destination:  destination_transformer.New(conf, log, statsFactory),
+		destination:  destination_transformer.New(conf, log, statsFactory, opts.destinationOpts...),
 		trackingplan: trackingplan_validation.New(conf, log, statsFactory),
 	}
 }
@@ -56,4 +69,8 @@ func (c *Clients) Destination() DestinationClient {
 
 func (c *Clients) TrackingPlan() TrackingPlanClient {
 	return c.trackingplan
+}
+
+type opts struct {
+	destinationOpts []destination_transformer.Opt
 }

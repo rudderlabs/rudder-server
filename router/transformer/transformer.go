@@ -34,6 +34,7 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -69,6 +70,10 @@ type handle struct {
 	oAuthV2EnabledLoader config.ValueLoader[bool]
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
+
+	forceCompactionEnabled bool // option to force usage of compaction for testing
+	compactionEnabled      config.ValueLoader[bool]
+	compactionSupported    bool
 }
 
 type ProxyRequestMetadata struct {
@@ -113,15 +118,22 @@ type Transformer interface {
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) ProxyRequestResponse
 }
 
-// NewTransformer creates a new transformer
-func NewTransformer(destinationTimeout, transformTimeout time.Duration, backendConfig backendconfig.BackendConfig, oauthV2Enabled config.ValueLoader[bool], expirationTimeDiff config.ValueLoader[time.Duration]) Transformer {
+// NewTransformer creates a new transformer.
+// If a nil [featuresService] is provided, the transformer will not use message compaction, even though transformation service might support it.
+func NewTransformer(
+	destinationTimeout, transformTimeout time.Duration,
+	backendConfig backendconfig.BackendConfig,
+	oauthV2Enabled config.ValueLoader[bool],
+	expirationTimeDiff config.ValueLoader[time.Duration],
+	featuresService transformerfs.FeaturesService,
+) Transformer {
 	cache := oauthv2.NewCache()
 	oauthLock := sync.NewPartitionRWLocker()
 	handle := &handle{
 		oAuthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
 	}
-	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig)
+	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig, featuresService)
 	return handle
 }
 
@@ -159,9 +171,9 @@ func (t transformerMetricLabels) ToStatsTag() stats.Tags {
 func (trans *handle) Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT {
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy, preservedData := transformMessage.Dehydrate()
+	compactRequestPayloads := trans.compactRequestPayloads() // consistent state for the entire request
 
-	// Call remote transformation
-	rawJSON, err := jsonrs.Marshal(&transformMessageCopy)
+	rawJSON, err := trans.getRequestPayload(transformMessageCopy, compactRequestPayloads)
 	if err != nil {
 		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
 		panic(err)
@@ -207,6 +219,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		if compactRequestPayloads {
+			req.Header.Set("X-Content-Format", "json+compactedv1")
+		}
 		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
@@ -550,7 +565,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 }
 
-func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig) {
+func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.Cache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, featuresService transformerfs.FeaturesService) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -591,6 +606,14 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
+	trans.forceCompactionEnabled = config.GetBoolVar(false, "Router.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
+	trans.compactionEnabled = config.GetReloadableBoolVar(false, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+	if featuresService != nil {
+		go func() {
+			<-featuresService.Wait()
+			trans.compactionSupported = featuresService.SupportDestTransformCompactedPayloadV1()
+		}()
+	}
 }
 
 func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
@@ -756,4 +779,15 @@ func getEndpointFromURL(urlStr string) string {
 		return parsedURL.Host
 	}
 	return ""
+}
+
+func (trans *handle) compactRequestPayloads() bool {
+	return (trans.compactionSupported && trans.compactionEnabled.Load()) || trans.forceCompactionEnabled
+}
+
+func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {
+	if compactRequestPayloads {
+		return jsonrs.Marshal(data.Compacted())
+	}
+	return jsonrs.Marshal(&data)
 }

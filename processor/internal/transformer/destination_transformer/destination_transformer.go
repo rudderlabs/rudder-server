@@ -11,7 +11,9 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -41,6 +43,22 @@ func WithClient(client transformerclient.Client) Opt {
 	}
 }
 
+// WithFeatureService is used to set the feature service for the transformer client.
+// It is used to check if the destination transformer supports compacted payloads.
+// If this option is omitted, the transformer client will not be able to use compacted payloads.
+func WithFeatureService(featureService transformerfs.FeaturesService) Opt {
+	return func(s *Client) {
+		if featureService == nil {
+			return
+		}
+		go func() {
+			// Wait for the feature service to be ready
+			<-featureService.Wait()
+			s.config.compactionSupported = featureService.SupportDestTransformCompactedPayloadV1()
+		}()
+	}
+}
+
 func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
 	handle := &Client{}
 	handle.conf = conf
@@ -66,6 +84,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.loggedEventsMu = sync.Mutex{}
 	handle.loggedFileName = generateLogFileName()
 
+	handle.config.forceCompactionEnabled = conf.GetBoolVar(false, "Processor.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
+	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+
 	for _, opt := range opts {
 		opt(handle)
 	}
@@ -84,6 +105,10 @@ type Client struct {
 		batchSize               config.ValueLoader[int]
 
 		maxLoggedEvents config.ValueLoader[int]
+
+		forceCompactionEnabled bool // option to force usage of compaction for testing
+		compactionEnabled      config.ValueLoader[bool]
+		compactionSupported    bool
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
@@ -193,27 +218,21 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 
 func (d *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
 	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	if len(data) == 0 {
+		return nil, nil
+	}
+	compactRequestPayloads := d.compactRequestPayloads() // consistent state for the entire request
 	// Call remote transformation
-	var (
-		rawJSON []byte
-		err     error
-	)
-
-	rawJSON, err = jsonrs.Marshal(data)
+	rawJSON, err := d.getRequestPayload(data, compactRequestPayloads)
 	if err != nil {
 		panic(err)
 	}
 
-	if len(data) == 0 {
-		return nil, nil
+	var extraHeaders map[string]string
+	if compactRequestPayloads {
+		extraHeaders = map[string]string{"X-Content-Format": "json+compactedv1"}
 	}
-
-	var (
-		respData   []byte
-		statusCode int
-	)
-
-	respData, statusCode, err = d.doPost(ctx, rawJSON, url, labels)
+	respData, statusCode, err := d.doPost(ctx, rawJSON, url, labels, extraHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +269,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	return transformerResponses, nil
 }
 
-func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {
+func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels, extraHeaders map[string]string) ([]byte, int, error) {
 	var (
 		retryCount int
 		resp       *http.Response
@@ -275,6 +294,9 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
+			for k, v := range extraHeaders {
+				req.Header.Set(k, v)
+			}
 
 			resp, reqErr = d.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
@@ -382,4 +404,36 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return legacyTransformerResponse
 	}
 	return impl(ctx, clientEvents)
+}
+
+func (d *Client) compactRequestPayloads() bool {
+	return (d.config.compactionSupported && d.config.compactionEnabled.Load()) || d.config.forceCompactionEnabled
+}
+
+func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
+	if compactRequestPayloads {
+		ctr := types.CompactedTransformRequest{
+			Input:        make([]types.CompactedTransformerEvent, 0, len(data)),
+			Connections:  make(map[string]backendconfig.Connection),
+			Destinations: make(map[string]backendconfig.DestinationT),
+		}
+		for i := range data {
+			ctr.Input = append(ctr.Input, types.CompactedTransformerEvent{
+				Message:     data[i].Message,
+				Metadata:    data[i].Metadata,
+				Libraries:   data[i].Libraries,
+				Credentials: data[i].Credentials,
+			})
+			if _, ok := ctr.Destinations[data[i].Metadata.DestinationID]; !ok {
+				ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
+			}
+			connectionKey := data[i].Metadata.SourceID + ":" + data[i].Metadata.DestinationID
+			if _, ok := ctr.Connections[connectionKey]; !ok {
+				ctr.Connections[connectionKey] = data[i].Connection
+			}
+		}
+		return jsonrs.Marshal(&ctr)
+
+	}
+	return jsonrs.Marshal(data)
 }
