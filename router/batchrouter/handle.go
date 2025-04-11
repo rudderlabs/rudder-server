@@ -123,9 +123,8 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    kitsync.Limiter
-		process kitsync.Limiter
-		upload  kitsync.Limiter
+		read   kitsync.Limiter
+		upload kitsync.Limiter
 	}
 
 	lastExecTimesMu sync.RWMutex
@@ -192,8 +191,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	if brt.skipFetchingJobs(partition) {
 		return
 	}
-
-	defer brt.limiter.read.Begin("")()
+	defer brt.limiter.read.Begin(partition)()
 
 	brt.configSubscriberMu.RLock()
 	destinationsMap := brt.destinationsMap

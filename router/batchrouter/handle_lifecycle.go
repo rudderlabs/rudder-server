@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -141,15 +142,6 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
-		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
-		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
-			return time.After(limiterStatsPeriod)
-		}),
-	)
 	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
 		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
 		stats.Default,
@@ -166,7 +158,14 @@ func (brt *Handle) Setup(
 	brt.jobBuffer = &JobBuffer{
 		sourceDestMap: make(map[string]chan *jobsdb.JobT),
 		uploadTimers:  make(map[string]*time.Timer),
+		batchWorkers:  make(map[string]*batchWorker),
 		brt:           brt,
+		workerPool: workerpool.New(context.Background(), func(key string) workerpool.Worker {
+			return &batchWorker{
+				partition: key,
+				jobBuffer: brt.jobBuffer,
+			}
+		}, brt.logger),
 	}
 
 	brt.crashRecover()
@@ -273,14 +272,12 @@ func (brt *Handle) Shutdown() {
 	brt.logger.Info("Initiating batch router shutdown")
 	brt.backgroundCancel()
 
-	// Stop all job buffer timers
+	// Stop all job buffer timers and workerPool
 	if brt.jobBuffer != nil {
-		brt.jobBuffer.mu.Lock()
-		for key, timer := range brt.jobBuffer.uploadTimers {
-			timer.Stop()
-			brt.logger.Debugf("Stopped timer for source-destination: %s", key)
-		}
-		brt.jobBuffer.mu.Unlock()
+		brt.logger.Debug("Stopping JobBuffer and its resources")
+
+		// Stop the job buffer (which will also stop the worker pool)
+		brt.jobBuffer.Stop()
 	}
 
 	// Wait for all background goroutines to complete

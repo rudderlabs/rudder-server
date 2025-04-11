@@ -128,7 +128,7 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 	brt.debugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
 }
 
-func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output UploadResult, isWarehouse bool) {
+func (brt *Handle) recordDeliveryStatus(destinationId, sourceId string, output UploadResult, isWarehouse bool) {
 	var (
 		errorCode string
 		jobState  string
@@ -162,15 +162,15 @@ func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output Uplo
 		EventName:     fmt.Sprint(output.TotalEvents) + " events",
 		EventType:     "",
 		SentAt:        time.Now().Format(misc.RFC3339Milli),
-		DestinationID: batchDestination.Destination.ID,
-		SourceID:      batchDestination.Source.ID,
+		DestinationID: destinationId,
+		SourceID:      sourceId,
 		Payload:       payload,
 		AttemptNum:    1,
 		JobState:      jobState,
 		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
-	brt.debugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+	brt.debugger.RecordEventDeliveryStatus(destinationId, &deliveryStatus)
 }
 
 func (brt *Handle) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) {

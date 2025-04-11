@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -19,9 +19,148 @@ type JobBuffer struct {
 	uploadTimers  map[string]*time.Timer
 	mu            sync.RWMutex
 	brt           *Handle
+
+	// Worker pool for batch processing
+	workerPool     workerpool.WorkerPool
+	batchWorkers   map[string]*batchWorker
+	batchWorkersMu sync.RWMutex
 }
 
-// createStat creates a new stat with consistent destination, source, and destination type tags
+// batchWorker implements the workerpool.Worker interface for processing batches
+type batchWorker struct {
+	partition string
+	jobs      []*ConnectionJob
+	jobBuffer *JobBuffer
+}
+
+type ConnectionJob struct {
+	job      *jobsdb.JobT
+	sourceID string
+	destID   string
+}
+
+// Work processes the current batch of jobs
+func (bw *batchWorker) Work() bool {
+	if len(bw.jobs) == 0 {
+		return false
+	}
+	bw.jobs = make([]*ConnectionJob, 0, bw.jobBuffer.brt.maxEventsInABatch)
+
+	// Use the existing upload logic
+	uploadSuccess := true
+	var uploadError error
+
+	// Define a function to update the failing destinations map based on the result
+	updateFailingStatus := func(failed bool, err error) {
+		bw.jobBuffer.brt.failingDestinationsMu.Lock()
+		bw.jobBuffer.brt.failingDestinations[bw.partition] = failed
+		bw.jobBuffer.brt.failingDestinationsMu.Unlock()
+
+		if failed {
+			bw.jobBuffer.brt.logger.Errorf("Upload failed for destination %s: %v", bw.partition, err)
+		}
+	}
+
+	// Execute the upload inside a defer context to always update status
+	defer func() {
+		updateFailingStatus(!uploadSuccess, uploadError)
+	}()
+
+	defer bw.jobBuffer.brt.limiter.upload.Begin(bw.partition)()
+
+	// Convert jobs to BatchedJobs
+	jobs := make([]*jobsdb.JobT, 0, len(bw.jobs))
+	var destinationId, sourceId string
+	for _, job := range bw.jobs {
+		jobs = append(jobs, job.job)
+		destinationId = job.destID
+		sourceId = job.sourceID
+	}
+	batchedJobs := BatchedJobs{
+		Jobs: jobs,
+		Connection: &Connection{
+			Destination: bw.jobBuffer.brt.destinationsMap[destinationId].Destination,
+			Source:      bw.jobBuffer.brt.destinationsMap[sourceId].Sources[0],
+		},
+	}
+
+	// Process based on destination type
+	switch {
+	case IsObjectStorageDestination(bw.jobBuffer.brt.destType):
+		destUploadStat := bw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, sourceId, destinationId)
+		destUploadStart := time.Now()
+		output := bw.jobBuffer.brt.upload(bw.jobBuffer.brt.destType, &batchedJobs, false)
+		bw.jobBuffer.brt.recordDeliveryStatus(destinationId, sourceId, output, false)
+		bw.jobBuffer.brt.updateJobStatus(&batchedJobs, false, output.Error, false)
+		misc.RemoveFilePaths(output.LocalFilePaths...)
+		if output.JournalOpID > 0 {
+			bw.jobBuffer.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+		}
+		if output.Error == nil {
+			bw.jobBuffer.brt.recordUploadStats(*batchedJobs.Connection, output)
+		} else {
+			uploadSuccess = false
+			uploadError = output.Error
+		}
+		destUploadStat.Since(destUploadStart)
+
+	case IsWarehouseDestination(bw.jobBuffer.brt.destType):
+		useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
+		objectStorageType := warehouseutils.ObjectStorageType(bw.jobBuffer.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
+		destUploadStat := bw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, sourceId, destinationId)
+		destUploadStart := time.Now()
+		splitBatchJobs := bw.jobBuffer.brt.splitBatchJobsOnTimeWindow(batchedJobs)
+		allSuccess := true
+		for _, splitJob := range splitBatchJobs {
+			output := bw.jobBuffer.brt.upload(objectStorageType, splitJob, true)
+			notifyWarehouseErr := false
+			if output.Error == nil && output.Key != "" {
+				output.Error = bw.jobBuffer.brt.pingWarehouse(splitJob, output)
+				if output.Error != nil {
+					notifyWarehouseErr = true
+					allSuccess = false
+					uploadError = output.Error
+				}
+				warehouseutils.DestStat(stats.CountType, "generate_staging_files", destinationId).Count(1)
+				warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", destinationId).Count(len(splitJob.Jobs))
+			} else if output.Error != nil {
+				allSuccess = false
+				uploadError = output.Error
+			}
+			bw.jobBuffer.brt.recordDeliveryStatus(destinationId, sourceId, output, true)
+			bw.jobBuffer.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
+			misc.RemoveFilePaths(output.LocalFilePaths...)
+		}
+		uploadSuccess = allSuccess
+		destUploadStat.Since(destUploadStart)
+
+	case asynccommon.IsAsyncDestination(bw.jobBuffer.brt.destType):
+		destUploadStat := bw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, sourceId, destinationId)
+		destUploadStart := time.Now()
+		bw.jobBuffer.brt.sendJobsToStorage(batchedJobs)
+		destUploadStat.Since(destUploadStart)
+
+	default:
+		errMsg := fmt.Errorf("unsupported destination type %s for job buffer", bw.jobBuffer.brt.destType)
+		bw.jobBuffer.brt.logger.Errorf("Unsupported destination type %s for job buffer: %v", bw.jobBuffer.brt.destType, errMsg)
+		uploadSuccess = false
+		uploadError = errMsg
+	}
+
+	return true
+}
+
+// SleepDurations returns the min and max sleep durations for the worker when idle
+func (bw *batchWorker) SleepDurations() (min, max time.Duration) {
+	return time.Millisecond * 100, time.Second * 5
+}
+
+// Stop is a no-op since this worker doesn't have internal goroutines
+func (bw *batchWorker) Stop() {
+	// No-op
+}
+
+// createStat creates a new stat with consistent source and destination tags
 func (jb *JobBuffer) createStat(name, statType, sourceID, destID string) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, statType, stats.Tags{
 		"destType": jb.brt.destType,
@@ -37,19 +176,22 @@ func getSourceDestKey(sourceID, destID string) string {
 
 // Initialize or get a job channel for a source-destination pair
 func (jb *JobBuffer) getJobChannel(sourceID, destID string) chan *jobsdb.JobT {
-	key := getSourceDestKey(sourceID, destID)
-
 	jb.mu.RLock()
-	ch, exists := jb.sourceDestMap[key]
+	ch, exists := jb.sourceDestMap[getSourceDestKey(sourceID, destID)]
 	jb.mu.RUnlock()
 
 	if !exists {
 		jb.mu.Lock()
 		// Double-check to avoid race conditions
-		if ch, exists = jb.sourceDestMap[key]; !exists {
-			bufferSize := jb.brt.conf.GetIntVar(100000, 1, "BatchRouter."+jb.brt.destType+".channelBufferSize", "BatchRouter.channelBufferSize")
+		if ch, exists = jb.sourceDestMap[getSourceDestKey(sourceID, destID)]; !exists {
+			// Match buffer size to batch size for efficiency
+			bufferSize := jb.brt.maxEventsInABatch
+			if customSize := jb.brt.conf.GetIntVar(0, 0, "BatchRouter."+jb.brt.destType+".channelBufferSize", "BatchRouter.channelBufferSize"); customSize > 0 {
+				bufferSize = customSize
+			}
+
 			ch = make(chan *jobsdb.JobT, bufferSize)
-			jb.sourceDestMap[key] = ch
+			jb.sourceDestMap[getSourceDestKey(sourceID, destID)] = ch
 
 			// Start consumer for this channel
 			go jb.startJobConsumer(sourceID, destID, ch)
@@ -60,226 +202,84 @@ func (jb *JobBuffer) getJobChannel(sourceID, destID string) chan *jobsdb.JobT {
 	return ch
 }
 
-func (jb *JobBuffer) startJobConsumer(sourceID, destID string, jobCh chan *jobsdb.JobT) {
-	key := getSourceDestKey(sourceID, destID)
-	jobBatch := make([]*jobsdb.JobT, 0)
+// AddJob adds a job to the appropriate buffer channel
+func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
+	// Get or create channel and send job (non-blocking check)
+	ch := jb.getJobChannel(sourceID, destID)
 
-	uploadFreq := jb.brt.uploadFreq.Load()
-
-	// Create a semaphore to limit concurrent uploads
-	maxConcurrentUploads := jb.brt.conf.GetIntVar(1, 1, "BatchRouter."+jb.brt.destType+".maxConcurrentUploads", "BatchRouter.maxConcurrentUploads")
-	uploadSemaphore := make(chan struct{}, maxConcurrentUploads)
-
-	jb.brt.logger.Debugf("Starting job consumer for %s:%s with upload frequency %s and max concurrent uploads %d",
-		sourceID, destID, uploadFreq, maxConcurrentUploads)
-
-	// Start timer for this source-destination pair
-	timer := time.NewTimer(uploadFreq)
-	jb.mu.Lock()
-	jb.uploadTimers[key] = timer
-	jb.mu.Unlock()
-
-	// Helper function to safely stop and reset the timer
-	resetTimer := func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(uploadFreq)
-	}
-
-	// Helper function to upload batch asynchronously
-	processAsyncBatch := func(batch []*jobsdb.JobT) {
-		// Try to acquire a slot from the semaphore, block if all slots are used
-		select {
-		case uploadSemaphore <- struct{}{}:
-			// We got a slot, launch the upload in a goroutine
-			go func(jobsToProcess []*jobsdb.JobT) {
-				defer func() { <-uploadSemaphore }() // Release the semaphore when done
-
-				if len(jobsToProcess) > 0 {
-					batchSize := len(jobsToProcess)
-					jb.brt.logger.Debugf("Processing batch of %d jobs for %s:%s asynchronously",
-						batchSize, sourceID, destID)
-					jb.processAndUploadBatch(sourceID, destID, jobsToProcess)
-				}
-			}(batch)
-		case <-jb.brt.backgroundCtx.Done():
-			// Context canceled, don't start new uploads
-			jb.brt.logger.Debugf("Context canceled while waiting for upload slot for %s:%s", sourceID, destID)
-			return
-		}
-	}
-
-	for {
-		select {
-		case job, ok := <-jobCh:
-			// Channel closed or context cancelled
-			if !ok {
-				jb.brt.logger.Debugf("Channel closed for %s:%s, processing remaining jobs and exiting", sourceID, destID)
-				if len(jobBatch) > 0 {
-					// Make a copy of the batch to avoid race conditions
-					batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
-					copy(batchToProcess, jobBatch)
-					processAsyncBatch(batchToProcess)
-				}
-				return
-			}
-			jobBatch = append(jobBatch, job)
-
-			// Check if batch size threshold is reached
-			if len(jobBatch) >= jb.brt.maxEventsInABatch {
-				jb.brt.logger.Debugf("Batch size threshold reached for %s:%s: %d jobs", sourceID, destID, len(jobBatch))
-
-				// Make a copy of the batch to avoid race conditions
-				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
-				copy(batchToProcess, jobBatch)
-				processAsyncBatch(batchToProcess)
-
-				// Clear the batch and reset timer
-				jobBatch = make([]*jobsdb.JobT, 0)
-				resetTimer()
-			}
-
-		case <-timer.C:
-			// Upload on timer expiry if we have jobs
-			jb.brt.logger.Debugf("Timer expired for %s:%s with %d jobs in batch", sourceID, destID, len(jobBatch))
-
-			if len(jobBatch) > 0 {
-				// Make a copy of the batch to avoid race conditions
-				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
-				copy(batchToProcess, jobBatch)
-				processAsyncBatch(batchToProcess)
-
-				// Clear the batch
-				jobBatch = make([]*jobsdb.JobT, 0)
-			}
-
-			timer.Reset(uploadFreq)
-
-		case <-jb.brt.backgroundCtx.Done():
-			// Clean shutdown
-			jb.brt.logger.Debugf("Shutting down job consumer for %s:%s with %d jobs in batch", sourceID, destID, len(jobBatch))
-
-			if len(jobBatch) > 0 {
-				// Make a copy of the batch to avoid race conditions
-				batchToProcess := make([]*jobsdb.JobT, len(jobBatch))
-				copy(batchToProcess, jobBatch)
-
-				// Process synchronously during shutdown to ensure all jobs are handled
-				jb.processAndUploadBatch(sourceID, destID, batchToProcess)
-			}
-
-			return
-		}
+	// Try to send the job to the channel, but don't block if it's full
+	select {
+	case ch <- job:
+		// Job added successfully
+	default:
+		// Channel is full, log warning
+		jb.brt.logger.Warnf("Buffer channel full for %s:%s, job %d will be processed in next batch",
+			sourceID, destID, job.JobID)
+		// Force add to the channel (blocking)
+		ch <- job
 	}
 }
 
-func (jb *JobBuffer) processAndUploadBatch(sourceID, destID string, jobs []*jobsdb.JobT) {
-	if len(jobs) == 0 {
-		return
-	}
+// Stop gracefully stops all job consumers and cleans up resources
+func (jb *JobBuffer) Stop() {
+	jb.mu.Lock()
+	defer jb.mu.Unlock()
 
-	// Track metrics for batch processing
-	processedBatchSizeStat := jb.createStat("batch_router_processed_batch_size", stats.GaugeType, sourceID, destID)
-	processedBatchSizeStat.Gauge(len(jobs))
+	// Close all channels to signal consumers to stop
+	for key, ch := range jb.sourceDestMap {
+		close(ch)
+		delete(jb.sourceDestMap, key)
 
-	processingStartTime := time.Now()
-	defer func() {
-		jb.createStat("batch_router_buffered_batch_processing_time", stats.TimerType, sourceID, destID).Since(processingStartTime)
-	}()
-
-	// Get destination and source details
-	jb.brt.configSubscriberMu.RLock()
-	destWithSources, ok := jb.brt.destinationsMap[destID]
-	jb.brt.configSubscriberMu.RUnlock()
-
-	if !ok {
-		// Handle destination not found
-		jb.brt.logger.Errorf("Destination not found for ID: %s", destID)
-		return
-	}
-
-	// Find the source
-	var source backendconfig.SourceT
-	sourceFound := false
-	for _, s := range destWithSources.Sources {
-		if s.ID == sourceID {
-			source = s
-			sourceFound = true
-			break
-		}
-	}
-
-	if !sourceFound {
-		// Handle source not found
-		jb.brt.logger.Errorf("Source not found for ID: %s", sourceID)
-		return
-	}
-
-	batchedJobs := BatchedJobs{
-		Jobs: jobs,
-		Connection: &Connection{
-			Destination: destWithSources.Destination,
-			Source:      source,
-		},
-	}
-
-	// Use the existing upload logic
-	defer jb.brt.limiter.upload.Begin("")()
-
-	// Helper function for standard object storage upload process
-	processObjectStorageUpload := func(destType string, isWarehouse bool) {
-		destUploadStat := jb.createStat("batch_router_dest_upload_time", stats.TimerType, sourceID, destID)
-		destUploadStart := time.Now()
-		output := jb.brt.upload(destType, &batchedJobs, isWarehouse)
-		jb.brt.recordDeliveryStatus(*batchedJobs.Connection, output, isWarehouse)
-		jb.brt.updateJobStatus(&batchedJobs, isWarehouse, output.Error, false)
-		misc.RemoveFilePaths(output.LocalFilePaths...)
-		if output.JournalOpID > 0 {
-			jb.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-		}
-		if output.Error == nil {
-			jb.brt.recordUploadStats(*batchedJobs.Connection, output)
-		}
-		destUploadStat.Since(destUploadStart)
-	}
-
-	switch {
-	case IsObjectStorageDestination(jb.brt.destType):
-		processObjectStorageUpload(jb.brt.destType, false)
-	case IsWarehouseDestination(jb.brt.destType):
-		useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
-		objectStorageType := warehouseutils.ObjectStorageType(jb.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
-		destUploadStat := jb.createStat("batch_router_dest_upload_time", stats.TimerType, sourceID, destID)
-		destUploadStart := time.Now()
-		splitBatchJobs := jb.brt.splitBatchJobsOnTimeWindow(batchedJobs)
-		for _, batchJob := range splitBatchJobs {
-			output := jb.brt.upload(objectStorageType, batchJob, true)
-			notifyWarehouseErr := false
-			if output.Error == nil && output.Key != "" {
-				output.Error = jb.brt.pingWarehouse(batchJob, output)
-				if output.Error != nil {
-					notifyWarehouseErr = true
+		// Cancel timers
+		if timer, ok := jb.uploadTimers[key]; ok {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
 				}
-				warehouseutils.DestStat(stats.CountType, "generate_staging_files", batchJob.Connection.Destination.ID).Count(1)
-				warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", batchJob.Connection.Destination.ID).Count(len(batchJob.Jobs))
 			}
-			jb.brt.recordDeliveryStatus(*batchJob.Connection, output, true)
-			jb.brt.updateJobStatus(batchJob, true, output.Error, notifyWarehouseErr)
-			misc.RemoveFilePaths(output.LocalFilePaths...)
+			delete(jb.uploadTimers, key)
 		}
-		destUploadStat.Since(destUploadStart)
-	case asynccommon.IsAsyncDestination(jb.brt.destType):
-		destUploadStat := jb.createStat("batch_router_dest_upload_time", stats.TimerType, sourceID, destID)
-		destUploadStart := time.Now()
-		jb.brt.sendJobsToStorage(batchedJobs)
-		destUploadStat.Since(destUploadStart)
-	default:
-		// Handle any other destination types
-		jb.brt.logger.Warnf("Unsupported destination type %s for job buffer. Attempting generic processing.", jb.brt.destType)
-		panic(fmt.Sprintf("Unsupported destination type %s for job buffer. Attempting generic processing.", jb.brt.destType))
 	}
+
+	// Shutdown the worker pool if it exists
+	jb.workerPool.Shutdown()
+}
+
+// startJobConsumer starts a consumer for a source-destination pair that processes jobs using the worker pool
+func (jb *JobBuffer) startJobConsumer(sourceID, destID string, ch chan *jobsdb.JobT) {
+	key := getSourceDestKey(sourceID, destID)
+	var lastJobTime time.Time
+
+	// Simple consumer loop that forwards jobs to the worker
+	for job := range ch {
+		jb.batchWorkersMu.Lock()
+		worker := jb.batchWorkers[key]
+		worker.jobs = append(worker.jobs, &ConnectionJob{
+			job:      job,
+			sourceID: sourceID,
+			destID:   destID,
+		})
+		currentBatchSize := len(worker.jobs)
+		jb.batchWorkersMu.Unlock()
+
+		if lastJobTime.IsZero() {
+			lastJobTime = time.Now()
+		}
+
+		// Ping worker when either:
+		// 1. We've reached max batch size
+		// 2. Upload frequency time has elapsed since first job
+		if currentBatchSize >= jb.brt.maxEventsInABatch || time.Since(lastJobTime) >= jb.brt.uploadFreq.Load() {
+			jb.workerPool.PingWorker(key)
+			lastJobTime = time.Time{} // Reset timer after ping
+		}
+	}
+
+	// Process any remaining jobs when channel is closed
+	jb.batchWorkersMu.Lock()
+	if worker := jb.batchWorkers[key]; len(worker.jobs) > 0 {
+		jb.workerPool.PingWorker(key)
+	}
+	jb.batchWorkersMu.Unlock()
 }

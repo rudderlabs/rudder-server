@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sony/gobreaker"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -16,20 +17,61 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// newWorker creates a new worker for the provided partition.
+// newWorker creates a new batch router worker
 func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 	w := &worker{
 		partition: partition,
 		logger:    logger,
 		brt:       brt,
 	}
+	w.cb = w.createCircuitBreaker()
 	return w
 }
 
+// worker represents a batch router worker that processes jobs for a specific partition
 type worker struct {
 	partition string
 	logger    logger.Logger
 	brt       *Handle
+	cb        *gobreaker.CircuitBreaker
+}
+
+// createCircuitBreaker creates a new circuit breaker for this worker
+func (w *worker) createCircuitBreaker() *gobreaker.CircuitBreaker {
+	maxFailures := w.brt.conf.GetIntVar(3, 1, "BatchRouter."+w.brt.destType+".circuitBreaker.maxFailures", "BatchRouter.circuitBreaker.maxFailures")
+	interval := w.brt.conf.GetDurationVar(1, time.Minute, "BatchRouter."+w.brt.destType+".circuitBreaker.interval", "BatchRouter.circuitBreaker.interval")
+	timeout := w.brt.conf.GetDurationVar(5, time.Minute, "BatchRouter."+w.brt.destType+".circuitBreaker.timeout", "BatchRouter.circuitBreaker.timeout")
+
+	cbSettings := gobreaker.Settings{
+		Name:        w.partition,
+		MaxRequests: uint32(maxFailures),
+		Interval:    interval,
+		Timeout:     timeout,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= uint32(maxFailures) && failureRatio >= 0.5
+		},
+		OnStateChange: func(name string, from, to gobreaker.State) {
+			if from != to {
+				w.logger.Infof("Circuit breaker %s state change from %s to %s", name, from, to)
+
+				// Update failing destinations map based on circuit breaker state
+				w.brt.failingDestinationsMu.Lock()
+				w.brt.failingDestinations[w.partition] = to == gobreaker.StateOpen
+				w.brt.failingDestinationsMu.Unlock()
+
+				// Emit metrics for circuit breaker state changes
+				statTags := stats.Tags{
+					"destType": w.brt.destType,
+					"key":      name,
+					"state":    to.String(),
+				}
+				stats.Default.NewTaggedStat("batch_router_circuit_breaker_state", stats.GaugeType, statTags).Gauge(1)
+			}
+		},
+	}
+
+	return gobreaker.NewCircuitBreaker(cbSettings)
 }
 
 // Work retrieves jobs from batch router for the worker's partition and processes them,
@@ -37,16 +79,37 @@ type worker struct {
 // The function returns when processing completes and the return value is true if at least 1 job was processed,
 // false otherwise.
 func (w *worker) Work() bool {
-	brt := w.brt
-	workerJobs := brt.getWorkerJobs(w.partition)
-	if len(workerJobs) == 0 {
+	// Check if circuit breaker allows operations
+	if w.cb.State() == gobreaker.StateOpen {
+		// Circuit breaker is open, skip processing
+		w.logger.Debugf("Circuit breaker is open for partition %s, skipping job processing", w.partition)
 		return false
 	}
 
-	for _, workerJob := range workerJobs {
-		w.routeJobsToBuffer(workerJob)
+	// Execute work through circuit breaker
+	result, err := w.cb.Execute(func() (interface{}, error) {
+		workerJobs := w.brt.getWorkerJobs(w.partition)
+		if len(workerJobs) == 0 {
+			return false, nil
+		}
+
+		// Record worker activity - number of destination jobs being processed
+		stats.Default.NewTaggedStat("batch_router_worker_jobs", stats.GaugeType, stats.Tags{
+			"partition": w.partition,
+			"destType":  w.brt.destType,
+		}).Gauge(len(workerJobs))
+
+		for _, workerJob := range workerJobs {
+			w.routeJobsToBuffer(workerJob)
+		}
+		return true, nil
+	})
+	if err != nil {
+		w.logger.Errorf("Circuit breaker prevented processing for partition %s: %v", w.partition, err)
+		return false
 	}
-	return true
+
+	return result.(bool)
 }
 
 // routeJobsToBuffer sends jobs to appropriate channels in the job buffer
@@ -102,7 +165,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", "source_not_found")
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
-			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destinationID]; !ok {
 				drainStatsbyDest[destinationID] = &routerutils.DrainStats{
 					Count:     0,
@@ -117,6 +179,7 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			continue
 		}
 
+		// Normal job processing path - check custom drainer conditions first
 		if drain, reason := brt.drainer.Drain(
 			job.CreatedAt,
 			destWithSources.Destination.ID,
@@ -185,10 +248,10 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 		}
 		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 
-		// Now that all statuses are updated, we can safely send jobs to channels
+		// Now that all statuses are updated, we can safely send jobs to buffer
 		for _, entry := range jobsToBuffer {
-			jobCh := brt.jobBuffer.getJobChannel(entry.sourceID, entry.destID)
-			jobCh <- entry.job
+			// Use the AddJob method which handles circuit breaker integration
+			brt.jobBuffer.AddJob(entry.sourceID, entry.destID, entry.job)
 		}
 	}
 
@@ -252,5 +315,4 @@ func (w *worker) SleepDurations() (min, max time.Duration) {
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.
 func (w *worker) Stop() {
-	// no-op
 }
