@@ -152,7 +152,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 			fmt.Sprintf(
 				deleteStmt,
 				jd.tablePrefix,
-				jd.config.GetInt("JobsDB.archivalTimeInDays", 10),
+				jd.config.GetIntVar(10, 1, jd.configKeys("archivalTimeInDays")...),
 			),
 		)
 		if err != nil {
@@ -173,7 +173,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 	jobState := "aborted"
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
-	maxAge := jd.conf.jobMaxAge()
+	maxAge := jd.conf.jobMaxAge.Load()
 	for _, ds := range dsList {
 		res, err := jd.dbHandle.ExecContext(
 			ctx,

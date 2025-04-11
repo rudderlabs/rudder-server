@@ -257,7 +257,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 
 	toVacuumFull := []string{}
 	for _, ds := range dsList {
-		if tableSizes[ds.JobStatusTable] > jd.conf.migration.vacuumFullStatusTableThreshold() {
+		if tableSizes[ds.JobStatusTable] > jd.conf.migration.vacuumFullStatusTableThreshold.Load() {
 			toVacuumFull = append(toVacuumFull, ds.JobStatusTable)
 		}
 	}
@@ -307,7 +307,7 @@ func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) (
 			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
 				jobs = float64(jd.conf.MaxDSSize.Load())
 			}
-			return statuses/jobs > jd.conf.migration.jobStatusMigrateThres()
+			return statuses/jobs > jd.conf.migration.jobStatusMigrateThres.Load()
 		})
 
 	return lo.Slice(datasets, 0, jd.conf.migration.maxMigrateDSProbe.Load()), nil
@@ -387,7 +387,7 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 		return false, err
 	}
 
-	if numJobStatusDeleted > jd.conf.migration.vacuumAnalyzeStatusTableThreshold() && canBeVacuumed {
+	if numJobStatusDeleted > jd.conf.migration.vacuumAnalyzeStatusTableThreshold.Load() && canBeVacuumed {
 		vacuum = true
 	} else {
 		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
@@ -423,7 +423,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 			break
 		}
 
-		migrate, isSmall, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds)
+		migrate, needsPair, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds)
 		if migrateErr != nil {
 			err = migrateErr
 			return
@@ -431,28 +431,28 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		jd.logger.Debugn(
 			"[[ migrateDSLoop ]]: Migrate check",
 			logger.NewBoolField("migrate", migrate),
-			logger.NewBoolField("isSmall", isSmall),
+			logger.NewBoolField("needsPair", needsPair),
 			logger.NewIntField("recordsLeft", int64(recordsLeft)),
 			logger.NewStringField("ds", ds.Index),
 		)
 
 		if migrate {
-			if waiting != nil { // add current and waiting DS, no matter if the current ds is small or not, it doesn't matter
+			if waiting != nil { // add current and waiting DS, no matter if the current ds needs a pair or not, it doesn't matter
 				migrateFrom = append(migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
 				pendingJobsCount += waiting.numJobsPending + recordsLeft
 				liveDSCount += 2
 				waiting = nil
-			} else if !isSmall || len(migrateFrom) > 0 { // add only if the current DS is not small or if we already have some DS in the list
+			} else if !needsPair || len(migrateFrom) > 0 { // add only if the current DS doesn't need a pair or if we already have some DS in the list
 				migrateFrom = append(migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
 				pendingJobsCount += recordsLeft
 				liveDSCount++
-			} else { // add the current small DS as waiting for the next iteration to pickup
+			} else { // add the current DS as waiting for the next iteration to pickup
 				waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
 			}
 		} else {
-			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
+			waiting = nil // if there was a DS waiting, we should remove it since its next dataset is not eligible for migration
 			if liveDSCount > 0 || migrateDSProbeCount > jd.conf.migration.maxMigrateDSProbe.Load() {
 				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
 				break
@@ -617,7 +617,7 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 // We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
 // Or when the job_status table gets too big because of lots of retries/failures
 func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
-	migrate, small bool, recordsLeft int, err error,
+	migrate, needsPair bool, recordsLeft int, err error,
 ) {
 	defer jd.getTimerStat(
 		"migration_ds_check",
@@ -657,13 +657,17 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 		return true, false, recordsLeft, nil
 	}
 
-	isSmall := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres()*float64(jd.conf.MaxDSSize.Load())
+	isSmallDS := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres.Load()*float64(jd.conf.MaxDSSize.Load())
 
-	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres() {
-		return true, isSmall, recordsLeft, nil
+	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres.Load() {
+		return true, isSmallDS, recordsLeft, nil
 	}
 
-	if isSmall {
+	if isSmallDS {
+		return true, true, recordsLeft, nil
+	}
+
+	if float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThres.Load()*float64(jd.conf.MaxDSSize.Load()) {
 		return true, true, recordsLeft, nil
 	}
 
