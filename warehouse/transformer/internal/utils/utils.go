@@ -183,7 +183,13 @@ func IsBlank(value interface{}) bool {
 	case map[string]any:
 		return len(v) == 0
 	case []any:
-		return len(v) == 0
+		if len(v) == 0 {
+			return true
+		}
+		if len(v) == 1 {
+			return IsBlank(v[0])
+		}
+		return false
 	case []types.ValidationError:
 		return len(v) == 0
 	default:
