@@ -20,11 +20,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -129,6 +131,7 @@ type Handle struct {
 	jobdDBMaxRetries           config.ValueLoader[int]
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
+	utSamplingFileManager      filemanager.FileManager
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -426,8 +429,14 @@ func (proc *Handle) Setup(
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 	proc.enrichers = enrichers
-
 	proc.transformerFeaturesService = transformerFeaturesService
+
+	var err error
+	proc.utSamplingFileManager, err = getUTSamplingUploader(proc.conf, proc.logger)
+	if err != nil {
+		proc.logger.Errorn("failed to create ut sampling file manager", obskit.Error(err))
+		proc.utSamplingFileManager = nil
+	}
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -2882,9 +2891,47 @@ func (proc *Handle) userTransformAndFilter(
 			if utMirroringEnabled && utMirroringSanityChecks != nil {
 				go func() {
 					mirroredResponse := <-utMirroringSanityChecks
-					if diff, equal := response.Equal(&mirroredResponse); !equal {
-						proc.logger.Errorn("UserTransform sanity check failed", logger.NewStringField("diff", diff))
+					diff, equal := response.Equal(&mirroredResponse)
+					if equal {
+						return
 					}
+
+					var (
+						tr  *types.TransformerResponse
+						log = proc.logger
+					)
+					if len(mirroredResponse.Events) > 0 {
+						tr = &mirroredResponse.Events[0]
+					} else if len(mirroredResponse.FailedEvents) > 0 {
+						tr = &mirroredResponse.FailedEvents[0]
+					}
+					if tr != nil {
+						log = proc.logger.Withn( // adding more data to help with debugging
+							obskit.WorkspaceID(tr.Metadata.WorkspaceID),
+							obskit.SourceID(tr.Metadata.SourceID),
+							logger.NewStringField("messageId", tr.Metadata.MessageID),
+						)
+					}
+
+					if proc.utSamplingFileManager == nil { // Cannot upload, log the diff
+						log.Errorn("UserTransform sanity check failed", logger.NewStringField("diff", diff))
+						return
+					}
+
+					objName := uuid.NewString()
+					file, err := proc.utSamplingFileManager.UploadReader(ctx, objName, strings.NewReader(diff))
+					if err != nil {
+						log.Errorn("Error uploading UserTransform sanity check diff file",
+							obskit.Error(err),
+							logger.NewStringField("diff", diff),
+						)
+						return
+					}
+
+					log.Errorn("UserTransform sanity check failed",
+						logger.NewStringField("location", file.Location),
+						logger.NewStringField("objectName", file.ObjectName),
+					)
 				}()
 			}
 
@@ -3697,4 +3744,33 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// getUTSamplingUploader can be completely removed once we get rid of UT sampling
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
+		endpoint         = conf.GetString("UTSampling.Endpoint", "")
+		accessKeyID      = conf.GetStringVar("", "UTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
+		accessKey        = conf.GetStringVar("", "UTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBool("UTSampling.S3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("UTSampling.DisableSsl", false)
+		enableSSE        = conf.GetBoolVar(false, "UTSampling.EnableSse", "AWS_ENABLE_SSE")
+		useGlue          = conf.GetBool("UTSampling.UseGlue", false)
+		region           = conf.GetStringVar("us-east-1", "UTSampling.Region", "AWS_DEFAULT_REGION")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"accessKey":        accessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+		"useGlue":          useGlue,
+		"region":           region,
+	}
+	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
+		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
+	})
 }
