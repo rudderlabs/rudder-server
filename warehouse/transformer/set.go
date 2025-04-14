@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/stringlikeobject"
@@ -28,7 +30,8 @@ func setDataAndMetadataFromInput(
 	if shouldHandleStringLikeObject(inputMap, pi) {
 		return handleStringLikeObject(tec, inputMap, data, metadata, pi)
 	}
-	for key, val := range inputMap {
+	for _, key := range tec.sorter(lo.Keys(inputMap)) {
+		val := inputMap[key]
 		if utils.IsBlank(val) {
 			continue
 		}
@@ -158,7 +161,8 @@ func setDataAndMetadataFromRules(
 	data map[string]any, metadata map[string]string,
 	rules map[string]rules.Rules,
 ) error {
-	for colKey, rule := range rules {
+	for _, colKey := range tec.sorter(lo.Keys(rules)) {
+		rule := rules[colKey]
 		columnName, err := safeColumnNameCached(tec, colKey)
 		if err != nil {
 			return fmt.Errorf("safe column name: %w", err)

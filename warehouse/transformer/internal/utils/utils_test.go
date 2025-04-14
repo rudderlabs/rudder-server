@@ -75,6 +75,8 @@ func TestValidTimestamp(t *testing.T) {
 		{name: "Positive year and time input", timestamp: "+2023-06-14T05:23:59.244Z", expected: false},
 		{name: "Negative year and time input", timestamp: "-2023-06-14T05:23:59.244Z", expected: false},
 		{name: "Malicious string input should return false", timestamp: "%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216Windows%u2216win%u002ein", expected: false},
+		{name: "Date time ISO 8601", timestamp: "2025-04-02T01:09:03", expected: true},
+		{name: "Date time Millis timezone", timestamp: "2025-04-02 01:09:03.000+0530", expected: true},
 	}
 
 	for _, tc := range testCases {
@@ -85,11 +87,11 @@ func TestValidTimestamp(t *testing.T) {
 }
 
 // BenchmarkValidTimestamp/ValidTimestamp_Valid
-// BenchmarkValidTimestamp/ValidTimestamp_Valid-12         				34838106	 	31.71 ns/op
+// BenchmarkValidTimestamp/ValidTimestamp_Valid-12         				36466681		32.00 ns/op
 // BenchmarkValidTimestamp/ValidTimestamp_Invalid
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid-12       	 			2619600	       	430.6 ns/op
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid-12       	 			2823615	       	423.4 ns/op
 // BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String-12        	7234989	       	178.7 ns/op
+// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String-12     	7731496	       	154.8 ns/op
 func BenchmarkValidTimestamp(b *testing.B) {
 	b.Run("ValidTimestamp_Valid", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
@@ -160,6 +162,11 @@ func TestIsBlank(t *testing.T) {
 		{"BoolTrue", true, false},
 		{"EmptySlice", []any{}, true},
 		{"NonEmptySlice", []any{1, 2, 3}, false},
+		{"OneBlankStringSlice", []any{""}, true},
+		{"ManyBlankStringSlice", []any{"", "", "", ""}, false},
+		{"NestedOneBlankStringSlice", []any{[]any{[]any{}}}, true},
+		{"NestedOneManyBlankStringSlice1", []any{[]any{[]any{}, []any{}}}, false},
+		{"NestedOneManyBlankStringSlice2", []any{[]any{[]any{}}, []any{}}, false},
 		{"EmptyMap", map[string]any{}, true},
 		{"NonEmptyMap", map[string]any{"key": 1}, false},
 		{"EmptyStruct", struct{}{}, false},

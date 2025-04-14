@@ -56,6 +56,19 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+// Custom type definitions for deeply nested map
+type (
+	DestinationID      string
+	SourceID           string
+	ConsentProviderKey string
+)
+
+type (
+	ConsentProviderMap map[ConsentProviderKey]GenericConsentManagementProviderData
+	DestConsentMap     map[DestinationID]ConsentProviderMap
+	SourceConsentMap   map[SourceID]DestConsentMap
+)
+
 const (
 	MetricKeyDelimiter    = "!<<#>>!"
 	UserTransformation    = "USER_TRANSFORMATION"
@@ -148,7 +161,7 @@ type Handle struct {
 		oneTrustConsentCategoriesMap    map[string][]string
 		connectionConfigMap             map[connection]backendconfig.Connection
 		ketchConsentCategoriesMap       map[string][]string
-		destGenericConsentManagementMap map[string]map[string]GenericConsentManagementProviderData
+		genericConsentManagementMap     SourceConsentMap
 		batchDestinations               []string
 		configSubscriberLock            sync.RWMutex
 		enableDedup                     bool
@@ -752,16 +765,16 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		var (
-			oneTrustConsentCategoriesMap    = make(map[string][]string)
-			ketchConsentCategoriesMap       = make(map[string][]string)
-			destGenericConsentManagementMap = make(map[string]map[string]GenericConsentManagementProviderData)
-			workspaceLibrariesMap           = make(map[string]backendconfig.LibrariesT, len(config))
-			sourceIdDestinationMap          = make(map[string][]backendconfig.DestinationT)
-			sourceIdSourceMap               = make(map[string]backendconfig.SourceT)
-			eventAuditEnabled               = make(map[string]bool)
-			credentialsMap                  = make(map[string][]types.Credential)
-			nonEventStreamSources           = make(map[string]bool)
-			connectionConfigMap             = make(map[connection]backendconfig.Connection)
+			oneTrustConsentCategoriesMap = make(map[string][]string)
+			ketchConsentCategoriesMap    = make(map[string][]string)
+			genericConsentManagementMap  = make(SourceConsentMap)
+			workspaceLibrariesMap        = make(map[string]backendconfig.LibrariesT, len(config))
+			sourceIdDestinationMap       = make(map[string][]backendconfig.DestinationT)
+			sourceIdSourceMap            = make(map[string]backendconfig.SourceT)
+			eventAuditEnabled            = make(map[string]bool)
+			credentialsMap               = make(map[string][]types.Credential)
+			nonEventStreamSources        = make(map[string]bool)
+			connectionConfigMap          = make(map[connection]backendconfig.Connection)
 		)
 		for workspaceID, wConfig := range config {
 			for _, conn := range wConfig.Connections {
@@ -772,13 +785,14 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 				sourceIdSourceMap[source.ID] = *source
 				if source.Enabled {
 					sourceIdDestinationMap[source.ID] = source.Destinations
+					genericConsentManagementMap[SourceID(source.ID)] = make(DestConsentMap)
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
 						oneTrustConsentCategoriesMap[destination.ID] = getOneTrustConsentCategories(destination)
 						ketchConsentCategoriesMap[destination.ID] = getKetchConsentCategories(destination)
 
 						var err error
-						destGenericConsentManagementMap[destination.ID], err = getGenericConsentManagementData(destination)
+						genericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
 						if err != nil {
 							proc.logger.Error(err)
 						}
@@ -803,7 +817,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 		proc.config.connectionConfigMap = connectionConfigMap
 		proc.config.oneTrustConsentCategoriesMap = oneTrustConsentCategoriesMap
 		proc.config.ketchConsentCategoriesMap = ketchConsentCategoriesMap
-		proc.config.destGenericConsentManagementMap = destGenericConsentManagementMap
+		proc.config.genericConsentManagementMap = genericConsentManagementMap
 		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
 		proc.config.sourceIdDestinationMap = sourceIdDestinationMap
 		proc.config.sourceIdSourceMap = sourceIdSourceMap
@@ -2129,6 +2143,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				destType := &enabledDestTypes[i]
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
+					sourceId,
 					lo.Filter(proc.getEnabledDestinations(sourceId, *destType), func(item backendconfig.DestinationT, index int) bool {
 						destId := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
 						if destId != "" {
@@ -3531,6 +3546,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 
 	if enabledDestinationsList := lo.Filter(proc.getConsentFilteredDestinations(
 		event,
+		sourceId,
 		lo.Flatten(
 			lo.Map(
 				enabledDestTypes,

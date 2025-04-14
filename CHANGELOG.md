@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.46.3](https://github.com/rudderlabs/rudder-server/compare/v1.46.2...v1.46.3) (2025-04-11)
+
+
+### Bug Fixes
+
+* handle consent management filtering per connection ([#5718](https://github.com/rudderlabs/rudder-server/issues/5718)) ([ef57ce6](https://github.com/rudderlabs/rudder-server/commit/ef57ce6064075ba1794cf642bf2e23d64b43c3cb))
+* handling isBlank for nested and empty arrays ([#5714](https://github.com/rudderlabs/rudder-server/issues/5714)) ([670bee0](https://github.com/rudderlabs/rudder-server/commit/670bee06e95ff0eee06bb1963cf964cf617b06a2))
+* warehouse transformations ordering while processing properties ([#5713](https://github.com/rudderlabs/rudder-server/issues/5713)) ([3298855](https://github.com/rudderlabs/rudder-server/commit/32988554d95cec34944fdf35ef15afeec35441f0))
+* warehouse transformations valid timestamp formats and log file path ([#5707](https://github.com/rudderlabs/rudder-server/issues/5707)) ([8675302](https://github.com/rudderlabs/rudder-server/commit/86753022fd15ca86a8d1e3cea2a4e7e7bc8e3bc3))
+
+
+### Miscellaneous
+
+* fix webhook tests in release branch ([#5715](https://github.com/rudderlabs/rudder-server/issues/5715)) ([090942d](https://github.com/rudderlabs/rudder-server/commit/090942da168dd8637639adbbae476845530da32f))
+
 ## [1.46.2](https://github.com/rudderlabs/rudder-server/compare/v1.46.1...v1.46.2) (2025-04-07)
 
 
