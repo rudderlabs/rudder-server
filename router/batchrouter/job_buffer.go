@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
@@ -29,9 +31,8 @@ type JobBuffer struct {
 	queuesMutex sync.RWMutex
 
 	// Consumer management
-	consumerPool    workerpool.WorkerPool
-	activeConsumers sync.Map
-	workerSemaphore chan struct{} // Semaphore to limit concurrent workers
+	consumerPool  workerpool.WorkerPool
+	workerLimiter kitsync.Limiter
 }
 
 // ConnectionJob represents a job with its connection details for batch processing
@@ -50,13 +51,16 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 	ctx, cancel := context.WithCancel(context.Background())
 	maxConsumers := brt.conf.GetInt("BatchRouter.maxConsumers", 100)
 
+	// Create a WaitGroup for the limiter
+	var limiterGroup sync.WaitGroup
+
 	jb := &JobBuffer{
-		brt:             brt,
-		sourceDestMap:   make(map[string]chan *jobsdb.JobT),
-		jobQueues:       make(map[string][]*ConnectionJob),
-		ctx:             ctx,
-		cancel:          cancel,
-		workerSemaphore: make(chan struct{}, maxConsumers),
+		brt:           brt,
+		sourceDestMap: make(map[string]chan *jobsdb.JobT),
+		jobQueues:     make(map[string][]*ConnectionJob),
+		ctx:           ctx,
+		cancel:        cancel,
+		workerLimiter: kitsync.NewLimiter(ctx, &limiterGroup, "batch_router_consumer_workers", maxConsumers, stats.Default),
 	}
 
 	// Initialize the batch worker pool
@@ -75,8 +79,11 @@ func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
 
 // createConsumerWorker is a factory function for creating new consumer workers
 func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
-	// Acquire semaphore slot
-	jb.workerSemaphore <- struct{}{}
+	// Try to acquire a slot from the limiter
+	if err := jb.workerLimiter.Begin(key); err != nil {
+		jb.brt.logger.Errorf("Failed to acquire worker slot: %v", err)
+		return nil
+	}
 
 	sourceID, destID := parseConnectionKey(key)
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
@@ -84,11 +91,6 @@ func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
 	callbacks := ConsumerCallbacks{
 		AddJobToPartition: jb.addJobToPartition,
 		PingBatchWorker:   jb.workerPool.PingWorker,
-		OnWorkerExit: func(sourceID, destID string) {
-			jb.activeConsumers.Delete(getSourceDestKey(sourceID, destID))
-			// Release semaphore slot
-			<-jb.workerSemaphore
-		},
 		GetUploadFreq: func() time.Duration {
 			return jb.brt.uploadFreq.Load()
 		},
@@ -162,10 +164,7 @@ func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
 
 	// Ensure a consumer exists for this source-destination pair
-	if _, exists := jb.activeConsumers.LoadOrStore(key, true); !exists {
-		// Start a new consumer worker if one doesn't exist
-		jb.consumerPool.PingWorker(key)
-	}
+	jb.consumerPool.PingWorker(key)
 
 	// Send the job to the channel
 	ch <- job
@@ -188,7 +187,4 @@ func (jb *JobBuffer) Stop() {
 	// Shutdown the worker pools
 	jb.workerPool.Shutdown()
 	jb.consumerPool.Shutdown()
-
-	// Close the semaphore channel
-	close(jb.workerSemaphore)
 }

@@ -43,7 +43,6 @@ func NewConsumerWorker(
 		logger:            logger.Child("consumer-worker").With("sourceID", sourceID, "destID", destID),
 		addJobToPartition: callbacks.AddJobToPartition,
 		pingBatchWorker:   callbacks.PingBatchWorker,
-		onWorkerExit:      callbacks.OnWorkerExit,
 		getUploadFreq:     callbacks.GetUploadFreq,
 		getMaxBatchSize:   callbacks.GetMaxBatchSize,
 	}
@@ -53,7 +52,6 @@ func NewConsumerWorker(
 type ConsumerCallbacks struct {
 	AddJobToPartition func(partition string, job *ConnectionJob)
 	PingBatchWorker   func(partition string)
-	OnWorkerExit      func(sourceID, destID string)
 	GetUploadFreq     func() time.Duration
 	GetMaxBatchSize   func() int
 }
