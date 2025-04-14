@@ -870,7 +870,6 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("worker partial failure", func(t *testing.T) {
-		t.Skip("enable the test once partial failure is implemented/handled as part of processing upload_v2 job")
 		notifier := &mockNotifier{
 			t:      t,
 			tables: tables,
@@ -900,6 +899,12 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 			}
 		}
 
+		timeWindow := time.Now().Add(time.Hour)
+		// Setting time window so that these 2 files are grouped together in a single upload_v2 job
+		stagingFiles[0].TimeWindow = timeWindow
+		stagingFiles[1].TimeWindow = timeWindow
+
+		// Batch 1 should fail, batch 2 should succeed
 		stagingFiles[0].Location = "abort"
 
 		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &model.UploadJob{
@@ -908,15 +913,11 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 			StagingFiles: stagingFiles,
 		})
 		require.NoError(t, err)
-		require.Equal(t, int64(1), startID)
 
-		require.Len(t,
-			loadRepo.store,
-			len(tables)*(len(stagingFiles)-1),
-		)
-
+		require.Len(t, loadRepo.store, len(tables))
 		require.Equal(t, loadRepo.store[0].ID, startID)
 		require.Equal(t, loadRepo.store[len(loadRepo.store)-1].ID, endID)
+		require.Equal(t, loadRepo.store[0].TotalRows, 8)
 	})
 
 	t.Run("worker failures for all", func(t *testing.T) {
