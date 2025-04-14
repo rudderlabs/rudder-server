@@ -15,6 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/hashicorp/go-retryablehttp"
@@ -324,11 +328,19 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				eventRequest, err = prepareTransformerEventRequestV2(req.request)
 			}
 
+			if err == nil {
+				eventRequest, err = misc.SanitizeJSON(eventRequest)
+				if err != nil {
+					bt.webhook.logger.Errorn("invalid payload", obskit.Error(err), obskit.SourceType(breq.sourceType), obskit.SourceID(req.sourceID))
+					err = errors.New(response.InvalidJSON)
+				}
+			}
+
 			if err == nil && !json.Valid(eventRequest) {
-				err = errors.New((response.InvalidJSON))
+				err = errors.New(response.InvalidJSON)
 			}
 			if err == nil && len(eventRequest) > bt.webhook.config.maxReqSize.Load() {
-				err = errors.New((response.RequestBodyTooLarge))
+				err = errors.New(response.RequestBodyTooLarge)
 			}
 			if err == nil {
 				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
