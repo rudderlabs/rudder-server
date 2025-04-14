@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
 )
@@ -23,9 +22,9 @@ type JobBuffer struct {
 	sourceDestMap map[string]chan *jobsdb.JobT
 	mu            sync.RWMutex
 
-	// Worker management
-	batchWorkers   map[string]*BatchWorker
-	batchWorkersMu sync.RWMutex
+	// Job queues for each partition
+	jobQueues   map[string][]*ConnectionJob
+	queuesMutex sync.RWMutex
 }
 
 // ConnectionJob represents a job with its connection details for batch processing
@@ -44,7 +43,7 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 	jb := &JobBuffer{
 		brt:           brt,
 		sourceDestMap: make(map[string]chan *jobsdb.JobT),
-		batchWorkers:  make(map[string]*BatchWorker),
+		jobQueues:     make(map[string][]*ConnectionJob),
 	}
 
 	// Initialize the worker pool with a worker factory
@@ -55,44 +54,12 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 
 // createBatchWorker is a factory function for creating new batch workers
 func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
-	return &BatchWorker{
-		partition: partition,
-		jobs:      make([]*ConnectionJob, 0, jb.brt.maxEventsInABatch),
-		jobBuffer: jb,
-	}
-}
-
-// createStat creates a new stat with consistent source and destination tags
-func (jb *JobBuffer) createStat(name, statType, sourceID, destID string) stats.Measurement {
-	return stats.Default.NewTaggedStat(name, statType, stats.Tags{
-		"destType": jb.brt.destType,
-		"sourceId": sourceID,
-		"destId":   destID,
-	})
+	return NewBatchWorker(partition, jb.brt.logger, jb.brt, jb.getJobsForPartition)
 }
 
 // getSourceDestKey generates a unique key for a source-destination pair
 func getSourceDestKey(sourceID, destID string) string {
 	return fmt.Sprintf("%s:%s", sourceID, destID)
-}
-
-// getBatchWorker returns or creates a batch worker for a source-destination pair
-func (jb *JobBuffer) getBatchWorker(sourceID, destID string) *BatchWorker {
-	key := getSourceDestKey(sourceID, destID)
-
-	jb.batchWorkersMu.Lock()
-	defer jb.batchWorkersMu.Unlock()
-
-	worker, exists := jb.batchWorkers[key]
-	if !exists {
-		worker = &BatchWorker{
-			partition: key,
-			jobs:      make([]*ConnectionJob, 0, jb.brt.maxEventsInABatch),
-			jobBuffer: jb,
-		}
-		jb.batchWorkers[key] = worker
-	}
-	return worker
 }
 
 // getJobChannel returns or creates a buffered channel for a source-destination pair
@@ -126,64 +93,90 @@ func (jb *JobBuffer) getJobChannel(sourceID, destID string) chan *jobsdb.JobT {
 	ch = make(chan *jobsdb.JobT, bufferSize)
 	jb.sourceDestMap[key] = ch
 
-	// Initialize the batch worker before starting the consumer
-	_ = jb.getBatchWorker(sourceID, destID)
-
 	// Start consumer for this channel
 	go jb.startJobConsumer(sourceID, destID, ch)
 
 	return ch
 }
 
+// getJobsForPartition atomically gets and clears all jobs for a partition
+func (jb *JobBuffer) getJobsForPartition(partition string) []*ConnectionJob {
+	jb.queuesMutex.Lock()
+	defer jb.queuesMutex.Unlock()
+
+	jobs := jb.jobQueues[partition]
+	jb.jobQueues[partition] = nil // Clear the queue
+	return jobs
+}
+
+// addJobToPartition adds a job to the specified partition's queue
+func (jb *JobBuffer) addJobToPartition(partition string, job *ConnectionJob) {
+	jb.queuesMutex.Lock()
+	jb.jobQueues[partition] = append(jb.jobQueues[partition], job)
+	jb.queuesMutex.Unlock()
+}
+
 // startJobConsumer processes jobs from the channel and manages batch processing
 func (jb *JobBuffer) startJobConsumer(sourceID, destID string, ch chan *jobsdb.JobT) {
 	key := getSourceDestKey(sourceID, destID)
 	var lastJobTime time.Time
-	worker := jb.getBatchWorker(sourceID, destID)
+	var jobCount int
 
-	for job := range ch {
-		jb.batchWorkersMu.Lock()
-		worker.jobs = append(worker.jobs, &ConnectionJob{
-			job:      job,
-			sourceID: sourceID,
-			destID:   destID,
-		})
-		currentBatchSize := len(worker.jobs)
-		jb.batchWorkersMu.Unlock()
+	// Create a timer channel for upload frequency checks
+	uploadFreqTimer := time.NewTimer(jb.brt.uploadFreq.Load())
+	defer uploadFreqTimer.Stop()
 
-		if lastJobTime.IsZero() {
-			lastJobTime = time.Now()
-		}
+	for {
+		select {
+		case job, ok := <-ch:
+			if !ok {
+				// Channel closed, exit
+				return
+			}
 
-		// Trigger batch processing when thresholds are met
-		if currentBatchSize >= jb.brt.maxEventsInABatch || time.Since(lastJobTime) >= jb.brt.uploadFreq.Load() {
-			jb.workerPool.PingWorker(key)
-			lastJobTime = time.Time{} // Reset timer after ping
+			// Add job to the partition's queue
+			jb.addJobToPartition(key, &ConnectionJob{
+				job:      job,
+				sourceID: sourceID,
+				destID:   destID,
+			})
+			jobCount++
+
+			if lastJobTime.IsZero() {
+				lastJobTime = time.Now()
+				// Reset timer when we get our first job
+				if !uploadFreqTimer.Stop() {
+					<-uploadFreqTimer.C
+				}
+				uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
+			}
+
+			// Trigger batch processing if max batch size reached
+			if jobCount >= jb.brt.maxEventsInABatch {
+				jb.workerPool.PingWorker(key)
+				lastJobTime = time.Time{} // Reset timer
+				jobCount = 0
+				if !uploadFreqTimer.Stop() {
+					<-uploadFreqTimer.C
+				}
+				uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
+			}
+
+		case <-uploadFreqTimer.C:
+			if jobCount > 0 {
+				jb.brt.logger.Infof("Upload frequency threshold reached for connection %s:%s with %d jobs", sourceID, destID, jobCount)
+				jb.workerPool.PingWorker(key)
+				lastJobTime = time.Time{} // Reset timer
+				jobCount = 0
+			}
+			uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
 		}
 	}
-
-	// Process any remaining jobs when channel is closed
-	jb.batchWorkersMu.Lock()
-	if len(worker.jobs) > 0 {
-		jb.workerPool.PingWorker(key)
-	}
-	jb.batchWorkersMu.Unlock()
 }
 
 // AddJob adds a job to the appropriate buffer channel
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
-	ch := jb.getJobChannel(sourceID, destID)
-
-	// Try non-blocking send first
-	select {
-	case ch <- job:
-		return
-	default:
-		// Channel is full, log warning and do a blocking send
-		jb.brt.logger.Warnf("Buffer channel full for %s:%s, job %d will be processed in next batch",
-			sourceID, destID, job.JobID)
-		ch <- job
-	}
+	jb.getJobChannel(sourceID, destID) <- job
 }
 
 // Stop gracefully stops all job consumers and cleans up resources

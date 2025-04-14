@@ -16,10 +16,10 @@ import (
 // It handles the actual upload of data to various destination types (object storage,
 // warehouse, async destinations) and manages the job status updates.
 type ConnectionWorker struct {
-	sourceID  string           // Source identifier
-	destID    string           // Destination identifier
-	jobs      []*ConnectionJob // Jobs to process for this connection
-	jobBuffer *JobBuffer       // Reference to the parent job buffer
+	sourceID string           // Source identifier
+	destID   string           // Destination identifier
+	jobs     []*ConnectionJob // Jobs to process for this connection
+	brt      *Handle          // Reference to the batch router handle
 }
 
 // Work processes the current batch of jobs for this connection.
@@ -30,10 +30,11 @@ func (cw *ConnectionWorker) Work() bool {
 		return false
 	}
 
+	cw.brt.logger.Infof("Processing batch of %d jobs for connection %s:%s", len(cw.jobs), cw.sourceID, cw.destID)
 	// Prepare the batch for processing
 	batchedJobs, err := cw.prepareBatch()
 	if err != nil {
-		cw.jobBuffer.brt.logger.Errorf("Failed to prepare batch: %v", err)
+		cw.brt.logger.Errorf("Failed to prepare batch: %v", err)
 		return false
 	}
 
@@ -56,9 +57,9 @@ func (cw *ConnectionWorker) prepareBatch() (*BatchedJobs, error) {
 	}
 
 	// Get destination and source configuration
-	cw.jobBuffer.brt.configSubscriberMu.RLock()
-	destWithSources, ok := cw.jobBuffer.brt.destinationsMap[cw.destID]
-	cw.jobBuffer.brt.configSubscriberMu.RUnlock()
+	cw.brt.configSubscriberMu.RLock()
+	destWithSources, ok := cw.brt.destinationsMap[cw.destID]
+	cw.brt.configSubscriberMu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("destination %s not found in destinationsMap", cw.destID)
 	}
@@ -87,40 +88,43 @@ func (cw *ConnectionWorker) prepareBatch() (*BatchedJobs, error) {
 // processBatch handles the upload process based on the destination type.
 // Returns upload success status and any error that occurred.
 func (cw *ConnectionWorker) processBatch(batchedJobs *BatchedJobs) (bool, error) {
-	defer cw.jobBuffer.brt.limiter.upload.Begin(cw.destID)()
+	defer cw.brt.limiter.upload.Begin(cw.destID)()
 
-	destUploadStat := cw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, cw.sourceID, cw.destID)
+	destUploadStat := stats.Default.NewTaggedStat("batch_router_dest_upload_time", stats.TimerType, map[string]string{
+		"sourceID": cw.sourceID,
+		"destID":   cw.destID,
+	})
 	destUploadStart := time.Now()
 	defer destUploadStat.Since(destUploadStart)
 
 	switch {
-	case IsObjectStorageDestination(cw.jobBuffer.brt.destType):
+	case IsObjectStorageDestination(cw.brt.destType):
 		return cw.handleObjectStorageUpload(batchedJobs)
-	case IsWarehouseDestination(cw.jobBuffer.brt.destType):
+	case IsWarehouseDestination(cw.brt.destType):
 		return cw.handleWarehouseUpload(batchedJobs)
-	case asynccommon.IsAsyncDestination(cw.jobBuffer.brt.destType):
+	case asynccommon.IsAsyncDestination(cw.brt.destType):
 		return cw.handleAsyncDestinationUpload(batchedJobs), nil
 	default:
-		err := fmt.Errorf("unsupported destination type %s for job buffer", cw.jobBuffer.brt.destType)
-		cw.jobBuffer.brt.logger.Error(err)
+		err := fmt.Errorf("unsupported destination type %s for job buffer", cw.brt.destType)
+		cw.brt.logger.Error(err)
 		return false, err
 	}
 }
 
 // handleObjectStorageUpload processes uploads for object storage destinations
 func (cw *ConnectionWorker) handleObjectStorageUpload(batchedJobs *BatchedJobs) (bool, error) {
-	output := cw.jobBuffer.brt.upload(cw.jobBuffer.brt.destType, batchedJobs, false)
+	output := cw.brt.upload(cw.brt.destType, batchedJobs, false)
 	defer misc.RemoveFilePaths(output.LocalFilePaths...)
 
-	cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, false)
-	cw.jobBuffer.brt.updateJobStatus(batchedJobs, false, output.Error, false)
+	cw.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, false)
+	cw.brt.updateJobStatus(batchedJobs, false, output.Error, false)
 
 	if output.JournalOpID > 0 {
-		cw.jobBuffer.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+		cw.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 	}
 
 	if output.Error == nil {
-		cw.jobBuffer.brt.recordUploadStats(*batchedJobs.Connection, output)
+		cw.brt.recordUploadStats(*batchedJobs.Connection, output)
 		return true, nil
 	}
 	return false, output.Error
@@ -129,19 +133,19 @@ func (cw *ConnectionWorker) handleObjectStorageUpload(batchedJobs *BatchedJobs) 
 // handleWarehouseUpload processes uploads for warehouse destinations
 func (cw *ConnectionWorker) handleWarehouseUpload(batchedJobs *BatchedJobs) (bool, error) {
 	useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
-	objectStorageType := warehouseutils.ObjectStorageType(cw.jobBuffer.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
+	objectStorageType := warehouseutils.ObjectStorageType(cw.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
 
-	splitBatchJobs := cw.jobBuffer.brt.splitBatchJobsOnTimeWindow(*batchedJobs)
+	splitBatchJobs := cw.brt.splitBatchJobsOnTimeWindow(*batchedJobs)
 	var lastError error
 	allSuccess := true
 
 	for _, splitJob := range splitBatchJobs {
-		output := cw.jobBuffer.brt.upload(objectStorageType, splitJob, true)
+		output := cw.brt.upload(objectStorageType, splitJob, true)
 		defer misc.RemoveFilePaths(output.LocalFilePaths...)
 
 		notifyWarehouseErr := false
 		if output.Error == nil && output.Key != "" {
-			output.Error = cw.jobBuffer.brt.pingWarehouse(splitJob, output)
+			output.Error = cw.brt.pingWarehouse(splitJob, output)
 			if output.Error != nil {
 				notifyWarehouseErr = true
 				allSuccess = false
@@ -154,8 +158,8 @@ func (cw *ConnectionWorker) handleWarehouseUpload(batchedJobs *BatchedJobs) (boo
 			lastError = output.Error
 		}
 
-		cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, true)
-		cw.jobBuffer.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
+		cw.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, true)
+		cw.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
 	}
 
 	return allSuccess, lastError
@@ -163,18 +167,18 @@ func (cw *ConnectionWorker) handleWarehouseUpload(batchedJobs *BatchedJobs) (boo
 
 // handleAsyncDestinationUpload processes uploads for async destinations
 func (cw *ConnectionWorker) handleAsyncDestinationUpload(batchedJobs *BatchedJobs) bool {
-	cw.jobBuffer.brt.sendJobsToStorage(*batchedJobs)
+	cw.brt.sendJobsToStorage(*batchedJobs)
 	return true
 }
 
 // updateFailingStatus updates the failing destinations map with the current status
 func (cw *ConnectionWorker) updateFailingStatus(failed bool, err error) {
-	cw.jobBuffer.brt.failingDestinationsMu.Lock()
-	cw.jobBuffer.brt.failingDestinations[cw.destID] = failed
-	cw.jobBuffer.brt.failingDestinationsMu.Unlock()
+	cw.brt.failingDestinationsMu.Lock()
+	cw.brt.failingDestinations[cw.destID] = failed
+	cw.brt.failingDestinationsMu.Unlock()
 
 	if failed {
-		cw.jobBuffer.brt.logger.Errorf("Upload failed for destination %s: %v", cw.destID, err)
+		cw.brt.logger.Errorf("Upload failed for destination %s: %v", cw.destID, err)
 	}
 }
 

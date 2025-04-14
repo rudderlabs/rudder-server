@@ -238,7 +238,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 	// Mark jobs as executing in a single batch operation
 	if len(statusList) > 0 {
-		w.brt.logger.Info("statusList", statusList)
 		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
