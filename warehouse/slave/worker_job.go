@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
@@ -33,11 +34,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type payload struct {
+type basePayload struct {
 	BatchID                      string                 `json:"batch_id"`
 	UploadID                     int64                  `json:"upload_id"`
-	StagingFileID                int64                  `json:"staging_file_id"`
-	StagingFileLocation          string                 `json:"staging_file_location"`
 	UploadSchema                 model.Schema           `json:"upload_schema"`
 	WorkspaceID                  string                 `json:"workspace_id"`
 	SourceID                     string                 `json:"source_id"`
@@ -59,16 +58,16 @@ type payload struct {
 	LoadFileType                 string                 `json:"load_file_type"`
 }
 
-func (p *payload) discardsTable() string {
+func (p *basePayload) discardsTable() string {
 	return warehouseutils.ToProviderCase(p.DestinationType, warehouseutils.DiscardsTable)
 }
 
-func (p *payload) columnName(columnName string) string {
+func (p *basePayload) columnName(columnName string) string {
 	return warehouseutils.ToProviderCase(p.DestinationType, columnName)
 }
 
 // sortedColumnMapForAllTables Sort columns per table to maintain same order in load file (needed in case of csv load file)
-func (p *payload) sortedColumnMapForAllTables() map[string][]string {
+func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 	return lo.MapValues(p.UploadSchema, func(value model.TableSchema, key string) []string {
 		columns := lo.Keys(value)
 		sort.Strings(columns)
@@ -76,7 +75,7 @@ func (p *payload) sortedColumnMapForAllTables() map[string][]string {
 	})
 }
 
-func (p *payload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
@@ -91,18 +90,42 @@ func (p *payload) fileManager(config interface{}, useRudderStorage bool) (filema
 	return fileManager, err
 }
 
-func (p *payload) pickupStagingConfiguration() bool {
+func (p *basePayload) pickupStagingConfiguration() bool {
 	return p.StagingDestinationRevisionID != p.DestinationRevisionID && p.StagingDestinationConfig != nil
+}
+
+type stagingFileProcessor struct {
+	cachedPath string
+	reader     *gzip.Reader
+	location   string
+}
+
+func (p *stagingFileProcessor) path(workerIdx int, job basePayload) (string, error) {
+	if p.cachedPath != "" {
+		return p.cachedPath, nil
+	}
+
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		return "", fmt.Errorf("creating tmp dir: %w", err)
+	}
+
+	dirName := "/" + misc.RudderWarehouseJsonUploadsTmp + "/" + "_" + strconv.Itoa(workerIdx) + "/"
+	filePath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, job.DestinationType, job.DestinationID) + p.location
+	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
+		return "", fmt.Errorf("creating staging file directory: %w", err)
+	}
+	p.cachedPath = filePath
+	return p.cachedPath, nil
 }
 
 // jobRun Temporary store for processing staging file to load file
 type jobRun struct {
-	job                  payload
-	stagingFilePath      string
+	job                  basePayload
+	workerIdx            int
 	uuidTS               time.Time
 	outputFileWritersMap map[string]encoding.LoadFileWriter
 	tableEventCountMap   map[string]int
-	stagingFileReader    *gzip.Reader
 	identifier           string
 	since                func(time.Time) time.Duration
 	logger               logger.Logger
@@ -110,10 +133,13 @@ type jobRun struct {
 
 	now func() time.Time
 
-	stats                          stats.Stats
-	conf                           *config.Config
-	uploadTimeStat                 stats.Measurement
-	totalUploadTimeStat            stats.Measurement
+	stats               stats.Stats
+	conf                *config.Config
+	uploadTimeStat      stats.Measurement
+	totalUploadTimeStat stats.Measurement
+
+	// Staging file related stats are thread safe
+	// so no need to move them to stagingFileProcessor struct
 	downloadStagingFileStat        stats.Measurement
 	processingStagingFileStat      stats.Measurement
 	bytesProcessedStagingFileStat  stats.Measurement
@@ -125,18 +151,35 @@ type jobRun struct {
 		slaveUploadTimeout       time.Duration
 		loadObjectFolder         string
 	}
+
+	// Mutex protection for concurrent access
+	writersMu sync.RWMutex
+	countsMu  sync.RWMutex
+
+	stagingFileProcessors   map[int64]*stagingFileProcessor
+	stagingFileProcessorsMu sync.RWMutex
+
+	// Per-table locks for writer access
+	tableWriterMutexes   map[string]*sync.Mutex
+	tableWriterMutexesMu sync.Mutex
 }
 
-func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) jobRun {
-	jr := jobRun{
-		job:             job,
-		identifier:      warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
-		stats:           stat,
-		conf:            conf,
-		since:           time.Since,
-		logger:          log,
-		now:             timeutil.Now,
-		encodingFactory: encodingFactory,
+func newJobRun(job basePayload, workerIdx int, conf *config.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) *jobRun {
+	jr := &jobRun{
+		job:                   job,
+		workerIdx:             workerIdx,
+		identifier:            warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
+		stats:                 stat,
+		conf:                  conf,
+		since:                 time.Since,
+		logger:                log,
+		now:                   timeutil.Now,
+		encodingFactory:       encodingFactory,
+		uuidTS:                timeutil.Now(),
+		outputFileWritersMap:  make(map[string]encoding.LoadFileWriter),
+		tableEventCountMap:    make(map[string]int),
+		stagingFileProcessors: make(map[int64]*stagingFileProcessor),
+		tableWriterMutexes:    make(map[string]*sync.Mutex),
 	}
 
 	jr.config.slaveUploadTimeout = conf.GetDurationVar(10, time.Minute, "Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin")
@@ -154,9 +197,6 @@ func newJobRun(job payload, conf *config.Config, log logger.Logger, stat stats.S
 		"destID":   jr.job.DestinationID,
 		"destType": jr.job.DestinationType,
 	})
-
-	jr.outputFileWritersMap = make(map[string]encoding.LoadFileWriter)
-	jr.tableEventCountMap = make(map[string]int)
 
 	return jr
 }
@@ -184,34 +224,25 @@ func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stat
 	return jr.stats.NewTaggedStat(name, stats.CountType, jr.buildTags(extraTags...))
 }
 
-// getStagingFilePath Get download path for the job. Also creates missing directories for this path
-func (jr *jobRun) getStagingFilePath(index int) (string, error) {
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		return "", fmt.Errorf("creating tmp dir: %w", err)
-	}
-
-	dirName := "/" + misc.RudderWarehouseJsonUploadsTmp + "/" + "_" + strconv.Itoa(index) + "/"
-	filePath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s/`, jr.job.DestinationType, jr.job.DestinationID) + jr.job.StagingFileLocation
-	if err = os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-		return "", fmt.Errorf("creating staging file directory: %w", err)
-	}
-
-	return filePath, nil
-}
-
 // downloadStagingFile Download Staging file for the job
-// If error occurs with the current config and current revision is different from staging revision
-// We retry with the staging revision config if it is present
-func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
+func (jr *jobRun) downloadStagingFile(ctx context.Context, stagingFileInfo stagingFileInfo) error {
 	doTask := func(config interface{}, useRudderStorage bool) error {
 		var file *os.File
 		var err error
 
-		if file, err = os.Create(jr.stagingFilePath); err != nil {
+		processor, err := jr.stagingFileProcessor(stagingFileInfo)
+		if err != nil {
+			return fmt.Errorf("getting processor: %w", err)
+		}
+		stagingFilePath, err := processor.path(jr.workerIdx, jr.job)
+		if err != nil {
+			return fmt.Errorf("getting staging file path: %w", err)
+		}
+
+		if file, err = os.Create(stagingFilePath); err != nil {
 			return fmt.Errorf("creating file at path:%s downloaded from %s: %w",
-				jr.stagingFilePath,
-				jr.job.StagingFileLocation,
+				stagingFilePath,
+				processor.location,
 				err,
 			)
 		}
@@ -222,8 +253,8 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 		}
 
 		downloadStart := jr.now()
-		if err = downloader.Download(ctx, file, jr.job.StagingFileLocation); err != nil {
-			return fmt.Errorf("downloading staging file from %s: %w", jr.job.StagingFileLocation, err)
+		if err = downloader.Download(ctx, file, processor.location); err != nil {
+			return fmt.Errorf("downloading staging file from %s: %w", processor.location, err)
 		}
 		if err = file.Close(); err != nil {
 			return fmt.Errorf("closing file after download: %w", err)
@@ -231,7 +262,7 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 
 		jr.downloadStagingFileStat.Since(downloadStart)
 
-		fileInfo, err := os.Stat(jr.stagingFilePath)
+		fileInfo, err := os.Stat(stagingFilePath)
 		if err != nil {
 			return fmt.Errorf("file size of downloaded staging file: %w", err)
 		}
@@ -240,14 +271,13 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 
 		return nil
 	}
-
 	if err := doTask(jr.job.DestinationConfig, jr.job.UseRudderStorage); err != nil {
 		if !jr.job.pickupStagingConfiguration() {
 			return fmt.Errorf("downloading staging file: %w", err)
 		}
 
 		jr.logger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, identifier: %s",
-			jr.job.StagingFileID,
+			stagingFileInfo.ID,
 			jr.job.DestinationRevisionID,
 			jr.job.StagingDestinationRevisionID,
 			jr.identifier,
@@ -261,8 +291,26 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context) error {
 	return nil
 }
 
+func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo) (string, error) {
+	processor, err := jr.stagingFileProcessor(stagingFileInfo)
+	if err != nil {
+		return "", fmt.Errorf("getting processor: %w", err)
+	}
+	stagingFilePath, err := processor.path(jr.workerIdx, jr.job)
+	if err != nil {
+		return "", fmt.Errorf("getting staging file path: %w", err)
+	}
+
+	return fmt.Sprintf("%s.%s.%s.%s",
+		strings.TrimSuffix(stagingFilePath, ".json.gz"),
+		jr.job.SourceID,
+		misc.FastUUID().String(),
+		warehouseutils.GetLoadFileFormat(jr.job.LoadFileType),
+	), nil
+}
+
 // uploadLoadFiles returns the upload output for each file uploaded to object storage
-func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
+func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uploadResult) uploadResult) ([]uploadResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, jr.config.slaveUploadTimeout)
 	defer cancel()
 
@@ -347,16 +395,17 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context) ([]uploadResult, error) {
 							return fmt.Errorf("getting load file stats: %w", err)
 						}
 
+						result := uploadResult{
+							TableName:             tableName,
+							Location:              uploadOutput.Location,
+							TotalRows:             jr.tableEventCountMap[tableName],
+							ContentLength:         loadFileStats.Size(),
+							DestinationRevisionID: jr.job.DestinationRevisionID,
+							UseRudderStorage:      jr.job.UseRudderStorage,
+						}
+
 						processStream <- &uploadProcessingResult{
-							result: uploadResult{
-								TableName:             tableName,
-								Location:              uploadOutput.Location,
-								ContentLength:         loadFileStats.Size(),
-								TotalRows:             jr.tableEventCountMap[tableName],
-								StagingFileID:         jr.job.StagingFileID,
-								DestinationRevisionID: jr.job.DestinationRevisionID,
-								UseRudderStorage:      jr.job.UseRudderStorage,
-							},
+							result: modifier(result),
 						}
 						return nil
 					}
@@ -393,62 +442,107 @@ func (jr *jobRun) bucketFolder(batchID, tableName string) string {
 	return batchID + "-" + tableName
 }
 
-func (jr *jobRun) reader() (*gzip.Reader, error) {
-	var stagingFile *os.File
-	var err error
-	var reader *gzip.Reader
-
-	if stagingFile, err = os.Open(jr.stagingFilePath); err != nil {
-		return nil, fmt.Errorf("opening file at path:%s downloaded from %s: %w", jr.stagingFilePath, jr.job.StagingFileLocation, err)
-	}
-
-	if reader, err = gzip.NewReader(stagingFile); err != nil {
-		return nil, fmt.Errorf("creating gzip reader at path:%s downloaded from %s: %w", jr.stagingFilePath, jr.job.StagingFileLocation, err)
-	}
-	return reader, nil
-}
-
-func (jr *jobRun) writer(tableName string) (encoding.LoadFileWriter, error) {
-	if writer, ok := jr.outputFileWritersMap[tableName]; ok {
-		return writer, nil
-	}
-
-	outputFilePath := jr.loadFilePath()
-
-	writer, err := jr.encodingFactory.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
+// reader should be called only if the staging file has been downloaded
+func (jr *jobRun) reader(stagingFileInfo stagingFileInfo) (*gzip.Reader, error) {
+	processor, err := jr.stagingFileProcessor(stagingFileInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting processor: %w", err)
 	}
+	if processor.reader == nil {
+		var stagingFile *os.File
+		stagingFilePath, err := processor.path(jr.workerIdx, jr.job)
+		if err != nil {
+			return nil, fmt.Errorf("getting staging file path: %w", err)
+		}
+		if stagingFile, err = os.Open(stagingFilePath); err != nil {
+			return nil, fmt.Errorf("opening file at path:%s downloaded from %s: %w", stagingFilePath, processor.location, err)
+		}
 
-	jr.outputFileWritersMap[tableName] = writer
-	jr.tableEventCountMap[tableName] = 0
-
-	return writer, nil
+		if processor.reader, err = gzip.NewReader(stagingFile); err != nil {
+			return nil, fmt.Errorf("creating gzip reader at path:%s downloaded from %s: %w", stagingFilePath, processor.location, err)
+		}
+	}
+	return processor.reader, nil
 }
 
-func (jr *jobRun) loadFilePath() string {
-	return fmt.Sprintf("%s.%s.%s.%s",
-		strings.TrimSuffix(jr.stagingFilePath, ".json.gz"),
-		jr.job.SourceID,
-		misc.FastUUID().String(),
-		warehouseutils.GetLoadFileFormat(jr.job.LoadFileType),
-	)
+// writer returns a writer for the table and an unlock function that MUST be called when done using the writer
+// If two goroutines request a writer for the same table, they will block on the mutex until the first goroutine is done writing
+func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo) (encoding.LoadFileWriter, func(), error) {
+	// Get or create mutex for this table
+	jr.tableWriterMutexesMu.Lock()
+	tableMutex, exists := jr.tableWriterMutexes[tableName]
+	if !exists {
+		tableMutex = &sync.Mutex{}
+		jr.tableWriterMutexes[tableName] = tableMutex
+	}
+	jr.tableWriterMutexesMu.Unlock()
+
+	// Lock the specific table mutex to ensure exclusive access
+	tableMutex.Lock()
+
+	// Check if writer exists under table lock
+	jr.writersMu.RLock()
+	writer, exists := jr.outputFileWritersMap[tableName]
+	jr.writersMu.RUnlock()
+	if exists {
+		return writer, tableMutex.Unlock, nil
+	}
+
+	outputFilePath, err := jr.loadFilePath(stagingFileInfo)
+	if err != nil {
+		tableMutex.Unlock()
+		return nil, nil, fmt.Errorf("failed to get output file path for table %s: %w", tableName, err)
+	}
+
+	writer, err = jr.encodingFactory.NewLoadFileWriter(jr.job.LoadFileType, outputFilePath, jr.job.UploadSchema[tableName], jr.job.DestinationType)
+	if err != nil {
+		tableMutex.Unlock()
+		return nil, nil, fmt.Errorf("creating new writer for table %s: %w", tableName, err)
+	}
+
+	// Initialize event count for this table if not already initialized
+	jr.countsMu.Lock()
+	if _, exists := jr.tableEventCountMap[tableName]; !exists {
+		jr.tableEventCountMap[tableName] = 0
+	}
+	jr.countsMu.Unlock()
+
+	// Update the writers map with write lock
+	jr.writersMu.Lock()
+	jr.outputFileWritersMap[tableName] = writer
+	jr.writersMu.Unlock()
+
+	return writer, tableMutex.Unlock, nil
 }
 
 func (jr *jobRun) cleanup() {
-	if jr.stagingFileReader != nil {
-		err := jr.stagingFileReader.Close()
-		if err != nil {
-			jr.logger.Warnf("[WH]: Failed to close staging file: %v", err)
+	// cleanup staging files
+	for _, processor := range jr.stagingFileProcessors {
+		if processor.reader != nil {
+			err := processor.reader.Close()
+			if err != nil {
+				jr.logger.Warnf("[WH]: Failed to close staging file: %v", err)
+			}
 		}
+		stagingFilePath, err := processor.path(jr.workerIdx, jr.job)
+		if err != nil {
+			jr.logger.Warnf("[WH]: Failed to get staging file path: %v", err)
+			continue
+		}
+		misc.RemoveFilePaths(stagingFilePath)
 	}
 
-	if jr.stagingFilePath != "" {
-		misc.RemoveFilePaths(jr.stagingFilePath)
-	}
-
+	// cleanup load files
 	for _, writer := range jr.outputFileWritersMap {
 		misc.RemoveFilePaths(writer.GetLoadFile().Name())
+	}
+}
+
+func (jr *jobRun) closeLoadFiles() {
+	for _, writer := range jr.outputFileWritersMap {
+		if err := writer.Close(); err != nil {
+			jr.logger.Errorf("Error while closing load file %s : %v", writer.GetLoadFile().Name(), err)
+		}
 	}
 }
 
@@ -489,4 +583,27 @@ func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal int
 		}
 	}
 	return nil
+}
+
+func (jr *jobRun) incrementEventCount(tableName string) {
+	jr.countsMu.Lock()
+	jr.tableEventCountMap[tableName]++
+	jr.countsMu.Unlock()
+}
+
+func (jr *jobRun) stagingFileProcessor(fileInfo stagingFileInfo) (*stagingFileProcessor, error) {
+	jr.stagingFileProcessorsMu.RLock()
+	processor, exists := jr.stagingFileProcessors[fileInfo.ID]
+	jr.stagingFileProcessorsMu.RUnlock()
+	if exists {
+		return processor, nil
+	}
+	// Lazy initialization of reader since it can be created only when the file is downloaded
+	processor = &stagingFileProcessor{
+		location: fileInfo.Location,
+	}
+	jr.stagingFileProcessorsMu.Lock()
+	jr.stagingFileProcessors[fileInfo.ID] = processor
+	jr.stagingFileProcessorsMu.Unlock()
+	return processor, nil
 }

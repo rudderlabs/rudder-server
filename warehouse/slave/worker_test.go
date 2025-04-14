@@ -100,24 +100,26 @@ func TestSlaveWorker(t *testing.T) {
 			)
 
 			p := payload{
-				UploadID:                     1,
-				StagingFileID:                1,
-				StagingFileLocation:          jobLocation,
-				UploadSchema:                 schemaMap,
-				WorkspaceID:                  workspaceID,
-				SourceID:                     sourceID,
-				SourceName:                   sourceName,
-				DestinationID:                destinationID,
-				DestinationName:              destinationName,
-				DestinationType:              destinationType,
-				DestinationNamespace:         namespace,
-				DestinationRevisionID:        uuid.New().String(),
-				StagingDestinationRevisionID: uuid.New().String(),
-				DestinationConfig:            destConf,
-				StagingDestinationConfig:     map[string]interface{}{},
-				UniqueLoadGenID:              uuid.New().String(),
-				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-				LoadFileType:                 "csv",
+				basePayload: basePayload{
+					UploadID:                     1,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              destinationType,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFileID:       1,
+				StagingFileLocation: jobLocation,
 			}
 
 			payloadJson, err := jsonrs.Marshal(p)
@@ -202,24 +204,26 @@ func TestSlaveWorker(t *testing.T) {
 			)
 
 			p := payload{
-				UploadID:                     1,
-				StagingFileID:                1,
-				StagingFileLocation:          jobLocation,
-				UploadSchema:                 schemaMap,
-				WorkspaceID:                  workspaceID,
-				SourceID:                     sourceID,
-				SourceName:                   sourceName,
-				DestinationID:                destinationID,
-				DestinationName:              destinationName,
-				DestinationType:              warehouseutils.CLICKHOUSE,
-				DestinationNamespace:         namespace,
-				DestinationRevisionID:        uuid.New().String(),
-				StagingDestinationRevisionID: uuid.New().String(),
-				DestinationConfig:            destConf,
-				StagingDestinationConfig:     map[string]interface{}{},
-				UniqueLoadGenID:              uuid.New().String(),
-				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-				LoadFileType:                 "csv",
+				basePayload: basePayload{
+					UploadID:                     1,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              warehouseutils.CLICKHOUSE,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFileID:       1,
+				StagingFileLocation: jobLocation,
 			}
 
 			payloadJson, err := jsonrs.Marshal(p)
@@ -331,24 +335,26 @@ func TestSlaveWorker(t *testing.T) {
 			)
 
 			p := payload{
-				UploadID:                     1,
-				StagingFileID:                1,
-				StagingFileLocation:          jobLocation,
-				UploadSchema:                 schemaMap,
-				WorkspaceID:                  workspaceID,
-				SourceID:                     sourceID,
-				SourceName:                   sourceName,
-				DestinationID:                destinationID,
-				DestinationName:              destinationName,
-				DestinationType:              warehouseutils.S3Datalake,
-				DestinationNamespace:         namespace,
-				DestinationRevisionID:        uuid.New().String(),
-				StagingDestinationRevisionID: uuid.New().String(),
-				DestinationConfig:            destConf,
-				StagingDestinationConfig:     map[string]interface{}{},
-				UniqueLoadGenID:              uuid.New().String(),
-				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-				LoadFileType:                 "csv",
+				basePayload: basePayload{
+					UploadID:                     1,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              warehouseutils.S3Datalake,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFileID:       1,
+				StagingFileLocation: jobLocation,
 			}
 
 			payloadJson, err := jsonrs.Marshal(p)
@@ -373,7 +379,7 @@ func TestSlaveWorker(t *testing.T) {
 			}()
 
 			response := <-subscribeCh
-			require.EqualError(t, response.Err, "staging file schema limit exceeded for stagingFileID: 1, actualCount: 21")
+			require.EqualError(t, response.Err, "staging file schema limit exceeded for stagingFileID: 1, actualCount: 21, maxAllowedCount: 10")
 
 			<-claimedJobDone
 		})
@@ -400,36 +406,38 @@ func TestSlaveWorker(t *testing.T) {
 			)
 
 			p := payload{
-				UploadID:            1,
+				basePayload: basePayload{
+					UploadID: 1,
+					UploadSchema: map[string]model.TableSchema{
+						"tracks": map[string]string{
+							"id":                 "int",
+							"user_id":            "int",
+							"uuid_ts":            "timestamp",
+							"received_at":        "timestamp",
+							"original_timestamp": "timestamp",
+							"timestamp":          "timestamp",
+							"sent_at":            "timestamp",
+							"event":              "string",
+							"event_text":         "string",
+						},
+					},
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              destinationType,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
 				StagingFileID:       1,
 				StagingFileLocation: jobLocation,
-				UploadSchema: map[string]model.TableSchema{
-					"tracks": map[string]string{
-						"id":                 "int",
-						"user_id":            "int",
-						"uuid_ts":            "timestamp",
-						"received_at":        "timestamp",
-						"original_timestamp": "timestamp",
-						"timestamp":          "timestamp",
-						"sent_at":            "timestamp",
-						"event":              "string",
-						"event_text":         "string",
-					},
-				},
-				WorkspaceID:                  workspaceID,
-				SourceID:                     sourceID,
-				SourceName:                   sourceName,
-				DestinationID:                destinationID,
-				DestinationName:              destinationName,
-				DestinationType:              destinationType,
-				DestinationNamespace:         namespace,
-				DestinationRevisionID:        uuid.New().String(),
-				StagingDestinationRevisionID: uuid.New().String(),
-				DestinationConfig:            destConf,
-				StagingDestinationConfig:     map[string]interface{}{},
-				UniqueLoadGenID:              uuid.New().String(),
-				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-				LoadFileType:                 "csv",
 			}
 
 			payloadJson, err := jsonrs.Marshal(p)
@@ -467,6 +475,437 @@ func TestSlaveWorker(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, discardsOutput.TotalRows, 24)
 			require.Equal(t, discardsOutput.StagingFileID, p.StagingFileID)
+			require.Equal(t, discardsOutput.DestinationRevisionID, p.DestinationRevisionID)
+			require.Equal(t, discardsOutput.UseRudderStorage, p.StagingUseRudderStorage)
+
+			<-claimedJobDone
+		})
+	})
+
+	t.Run("Upload V2 Job", func(t *testing.T) {
+		jobLocation1 := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
+		jobLocation2 := uploadFile(t, ctx, destConf, "testdata/staging2.json.gz")
+		jobLocation3 := uploadFile(t, ctx, destConf, "testdata/staging3.json.gz")
+
+		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.New())
+
+		t.Run("success", func(t *testing.T) {
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
+			defer close(subscribeCh)
+
+			slaveNotifier := &mockSlaveNotifier{
+				subscribeCh: subscribeCh,
+			}
+
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+			slaveWorker := newWorker(
+				config.New(),
+				logger.NOP,
+				stats.NOP,
+				slaveNotifier,
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+				constraints.New(config.New()),
+				ef,
+				workerIdx,
+			)
+
+			stagingFiles := []stagingFileInfo{
+				{ID: 1, Location: jobLocation1},
+				{ID: 2, Location: jobLocation2},
+				{ID: 3, Location: jobLocation3},
+			}
+
+			p := payloadV2{
+				basePayload: basePayload{
+					UploadID:                     1,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              destinationType,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFiles: stagingFiles,
+			}
+
+			payloadJson, err := jsonrs.Marshal(p)
+			require.NoError(t, err)
+
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUploadV2,
+				},
+			}
+
+			claimedJobDone := make(chan struct{})
+			go func() {
+				defer close(claimedJobDone)
+
+				slaveWorker.processClaimedUploadJob(ctx, claim)
+			}()
+
+			response := <-subscribeCh
+			require.NoError(t, response.Err)
+
+			var uploadPayload payloadV2
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
+			require.NoError(t, err)
+			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
+			require.Equal(t, uploadPayload.UploadID, p.UploadID)
+			require.Equal(t, uploadPayload.StagingFiles, p.StagingFiles)
+			require.Equal(t, uploadPayload.UploadSchema, p.UploadSchema)
+			require.Equal(t, uploadPayload.WorkspaceID, p.WorkspaceID)
+			require.Equal(t, uploadPayload.SourceID, p.SourceID)
+			require.Equal(t, uploadPayload.SourceName, p.SourceName)
+			require.Equal(t, uploadPayload.DestinationID, p.DestinationID)
+			require.Equal(t, uploadPayload.DestinationName, p.DestinationName)
+			require.Equal(t, uploadPayload.DestinationType, p.DestinationType)
+			require.Equal(t, uploadPayload.DestinationNamespace, p.DestinationNamespace)
+			require.Equal(t, uploadPayload.DestinationRevisionID, p.DestinationRevisionID)
+			require.Equal(t, uploadPayload.StagingDestinationRevisionID, p.StagingDestinationRevisionID)
+			require.Equal(t, uploadPayload.DestinationConfig, p.DestinationConfig)
+			require.Equal(t, uploadPayload.StagingDestinationConfig, p.StagingDestinationConfig)
+			require.Equal(t, uploadPayload.UseRudderStorage, p.UseRudderStorage)
+			require.Equal(t, uploadPayload.StagingUseRudderStorage, p.StagingUseRudderStorage)
+			require.Equal(t, uploadPayload.UniqueLoadGenID, p.UniqueLoadGenID)
+			require.Equal(t, uploadPayload.RudderStoragePrefix, p.RudderStoragePrefix)
+			require.Equal(t, uploadPayload.LoadFileType, p.LoadFileType)
+
+			require.Len(t, uploadPayload.Output, 8)
+			for _, output := range uploadPayload.Output {
+				require.Equal(t, output.TotalRows, 12) // 4 rows per file * 3 files
+				require.Equal(t, output.UploadID, p.UploadID)
+				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
+				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
+			}
+
+			<-claimedJobDone
+		})
+
+		t.Run("clickhouse bool", func(t *testing.T) {
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
+			defer close(subscribeCh)
+
+			slaveNotifier := &mockSlaveNotifier{
+				subscribeCh: subscribeCh,
+			}
+
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+			slaveWorker := newWorker(
+				config.New(),
+				logger.NOP,
+				stats.NOP,
+				slaveNotifier,
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+				constraints.New(config.New()),
+				ef,
+				workerIdx,
+			)
+
+			stagingFiles := []stagingFileInfo{
+				{ID: 1, Location: jobLocation1},
+				{ID: 2, Location: jobLocation2},
+				{ID: 3, Location: jobLocation3},
+			}
+
+			p := payloadV2{
+				basePayload: basePayload{
+					UploadID:                     99,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              warehouseutils.CLICKHOUSE,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFiles: stagingFiles,
+			}
+
+			payloadJson, err := jsonrs.Marshal(p)
+			require.NoError(t, err)
+
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUploadV2,
+				},
+			}
+
+			claimedJobDone := make(chan struct{})
+			go func() {
+				defer close(claimedJobDone)
+
+				slaveWorker.processClaimedUploadJob(ctx, claim)
+			}()
+
+			response := <-subscribeCh
+			require.NoError(t, response.Err)
+
+			var uploadPayload payloadV2
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
+			require.NoError(t, err)
+
+			for _, output := range uploadPayload.Output {
+				require.Equal(t, output.TotalRows, 12) // 4 rows per file * 3 files
+				require.Equal(t, output.UploadID, p.UploadID)
+				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
+				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
+
+				fm, err := filemanager.New(&filemanager.Settings{
+					Provider: "MINIO",
+					Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+						Provider: "MINIO",
+						Config:   destConf,
+					}),
+				})
+				require.NoError(t, err)
+
+				objKey, err := fm.GetObjectNameFromLocation(output.Location)
+				require.NoError(t, err)
+
+				tmpFile, err := os.CreateTemp("", "load.csv")
+				require.NoError(t, err)
+
+				err = fm.Download(ctx, tmpFile, objKey)
+				require.NoError(t, err)
+
+				tmpFile, err = os.Open(tmpFile.Name())
+				require.NoError(t, err)
+
+				gzReader, err := gzip.NewReader(tmpFile)
+				require.NoError(t, err)
+
+				reader := csv.NewReader(gzReader)
+				reader.Comma = ','
+
+				sortedColMap := p.sortedColumnMapForAllTables()
+
+				for i := 0; i < output.TotalRows; i++ {
+					row, err := reader.Read()
+					require.NoError(t, err)
+
+					sortedCols := sortedColMap[output.TableName]
+
+					_, boolColIdx, _ := lo.FindIndexOf(sortedCols, func(item string) bool {
+						return item == "test_boolean"
+					})
+					_, boolArrayColIdx, _ := lo.FindIndexOf(sortedCols, func(item string) bool {
+						return item == "test_boolean_array"
+					})
+					require.Equal(t, row[boolColIdx], "1")
+					require.Equal(t, row[boolArrayColIdx], "[1,0]")
+				}
+				require.NoError(t, gzReader.Close())
+			}
+
+			<-claimedJobDone
+		})
+
+		t.Run("schema limit exceeded", func(t *testing.T) {
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
+			defer close(subscribeCh)
+
+			slaveNotifier := &mockSlaveNotifier{
+				subscribeCh: subscribeCh,
+			}
+
+			c := config.New()
+			c.Set("Warehouse.s3_datalake.columnCountLimit", 10)
+
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+			slaveWorker := newWorker(
+				c,
+				logger.NOP,
+				stats.NOP,
+				slaveNotifier,
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+				constraints.New(config.New()),
+				ef,
+				workerIdx,
+			)
+
+			stagingFiles := []stagingFileInfo{
+				{ID: 3, Location: jobLocation1},
+				{ID: 2, Location: jobLocation2},
+				{ID: 1, Location: jobLocation3},
+			}
+
+			p := payloadV2{
+				basePayload: basePayload{
+					UploadID:                     1,
+					UploadSchema:                 schemaMap,
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              warehouseutils.S3Datalake,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFiles: stagingFiles,
+			}
+
+			payloadJson, err := jsonrs.Marshal(p)
+			require.NoError(t, err)
+
+			claimJob := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUploadV2,
+				},
+			}
+
+			claimedJobDone := make(chan struct{})
+			go func() {
+				defer close(claimedJobDone)
+
+				slaveWorker.processClaimedUploadJob(ctx, claimJob)
+			}()
+
+			response := <-subscribeCh
+			require.Regexp(t, `staging file schema limit exceeded for stagingFileID: \d+, actualCount: 21, maxAllowedCount: 10`, response.Err.Error())
+
+			<-claimedJobDone
+		})
+
+		t.Run("discards", func(t *testing.T) {
+			subscribeCh := make(chan *notifier.ClaimJobResponse)
+			defer close(subscribeCh)
+
+			slaveNotifier := &mockSlaveNotifier{
+				subscribeCh: subscribeCh,
+			}
+
+			tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+			slaveWorker := newWorker(
+				config.New(),
+				logger.NOP,
+				stats.NOP,
+				slaveNotifier,
+				bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+				constraints.New(config.New()),
+				ef,
+				workerIdx,
+			)
+
+			stagingFiles := []stagingFileInfo{
+				{ID: 1, Location: jobLocation1},
+				{ID: 2, Location: jobLocation2},
+				{ID: 3, Location: jobLocation3},
+			}
+
+			p := payloadV2{
+				basePayload: basePayload{
+					UploadID: 1,
+					UploadSchema: map[string]model.TableSchema{
+						"tracks": map[string]string{
+							"id":                 "int",
+							"user_id":            "int",
+							"uuid_ts":            "timestamp",
+							"received_at":        "timestamp",
+							"original_timestamp": "timestamp",
+							"timestamp":          "timestamp",
+							"sent_at":            "timestamp",
+							"event":              "string",
+							"event_text":         "string",
+						},
+					},
+					WorkspaceID:                  workspaceID,
+					SourceID:                     sourceID,
+					SourceName:                   sourceName,
+					DestinationID:                destinationID,
+					DestinationName:              destinationName,
+					DestinationType:              destinationType,
+					DestinationNamespace:         namespace,
+					DestinationRevisionID:        uuid.New().String(),
+					StagingDestinationRevisionID: uuid.New().String(),
+					DestinationConfig:            destConf,
+					StagingDestinationConfig:     map[string]interface{}{},
+					UniqueLoadGenID:              uuid.New().String(),
+					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+					LoadFileType:                 "csv",
+				},
+				StagingFiles: stagingFiles,
+			}
+
+			payloadJson, err := jsonrs.Marshal(p)
+			require.NoError(t, err)
+
+			claim := &notifier.ClaimJob{
+				Job: &notifier.Job{
+					ID:                  1,
+					BatchID:             uuid.New().String(),
+					Payload:             payloadJson,
+					Status:              model.Waiting,
+					WorkspaceIdentifier: "test_workspace",
+					Type:                notifier.JobTypeUploadV2,
+				},
+			}
+
+			claimedJobDone := make(chan struct{})
+			go func() {
+				defer close(claimedJobDone)
+
+				slaveWorker.processClaimedUploadJob(ctx, claim)
+			}()
+
+			response := <-subscribeCh
+			require.NoError(t, response.Err)
+
+			var uploadPayload payloadV2
+			err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
+			require.NoError(t, err)
+			require.Len(t, uploadPayload.Output, 9)
+
+			discardsOutput, ok := lo.Find(uploadPayload.Output, func(o uploadResult) bool {
+				return o.TableName == warehouseutils.DiscardsTable
+			})
+			require.True(t, ok)
+			require.Equal(t, discardsOutput.TotalRows, 72) // 24 discards per file * 3 files
+			require.Equal(t, discardsOutput.UploadID, p.UploadID)
 			require.Equal(t, discardsOutput.DestinationRevisionID, p.DestinationRevisionID)
 			require.Equal(t, discardsOutput.UseRudderStorage, p.StagingUseRudderStorage)
 
