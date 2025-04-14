@@ -24,6 +24,7 @@ import (
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -739,4 +740,96 @@ func TestUploadJob_CanAppend(t *testing.T) {
 			require.Equal(t, uj.CanAppend(), tc.expected)
 		})
 	}
+}
+
+func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
+	ctx := context.Background()
+
+	testCases := []struct {
+		name              string
+		queryWithUploadID bool
+		expectedLoadFiles int
+	}{
+		{
+			name:              "query with upload ID",
+			queryWithUploadID: true,
+			expectedLoadFiles: 2,
+		},
+		{
+			name:              "query with staging file IDs",
+			queryWithUploadID: false,
+			expectedLoadFiles: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			db := setupDB(t)
+
+			conf := config.New()
+			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", tc.queryWithUploadID)
+
+			job := &UploadJob{
+				ctx:            ctx,
+				db:             db,
+				upload:         model.Upload{},
+				stagingFileIDs: []int64{1, 2, 3},
+				logger:         logger.NOP,
+				config: struct {
+					refreshPartitionBatchSize           int
+					retryTimeWindow                     time.Duration
+					minRetryAttempts                    int
+					disableAlter                        bool
+					minUploadBackoff                    time.Duration
+					maxUploadBackoff                    time.Duration
+					alwaysRegenerateAllLoadFiles        bool
+					reportingEnabled                    bool
+					maxParallelLoadsWorkspaceIDs        map[string]interface{}
+					columnsBatchSize                    int
+					longRunningUploadStatThresholdInMin time.Duration
+					skipPreviouslyFailedTables          bool
+					queryLoadFilesWithUploadID          config.ValueLoader[bool]
+				}{
+					queryLoadFilesWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
+				},
+			}
+			var stagingFileId int64
+			stagingFileId, job.upload.ID = createUpload(t, ctx, db)
+			loadFiles := []model.LoadFile{
+				{
+					UploadID:      &job.upload.ID,
+					StagingFileID: stagingFileId,
+					TableName:     "test_table",
+				},
+				{
+					UploadID:  &job.upload.ID,
+					TableName: "test_table2",
+				},
+			}
+			err := repo.NewLoadFiles(db, conf).Insert(ctx, loadFiles)
+			require.NoError(t, err)
+			result, err := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedLoadFiles, len(result))
+		})
+	}
+}
+
+func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
+	t.Helper()
+	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFile := model.StagingFileWithSchema{
+		StagingFile: model.StagingFile{},
+	}
+	var err error
+	stagingFile.ID, err = stagingFilesRepo.Insert(ctx, &stagingFile)
+	require.NoError(t, err)
+	stagingFiles := []*model.StagingFile{&stagingFile.StagingFile}
+	uploadRepo := repo.NewUploads(db)
+	upload := model.Upload{}
+	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
+	require.NoError(t, err)
+	return stagingFile.ID, uploadID
 }

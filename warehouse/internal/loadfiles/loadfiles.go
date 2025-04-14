@@ -211,6 +211,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	}()
 
 	if !lf.AllowUploadV2JobCreation(job) {
+		lf.Logger.Infof("V2 job creation disabled. Processing %d staging files", len(toProcessStagingFiles))
 		err = lf.createUploadJobs(ctx, job, toProcessStagingFiles, publishBatchSize, uniqueLoadGenID)
 		if err != nil {
 			return 0, 0, fmt.Errorf("creating upload jobs: %w", err)
@@ -234,11 +235,13 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	g, gCtx := errgroup.WithContext(ctx)
 	if len(v1Files) > 0 {
 		g.Go(func() error {
+			lf.Logger.Infof("V2 job creation enabled. Processing %d v1 staging files", len(v1Files))
 			return lf.createUploadJobs(gCtx, job, v1Files, publishBatchSize, uniqueLoadGenID)
 		})
 	}
 	if len(v2Files) > 0 {
 		g.Go(func() error {
+			lf.Logger.Infof("V2 job creation enabled. Processing %d v2 staging files", len(v2Files))
 			return lf.createUploadV2Jobs(gCtx, job, v2Files, publishBatchSize, uniqueLoadGenID)
 		})
 	}
@@ -329,7 +332,7 @@ func (lf *LoadFileGenerator) publishToNotifier(
 
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
-	lf.Logger.Infof("[WH]: Publishing %d staging files for %s:%s to notifier", len(messages), destType, destID)
+	lf.Logger.Infof("[WH]: Publishing %d jobs for %s:%s to notifier", len(messages), obskit.DestinationType(destType), obskit.DestinationID(destID))
 
 	ch, err := lf.Notifier.Publish(ctx, &notifier.PublishRequest{
 		Payloads:     messages,
@@ -401,7 +404,6 @@ func (lf *LoadFileGenerator) processNotifierResponse(ctx context.Context, ch <-c
 	return nil
 }
 
-// Unlike upload type job, for v2 we are not setting the status of staging files
 func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <-chan *notifier.PublishResponse, job *model.UploadJob, chunk []*model.StagingFile) error {
 	responses, ok := <-ch
 	if !ok {
@@ -436,6 +438,12 @@ func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <
 	}
 	if err := lf.LoadRepo.Insert(ctx, loadFiles); err != nil {
 		return fmt.Errorf("inserting load files: %w", err)
+	}
+	stagingFileIds := lo.Map(chunk, func(file *model.StagingFile, _ int) int64 {
+		return file.ID
+	})
+	if err := lf.StageRepo.SetStatuses(ctx, stagingFileIds, warehouseutils.StagingFileSucceededState); err != nil {
+		return fmt.Errorf("setting staging file status to succeeded: %w", err)
 	}
 	return nil
 }
@@ -479,8 +487,9 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 	}
 	g, gCtx := errgroup.WithContext(ctx)
 	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128))
-	for _, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
-		for _, group := range fileGroups {
+	for i, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
+		for j, group := range fileGroups {
+			lf.Logger.Infof("chunk %d, group %d, size %d", i, j, len(group))
 			baseReq := lf.prepareBaseJobRequest(job, uniqueLoadGenID, group[0], destinationRevisionIDMap)
 
 			stagingFileInfos := make([]StagingFileInfo, len(group))
@@ -642,7 +651,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 		sizes: make(map[string]int64),
 	})
 
-	lf.Logger.Infof("maxTable: %s, maxTableSize: %d", maxTable.name, maxTable.size)
+	lf.Logger.Infon("[groupBySize]", logger.NewStringField("maxTableName", maxTable.name), logger.NewIntField("maxTableSizeInBytes", maxTable.size))
 
 	// Sorting ensures that minimum batches are created
 	slices.SortFunc(files, func(a, b *model.StagingFile) int {
