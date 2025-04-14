@@ -12,55 +12,55 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// ConnectionWorker implements the workerpool.Worker interface for processing connection-level batches
+// ConnectionWorker processes batches of jobs for a specific source-destination connection.
+// It handles the actual upload of data to various destination types (object storage,
+// warehouse, async destinations) and manages the job status updates.
 type ConnectionWorker struct {
-	sourceID  string
-	destID    string
-	jobs      []*ConnectionJob
-	jobBuffer *JobBuffer
+	sourceID  string           // Source identifier
+	destID    string           // Destination identifier
+	jobs      []*ConnectionJob // Jobs to process for this connection
+	jobBuffer *JobBuffer       // Reference to the parent job buffer
 }
 
-// Work processes jobs for a specific connection
+// Work processes the current batch of jobs for this connection.
+// It handles different destination types and manages the upload process,
+// including error handling and status updates.
 func (cw *ConnectionWorker) Work() bool {
 	if len(cw.jobs) == 0 {
 		return false
 	}
 
-	// Use the existing upload logic
-	uploadSuccess := true
-	var uploadError error
-
-	// Define a function to update the failing destinations map based on the result
-	updateFailingStatus := func(failed bool, err error) {
-		cw.jobBuffer.brt.failingDestinationsMu.Lock()
-		cw.jobBuffer.brt.failingDestinations[cw.destID] = failed
-		cw.jobBuffer.brt.failingDestinationsMu.Unlock()
-
-		if failed {
-			cw.jobBuffer.brt.logger.Errorf("Upload failed for destination %s: %v", cw.destID, err)
-		}
+	// Prepare the batch for processing
+	batchedJobs, err := cw.prepareBatch()
+	if err != nil {
+		cw.jobBuffer.brt.logger.Errorf("Failed to prepare batch: %v", err)
+		return false
 	}
 
-	// Execute the upload inside a defer context to always update status
-	defer func() {
-		updateFailingStatus(!uploadSuccess, uploadError)
-	}()
+	// Process the batch based on destination type
+	uploadSuccess, uploadError := cw.processBatch(batchedJobs)
 
-	defer cw.jobBuffer.brt.limiter.upload.Begin(cw.destID)()
+	// Update failing destinations status
+	cw.updateFailingStatus(!uploadSuccess, uploadError)
 
-	// Convert jobs to BatchedJobs
+	return true
+}
+
+// prepareBatch converts the worker's jobs into a BatchedJobs structure and validates
+// the source and destination configuration.
+func (cw *ConnectionWorker) prepareBatch() (*BatchedJobs, error) {
+	// Convert jobs to BatchedJobs format
 	jobsToUpload := make([]*jobsdb.JobT, 0, len(cw.jobs))
 	for _, job := range cw.jobs {
 		jobsToUpload = append(jobsToUpload, job.job)
 	}
 
-	// Get destination and source from destinationsMap
+	// Get destination and source configuration
 	cw.jobBuffer.brt.configSubscriberMu.RLock()
 	destWithSources, ok := cw.jobBuffer.brt.destinationsMap[cw.destID]
 	cw.jobBuffer.brt.configSubscriberMu.RUnlock()
 	if !ok {
-		cw.jobBuffer.brt.logger.Errorf("Destination %s not found in destinationsMap", cw.destID)
-		return false
+		return nil, fmt.Errorf("destination %s not found in destinationsMap", cw.destID)
 	}
 
 	// Find matching source
@@ -72,90 +72,121 @@ func (cw *ConnectionWorker) Work() bool {
 		}
 	}
 	if source == nil {
-		cw.jobBuffer.brt.logger.Errorf("Source %s not found in destination %s", cw.sourceID, cw.destID)
-		return false
+		return nil, fmt.Errorf("source %s not found in destination %s", cw.sourceID, cw.destID)
 	}
 
-	batchedJobs := BatchedJobs{
+	return &BatchedJobs{
 		Jobs: jobsToUpload,
 		Connection: &Connection{
 			Destination: destWithSources.Destination,
 			Source:      *source,
 		},
-	}
+	}, nil
+}
 
-	// Process based on destination type
+// processBatch handles the upload process based on the destination type.
+// Returns upload success status and any error that occurred.
+func (cw *ConnectionWorker) processBatch(batchedJobs *BatchedJobs) (bool, error) {
+	defer cw.jobBuffer.brt.limiter.upload.Begin(cw.destID)()
+
+	destUploadStat := cw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, cw.sourceID, cw.destID)
+	destUploadStart := time.Now()
+	defer destUploadStat.Since(destUploadStart)
+
 	switch {
 	case IsObjectStorageDestination(cw.jobBuffer.brt.destType):
-		destUploadStat := cw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, cw.sourceID, cw.destID)
-		destUploadStart := time.Now()
-		output := cw.jobBuffer.brt.upload(cw.jobBuffer.brt.destType, &batchedJobs, false)
-		cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, false)
-		cw.jobBuffer.brt.updateJobStatus(&batchedJobs, false, output.Error, false)
-		misc.RemoveFilePaths(output.LocalFilePaths...)
-		if output.JournalOpID > 0 {
-			cw.jobBuffer.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
-		}
-		if output.Error == nil {
-			cw.jobBuffer.brt.recordUploadStats(*batchedJobs.Connection, output)
-		} else {
-			uploadSuccess = false
-			uploadError = output.Error
-		}
-		destUploadStat.Since(destUploadStart)
-
+		return cw.handleObjectStorageUpload(batchedJobs)
 	case IsWarehouseDestination(cw.jobBuffer.brt.destType):
-		useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
-		objectStorageType := warehouseutils.ObjectStorageType(cw.jobBuffer.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
-		destUploadStat := cw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, cw.sourceID, cw.destID)
-		destUploadStart := time.Now()
-		splitBatchJobs := cw.jobBuffer.brt.splitBatchJobsOnTimeWindow(batchedJobs)
-		allSuccess := true
-		for _, splitJob := range splitBatchJobs {
-			output := cw.jobBuffer.brt.upload(objectStorageType, splitJob, true)
-			notifyWarehouseErr := false
-			if output.Error == nil && output.Key != "" {
-				output.Error = cw.jobBuffer.brt.pingWarehouse(splitJob, output)
-				if output.Error != nil {
-					notifyWarehouseErr = true
-					allSuccess = false
-					uploadError = output.Error
-				}
-				warehouseutils.DestStat(stats.CountType, "generate_staging_files", cw.destID).Count(1)
-				warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", cw.destID).Count(len(splitJob.Jobs))
-			} else if output.Error != nil {
-				allSuccess = false
-				uploadError = output.Error
-			}
-			cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, true)
-			cw.jobBuffer.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
-			misc.RemoveFilePaths(output.LocalFilePaths...)
-		}
-		uploadSuccess = allSuccess
-		destUploadStat.Since(destUploadStart)
-
+		return cw.handleWarehouseUpload(batchedJobs)
 	case asynccommon.IsAsyncDestination(cw.jobBuffer.brt.destType):
-		destUploadStat := cw.jobBuffer.createStat("batch_router_dest_upload_time", stats.TimerType, cw.sourceID, cw.destID)
-		destUploadStart := time.Now()
-		cw.jobBuffer.brt.sendJobsToStorage(batchedJobs)
-		destUploadStat.Since(destUploadStart)
-
+		return cw.handleAsyncDestinationUpload(batchedJobs), nil
 	default:
-		errMsg := fmt.Errorf("unsupported destination type %s for job buffer", cw.jobBuffer.brt.destType)
-		cw.jobBuffer.brt.logger.Errorf("Unsupported destination type %s for job buffer: %v", cw.jobBuffer.brt.destType, errMsg)
-		uploadSuccess = false
-		uploadError = errMsg
+		err := fmt.Errorf("unsupported destination type %s for job buffer", cw.jobBuffer.brt.destType)
+		cw.jobBuffer.brt.logger.Error(err)
+		return false, err
+	}
+}
+
+// handleObjectStorageUpload processes uploads for object storage destinations
+func (cw *ConnectionWorker) handleObjectStorageUpload(batchedJobs *BatchedJobs) (bool, error) {
+	output := cw.jobBuffer.brt.upload(cw.jobBuffer.brt.destType, batchedJobs, false)
+	defer misc.RemoveFilePaths(output.LocalFilePaths...)
+
+	cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, false)
+	cw.jobBuffer.brt.updateJobStatus(batchedJobs, false, output.Error, false)
+
+	if output.JournalOpID > 0 {
+		cw.jobBuffer.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
 	}
 
+	if output.Error == nil {
+		cw.jobBuffer.brt.recordUploadStats(*batchedJobs.Connection, output)
+		return true, nil
+	}
+	return false, output.Error
+}
+
+// handleWarehouseUpload processes uploads for warehouse destinations
+func (cw *ConnectionWorker) handleWarehouseUpload(batchedJobs *BatchedJobs) (bool, error) {
+	useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
+	objectStorageType := warehouseutils.ObjectStorageType(cw.jobBuffer.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
+
+	splitBatchJobs := cw.jobBuffer.brt.splitBatchJobsOnTimeWindow(*batchedJobs)
+	var lastError error
+	allSuccess := true
+
+	for _, splitJob := range splitBatchJobs {
+		output := cw.jobBuffer.brt.upload(objectStorageType, splitJob, true)
+		defer misc.RemoveFilePaths(output.LocalFilePaths...)
+
+		notifyWarehouseErr := false
+		if output.Error == nil && output.Key != "" {
+			output.Error = cw.jobBuffer.brt.pingWarehouse(splitJob, output)
+			if output.Error != nil {
+				notifyWarehouseErr = true
+				allSuccess = false
+				lastError = output.Error
+			}
+			warehouseutils.DestStat(stats.CountType, "generate_staging_files", cw.destID).Count(1)
+			warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", cw.destID).Count(len(splitJob.Jobs))
+		} else if output.Error != nil {
+			allSuccess = false
+			lastError = output.Error
+		}
+
+		cw.jobBuffer.brt.recordDeliveryStatus(cw.destID, cw.sourceID, output, true)
+		cw.jobBuffer.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
+	}
+
+	return allSuccess, lastError
+}
+
+// handleAsyncDestinationUpload processes uploads for async destinations
+func (cw *ConnectionWorker) handleAsyncDestinationUpload(batchedJobs *BatchedJobs) bool {
+	cw.jobBuffer.brt.sendJobsToStorage(*batchedJobs)
 	return true
 }
 
-// SleepDurations returns the min and max sleep durations for the worker when idle
+// updateFailingStatus updates the failing destinations map with the current status
+func (cw *ConnectionWorker) updateFailingStatus(failed bool, err error) {
+	cw.jobBuffer.brt.failingDestinationsMu.Lock()
+	cw.jobBuffer.brt.failingDestinations[cw.destID] = failed
+	cw.jobBuffer.brt.failingDestinationsMu.Unlock()
+
+	if failed {
+		cw.jobBuffer.brt.logger.Errorf("Upload failed for destination %s: %v", cw.destID, err)
+	}
+}
+
+// SleepDurations returns the min and max sleep durations for the worker when idle.
+// These values determine how long the worker should wait before checking for new work
+// when there are no jobs to process.
 func (cw *ConnectionWorker) SleepDurations() (min, max time.Duration) {
 	return time.Millisecond * 100, time.Second * 5
 }
 
-// Stop is a no-op since this worker doesn't have internal goroutines
+// Stop cleans up any resources used by the worker.
+// Currently a no-op as ConnectionWorker doesn't maintain any persistent resources.
 func (cw *ConnectionWorker) Stop() {
-	// No-op
+	// No cleanup needed
 }
