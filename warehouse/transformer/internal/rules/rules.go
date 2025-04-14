@@ -16,12 +16,12 @@ type Rules func(event *types.TransformerEvent) (any, error)
 
 var (
 	DefaultRules = map[string]Rules{
-		"id":                 staticRule("messageId"),
+		"id":                 messageIDFromMetadata(),
 		"anonymous_id":       staticRule("anonymousId"),
 		"user_id":            staticRule("userId"),
 		"sent_at":            staticRule("sentAt"),
 		"timestamp":          staticRule("timestamp"),
-		"received_at":        staticRule("receivedAt"),
+		"received_at":        receivedAtFromMetadata(),
 		"original_timestamp": staticRule("originalTimestamp"),
 		"channel":            staticRule("channel"),
 		"context_ip": func(event *types.TransformerEvent) (any, error) {
@@ -101,7 +101,7 @@ var (
 		"id": func(event *types.TransformerEvent) (any, error) {
 			return extractRecordID(&event.Metadata)
 		},
-		"received_at": staticRule("receivedAt"),
+		"received_at": receivedAtFromMetadata(),
 		"event":       staticRule("event"),
 	}
 )
@@ -109,6 +109,18 @@ var (
 func staticRule(key string) Rules {
 	return func(event *types.TransformerEvent) (any, error) {
 		return misc.MapLookup(event.Message, strings.Split(key, ".")...), nil
+	}
+}
+
+func messageIDFromMetadata() Rules {
+	return func(event *types.TransformerEvent) (any, error) {
+		return event.Metadata.MessageID, nil
+	}
+}
+
+func receivedAtFromMetadata() Rules {
+	return func(event *types.TransformerEvent) (any, error) {
+		return event.Metadata.ReceivedAt, nil
 	}
 }
 
