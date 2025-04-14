@@ -40,7 +40,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/utils/workerpool"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -153,21 +152,6 @@ func (brt *Handle) Setup(
 	)
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
-
-	// Initialize job buffer
-	brt.jobBuffer = &JobBuffer{
-		sourceDestMap: make(map[string]chan *jobsdb.JobT),
-		uploadTimers:  make(map[string]*time.Timer),
-		batchWorkers:  make(map[string]*batchWorker),
-		brt:           brt,
-		workerPool: workerpool.New(context.Background(), func(key string) workerpool.Worker {
-			return &batchWorker{
-				partition: key,
-				jobBuffer: brt.jobBuffer,
-			}
-		}, brt.logger),
-	}
-
 	brt.crashRecover()
 
 	if asynccommon.IsAsyncDestination(brt.destType) {
@@ -206,6 +190,9 @@ func (brt *Handle) Setup(
 		brt.collectMetrics(brt.backgroundCtx)
 		return nil
 	}))
+
+	// Initialize the job buffer
+	brt.jobBuffer = NewJobBuffer(brt)
 }
 
 func (brt *Handle) setupReloadableVars() {
