@@ -37,8 +37,9 @@ type GenericConsentManagementProviderConfig struct {
 Filters and returns destinations based on the consents configured for the destination and the user consents present in the event.
 
 Supports legacy and generic consent management.
+For GCM based filtering, uses source and destination IDs to fetch the appropriate GCM data from the config.
 */
-func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
+func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, sourceID string, destinations []backendconfig.DestinationT) []backendconfig.DestinationT {
 	// If the event does not have denied consent IDs, do not filter any destinations
 	consentManagementInfo, err := getConsentManagementInfo(event)
 	if err != nil {
@@ -52,7 +53,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, d
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// Generic consent management
-		if cmpData := proc.getGCMData(dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
+		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
 			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 
@@ -103,17 +104,17 @@ func (proc *Handle) getKetchConsentData(destinationID string) []string {
 	return proc.config.ketchConsentCategoriesMap[destinationID]
 }
 
-func (proc *Handle) getGCMData(destinationID, provider string) GenericConsentManagementProviderData {
+func (proc *Handle) getGCMData(sourceID, destinationID, provider string) GenericConsentManagementProviderData {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
 
 	defRetVal := GenericConsentManagementProviderData{}
-	destinationData, ok := proc.config.destGenericConsentManagementMap[destinationID]
+	destinationData, ok := proc.config.genericConsentManagementMap[SourceID(sourceID)][DestinationID(destinationID)]
 	if !ok {
 		return defRetVal
 	}
 
-	providerData, ok := destinationData[provider]
+	providerData, ok := destinationData[ConsentProviderKey(provider)]
 	if !ok {
 		return defRetVal
 	}
@@ -161,8 +162,8 @@ func getKetchConsentCategories(dest *backendconfig.DestinationT) []string {
 	})
 }
 
-func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[string]GenericConsentManagementProviderData, error) {
-	genericConsentManagementData := make(map[string]GenericConsentManagementProviderData)
+func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentProviderMap, error) {
+	genericConsentManagementData := make(ConsentProviderMap)
 
 	if _, ok := dest.Config["consentManagement"]; !ok {
 		return genericConsentManagementData, nil
@@ -192,7 +193,7 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (map[stri
 			)
 
 			if len(consentIDs) > 0 {
-				genericConsentManagementData[providerConfig.Provider] = GenericConsentManagementProviderData{
+				genericConsentManagementData[ConsentProviderKey(providerConfig.Provider)] = GenericConsentManagementProviderData{
 					ResolutionStrategy: providerConfig.ResolutionStrategy,
 					Consents:           consentIDs,
 				}
