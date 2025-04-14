@@ -151,7 +151,7 @@ func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, even
 	s.pipelinesPerPartition = pipelinesPerPartition
 
 	var idx int
-	for u := 0; u < workspaces; u++ {
+	for u := range workspaces {
 		workspaceID := "workspace-" + strconv.Itoa(u)
 		s.workspaces = append(s.workspaces, workspaceID)
 		for i := 0; i < eventsPerWorkspace; i++ {

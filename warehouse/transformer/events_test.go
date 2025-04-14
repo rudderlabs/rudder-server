@@ -3,12 +3,13 @@ package transformer
 import (
 	"context"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -2578,5 +2579,67 @@ func TestEvents(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("Multiple fields for the same key", func(t *testing.T) {
+		message := map[string]any{
+			"context": map[string]any{
+				"abC":  "1",
+				"ab_C": "2",
+				"ab_c": "3",
+			},
+			"messageId":         "messageId",
+			"originalTimestamp": "2021-09-01T00:00:00.000Z",
+			"receivedAt":        "2021-09-01T00:00:00.000Z",
+			"sentAt":            "2021-09-01T00:00:00.000Z",
+			"timestamp":         "2021-09-01T00:00:00.000Z",
+			"type":              "identify",
+		}
+		c := setupConfig(transformerResource, map[string]any{})
+
+		ctx := context.Background()
+		events := []types.TransformerEvent{{
+			Message:     message,
+			Metadata:    getMetadata("identify", "POSTGRES"),
+			Destination: getDestination("POSTGRES", map[string]any{}),
+		}}
+
+		t.Run("Reverse", func(t *testing.T) {
+			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
+			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+			warehouseTransformer.sorter = func(i []string) []string {
+				sort.Strings(i)
+				slices.Reverse(i)
+				return i
+			}
+
+			pResponse := processorTransformer.Destination().Transform(ctx, events)
+			wResponse := warehouseTransformer.Transform(ctx, events)
+
+			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+			require.Nil(t, pResponse.FailedEvents)
+			require.Nil(t, wResponse.FailedEvents)
+			for i := range pResponse.Events {
+				require.Equal(t, "3", misc.MapLookup(pResponse.Events[i].Output, "data", "context_ab_c"))
+				require.Equal(t, "1", misc.MapLookup(wResponse.Events[i].Output, "data", "context_ab_c"))
+				delete(pResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				delete(wResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			}
+		})
+		t.Run("Sorted", func(t *testing.T) {
+			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
+			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+
+			pResponse := processorTransformer.Destination().Transform(ctx, events)
+			wResponse := warehouseTransformer.Transform(ctx, events)
+
+			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+			require.Nil(t, pResponse.FailedEvents)
+			require.Nil(t, wResponse.FailedEvents)
+			for i := range pResponse.Events {
+				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			}
+		})
 	})
 }
