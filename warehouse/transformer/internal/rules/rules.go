@@ -16,12 +16,12 @@ type Rules func(event *types.TransformerEvent) (any, error)
 
 var (
 	DefaultRules = map[string]Rules{
-		"id":                 messageIDFromMetadata(),
+		"id":                 messageIDFromMetadata(), // Use metadata, since we are not modifying Message
 		"anonymous_id":       staticRule("anonymousId"),
 		"user_id":            staticRule("userId"),
 		"sent_at":            staticRule("sentAt"),
 		"timestamp":          staticRule("timestamp"),
-		"received_at":        receivedAtFromMetadata(),
+		"received_at":        receivedAtFromMetadata(), // Use metadata, since we are not modifying Message
 		"original_timestamp": staticRule("originalTimestamp"),
 		"channel":            staticRule("channel"),
 		"context_ip": func(event *types.TransformerEvent) (any, error) {
@@ -101,7 +101,7 @@ var (
 		"id": func(event *types.TransformerEvent) (any, error) {
 			return extractRecordID(&event.Metadata)
 		},
-		"received_at": receivedAtFromMetadata(),
+		"received_at": receivedAtFromMetadata(), // Use metadata, since we are not modifying Message
 		"event":       staticRule("event"),
 	}
 )
