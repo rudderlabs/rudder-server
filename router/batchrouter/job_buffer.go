@@ -33,6 +33,9 @@ type JobBuffer struct {
 	// Consumer management
 	consumerPool  workerpool.WorkerPool
 	workerLimiter kitsync.Limiter
+
+	// Active consumer tracking
+	activeConsumers sync.Map
 }
 
 // ConnectionJob represents a job with its connection details for batch processing
@@ -44,10 +47,6 @@ type ConnectionJob struct {
 
 // NewJobBuffer creates and initializes a new JobBuffer instance
 func NewJobBuffer(brt *Handle) *JobBuffer {
-	if brt == nil {
-		panic("batch router handle cannot be nil")
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	maxConsumers := brt.conf.GetInt("BatchRouter.maxConsumers", 100)
 
@@ -66,10 +65,41 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 	// Initialize the batch worker pool
 	jb.workerPool = workerpool.New(ctx, jb.createBatchWorker, brt.logger)
 
-	// Initialize the consumer worker pool
-	jb.consumerPool = workerpool.New(ctx, jb.createConsumerWorker, brt.logger)
+	// Initialize the consumer worker pool with a shorter idle timeout to keep workers active
+	jb.consumerPool = workerpool.New(ctx, jb.createConsumerWorker, brt.logger,
+		workerpool.WithIdleTimeout(brt.uploadFreq.Load()/2), // Set idle timeout to half the upload frequency
+	)
+
+	// Start a background goroutine to keep consumer workers active
+	go jb.keepConsumersActive()
 
 	return jb
+}
+
+// keepConsumersActive ensures consumer workers stay active by periodically pinging them
+func (jb *JobBuffer) keepConsumersActive() {
+	ticker := time.NewTicker(jb.brt.uploadFreq.Load() / 4) // Ping at 1/4th of upload frequency
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-jb.ctx.Done():
+			return
+		case <-ticker.C:
+			// Get all active consumer keys
+			jb.mu.RLock()
+			keys := make([]string, 0, len(jb.sourceDestMap))
+			for key := range jb.sourceDestMap {
+				keys = append(keys, key)
+			}
+			jb.mu.RUnlock()
+
+			// Ping each consumer worker
+			for _, key := range keys {
+				jb.consumerPool.PingWorker(key)
+			}
+		}
+	}
 }
 
 // createBatchWorker is a factory function for creating new batch workers
@@ -80,7 +110,10 @@ func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
 // createConsumerWorker is a factory function for creating new consumer workers
 func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
 	// Try to acquire a slot from the limiter
-	jb.workerLimiter.Begin(key)
+	release := jb.workerLimiter.Begin(key)
+
+	// Store the release function
+	jb.activeConsumers.Store(key, release)
 
 	sourceID, destID := parseConnectionKey(key)
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
@@ -159,6 +192,8 @@ func (jb *JobBuffer) addJobToPartition(partition string, job *ConnectionJob) {
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	key := getSourceDestKey(sourceID, destID)
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
+
+	// Ensure the consumer is active
 	jb.consumerPool.PingWorker(key)
 
 	// Send the job to the channel
@@ -178,6 +213,14 @@ func (jb *JobBuffer) Stop() {
 		close(ch)
 		delete(jb.sourceDestMap, key)
 	}
+
+	// Release all limiter slots
+	jb.activeConsumers.Range(func(key, value interface{}) bool {
+		if release, ok := value.(func()); ok {
+			release()
+		}
+		return true
+	})
 
 	// Shutdown the worker pools
 	jb.workerPool.Shutdown()

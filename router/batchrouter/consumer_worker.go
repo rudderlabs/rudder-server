@@ -23,6 +23,10 @@ type ConsumerWorker struct {
 	pingBatchWorker   func(partition string)
 	getUploadFreq     func() time.Duration
 	getMaxBatchSize   func() int
+
+	// Batch state
+	currentBatchSize int
+	lastBatchTime    time.Time
 }
 
 // NewConsumerWorker creates a new consumer worker for a source-destination pair
@@ -44,6 +48,7 @@ func NewConsumerWorker(
 		pingBatchWorker:   callbacks.PingBatchWorker,
 		getUploadFreq:     callbacks.GetUploadFreq,
 		getMaxBatchSize:   callbacks.GetMaxBatchSize,
+		lastBatchTime:     time.Now(),
 	}
 }
 
@@ -58,15 +63,36 @@ type ConsumerCallbacks struct {
 // Work implements the workerpool.Worker interface.
 // It processes jobs from the channel and manages batching based on size and time thresholds.
 func (cw *ConsumerWorker) Work() bool {
-	var jobCount int
+	// Check if we need to trigger a batch based on time
+	if cw.currentBatchSize > 0 && time.Since(cw.lastBatchTime) >= cw.getUploadFreq() {
+		cw.triggerBatch()
+		return true
+	}
 
-	// Create a timer channel for upload frequency checks
-	uploadFreqTimer := time.NewTimer(cw.getUploadFreq())
-	defer uploadFreqTimer.Stop()
+	// Try to read a job with a timeout to ensure we don't miss time-based batch triggers
+	timeout := cw.getUploadFreq()
+	if cw.currentBatchSize > 0 {
+		// If we have jobs in the batch, use the remaining time until next batch
+		remainingTime := cw.getUploadFreq() - time.Since(cw.lastBatchTime)
+		if remainingTime > 0 {
+			timeout = remainingTime
+		} else {
+			// If we're already past the upload frequency, trigger immediately
+			cw.triggerBatch()
+			return true
+		}
+	}
+
+	// Set up a timer for the timeout
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 
 	select {
 	case job, ok := <-cw.ch:
 		if !ok {
+			if cw.currentBatchSize > 0 {
+				cw.triggerBatch()
+			}
 			return false
 		}
 
@@ -77,42 +103,44 @@ func (cw *ConsumerWorker) Work() bool {
 			sourceID: cw.sourceID,
 			destID:   cw.destID,
 		})
-		jobCount++
+		cw.currentBatchSize++
 
-		// Reset timer when we get our first job
-		if jobCount == 1 {
-			if !uploadFreqTimer.Stop() {
-				<-uploadFreqTimer.C
-			}
-			uploadFreqTimer.Reset(cw.getUploadFreq())
+		// If this is the first job in a new batch, update the batch start time
+		if cw.currentBatchSize == 1 {
+			cw.lastBatchTime = time.Now()
 		}
 
 		// Trigger batch processing if max batch size reached
-		if jobCount >= cw.getMaxBatchSize() {
-			key := getSourceDestKey(cw.sourceID, cw.destID)
-			cw.pingBatchWorker(key)
-			if !uploadFreqTimer.Stop() {
-				<-uploadFreqTimer.C
-			}
-			uploadFreqTimer.Reset(cw.getUploadFreq())
-			return true
+		if cw.currentBatchSize >= cw.getMaxBatchSize() {
+			cw.triggerBatch()
 		}
 
-	case <-uploadFreqTimer.C:
-		cw.logger.Infof("Upload frequency threshold reached with %d jobs", jobCount)
-		if jobCount > 0 {
-			key := getSourceDestKey(cw.sourceID, cw.destID)
-			cw.pingBatchWorker(key)
-			uploadFreqTimer.Reset(cw.getUploadFreq())
-			return true
+	case <-timer.C:
+		// Timer expired - trigger batch if we have any jobs
+		if cw.currentBatchSize > 0 {
+			cw.triggerBatch()
 		}
-		uploadFreqTimer.Reset(cw.getUploadFreq())
 
 	case <-cw.ctx.Done():
+		// Context cancelled - trigger final batch if we have any jobs
+		if cw.currentBatchSize > 0 {
+			cw.triggerBatch()
+		}
 		return false
 	}
 
 	return true
+}
+
+// triggerBatch triggers batch processing and resets batch state
+func (cw *ConsumerWorker) triggerBatch() {
+	if cw.currentBatchSize > 0 {
+		key := getSourceDestKey(cw.sourceID, cw.destID)
+		cw.logger.Infof("Triggering batch processing for %d jobs", cw.currentBatchSize)
+		cw.pingBatchWorker(key)
+		cw.currentBatchSize = 0
+		cw.lastBatchTime = time.Now()
+	}
 }
 
 // SleepDurations returns the min and max sleep durations for the worker when idle
@@ -122,5 +150,8 @@ func (cw *ConsumerWorker) SleepDurations() (min, max time.Duration) {
 
 // Stop implements the workerpool.Worker interface
 func (cw *ConsumerWorker) Stop() {
-	// No cleanup needed
+	// Trigger final batch if we have any jobs
+	if cw.currentBatchSize > 0 {
+		cw.triggerBatch()
+	}
 }
