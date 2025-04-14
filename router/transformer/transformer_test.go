@@ -340,7 +340,7 @@ func TestProxyRequest(t *testing.T) {
 
 				isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 				expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
@@ -366,10 +366,10 @@ func TestProxyRequest(t *testing.T) {
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -642,7 +642,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 			transformMsg := types.TransformMessageT{
 				Data: tc.inputEvents,
@@ -1680,7 +1680,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff)
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 			var adapter transformerProxyAdapter
 			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
@@ -1745,7 +1745,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1778,7 +1778,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1820,7 +1820,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1861,7 +1861,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1910,7 +1910,7 @@ func TestDehydrateHydrate(t *testing.T) {
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
 	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff)
+	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)
 
@@ -2061,4 +2061,53 @@ func TestTransformerMetrics(t *testing.T) {
 				"metric %s should have count of 2 events", metricName)
 		}
 	}
+}
+
+func TestTransformerCompactionFlags(t *testing.T) {
+	t.Run("compaction not supported and not enabled", func(t *testing.T) {
+		h := &handle{
+			compactionEnabled:      config.SingleValueLoader(false),
+			compactionSupported:    false,
+			forceCompactionEnabled: false,
+		}
+
+		require.False(t, h.compactRequestPayloads())
+	})
+
+	t.Run("compaction not supported and not enabled but forced", func(t *testing.T) {
+		h := &handle{
+			compactionEnabled:      config.SingleValueLoader(false),
+			compactionSupported:    false,
+			forceCompactionEnabled: true,
+		}
+
+		require.True(t, h.compactRequestPayloads())
+	})
+
+	t.Run("compaction supported but not enabled", func(t *testing.T) {
+		h := &handle{
+			compactionEnabled:      config.SingleValueLoader(false),
+			compactionSupported:    true,
+			forceCompactionEnabled: false,
+		}
+		require.False(t, h.compactRequestPayloads())
+	})
+
+	t.Run("compaction supported, not enabled but forced", func(t *testing.T) {
+		h := &handle{
+			compactionEnabled:      config.SingleValueLoader(false),
+			compactionSupported:    true,
+			forceCompactionEnabled: true,
+		}
+		require.True(t, h.compactRequestPayloads())
+	})
+
+	t.Run("compaction supported and enabled", func(t *testing.T) {
+		h := &handle{
+			compactionEnabled:      config.SingleValueLoader(true),
+			compactionSupported:    true,
+			forceCompactionEnabled: false,
+		}
+		require.True(t, h.compactRequestPayloads())
+	})
 }

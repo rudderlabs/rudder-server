@@ -11,9 +11,28 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
+
+func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64 {
+	t.Helper()
+	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFile := model.StagingFileWithSchema{
+		StagingFile: model.StagingFile{
+			ID: 1,
+		},
+	}
+	_, err := stagingFilesRepo.Insert(ctx, &stagingFile)
+	require.NoError(t, err)
+	stagingFiles := []*model.StagingFile{&stagingFile.StagingFile}
+	uploadRepo := repo.NewUploads(db)
+	upload := model.Upload{}
+	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
+	require.NoError(t, err)
+	return uploadID
+}
 
 func Test_LoadFiles(t *testing.T) {
 	ctx := context.Background()
@@ -124,8 +143,9 @@ func TestLoadFiles_GetByID(t *testing.T) {
 		return now
 	}))
 
+	uploadID := createUpload(t, ctx, db)
 	loadFiles := lo.RepeatBy(10, func(i int) model.LoadFile {
-		return model.LoadFile{
+		file := model.LoadFile{
 			TableName:             "table_name",
 			Location:              "s3://bucket/path/to/file",
 			TotalRows:             10,
@@ -137,6 +157,11 @@ func TestLoadFiles_GetByID(t *testing.T) {
 			DestinationID:         "destination_id",
 			DestinationType:       "RS",
 		}
+		// Not adding uploadID for first file to test NULL value
+		if i != 0 {
+			file.UploadID = &uploadID
+		}
+		return file
 	})
 	require.NoError(t, r.Insert(ctx, loadFiles))
 
