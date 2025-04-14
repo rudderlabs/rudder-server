@@ -588,7 +588,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
-		Augmenter:          extensions.RouterBodyAugmenter,
+		Augmenter:          extensions.RouterHeaderAugmenter,
 		ExpirationTimeDiff: (trans.expirationTimeDiff).Load(),
 		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
 	}
