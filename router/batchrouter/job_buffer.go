@@ -80,10 +80,7 @@ func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
 // createConsumerWorker is a factory function for creating new consumer workers
 func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
 	// Try to acquire a slot from the limiter
-	if err := jb.workerLimiter.Begin(key); err != nil {
-		jb.brt.logger.Errorf("Failed to acquire worker slot: %v", err)
-		return nil
-	}
+	jb.workerLimiter.Begin(key)
 
 	sourceID, destID := parseConnectionKey(key)
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
@@ -162,8 +159,6 @@ func (jb *JobBuffer) addJobToPartition(partition string, job *ConnectionJob) {
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	key := getSourceDestKey(sourceID, destID)
 	ch := jb.getOrCreateJobChannel(sourceID, destID)
-
-	// Ensure a consumer exists for this source-destination pair
 	jb.consumerPool.PingWorker(key)
 
 	// Send the job to the channel

@@ -21,7 +21,6 @@ type ConsumerWorker struct {
 	// Callbacks for job processing
 	addJobToPartition func(partition string, job *ConnectionJob)
 	pingBatchWorker   func(partition string)
-	onWorkerExit      func(sourceID, destID string)
 	getUploadFreq     func() time.Duration
 	getMaxBatchSize   func() int
 }
@@ -68,8 +67,6 @@ func (cw *ConsumerWorker) Work() bool {
 	select {
 	case job, ok := <-cw.ch:
 		if !ok {
-			// Channel closed, notify parent and exit
-			cw.onWorkerExit(cw.sourceID, cw.destID)
 			return false
 		}
 
@@ -102,9 +99,9 @@ func (cw *ConsumerWorker) Work() bool {
 		}
 
 	case <-uploadFreqTimer.C:
+		cw.logger.Infof("Upload frequency threshold reached with %d jobs", jobCount)
 		if jobCount > 0 {
 			key := getSourceDestKey(cw.sourceID, cw.destID)
-			cw.logger.Infof("Upload frequency threshold reached with %d jobs", jobCount)
 			cw.pingBatchWorker(key)
 			uploadFreqTimer.Reset(cw.getUploadFreq())
 			return true
