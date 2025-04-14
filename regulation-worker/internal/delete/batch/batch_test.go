@@ -3,6 +3,7 @@ package batch_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -179,13 +180,13 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 		fileName = strings.Join(prefixes, "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	// copy the content of file to mockBucektLocation+fileName
+	// copy the content of file to mockBucketLocation+fileName
 	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	defer uploadFilePtr.Close()
+	defer func() { _ = uploadFilePtr.Close() }()
 	_, err = io.Copy(uploadFilePtr, file)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
@@ -197,8 +198,12 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 	}, nil
 }
 
+func (fm *mockFileManager) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
+	return filemanager.UploadedFile{}, errors.New("not implemented")
+}
+
 // Given a file name download & simply save it in the given file pointer.
-func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, location string) error {
+func (fm *mockFileManager) Download(_ context.Context, output io.WriterAt, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0o644)
 	if err != nil {
@@ -207,7 +212,7 @@ func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, l
 		}
 		return err
 	}
-	_, err = io.Copy(outputFilePtr, uploadFilePtr)
+	_, err = io.Copy(&writerAtAdapter{w: output}, uploadFilePtr)
 	if err != nil {
 		return err
 	}
@@ -262,4 +267,16 @@ func (*mockFileManager) GetDownloadKeyFromFileLocation(_ string) string {
 
 func (*mockFileManager) Prefix() string {
 	return ""
+}
+
+// writerAtAdapter adapts an io.WriterAt to an io.Writer
+type writerAtAdapter struct {
+	w      io.WriterAt
+	offset int64
+}
+
+func (a *writerAtAdapter) Write(p []byte) (int, error) {
+	n, err := a.w.WriteAt(p, a.offset)
+	a.offset += int64(n)
+	return n, err
 }
