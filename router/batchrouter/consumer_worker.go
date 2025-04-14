@@ -61,7 +61,6 @@ type ConsumerCallbacks struct {
 // Work implements the workerpool.Worker interface.
 // It processes jobs from the channel and manages batching based on size and time thresholds.
 func (cw *ConsumerWorker) Work() bool {
-	var lastJobTime time.Time
 	var jobCount int
 
 	// Create a timer channel for upload frequency checks
@@ -85,9 +84,8 @@ func (cw *ConsumerWorker) Work() bool {
 		})
 		jobCount++
 
-		if lastJobTime.IsZero() {
-			lastJobTime = time.Now()
-			// Reset timer when we get our first job
+		// Reset timer when we get our first job
+		if jobCount == 1 {
 			if !uploadFreqTimer.Stop() {
 				<-uploadFreqTimer.C
 			}
@@ -98,12 +96,11 @@ func (cw *ConsumerWorker) Work() bool {
 		if jobCount >= cw.getMaxBatchSize() {
 			key := getSourceDestKey(cw.sourceID, cw.destID)
 			cw.pingBatchWorker(key)
-			lastJobTime = time.Time{} // Reset timer
-			jobCount = 0
 			if !uploadFreqTimer.Stop() {
 				<-uploadFreqTimer.C
 			}
 			uploadFreqTimer.Reset(cw.getUploadFreq())
+			return true
 		}
 
 	case <-uploadFreqTimer.C:
@@ -111,8 +108,8 @@ func (cw *ConsumerWorker) Work() bool {
 			key := getSourceDestKey(cw.sourceID, cw.destID)
 			cw.logger.Infof("Upload frequency threshold reached with %d jobs", jobCount)
 			cw.pingBatchWorker(key)
-			lastJobTime = time.Time{} // Reset timer
-			jobCount = 0
+			uploadFreqTimer.Reset(cw.getUploadFreq())
+			return true
 		}
 		uploadFreqTimer.Reset(cw.getUploadFreq())
 
