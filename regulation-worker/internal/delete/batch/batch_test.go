@@ -3,6 +3,7 @@ package batch_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -180,13 +181,13 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 		fileName = strings.Join(prefixes, "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	// copy the content of file to mockBucektLocation+fileName
+	// copy the content of file to mockBucketLocation+fileName
 	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	defer uploadFilePtr.Close()
+	defer func() { _ = uploadFilePtr.Close() }()
 	_, err = io.Copy(uploadFilePtr, file)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
