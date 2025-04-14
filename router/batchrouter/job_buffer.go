@@ -17,6 +17,8 @@ type JobBuffer struct {
 	// Core components
 	brt        *Handle
 	workerPool workerpool.WorkerPool
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	// Channel management
 	sourceDestMap map[string]chan *jobsdb.JobT
@@ -25,6 +27,11 @@ type JobBuffer struct {
 	// Job queues for each partition
 	jobQueues   map[string][]*ConnectionJob
 	queuesMutex sync.RWMutex
+
+	// Consumer management
+	consumerPool    workerpool.WorkerPool
+	activeConsumers sync.Map
+	workerSemaphore chan struct{} // Semaphore to limit concurrent workers
 }
 
 // ConnectionJob represents a job with its connection details for batch processing
@@ -40,14 +47,23 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 		panic("batch router handle cannot be nil")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	maxConsumers := brt.conf.GetInt("BatchRouter.maxConsumers", 100)
+
 	jb := &JobBuffer{
-		brt:           brt,
-		sourceDestMap: make(map[string]chan *jobsdb.JobT),
-		jobQueues:     make(map[string][]*ConnectionJob),
+		brt:             brt,
+		sourceDestMap:   make(map[string]chan *jobsdb.JobT),
+		jobQueues:       make(map[string][]*ConnectionJob),
+		ctx:             ctx,
+		cancel:          cancel,
+		workerSemaphore: make(chan struct{}, maxConsumers),
 	}
 
-	// Initialize the worker pool with a worker factory
-	jb.workerPool = workerpool.New(context.Background(), jb.createBatchWorker, brt.logger)
+	// Initialize the batch worker pool
+	jb.workerPool = workerpool.New(ctx, jb.createBatchWorker, brt.logger)
+
+	// Initialize the consumer worker pool
+	jb.consumerPool = workerpool.New(ctx, jb.createConsumerWorker, brt.logger)
 
 	return jb
 }
@@ -57,13 +73,40 @@ func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
 	return NewBatchWorker(partition, jb.brt.logger, jb.brt, jb.getJobsForPartition)
 }
 
+// createConsumerWorker is a factory function for creating new consumer workers
+func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
+	// Acquire semaphore slot
+	jb.workerSemaphore <- struct{}{}
+
+	sourceID, destID := parseConnectionKey(key)
+	ch := jb.getOrCreateJobChannel(sourceID, destID)
+
+	callbacks := ConsumerCallbacks{
+		AddJobToPartition: jb.addJobToPartition,
+		PingBatchWorker:   jb.workerPool.PingWorker,
+		OnWorkerExit: func(sourceID, destID string) {
+			jb.activeConsumers.Delete(getSourceDestKey(sourceID, destID))
+			// Release semaphore slot
+			<-jb.workerSemaphore
+		},
+		GetUploadFreq: func() time.Duration {
+			return jb.brt.uploadFreq.Load()
+		},
+		GetMaxBatchSize: func() int {
+			return jb.brt.maxEventsInABatch
+		},
+	}
+
+	return NewConsumerWorker(sourceID, destID, ch, jb.ctx, jb.brt.logger, callbacks)
+}
+
 // getSourceDestKey generates a unique key for a source-destination pair
 func getSourceDestKey(sourceID, destID string) string {
 	return fmt.Sprintf("%s:%s", sourceID, destID)
 }
 
-// getJobChannel returns or creates a buffered channel for a source-destination pair
-func (jb *JobBuffer) getJobChannel(sourceID, destID string) chan *jobsdb.JobT {
+// getOrCreateJobChannel returns or creates a buffered channel for a source-destination pair
+func (jb *JobBuffer) getOrCreateJobChannel(sourceID, destID string) chan *jobsdb.JobT {
 	key := getSourceDestKey(sourceID, destID)
 
 	// Fast path: check if channel exists
@@ -93,9 +136,6 @@ func (jb *JobBuffer) getJobChannel(sourceID, destID string) chan *jobsdb.JobT {
 	ch = make(chan *jobsdb.JobT, bufferSize)
 	jb.sourceDestMap[key] = ch
 
-	// Start consumer for this channel
-	go jb.startJobConsumer(sourceID, destID, ch)
-
 	return ch
 }
 
@@ -116,71 +156,26 @@ func (jb *JobBuffer) addJobToPartition(partition string, job *ConnectionJob) {
 	jb.queuesMutex.Unlock()
 }
 
-// startJobConsumer processes jobs from the channel and manages batch processing
-func (jb *JobBuffer) startJobConsumer(sourceID, destID string, ch chan *jobsdb.JobT) {
-	key := getSourceDestKey(sourceID, destID)
-	var lastJobTime time.Time
-	var jobCount int
-
-	// Create a timer channel for upload frequency checks
-	uploadFreqTimer := time.NewTimer(jb.brt.uploadFreq.Load())
-	defer uploadFreqTimer.Stop()
-
-	for {
-		select {
-		case job, ok := <-ch:
-			if !ok {
-				// Channel closed, exit
-				return
-			}
-
-			// Add job to the partition's queue
-			jb.addJobToPartition(key, &ConnectionJob{
-				job:      job,
-				sourceID: sourceID,
-				destID:   destID,
-			})
-			jobCount++
-
-			if lastJobTime.IsZero() {
-				lastJobTime = time.Now()
-				// Reset timer when we get our first job
-				if !uploadFreqTimer.Stop() {
-					<-uploadFreqTimer.C
-				}
-				uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
-			}
-
-			// Trigger batch processing if max batch size reached
-			if jobCount >= jb.brt.maxEventsInABatch {
-				jb.workerPool.PingWorker(key)
-				lastJobTime = time.Time{} // Reset timer
-				jobCount = 0
-				if !uploadFreqTimer.Stop() {
-					<-uploadFreqTimer.C
-				}
-				uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
-			}
-
-		case <-uploadFreqTimer.C:
-			if jobCount > 0 {
-				jb.brt.logger.Infof("Upload frequency threshold reached for connection %s:%s with %d jobs", sourceID, destID, jobCount)
-				jb.workerPool.PingWorker(key)
-				lastJobTime = time.Time{} // Reset timer
-				jobCount = 0
-			}
-			uploadFreqTimer.Reset(jb.brt.uploadFreq.Load())
-		}
-	}
-}
-
-// AddJob adds a job to the appropriate buffer channel
+// AddJob adds a job to the appropriate buffer channel and ensures a consumer exists
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
-	jb.getJobChannel(sourceID, destID) <- job
+	key := getSourceDestKey(sourceID, destID)
+	ch := jb.getOrCreateJobChannel(sourceID, destID)
+
+	// Ensure a consumer exists for this source-destination pair
+	if _, exists := jb.activeConsumers.LoadOrStore(key, true); !exists {
+		// Start a new consumer worker if one doesn't exist
+		jb.consumerPool.PingWorker(key)
+	}
+
+	// Send the job to the channel
+	ch <- job
 }
 
 // Stop gracefully stops all job consumers and cleans up resources
 func (jb *JobBuffer) Stop() {
+	// Signal all workers to stop
+	jb.cancel()
+
 	jb.mu.Lock()
 	defer jb.mu.Unlock()
 
@@ -190,6 +185,10 @@ func (jb *JobBuffer) Stop() {
 		delete(jb.sourceDestMap, key)
 	}
 
-	// Shutdown the worker pool
+	// Shutdown the worker pools
 	jb.workerPool.Shutdown()
+	jb.consumerPool.Shutdown()
+
+	// Close the semaphore channel
+	close(jb.workerSemaphore)
 }
