@@ -32,7 +32,7 @@ func floorFactor(intervalMs int64) int64 {
 	return factors[index-1]
 }
 
-func getAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
+func GetAggregationBucketMinute(timeMs, intervalMs int64) (int64, int64) {
 	// If interval is not a factor of 60, then the bucket start will not be aligned to hour start
 	// For example, if intervalMs is 7, and timeMs is 28891085 (6:05) then the bucket start will be 28891079 (5:59)
 	// and current bucket will contain the data of 2 different hourly buckets, which is should not have happened.
@@ -63,7 +63,7 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 	isValidSample := (sampleEvent != nil || sampleResponse != "")
 
 	if isValidSample {
-		sampleEventBucket, _ := getAggregationBucketMinute(reportedAt, eventSamplingDuration)
+		sampleEventBucket, _ := GetAggregationBucketMinute(reportedAt, eventSamplingDuration)
 		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
 
 		var found bool
