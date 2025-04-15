@@ -238,7 +238,7 @@ func TestGRPC(t *testing.T) {
 			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoTableUploads := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+			repoTableUploads := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -1242,7 +1242,7 @@ func TestGRPC(t *testing.T) {
 				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 					return now
 				}))
-				repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+				repoTableUpload := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
 					return now
 				}))
 
