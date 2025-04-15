@@ -102,7 +102,6 @@ func (c *ConsumerWorker) Work() bool {
 						c.logger.Errorf("Error processing jobs: %v", err)
 					}
 				}
-				jobs = nil
 				jobsProcessed = true
 			}
 			timer.Reset(uploadFrequency)

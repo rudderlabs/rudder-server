@@ -79,13 +79,6 @@ func (w *worker) createCircuitBreaker() *gobreaker.CircuitBreaker {
 // The function returns when processing completes and the return value is true if at least 1 job was processed,
 // false otherwise.
 func (w *worker) Work() bool {
-	// Check if circuit breaker allows operations
-	if w.cb.State() == gobreaker.StateOpen {
-		// Circuit breaker is open, skip processing
-		w.logger.Debugf("Circuit breaker is open for partition %s, skipping job processing", w.partition)
-		return false
-	}
-
 	// Execute work through circuit breaker
 	result, err := w.cb.Execute(func() (interface{}, error) {
 		workerJobs := w.brt.getWorkerJobs(w.partition)

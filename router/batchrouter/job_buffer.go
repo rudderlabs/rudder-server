@@ -31,21 +31,10 @@ type JobBuffer struct {
 	sourceDestMap map[string]chan *jobsdb.JobT
 	mu            sync.RWMutex
 
-	// Job queues for each partition
-	jobQueues   map[string][]*ConnectionJob
-	queuesMutex sync.RWMutex
-
 	// Consumer management
 	consumerPool    workerpool.WorkerPool
 	workerLimiter   kitsync.Limiter
 	activeConsumers sync.Map
-}
-
-// ConnectionJob represents a job with its connection details for batch processing
-type ConnectionJob struct {
-	job      *jobsdb.JobT // The actual job to be processed
-	sourceID string       // Source identifier
-	destID   string       // Destination identifier
 }
 
 // NewJobBuffer creates and initializes a new JobBuffer instance
@@ -59,7 +48,6 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 	jb := &JobBuffer{
 		brt:           brt,
 		sourceDestMap: make(map[string]chan *jobsdb.JobT),
-		jobQueues:     make(map[string][]*ConnectionJob),
 		ctx:           ctx,
 		cancel:        cancel,
 		workerLimiter: kitsync.NewLimiter(ctx, &limiterGroup, "batch_router_consumer_workers", maxConsumers, stats.Default),
