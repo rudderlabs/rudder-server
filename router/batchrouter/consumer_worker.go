@@ -2,7 +2,6 @@ package batchrouter
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -10,140 +9,112 @@ import (
 )
 
 // ConsumerWorker handles job consumption for a specific source-destination pair.
-// It implements the workerpool.Worker interface and manages the buffering and batching
-// of jobs before they are processed by the batch worker.
+// It acts as a buffer between job ingestion and batch processing, storing jobs
+// in partition queues for the batch worker to process.
 type ConsumerWorker struct {
-	sourceID string
-	destID   string
-	ch       chan *jobsdb.JobT
-	ctx      context.Context
-	logger   logger.Logger
+	sourceID  string
+	destID    string
+	jobChan   chan *jobsdb.JobT
+	ctx       context.Context
+	logger    logger.Logger
+	callbacks *ConsumerCallbacks
+}
 
-	// Callbacks for job processing
-	addJobToPartition func(partition string, job *ConnectionJob)
-	pingBatchWorker   func(partition string)
-	getUploadFreq     func() time.Duration
-	getMaxBatchSize   func() int
-
-	// Batch state
-	currentBatchSize int
-	batchMutex       sync.Mutex
-	isStarted        bool
-	startOnce        sync.Once
+// ConsumerCallbacks contains callback functions needed by the consumer worker
+type ConsumerCallbacks struct {
+	GetUploadFrequency func() time.Duration
+	GetMaxBatchSize    func() int
+	ProcessJobs        func(ctx context.Context, jobs []*jobsdb.JobT) error
+	ReleaseWorker      func(sourceID, destID string)
+	PartitionJobs      func(jobs []*jobsdb.JobT) [][]*jobsdb.JobT
 }
 
 // NewConsumerWorker creates a new consumer worker for a source-destination pair
 func NewConsumerWorker(
 	sourceID string,
 	destID string,
-	ch chan *jobsdb.JobT,
+	jobChan chan *jobsdb.JobT,
 	ctx context.Context,
 	logger logger.Logger,
-	callbacks ConsumerCallbacks,
+	callbacks *ConsumerCallbacks,
 ) *ConsumerWorker {
-	cw := &ConsumerWorker{
-		sourceID:          sourceID,
-		destID:            destID,
-		ch:                ch,
-		ctx:               ctx,
-		logger:            logger.Child("consumer-worker").With("sourceID", sourceID, "destID", destID),
-		addJobToPartition: callbacks.AddJobToPartition,
-		pingBatchWorker:   callbacks.PingBatchWorker,
-		getUploadFreq:     callbacks.GetUploadFreq,
-		getMaxBatchSize:   callbacks.GetMaxBatchSize,
+	return &ConsumerWorker{
+		sourceID:  sourceID,
+		destID:    destID,
+		jobChan:   jobChan,
+		ctx:       ctx,
+		logger:    logger.Child("consumer-worker").With("sourceID", sourceID, "destID", destID),
+		callbacks: callbacks,
 	}
-
-	// Start the batch timer immediately
-	cw.startBatchTimer()
-	return cw
 }
 
-// ConsumerCallbacks contains callback functions needed by the consumer worker
-type ConsumerCallbacks struct {
-	AddJobToPartition func(partition string, job *ConnectionJob)
-	PingBatchWorker   func(partition string)
-	GetUploadFreq     func() time.Duration
-	GetMaxBatchSize   func() int
-}
+// Work implements the workerpool.Worker interface
+func (c *ConsumerWorker) Work() bool {
+	defer c.callbacks.ReleaseWorker(c.sourceID, c.destID)
 
-// startBatchTimer starts the background timer for batch processing
-func (cw *ConsumerWorker) startBatchTimer() {
-	cw.startOnce.Do(func() {
-		cw.isStarted = true
-		go func() {
-			ticker := time.NewTicker(cw.getUploadFreq())
-			defer ticker.Stop()
+	uploadFrequency := c.callbacks.GetUploadFrequency()
+	maxBatchSize := c.callbacks.GetMaxBatchSize()
 
-			for {
-				select {
-				case <-cw.ctx.Done():
-					// Final check for any remaining jobs before exiting
-					cw.checkAndTriggerBatch()
-					return
-				case <-ticker.C:
-					cw.checkAndTriggerBatch()
+	var jobs []*jobsdb.JobT
+	timer := time.NewTimer(uploadFrequency)
+	defer timer.Stop()
+
+	jobsProcessed := false
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			if len(jobs) > 0 {
+				partitionedJobs := c.callbacks.PartitionJobs(jobs)
+				for _, jobBatch := range partitionedJobs {
+					if err := c.callbacks.ProcessJobs(c.ctx, jobBatch); err != nil {
+						c.logger.Errorf("Error processing jobs: %v", err)
+					}
 				}
+				jobsProcessed = true
 			}
-		}()
-	})
-}
+			return jobsProcessed
 
-// checkAndTriggerBatch checks if we should trigger a batch based on size or time
-func (cw *ConsumerWorker) checkAndTriggerBatch() {
-	cw.batchMutex.Lock()
-	defer cw.batchMutex.Unlock()
+		case job := <-c.jobChan:
+			jobs = append(jobs, job)
+			if len(jobs) >= maxBatchSize {
+				partitionedJobs := c.callbacks.PartitionJobs(jobs)
+				for _, jobBatch := range partitionedJobs {
+					if err := c.callbacks.ProcessJobs(c.ctx, jobBatch); err != nil {
+						c.logger.Errorf("Error processing jobs: %v", err)
+					}
+				}
+				jobs = nil
+				timer.Reset(uploadFrequency)
+				jobsProcessed = true
+			}
 
-	// Check if we have enough jobs to trigger a batch
-	if cw.currentBatchSize >= cw.getMaxBatchSize() || cw.currentBatchSize > 0 {
-		cw.triggerBatch()
-	}
-}
-
-// Work implements the workerpool.Worker interface.
-// It only handles job ingestion and storage, while batch processing is handled by the timer.
-func (cw *ConsumerWorker) Work() bool {
-	select {
-	case job, ok := <-cw.ch:
-		if !ok {
-			return false
+		case <-timer.C:
+			if len(jobs) > 0 {
+				partitionedJobs := c.callbacks.PartitionJobs(jobs)
+				for _, jobBatch := range partitionedJobs {
+					if err := c.callbacks.ProcessJobs(c.ctx, jobBatch); err != nil {
+						c.logger.Errorf("Error processing jobs: %v", err)
+					}
+				}
+				jobsProcessed = true
+			}
+			timer.Reset(uploadFrequency)
+			return jobsProcessed
 		}
-
-		cw.batchMutex.Lock()
-		// Add job to the partition's queue
-		key := getSourceDestKey(cw.sourceID, cw.destID)
-		cw.addJobToPartition(key, &ConnectionJob{
-			job:      job,
-			sourceID: cw.sourceID,
-			destID:   cw.destID,
-		})
-		cw.currentBatchSize++
-
-		// Let the timer goroutine handle batch triggering
-		cw.batchMutex.Unlock()
-
-	case <-cw.ctx.Done():
-		return false
-	}
-
-	return true
-}
-
-// triggerBatch triggers batch processing and resets batch state
-func (cw *ConsumerWorker) triggerBatch() {
-	if cw.currentBatchSize > 0 {
-		key := getSourceDestKey(cw.sourceID, cw.destID)
-		cw.logger.Infof("Triggering batch processing for %d jobs", cw.currentBatchSize)
-		cw.pingBatchWorker(key)
-		cw.currentBatchSize = 0
 	}
 }
 
 // SleepDurations returns the min and max sleep durations for the worker when idle
-func (cw *ConsumerWorker) SleepDurations() (min, max time.Duration) {
+func (c *ConsumerWorker) SleepDurations() (min, max time.Duration) {
 	return time.Millisecond * 100, time.Second * 5
 }
 
 // Stop implements the workerpool.Worker interface
-func (cw *ConsumerWorker) Stop() {
-	// The context cancellation will trigger final batch processing in the timer goroutine
+func (c *ConsumerWorker) Stop() {
+	// No cleanup needed
+}
+
+func (c *ConsumerWorker) IsIdle() bool {
+	return len(c.jobChan) == 0
 }

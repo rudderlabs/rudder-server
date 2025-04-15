@@ -31,8 +31,9 @@ type JobBuffer struct {
 	queuesMutex sync.RWMutex
 
 	// Consumer management
-	consumerPool  workerpool.WorkerPool
-	workerLimiter kitsync.Limiter
+	consumerPool    workerpool.WorkerPool
+	workerLimiter   kitsync.Limiter
+	activeConsumers sync.Map
 }
 
 // ConnectionJob represents a job with its connection details for batch processing
@@ -75,25 +76,68 @@ func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
 
 // createConsumerWorker is a factory function for creating new consumer workers
 func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
-	// Try to acquire a slot from the limiter
-	release := jb.workerLimiter.Begin(key)
-	defer release()
+	sourceID, destID := ParseConnectionKey(key)
+	if sourceID == "" || destID == "" {
+		jb.brt.logger.Errorf("Invalid connection key format: %s", key)
+		return nil
+	}
 
-	sourceID, destID := parseConnectionKey(key)
-	ch := jb.getOrCreateJobChannel(sourceID, destID)
+	jobsChan := make(chan *jobsdb.JobT, 1000)
+	jb.mu.Lock()
+	jb.sourceDestMap[key] = jobsChan
+	jb.mu.Unlock()
 
-	callbacks := ConsumerCallbacks{
-		AddJobToPartition: jb.addJobToPartition,
-		PingBatchWorker:   jb.workerPool.PingWorker,
-		GetUploadFreq: func() time.Duration {
+	callbacks := &ConsumerCallbacks{
+		GetUploadFrequency: func() time.Duration {
 			return jb.brt.uploadFreq.Load()
 		},
 		GetMaxBatchSize: func() int {
 			return jb.brt.maxEventsInABatch
 		},
+		ProcessJobs: func(ctx context.Context, jobs []*jobsdb.JobT) error {
+			// Process jobs for this destination using the batch router's destination processor
+			destWithSources, ok := jb.brt.destinationsMap[destID]
+			if !ok {
+				return fmt.Errorf("destination not found: %s", destID)
+			}
+			destJobs := &DestinationJobs{
+				jobs:            jobs,
+				destWithSources: *destWithSources,
+			}
+			// Process jobs using the batch router's worker
+			worker := newWorker(destID, jb.brt.logger, jb.brt)
+			worker.routeJobsToBuffer(destJobs)
+			return nil
+		},
+		ReleaseWorker: func(sourceID, destID string) {
+			key := fmt.Sprintf("%s:%s", sourceID, destID)
+			jb.mu.Lock()
+			delete(jb.sourceDestMap, key)
+			jb.mu.Unlock()
+			jb.activeConsumers.Delete(key)
+		},
+		PartitionJobs: func(jobs []*jobsdb.JobT) [][]*jobsdb.JobT {
+			// Group jobs into batches based on size and other criteria
+			var batches [][]*jobsdb.JobT
+			currentBatch := make([]*jobsdb.JobT, 0, jb.brt.maxEventsInABatch)
+
+			for _, job := range jobs {
+				currentBatch = append(currentBatch, job)
+				if len(currentBatch) >= jb.brt.maxEventsInABatch {
+					batches = append(batches, currentBatch)
+					currentBatch = make([]*jobsdb.JobT, 0, jb.brt.maxEventsInABatch)
+				}
+			}
+			if len(currentBatch) > 0 {
+				batches = append(batches, currentBatch)
+			}
+			return batches
+		},
 	}
 
-	return NewConsumerWorker(sourceID, destID, ch, jb.ctx, jb.brt.logger, callbacks)
+	worker := NewConsumerWorker(sourceID, destID, jobsChan, jb.ctx, jb.brt.logger, callbacks)
+	jb.activeConsumers.Store(key, worker)
+	return worker
 }
 
 // getSourceDestKey generates a unique key for a source-destination pair
@@ -145,13 +189,6 @@ func (jb *JobBuffer) getJobsForPartition(partition string) []*ConnectionJob {
 	return jobs
 }
 
-// addJobToPartition adds a job to the specified partition's queue
-func (jb *JobBuffer) addJobToPartition(partition string, job *ConnectionJob) {
-	jb.queuesMutex.Lock()
-	jb.jobQueues[partition] = append(jb.jobQueues[partition], job)
-	jb.queuesMutex.Unlock()
-}
-
 // AddJob adds a job to the appropriate buffer channel and ensures a consumer exists
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	key := getSourceDestKey(sourceID, destID)
@@ -164,21 +201,9 @@ func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	ch <- job
 }
 
-// Stop gracefully stops all job consumers and cleans up resources
-func (jb *JobBuffer) Stop() {
-	// Signal all workers to stop
+// Shutdown gracefully shuts down the job buffer
+func (jb *JobBuffer) Shutdown() {
 	jb.cancel()
-
-	jb.mu.Lock()
-	defer jb.mu.Unlock()
-
-	// Close all channels to signal consumers to stop
-	for key, ch := range jb.sourceDestMap {
-		close(ch)
-		delete(jb.sourceDestMap, key)
-	}
-
-	// Shutdown the worker pools
 	jb.workerPool.Shutdown()
 	jb.consumerPool.Shutdown()
 }

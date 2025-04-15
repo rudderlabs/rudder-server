@@ -264,7 +264,7 @@ func (brt *Handle) Shutdown() {
 		brt.logger.Debug("Stopping JobBuffer and its resources")
 
 		// Stop the job buffer (which will also stop the worker pool)
-		brt.jobBuffer.Stop()
+		brt.jobBuffer.Shutdown()
 	}
 
 	// Wait for all background goroutines to complete

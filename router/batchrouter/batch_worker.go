@@ -57,7 +57,7 @@ func (bw *BatchWorker) Work() bool {
 		wg.Add(1)
 		go func(key string, jobs []*ConnectionJob) {
 			defer wg.Done()
-			sourceID, destID := parseConnectionKey(key)
+			sourceID, destID := ParseConnectionKey(key)
 			bw.processConnectionJobs(sourceID, destID, jobs)
 		}(connKey, connJobs)
 	}
@@ -227,9 +227,9 @@ func (bw *BatchWorker) Stop() {
 	// No cleanup needed
 }
 
-// parseConnectionKey splits a connection key into sourceID and destID.
+// ParseConnectionKey splits a connection key into sourceID and destID.
 // Returns empty strings if the key format is invalid.
-func parseConnectionKey(connKey string) (sourceID, destID string) {
+func ParseConnectionKey(connKey string) (sourceID, destID string) {
 	parts := strings.Split(connKey, ":")
 	if len(parts) != 2 {
 		return "", ""
