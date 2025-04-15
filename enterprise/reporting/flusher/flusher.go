@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -31,8 +32,10 @@ type Flusher struct {
 	db                 *sql.DB
 	maxOpenConnections int
 
-	client     *http.Client
-	aggregator aggregator.Aggregator
+	aggregator      aggregator.Aggregator
+	httpClient      *http.Client
+	useCommonClient config.ValueLoader[bool]
+	commonClient    *client.Client
 
 	instanceId string
 	table      string
@@ -51,7 +54,6 @@ type Flusher struct {
 	vacuumFull                          config.ValueLoader[bool]
 	vacuumInterval                      config.ValueLoader[time.Duration]
 
-	reportingURL          string
 	minConcurrentRequests config.ValueLoader[int]
 	maxConcurrentRequests config.ValueLoader[int]
 	batchSizeToReporting  config.ValueLoader[int]
@@ -69,9 +71,12 @@ type Flusher struct {
 	flushLag                stats.Measurement
 
 	commonTags stats.Tags
+
+	// DEPRECATED: Remove this after migration to commonClient.
+	reportingURL string
 }
 
-func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
+func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, commonClient *client.Client, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -87,12 +92,12 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
 
 	tr := &http.Transport{}
-	client := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	httpClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.flusher.useCommonClient")
 
 	f := Flusher{
 		db:                         db,
 		log:                        log,
-		reportingURL:               reportingURL,
 		instanceId:                 conf.GetString("INSTANCE_ID", "1"),
 		sleepInterval:              sleepInterval,
 		flushWindow:                flushWindow,
@@ -112,8 +117,13 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		maxOpenConnections:                  maxOpenConns,
 		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
-		client:                              client,
+		httpClient:                          httpClient,
 		module:                              module,
+		useCommonClient:                     useCommonClient,
+		commonClient:                        commonClient,
+
+		// DEPRECATED: Remove this after migration to commonClient.
+		reportingURL: reportingURL,
 	}
 
 	f.initCommonTags()
@@ -374,7 +384,12 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 	return nil
 }
 
+// DEPRECATED: Remove this after migration to commonClient, use f.commonClient.Send instead.
 func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
+	if f.useCommonClient.Load() {
+		return f.commonClient.Send(ctx, payload)
+	}
+
 	payloadBytes, err := jsonrs.Marshal(payload)
 	if err != nil {
 		return err
@@ -386,7 +401,7 @@ func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload inter
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 		start := time.Now()
-		resp, err := f.client.Do(req)
+		resp, err := f.httpClient.Do(req)
 		if err != nil {
 			return err
 		}
