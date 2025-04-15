@@ -177,7 +177,6 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		pw.logger.Errorf("Source not found for ID: %s", sourceID)
 		return
 	}
-
 	batchedJobs := BatchedJobs{
 		Jobs: jobs,
 		Connection: &Connection{
@@ -235,6 +234,6 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 }
 
 func (pw *PartitionWorker) Stop() {
-	close(pw.channel)
 	pw.cancel()
+	close(pw.channel)
 }
