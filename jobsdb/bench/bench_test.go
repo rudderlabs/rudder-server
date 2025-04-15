@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	statsmetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 )
 
@@ -53,7 +52,6 @@ func TestBench(t *testing.T) {
 		c.Set("JobsDB.maxWriters", 4)           // default: 3
 		c.Set("JobsDB.enableReaderQueue", true) //	default: true
 		c.Set("JobsDB.maxReaders", 8)           // default: 6
-		c.Set("JobsDB.payloadColumnType", string(jobsdb.TEXT))
 		c.Set("JobsDB.enableToastOptimizations", true)
 		c.Set("JobsDB.Compression.enabled", true)
 		c.Set("JobsDB.Compression.algorithm", "lz4")
@@ -126,7 +124,6 @@ func TestBench(t *testing.T) {
 		c.Set("JobsDB.maxWriters", 4)           // default: 3
 		c.Set("JobsDB.enableReaderQueue", true) //	default: true
 		c.Set("JobsDB.maxReaders", 8)           // default: 6
-		c.Set("JobsDB.payloadColumnType", string(jobsdb.TEXT))
 		c.Set("JobsDB.enableToastOptimizations", false)
 		c.Set("JobsDB.refreshDSListLoopSleepDuration", 1*time.Second)
 

@@ -463,77 +463,18 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 	return
 }
 
-func getColumnConversion(srcType, destType string) (string, error) {
-	if srcType == destType {
-		return "j.event_payload", nil
-	}
-
-	conversions := map[string]map[string]string{
-		"jsonb": {
-			"text":  "j.event_payload::TEXT",
-			"bytea": "convert_to(j.event_payload::TEXT, 'UTF8')",
-		},
-		"bytea": {
-			"text":  "convert_from(j.event_payload, 'UTF8')",
-			"jsonb": "convert_from(j.event_payload, 'UTF8')::jsonb",
-		},
-		"text": {
-			"jsonb": "j.event_payload::jsonb",
-			"bytea": "convert_to(j.event_payload, 'UTF8')",
-		},
-	}
-	var result string
-	if destMap, ok := conversions[srcType]; ok {
-		if result, ok = destMap[destType]; !ok {
-			return "", fmt.Errorf("unsupported payload column types: src-%s, dest-%s", srcType, destType)
-		}
-	}
-	return result, nil
-}
-
 func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
 	defer jd.getTimerStat(
 		"migration_jobs",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	).RecordDuration()()
 
-	columnTypeMap := map[string]string{srcDS.JobTable: string(JSONB), destDS.JobTable: string(JSONB)}
-	// find column types first - to differentiate between `text`, `bytea` and `jsonb`
-	rows, err := tx.QueryContext(
-		ctx,
-		`select table_name, data_type
-		from information_schema.columns
-		where table_name IN ($1, $2) and column_name='event_payload';`,
-		srcDS.JobTable, destDS.JobTable,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("get column types: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var jobsTable, columnType string
-	for rows.Next() {
-		if err = rows.Scan(&jobsTable, &columnType); err != nil {
-			return 0, fmt.Errorf("scan column types: %w", err)
-		}
-		if columnType != string(BYTEA) && columnType != string(JSONB) && columnType != string(TEXT) {
-			return 0, fmt.Errorf("unsupported column type %s", columnType)
-		}
-		columnTypeMap[jobsTable] = columnType
-	}
-	if err = rows.Err(); err != nil {
-		return 0, fmt.Errorf("rows.Err() on column types: %w", err)
-	}
-	payloadLiteral, err := getColumnConversion(columnTypeMap[srcDS.JobTable], columnTypeMap[destDS.JobTable])
-	if err != nil {
-		return 0, err
-	}
-
 	compactDSQuery := fmt.Sprintf(
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
 			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
-			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.custom_val, j.parameters, %[6]s, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
+			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.custom_val, j.parameters, j.event_payload, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
 				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
 		),
 		insertedStatuses as
@@ -547,7 +488,6 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 		destDS.JobTable,
 		destDS.JobStatusTable,
 		strings.Join(validNonTerminalStates, ","),
-		payloadLiteral,
 	)
 
 	var numJobsMigrated int

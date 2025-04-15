@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -1029,182 +1028,84 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		in, out string
 		err     error
 	}
-	ch := func(n int) string {
-		return strings.Repeat("�", n)
-	}
-	byteaInvalidInputSyntaxError := errors.New("pq: invalid input syntax for type bytea")
-	UTF8Tests := []struct {
-		payloadColumnType string
-		cases             []testCase
-	}{
-		{
-			string(JSONB),
-			[]testCase{
-				{`\u0000`, "", nil},
-				{`\u0000☺\u0000b☺`, "☺b☺", nil},
-				// NOTE: we are not handling the following:
-				// {"\u0000", ""},
-				// {"\u0000☺\u0000b☺", "☺b☺"},
+	UTF8Tests := []testCase{
+		{`\u0000`, `\u0000`, nil},
+		{`\u0000☺\u0000b☺`, `\u0000☺\u0000b☺`, nil},
 
-				{"", "", nil},
-				{"abc", "abc", nil},
-				{"\uFDDD", "\uFDDD", nil},
-				{"a\xffb", "a" + ch(1) + "b", nil},
-				{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD", nil},
-				{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1), nil},
-				{"\xC0\xAF", ch(2), nil},
-				{"\xE0\x80\xAF", ch(3), nil},
-				{"\xed\xa0\x80", ch(3), nil},
-				{"\xed\xbf\xbf", ch(3), nil},
-				{"\xF0\x80\x80\xaf", ch(4), nil},
-				{"\xF8\x80\x80\x80\xAF", ch(5), nil},
-				{"\xFC\x80\x80\x80\x80\xAF", ch(6), nil},
+		{"", "", nil},
+		{"abc", "abc", nil},
+		{"\uFDDD", "\uFDDD", nil},
+		{"a\xffb", `a\ufffdb`, nil},
+		{"a\xffb\uFFFD", `a\ufffdb�`, nil},
+		{"a☺\xffb☺\xC0\xAFc☺\xff", `a☺\ufffdb☺\ufffd\ufffdc☺\ufffd`, nil},
+		{"\xC0\xAF", `\ufffd\ufffd`, nil},
+		{"\xE0\x80\xAF", `\ufffd\ufffd\ufffd`, nil},
+		{"\xed\xa0\x80", `\ufffd\ufffd\ufffd`, nil},
+		{"\xed\xbf\xbf", `\ufffd\ufffd\ufffd`, nil},
+		{"\xF0\x80\x80\xaf", `\ufffd\ufffd\ufffd\ufffd`, nil},
+		{"\xF8\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
+		{"\xFC\x80\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
 
-				// {"\ud800", ""},
-				{`\ud800`, ch(1), nil},
-				{`\uDEAD`, ch(1), nil},
+		// {"\ud800", ""},
+		// 15
+		{`\ud800`, `\ud800`, nil},
+		{`\uDEAD`, `\uDEAD`, nil},
 
-				{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
-				{`\uD83D\ude04`, "😄", nil},
+		{`\uD83D\ub000`, `\uD83D\ub000`, nil},
+		{`\uD83D\ude04`, `\uD83D\ude04`, nil},
 
-				{`\u4e2d\u6587`, "中文", nil},
-				{`\ud83d\udc4a`, "\xf0\x9f\x91\x8a", nil},
+		{`\u4e2d\u6587`, `\u4e2d\u6587`, nil},
+		{`\ud83d\udc4a`, `\ud83d\udc4a`, nil},
 
-				{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
-				{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
-			},
-		},
-		{
-			string(TEXT),
-			[]testCase{
-				{`\u0000`, `\u0000`, nil},
-				{`\u0000☺\u0000b☺`, `\u0000☺\u0000b☺`, nil},
-
-				{"", "", nil},
-				{"abc", "abc", nil},
-				{"\uFDDD", "\uFDDD", nil},
-				{"a\xffb", `a\ufffdb`, nil},
-				{"a\xffb\uFFFD", `a\ufffdb�`, nil},
-				{"a☺\xffb☺\xC0\xAFc☺\xff", `a☺\ufffdb☺\ufffd\ufffdc☺\ufffd`, nil},
-				{"\xC0\xAF", `\ufffd\ufffd`, nil},
-				{"\xE0\x80\xAF", `\ufffd\ufffd\ufffd`, nil},
-				{"\xed\xa0\x80", `\ufffd\ufffd\ufffd`, nil},
-				{"\xed\xbf\xbf", `\ufffd\ufffd\ufffd`, nil},
-				{"\xF0\x80\x80\xaf", `\ufffd\ufffd\ufffd\ufffd`, nil},
-				{"\xF8\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
-				{"\xFC\x80\x80\x80\x80\xAF", `\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd`, nil},
-
-				// {"\ud800", ""},
-				// 15
-				{`\ud800`, `\ud800`, nil},
-				{`\uDEAD`, `\uDEAD`, nil},
-
-				{`\uD83D\ub000`, `\uD83D\ub000`, nil},
-				{`\uD83D\ude04`, `\uD83D\ude04`, nil},
-
-				{`\u4e2d\u6587`, `\u4e2d\u6587`, nil},
-				{`\ud83d\udc4a`, `\ud83d\udc4a`, nil},
-
-				// 21
-				{`\U0001f64f`, `\U0001f64f`, nil},
-				{`\uD83D\u00`, `\uD83D\u00`, nil},
-			},
-		},
-		{
-			string(BYTEA),
-			[]testCase{
-				{`\u0000`, "", nil},
-				{`\u0000☺\u0000b☺`, "☺b☺", nil},
-				// NOTE: we are not handling the following:
-				// {"\u0000", ""},
-				// {"\u0000☺\u0000b☺", "☺b☺"},
-
-				{"", "", nil},
-				{"abc", "abc", nil},
-				{"\uFDDD", "\uFDDD", nil},
-				{"a\xffb", "a" + ch(1) + "b", byteaInvalidInputSyntaxError},
-				{"a\xffb\uFFFD", "a" + ch(1) + "b\uFFFD", byteaInvalidInputSyntaxError},
-				{"a☺\xffb☺\xC0\xAFc☺\xff", "a☺" + ch(1) + "b☺" + ch(2) + "c☺" + ch(1), byteaInvalidInputSyntaxError},
-				{"\xC0\xAF", ch(2), byteaInvalidInputSyntaxError},
-				{"\xE0\x80\xAF", ch(3), byteaInvalidInputSyntaxError},
-				{"\xed\xa0\x80", ch(3), byteaInvalidInputSyntaxError},
-				{"\xed\xbf\xbf", ch(3), byteaInvalidInputSyntaxError},
-				{"\xF0\x80\x80\xaf", ch(4), byteaInvalidInputSyntaxError},
-				{"\xF8\x80\x80\x80\xAF", ch(5), byteaInvalidInputSyntaxError},
-				{"\xFC\x80\x80\x80\x80\xAF", ch(6), byteaInvalidInputSyntaxError},
-
-				// {"\ud800", ""},
-				// 15
-				{`\ud800`, ch(1), nil},
-				{`\uDEAD`, ch(1), nil},
-
-				{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
-				{`\uD83D\ude04`, "😄", nil},
-
-				{`\u4e2d\u6587`, "中文", nil},
-				{`\ud83d\udc4a`, "\xf0\x9f\x91\x8a", nil},
-
-				{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
-				{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
-			},
-		},
+		// 21
+		{`\U0001f64f`, `\U0001f64f`, nil},
+		{`\uD83D\u00`, `\uD83D\u00`, nil},
 	}
 
+	_ = startPostgres(t)
+	conf := config.New()
+	jobDB := Handle{config: conf}
+	err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)))
+	require.NoError(t, err)
 	for _, tCase := range UTF8Tests {
-		t.Run(tCase.payloadColumnType, func(t *testing.T) {
-			_ = startPostgres(t)
-			conf := config.New()
-			conf.Set("JobsDB.payloadColumnType", tCase.payloadColumnType)
-			jobDB := Handle{config: conf}
-			err := jobDB.Setup(ReadWrite, true, tCase.payloadColumnType+"_"+strings.ToLower(rand.String(5)))
-			require.NoError(t, err, tCase.payloadColumnType)
+		t.Run(tCase.in, func(t *testing.T) {
 			eventPayload := []byte(`{"batch":[{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
-			for i, tt := range tCase.cases {
-				customVal := fmt.Sprintf("TEST_%d", i)
-				jobs := []*JobT{{
-					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
-					EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
-					UserID:       uuid.New().String(),
-					UUID:         uuid.New(),
-					CustomVal:    customVal,
-					WorkspaceId:  defaultWorkspaceID,
-					EventCount:   1,
-				}}
-				err := jobDB.Store(context.Background(), jobs)
-				if tt.err != nil {
-					require.Error(t, err, "should error", tCase.payloadColumnType, i)
-					require.Contains(t, err.Error(), tt.err.Error(), "should contain error", tCase.payloadColumnType, i)
-					continue
-				}
-
-				require.NoError(t, err, tCase.payloadColumnType, i)
-
-				unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
-					CustomValFilters: []string{customVal},
-					JobsLimit:        10,
-					ParameterFilters: []ParameterFilterT{},
-				})
-				require.NoError(t, err, "should not error")
-
-				require.Len(t, unprocessedJob.Jobs, 1, tCase.payloadColumnType, i)
-
-				if tCase.payloadColumnType == string(TEXT) { // some can't be valid json
-					require.Equal(t,
-						string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
-						string(unprocessedJob.Jobs[0].EventPayload),
-						tCase.payloadColumnType, i,
-					)
-				} else {
-					require.JSONEq(t,
-						string(bytes.Replace(eventPayload, []byte("track"), []byte(tt.out), 1)),
-						string(unprocessedJob.Jobs[0].EventPayload),
-						tCase.payloadColumnType, i,
-					)
-				}
+			customVal := rand.String(5)
+			jobs := []*JobT{{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tCase.in), 1),
+				UserID:       uuid.New().String(),
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				WorkspaceId:  defaultWorkspaceID,
+				EventCount:   1,
+			}}
+			err := jobDB.Store(context.Background(), jobs)
+			if tCase.err != nil {
+				require.Error(t, err, "should error", tCase.in)
+				require.Contains(t, err.Error(), tCase.err.Error(), "should contain error: ", tCase.err)
+				return
 			}
-			jobDB.TearDown()
+
+			require.NoError(t, err, tCase.in)
+
+			unprocessedJob, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
+				CustomValFilters: []string{customVal},
+				JobsLimit:        10,
+				ParameterFilters: []ParameterFilterT{},
+			})
+			require.NoError(t, err, "should not error")
+
+			require.Len(t, unprocessedJob.Jobs, 1, tCase.in)
+
+			require.Equal(t,
+				string(bytes.Replace(eventPayload, []byte("track"), []byte(tCase.out), 1)),
+				string(unprocessedJob.Jobs[0].EventPayload),
+				tCase.in,
+			)
 		})
 	}
+	jobDB.TearDown()
 }
 
 // Fuzzer represents a test fuzzer for analytics events
