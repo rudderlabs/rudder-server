@@ -15,6 +15,7 @@ type (
 	Transformer struct {
 		now           func() time.Time
 		uuidGenerator func() string
+		sorter        func([]string) []string
 
 		logger       logger.Logger
 		statsFactory stats.Stats
@@ -70,6 +71,7 @@ type (
 		destOpts      *destOptions
 		jsonPathsInfo *jsonPathInfo
 		cache         *cache
+		sorter        func([]string) []string
 	}
 
 	intrOptions struct {

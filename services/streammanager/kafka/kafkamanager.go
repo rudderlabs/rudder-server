@@ -151,6 +151,7 @@ type ProducerManager struct {
 	timeout           time.Duration
 	embedAvroSchemaID bool
 	codecs            map[string]*goavro.Codec
+	enableBatching    bool
 }
 
 func (p *ProducerManager) getTimeout() time.Duration {
@@ -391,6 +392,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		timeout:           o.Timeout,
 		embedAvroSchemaID: embedAvroSchemaID,
 		codecs:            codecs,
+		enableBatching:    kafkaBatchingEnabled,
 	}, nil
 }
 
@@ -439,7 +441,10 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &ProducerManager{p: p, timeout: o.Timeout}, nil
+	return &ProducerManager{
+		p: p, timeout: o.Timeout,
+		enableBatching: config.GetBoolVar(false, "Router.AZURE_EVENT_HUB.enableBatching"),
+	}, nil
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
@@ -488,7 +493,10 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &ProducerManager{p: p, timeout: o.Timeout}, nil
+	return &ProducerManager{
+		p: p, timeout: o.Timeout,
+		enableBatching: config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching"),
+	}, nil
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
@@ -674,7 +682,7 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 
 	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
-	if kafkaBatchingEnabled {
+	if p.enableBatching {
 		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
 

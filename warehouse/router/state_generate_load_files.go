@@ -11,9 +11,8 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func (job *UploadJob) generateLoadFiles(hasSchemaChanged bool) error {
-	generateAll := hasSchemaChanged ||
-		slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
+func (job *UploadJob) generateLoadFiles() error {
+	generateAll := slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
 		job.config.alwaysRegenerateAllLoadFiles
 
 	var startLoadFileID, endLoadFileID int64
@@ -70,7 +69,7 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.stagingFileIDs, []string{
+	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.upload.ID, job.stagingFileIDs, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
 	if err != nil {
