@@ -56,6 +56,7 @@ func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
 
 func (pw *PartitionWorker) Start() {
 	uploadFreq := pw.brt.uploadFreq.Load()
+	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq)
 	jobBatch := make([]*JobEntry, 0)
 	active := 0
 	timer := time.NewTimer(uploadFreq)
@@ -123,6 +124,7 @@ func (pw *PartitionWorker) Start() {
 							resetTimer()
 							pw.partitionMutex.Unlock()
 						}()
+						processBatch(jobBatch)
 					}()
 				}
 				pw.partitionMutex.Unlock()
