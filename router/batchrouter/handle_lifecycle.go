@@ -161,14 +161,6 @@ func (brt *Handle) Setup(
 	)
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
-
-	// Initialize job buffer
-	brt.jobBuffer = &JobBuffer{
-		sourceDestMap: make(map[string]chan *jobsdb.JobT),
-		uploadTimers:  make(map[string]*time.Timer),
-		brt:           brt,
-	}
-
 	brt.crashRecover()
 
 	if asynccommon.IsAsyncDestination(brt.destType) {
@@ -272,17 +264,6 @@ func (brt *Handle) Shutdown() {
 	// Signal all goroutines to stop via context cancellation
 	brt.logger.Info("Initiating batch router shutdown")
 	brt.backgroundCancel()
-
-	// Stop all job buffer timers
-	if brt.jobBuffer != nil {
-		brt.jobBuffer.mu.Lock()
-		for key, timer := range brt.jobBuffer.uploadTimers {
-			timer.Stop()
-			brt.logger.Debugf("Stopped timer for source-destination: %s", key)
-		}
-		brt.jobBuffer.mu.Unlock()
-	}
-
 	// Wait for all background goroutines to complete
 	_ = brt.backgroundWait()
 	brt.logger.Info("Batch router shutdown complete")

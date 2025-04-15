@@ -23,12 +23,13 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 		partition: partition,
 		logger:    logger,
 		brt:       brt,
-		pw:        NewPartitionWorker(brt.conf, logger, partition),
+		pw:        NewPartitionWorker(logger, partition, brt),
 		cb: gobreaker.NewCircuitBreaker(gobreaker.Settings{
 			Name:    partition,
 			Timeout: brt.conf.GetDuration("BatchRouter.timeout", 10, time.Second),
 		}),
 	}
+	w.pw.Start()
 	return w
 }
 
@@ -195,13 +196,12 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 		// Now that all statuses are updated, we can safely send jobs to channels
 		for _, entry := range jobsToBuffer {
-			w.pw.AddJob(entry.job)
+			w.pw.AddJob(entry.job, entry.sourceID, entry.destID)
 		}
 	}
 
 	// Mark the drainList jobs as Aborted
 	if len(drainList) > 0 {
-		w.brt.logger.Info("drainList", drainList)
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.errorDB.Store(ctx, drainJobList)
 		}, brt.sendRetryStoreStats)
@@ -259,5 +259,5 @@ func (w *worker) SleepDurations() (min, max time.Duration) {
 
 // Stop is no-op for this worker since the worker is not running any goroutine internally.
 func (w *worker) Stop() {
-	// no-op
+	w.pw.Stop()
 }
