@@ -895,18 +895,19 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			}
 		}
 
-		writeKey, ok := gw.getWriteKeyFromSourceID(msg.Properties.SourceID)
+		writeKey, sourceDefName, sourceName, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
-			gw.logger.Errorn("unable to get writeKey for job",
+			gw.logger.Errorn("unable to get source details from sourceID",
 				logger.NewStringField("messageId", messageID),
 				obskit.SourceID(msg.Properties.SourceID))
 		}
 		stat.SourceID = msg.Properties.SourceID
 		stat.WorkspaceID = msg.Properties.WorkspaceID
 		stat.WriteKey = writeKey
+		stat.SourceDefName = sourceDefName
+
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
-			sourceConfig := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 			gw.logger.Infon("suppressed event",
 				obskit.SourceID(msg.Properties.SourceID),
 				obskit.WorkspaceID(msg.Properties.WorkspaceID),
@@ -915,7 +916,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			gw.stats.NewTaggedStat(
 				"gateway.write_key_suppressed_events",
 				stats.CountType,
-				gw.newSourceStatTagsWithReason(&sourceConfig, reqType, errEventSuppressed.Error()),
+				gw.newSourceStatTagsWithReason(msg.Properties, reqType, errEventSuppressed.Error(), writeKey, sourceName),
 			).Increment()
 			continue
 		}
@@ -1024,22 +1025,13 @@ func fillRequestIP(event []byte, ip string) ([]byte, error) {
 	return event, nil
 }
 
-func (gw *Handle) getSourceConfigFromSourceID(sourceID string) backendconfig.SourceT {
+func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (writeKey, sourceDefName, sourceName string, ok bool) {
 	gw.configSubscriberLock.RLock()
 	defer gw.configSubscriberLock.RUnlock()
 	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
-		return s
+		return s.WriteKey, s.SourceDefinition.Name, s.Name, true
 	}
-	return backendconfig.SourceT{}
-}
-
-func (gw *Handle) getWriteKeyFromSourceID(sourceID string) (string, bool) {
-	gw.configSubscriberLock.RLock()
-	defer gw.configSubscriberLock.RUnlock()
-	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
-		return s.WriteKey, true
-	}
-	return "", false
+	return "", "", "", false
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {

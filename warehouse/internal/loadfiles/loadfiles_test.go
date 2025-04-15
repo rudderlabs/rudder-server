@@ -102,7 +102,7 @@ func TestCreateLoadFiles(t *testing.T) {
 	require.Len(t, stageRepo.store, len(stagingFiles))
 
 	for _, stagingFile := range stagingFiles {
-		loadFiles, err := loadRepo.GetByStagingFiles(ctx, []int64{stagingFile.ID})
+		loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
 		require.Equal(t, 2, len(loadFiles))
 		require.NoError(t, err)
 
@@ -330,7 +330,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
 
-	loadFiles, err := loadRepo.GetByStagingFiles(ctx, []int64{stagingFile.ID})
+	loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
 	require.Equal(t, 2, len(loadFiles))
 	require.NoError(t, err)
 

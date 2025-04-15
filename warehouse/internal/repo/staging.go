@@ -33,7 +33,8 @@ const stagingTableColumns = `
     created_at,
     updated_at,
     metadata,
-    workspace_id
+    workspace_id,
+    bytes_per_table
 `
 
 // StagingFiles is a repository for inserting and querying staging files.
@@ -127,6 +128,16 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
+	var bytesPerTablePayload interface{}
+	if stagingFile.BytesPerTable != nil {
+		marshalled, err := jsonrs.Marshal(stagingFile.BytesPerTable)
+		if err != nil {
+			return id, fmt.Errorf("marshaling bytes per table: %w", err)
+		}
+		bytesPerTablePayload = marshalled
+	} else {
+		bytesPerTablePayload = nil
+	}
 
 	err = sf.db.QueryRowContext(ctx,
 		`INSERT INTO `+stagingTableName+` (
@@ -142,10 +153,11 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 			last_event_at,
 			created_at,
 			updated_at,
-			metadata
+			metadata,
+			bytes_per_table
 		)
 		VALUES
-		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`,
 
 		stagingFile.Location,
@@ -161,6 +173,7 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		now.UTC(),
 		now.UTC(),
 		rawMetadata,
+		bytesPerTablePayload,
 	).Scan(&id)
 	if err != nil {
 		return id, fmt.Errorf("inserting staging file: %w", err)
@@ -176,8 +189,9 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var (
-			stagingFile model.StagingFile
-			metadataRaw []byte
+			stagingFile      model.StagingFile
+			metadataRaw      []byte
+			bytesPerTableRaw []byte
 
 			firstEventAt, lastEventAt sql.NullTime
 
@@ -198,6 +212,7 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 			&stagingFile.UpdatedAt,
 			&metadataRaw,
 			&stagingFile.WorkspaceID,
+			&bytesPerTableRaw,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning row: %w", err)
@@ -221,6 +236,13 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 		err = jsonrs.Unmarshal(metadataRaw, &m)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal metadata: %w", err)
+		}
+
+		if bytesPerTableRaw != nil {
+			err = jsonrs.Unmarshal(bytesPerTableRaw, &stagingFile.BytesPerTable)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal bytes per table: %w", err)
+			}
 		}
 
 		m.SetStagingFile(&stagingFile)
