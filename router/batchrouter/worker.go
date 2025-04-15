@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sony/gobreaker"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -22,6 +23,11 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 		partition: partition,
 		logger:    logger,
 		brt:       brt,
+		pw:        NewPartitionWorker(brt.conf, logger, partition),
+		cb: gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    partition,
+			Timeout: brt.conf.GetDuration("BatchRouter.timeout", 10, time.Second),
+		}),
 	}
 	return w
 }
@@ -30,6 +36,8 @@ type worker struct {
 	partition string
 	logger    logger.Logger
 	brt       *Handle
+	cb        *gobreaker.CircuitBreaker
+	pw        *PartitionWorker
 }
 
 // Work retrieves jobs from batch router for the worker's partition and processes them,
@@ -187,8 +195,7 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 
 		// Now that all statuses are updated, we can safely send jobs to channels
 		for _, entry := range jobsToBuffer {
-			jobCh := brt.jobBuffer.getJobChannel(entry.sourceID, entry.destID)
-			jobCh <- entry.job
+			w.pw.AddJob(entry.job)
 		}
 	}
 
