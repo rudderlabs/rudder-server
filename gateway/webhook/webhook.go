@@ -64,8 +64,8 @@ type HandleT struct {
 	netClient     *retryablehttp.Client
 	gwHandle      Gateway
 	stats         stats.Stats
-	ackCount      uint64
-	recvCount     uint64
+	ackCount      atomic.Uint64
+	recvCount     atomic.Uint64
 
 	batchRequestsWg  sync.WaitGroup
 	backgroundWait   func() error
@@ -122,7 +122,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	webhook.logger.LogRequest(r)
-	atomic.AddUint64(&webhook.recvCount, 1)
+	webhook.recvCount.Add(1)
 	sourceDefName := arctx.SourceDefName
 
 	var postFrom url.Values
@@ -144,7 +144,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInParseForm),
 				response.GetErrorStatusCode(response.ErrorInParseForm),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 		postFrom = r.PostForm
@@ -160,7 +160,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInParseMultiform),
 				response.GetErrorStatusCode(response.ErrorInParseMultiform),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 		multipartForm = r.MultipartForm
@@ -181,7 +181,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 	} else if len(postFrom) != 0 {
@@ -196,7 +196,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 	}
@@ -226,7 +226,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Wait for batcher process to be done
 	resp := <-done
-	atomic.AddUint64(&webhook.ackCount, 1)
+	webhook.ackCount.Add(1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
 	ss := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
@@ -558,10 +558,10 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 func (webhook *HandleT) printStats(ctx context.Context) {
 	var lastRecvCount, lastAckCount uint64
 	for {
-		if lastRecvCount != webhook.recvCount || lastAckCount != webhook.ackCount {
-			lastRecvCount = webhook.recvCount
-			lastAckCount = webhook.ackCount
-			webhook.logger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+		if lastRecvCount != webhook.recvCount.Load() || lastAckCount != webhook.ackCount.Load() {
+			lastRecvCount = webhook.recvCount.Load()
+			lastAckCount = webhook.ackCount.Load()
+			webhook.logger.Debug("Webhook Recv/Ack ", webhook.recvCount.Load(), webhook.ackCount.Load())
 		}
 
 		select {
