@@ -274,6 +274,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 								"transformationId": "",
 								"workspaceId":      Metadata.WorkspaceID,
 								"language":         "",
+								"mirroring":        "false",
 
 								// Legacy tags: to be removed
 								"dest_type": "",
