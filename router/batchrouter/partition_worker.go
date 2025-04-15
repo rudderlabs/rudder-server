@@ -101,31 +101,41 @@ func (pw *PartitionWorker) Start() {
 					pw.partitionMutex.Lock()
 					if active <= pw.active.Load() {
 						active++
-						go func() {
+						// Create a copy of the current batch
+						currentBatch := make([]*JobEntry, len(jobBatch))
+						copy(currentBatch, jobBatch)
+						// Reset job batch
+						jobBatch = make([]*JobEntry, 0)
+						go func(batch []*JobEntry) {
 							defer func() {
 								pw.partitionMutex.Lock()
 								active--
 								resetTimer()
 								pw.partitionMutex.Unlock()
 							}()
-							processBatch(jobBatch)
-						}()
+							processBatch(batch)
+						}(currentBatch)
 					}
 					pw.partitionMutex.Unlock()
 				}
 			case <-timer.C:
 				pw.partitionMutex.Lock()
-				if active <= pw.active.Load() {
+				if active <= pw.active.Load() && len(jobBatch) > 0 {
 					active++
-					go func() {
+					// Create a copy of the current batch
+					currentBatch := make([]*JobEntry, len(jobBatch))
+					copy(currentBatch, jobBatch)
+					// Reset job batch
+					jobBatch = make([]*JobEntry, 0)
+					go func(batch []*JobEntry) {
 						defer func() {
 							pw.partitionMutex.Lock()
 							active--
 							resetTimer()
 							pw.partitionMutex.Unlock()
 						}()
-						processBatch(jobBatch)
-					}()
+						processBatch(batch)
+					}(currentBatch)
 				}
 				pw.partitionMutex.Unlock()
 				resetTimer()
