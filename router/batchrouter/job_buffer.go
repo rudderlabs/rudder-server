@@ -3,13 +3,19 @@ package batchrouter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/workerpool"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // JobBuffer manages job buffering and batch processing for source-destination pairs.
@@ -17,10 +23,9 @@ import (
 // process these jobs in configurable batch sizes.
 type JobBuffer struct {
 	// Core components
-	brt        *Handle
-	workerPool workerpool.WorkerPool
-	ctx        context.Context
-	cancel     context.CancelFunc
+	brt    *Handle
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	// Channel management
 	sourceDestMap map[string]chan *jobsdb.JobT
@@ -60,18 +65,10 @@ func NewJobBuffer(brt *Handle) *JobBuffer {
 		workerLimiter: kitsync.NewLimiter(ctx, &limiterGroup, "batch_router_consumer_workers", maxConsumers, stats.Default),
 	}
 
-	// Initialize the batch worker pool
-	jb.workerPool = workerpool.New(ctx, jb.createBatchWorker, brt.logger)
-
 	// Initialize the consumer worker pool
 	jb.consumerPool = workerpool.New(ctx, jb.createConsumerWorker, brt.logger)
 
 	return jb
-}
-
-// createBatchWorker is a factory function for creating new batch workers
-func (jb *JobBuffer) createBatchWorker(partition string) workerpool.Worker {
-	return NewBatchWorker(partition, jb.brt.logger, jb.brt, jb.getJobsForPartition)
 }
 
 // createConsumerWorker is a factory function for creating new consumer workers
@@ -100,13 +97,117 @@ func (jb *JobBuffer) createConsumerWorker(key string) workerpool.Worker {
 			if !ok {
 				return fmt.Errorf("destination not found: %s", destID)
 			}
-			destJobs := &DestinationJobs{
-				jobs:            jobs,
-				destWithSources: *destWithSources,
+
+			// Create batch job structure with connection info for processing
+			// Find appropriate source for this destination
+			var source backendconfig.SourceT
+			for _, s := range destWithSources.Sources {
+				if s.ID == sourceID {
+					source = s
+					break
+				}
 			}
-			// Process jobs using the batch router's worker
-			worker := newWorker(destID, jb.brt.logger, jb.brt)
-			worker.routeJobsToBuffer(destJobs)
+
+			batchedJobs := &BatchedJobs{
+				Jobs: jobs,
+				Connection: &Connection{
+					Destination: destWithSources.Destination,
+					Source:      source,
+				},
+			}
+
+			// Track connection details for metrics and reporting
+			jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
+
+			for _, job := range jobs {
+				// Use strings and routerutils packages to ensure they are used
+				// Add metadata for tracking the consumer worker handling
+				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "consumer_key",
+					strings.Join([]string{sourceID, destID}, ":"))
+
+				jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
+					SourceID:      sourceID,
+					DestinationID: destID,
+				}
+			}
+
+			// Process based on destination type
+			var uploadSuccess bool
+			var uploadError error
+
+			switch {
+			case IsObjectStorageDestination(jb.brt.destType):
+				// Object storage destinations (S3, GCS, etc)
+				output := jb.brt.upload(jb.brt.destType, batchedJobs, false)
+				defer misc.RemoveFilePaths(output.LocalFilePaths...)
+
+				jb.brt.recordDeliveryStatus(destID, sourceID, output, false)
+				jb.brt.updateJobStatus(batchedJobs, false, output.Error, false)
+
+				if output.JournalOpID > 0 {
+					jb.brt.jobsDB.JournalDeleteEntry(output.JournalOpID)
+				}
+
+				if output.Error == nil {
+					jb.brt.recordUploadStats(*batchedJobs.Connection, output)
+					uploadSuccess = true
+				} else {
+					uploadError = output.Error
+				}
+
+			case IsWarehouseDestination(jb.brt.destType):
+				// Warehouse destinations
+				useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchedJobs.Connection.Destination.Config)
+				objectStorageType := warehouseutils.ObjectStorageType(jb.brt.destType, batchedJobs.Connection.Destination.Config, useRudderStorage)
+
+				splitBatchJobs := jb.brt.splitBatchJobsOnTimeWindow(*batchedJobs)
+				allSuccess := true
+
+				for _, splitJob := range splitBatchJobs {
+					output := jb.brt.upload(objectStorageType, splitJob, true)
+					defer misc.RemoveFilePaths(output.LocalFilePaths...)
+
+					notifyWarehouseErr := false
+					if output.Error == nil && output.Key != "" {
+						output.Error = jb.brt.pingWarehouse(splitJob, output)
+						if output.Error != nil {
+							notifyWarehouseErr = true
+							allSuccess = false
+							uploadError = output.Error
+						}
+						warehouseutils.DestStat(stats.CountType, "generate_staging_files", destID).Count(1)
+						warehouseutils.DestStat(stats.CountType, "staging_file_batch_size", destID).Count(len(splitJob.Jobs))
+					} else if output.Error != nil {
+						allSuccess = false
+						uploadError = output.Error
+					}
+
+					jb.brt.recordDeliveryStatus(destID, sourceID, output, true)
+					jb.brt.updateJobStatus(splitJob, true, output.Error, notifyWarehouseErr)
+				}
+
+				uploadSuccess = allSuccess
+
+			case asynccommon.IsAsyncDestination(jb.brt.destType):
+				// Async destinations
+				jb.brt.sendJobsToStorage(*batchedJobs)
+				uploadSuccess = true
+
+			default:
+				uploadError = fmt.Errorf("unsupported destination type %s for job buffer", jb.brt.destType)
+				jb.brt.logger.Error(uploadError)
+			}
+
+			// Update failing destinations map
+			jb.brt.failingDestinationsMu.Lock()
+			jb.brt.failingDestinations[destID] = !uploadSuccess
+			jb.brt.failingDestinationsMu.Unlock()
+
+			if !uploadSuccess && uploadError != nil {
+				jb.brt.logger.Errorf("Upload failed for destination %s: %v", destID, uploadError)
+				return uploadError
+			}
+
 			return nil
 		},
 		ReleaseWorker: func(sourceID, destID string) {
@@ -145,6 +246,14 @@ func getSourceDestKey(sourceID, destID string) string {
 	return fmt.Sprintf("%s:%s", sourceID, destID)
 }
 
+func ParseConnectionKey(key string) (sourceID, destID string) {
+	parts := strings.Split(key, ":")
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
 // getOrCreateJobChannel returns or creates a buffered channel for a source-destination pair
 func (jb *JobBuffer) getOrCreateJobChannel(sourceID, destID string) chan *jobsdb.JobT {
 	key := getSourceDestKey(sourceID, destID)
@@ -179,16 +288,6 @@ func (jb *JobBuffer) getOrCreateJobChannel(sourceID, destID string) chan *jobsdb
 	return ch
 }
 
-// getJobsForPartition atomically gets and clears all jobs for a partition
-func (jb *JobBuffer) getJobsForPartition(partition string) []*ConnectionJob {
-	jb.queuesMutex.Lock()
-	defer jb.queuesMutex.Unlock()
-
-	jobs := jb.jobQueues[partition]
-	jb.jobQueues[partition] = nil // Clear the queue
-	return jobs
-}
-
 // AddJob adds a job to the appropriate buffer channel and ensures a consumer exists
 func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 	key := getSourceDestKey(sourceID, destID)
@@ -204,6 +303,5 @@ func (jb *JobBuffer) AddJob(sourceID, destID string, job *jobsdb.JobT) {
 // Shutdown gracefully shuts down the job buffer
 func (jb *JobBuffer) Shutdown() {
 	jb.cancel()
-	jb.workerPool.Shutdown()
 	jb.consumerPool.Shutdown()
 }

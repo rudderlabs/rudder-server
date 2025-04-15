@@ -112,7 +112,15 @@ func (w *worker) Work() bool {
 	return result.(bool)
 }
 
-// routeJobsToBuffer sends jobs to appropriate channels in the job buffer
+// routeJobsToBuffer sends jobs to appropriate channels in the job buffer.
+// This is the entry point for jobs into the buffering system:
+// 1. Jobs are checked for drain conditions (e.g., source not found, expired)
+// 2. Jobs passing validation are marked as executing in JobsDB
+// 3. Valid jobs are sent to JobBuffer.AddJob which:
+//   - Ensures a consumer worker exists for the source-destination pair
+//   - Adds the job to a channel specific to that source-destination pair
+//     4. The ConsumerWorker then picks up jobs from the channel and processes them
+//     in batches based on batch size and time thresholds
 func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 	brt := w.brt
 	destWithSources := destinationJobs.destWithSources

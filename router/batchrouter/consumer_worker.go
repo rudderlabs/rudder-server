@@ -48,7 +48,12 @@ func NewConsumerWorker(
 	}
 }
 
-// Work implements the workerpool.Worker interface
+// Work implements the workerpool.Worker interface.
+// It consumes jobs from the channel and processes them in batches.
+// When either the batch size threshold or the upload frequency timer is reached,
+// it sends the collected jobs for processing using the callbacks.ProcessJobs method.
+// This directly processes the jobs without sending them back to the buffer.
+// Returns true if any jobs were processed.
 func (c *ConsumerWorker) Work() bool {
 	defer c.callbacks.ReleaseWorker(c.sourceID, c.destID)
 
@@ -97,6 +102,7 @@ func (c *ConsumerWorker) Work() bool {
 						c.logger.Errorf("Error processing jobs: %v", err)
 					}
 				}
+				jobs = nil
 				jobsProcessed = true
 			}
 			timer.Reset(uploadFrequency)
