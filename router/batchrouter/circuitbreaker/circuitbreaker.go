@@ -4,8 +4,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/sony/gobreaker"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
 type CircuitBreaker interface {
@@ -21,21 +22,25 @@ func WithMaxRequests(maxRequests int) Opt {
 		cfg.maxRequests = maxRequests
 	}
 }
+
 func WithTimeout(timeout time.Duration) Opt {
 	return func(cfg *cfg) {
 		cfg.timeout = timeout
 	}
 }
+
 func WithConsecutiveFailures(consecutiveFailures int) Opt {
 	return func(cfg *cfg) {
 		cfg.consecutiveFailures = consecutiveFailures
 	}
 }
+
 func WithLogger(logger logger.Logger) Opt {
 	return func(cfg *cfg) {
 		cfg.logger = logger
 	}
 }
+
 func NewCircuitBreaker(name string, opts ...Opt) CircuitBreaker {
 	cfg := &cfg{
 		name:                name,
@@ -75,11 +80,13 @@ type circuitBreaker struct {
 func (cb *circuitBreaker) IsOpen() bool {
 	return cb.cb.State() == gobreaker.StateOpen
 }
+
 func (cb *circuitBreaker) Success() {
 	_, _ = cb.cb.Execute(func() (any, error) {
 		return true, nil
 	})
 }
+
 func (cb *circuitBreaker) Failure() {
 	_, _ = cb.cb.Execute(func() (any, error) {
 		return nil, errors.New("failure")
