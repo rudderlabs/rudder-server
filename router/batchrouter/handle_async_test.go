@@ -782,7 +782,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 				}).Return(nil)
 			mockErrJobsDB.EXPECT().Store(gomock.Any(), []*jobsdb.JobT{abortedJob}).Return(nil).AnyTimes()
 
-			batchRouter.sendJobsToStorage(BatchedJobs{
+			err := batchRouter.sendJobsToStorage(BatchedJobs{
 				Jobs: []*jobsdb.JobT{
 					job,
 				},
@@ -791,6 +791,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Destination: destination,
 				},
 			})
+			require.NoError(t, err)
 		})
 	})
 }

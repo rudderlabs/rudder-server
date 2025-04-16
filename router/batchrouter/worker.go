@@ -38,7 +38,7 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 			failureThreshold := brt.conf.GetFloat64("BatchRouter.failureThreshold", 0.6)
 			return counts.TotalFailures >= uint32(consecutiveFailures) && failureRatio >= failureThreshold
 		},
-		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+		OnStateChange: func(name string, from, to gobreaker.State) {
 			logger.Infof("Circuit breaker %s state changed from %s to %s", name, from, to)
 		},
 	})
@@ -76,7 +76,7 @@ func (w *worker) SuccessfulUpload(sourceID, destID string) {
 	// Execute the circuit breaker with success to properly track statistics
 	// This will help reset the failure counters in the circuit breaker
 	_, _ = w.cb.Execute(func() (interface{}, error) {
-		return nil, nil // Successful execution
+		return true, nil // Return a non-nil value for success
 	})
 }
 
