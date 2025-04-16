@@ -1,6 +1,7 @@
 package batchrouter
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -43,6 +44,11 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb 
 		active:  brt.conf.GetReloadableIntVar(1, 1, "BatchRouter.partitionWorker.active"),
 		brt:     brt,
 		cb:      cb,
+		limiter: kitsync.NewLimiter(
+			context.Background(), &sync.WaitGroup{}, "batchrouter_partition_worker",
+			brt.conf.GetInt("BatchRouter.partitionWorker.concurrency", 10),
+			stats.Default,
+		),
 	}
 	return pw
 }
