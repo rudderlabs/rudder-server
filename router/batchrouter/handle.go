@@ -203,7 +203,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-	var limitsReached bool
 
 	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
@@ -213,7 +212,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		panic(err)
 	}
 	jobs = toProcess.Jobs
-	limitsReached = toProcess.LimitsReached
 
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
@@ -229,9 +227,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	})
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
-			if limitsReached { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
-				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
-			}
+			workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 		} else {
 			brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
 		}
