@@ -25,6 +25,13 @@ type PartitionWorker struct {
 	channel        chan *JobEntry
 	partitionMutex sync.RWMutex
 	active         *config.Reloadable[int]
+	worker         PartitionWorkerOwner
+}
+
+// Interface to allow access to worker methods without circular imports
+type PartitionWorkerOwner interface {
+	MarkUploadFailure(sourceID, destID string, err error)
+	SuccessfulUpload(sourceID, destID string)
 }
 
 type JobEntry struct {
@@ -44,6 +51,11 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle) *Pa
 		active:  brt.conf.GetReloadableIntVar(1, 1, "BatchRouter.partitionWorker.active"),
 		brt:     brt,
 	}
+}
+
+// SetWorker sets the worker that owns this partition worker
+func (pw *PartitionWorker) SetWorker(worker PartitionWorkerOwner) {
+	pw.worker = worker
 }
 
 func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
@@ -199,6 +211,13 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		}
 		if output.Error == nil {
 			pw.brt.recordUploadStats(*batchedJobs.Connection, output)
+			if pw.worker != nil {
+				// Notify worker about the success
+				pw.worker.SuccessfulUpload(sourceID, destID)
+			}
+		} else if pw.worker != nil {
+			// Notify worker about the failure
+			pw.worker.MarkUploadFailure(sourceID, destID, output.Error)
 		}
 	}
 
@@ -223,9 +242,25 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 			pw.brt.recordDeliveryStatus(*batchJob.Connection, output, true)
 			pw.brt.updateJobStatus(batchJob, true, output.Error, notifyWarehouseErr)
 			misc.RemoveFilePaths(output.LocalFilePaths...)
+
+			// Notify worker about results
+			if pw.worker != nil {
+				if output.Error == nil {
+					pw.worker.SuccessfulUpload(sourceID, destID)
+				} else {
+					pw.worker.MarkUploadFailure(sourceID, destID, output.Error)
+				}
+			}
 		}
 	case asynccommon.IsAsyncDestination(pw.brt.destType):
-		pw.brt.sendJobsToStorage(batchedJobs)
+		err := pw.brt.sendJobsToStorage(batchedJobs)
+		if pw.worker != nil {
+			if err != nil {
+				pw.worker.MarkUploadFailure(sourceID, destID, err)
+			} else {
+				pw.worker.SuccessfulUpload(sourceID, destID)
+			}
+		}
 	default:
 		// Handle any other destination types
 		pw.logger.Warnf("Unsupported destination type %s for job buffer. Attempting generic processing.", pw.brt.destType)

@@ -23,12 +23,28 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 		partition: partition,
 		logger:    logger,
 		brt:       brt,
-		pw:        NewPartitionWorker(logger, partition, brt),
-		cb: gobreaker.NewCircuitBreaker(gobreaker.Settings{
-			Name:    partition,
-			Timeout: brt.conf.GetDuration("BatchRouter.timeout", 10, time.Second),
-		}),
 	}
+
+	// Configure circuit breaker with proper settings
+	w.cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		Name:        partition,
+		MaxRequests: 1,                                                            // Allow 1 request to pass through when in half-open state
+		Interval:    0,                                                            // Doesn't count failures when time between requests > interval
+		Timeout:     brt.conf.GetDuration("BatchRouter.timeout", 10, time.Second), // Time after which to transition from Open to Half-Open
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			// Trip when we have at least 3 failures and the failure ratio exceeds 0.6
+			consecutiveFailures := brt.conf.GetInt("BatchRouter.maxConsecutiveFailures", 3)
+			failureThreshold := brt.conf.GetFloat64("BatchRouter.failureThreshold", 0.6)
+			return counts.TotalFailures >= uint32(consecutiveFailures) && failureRatio >= failureThreshold
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			logger.Infof("Circuit breaker %s state changed from %s to %s", name, from, to)
+		},
+	})
+
+	w.pw = NewPartitionWorker(logger, partition, brt)
+	w.pw.SetWorker(w)
 	w.pw.Start()
 	return w
 }
@@ -41,11 +57,40 @@ type worker struct {
 	pw        *PartitionWorker
 }
 
+// MarkUploadFailure is called by the partition worker when an upload fails
+func (w *worker) MarkUploadFailure(sourceID, destID string, err error) {
+	// Execute the circuit breaker with a failure to track it in the circuit breaker
+	// This will increment the failure counts and potentially trip the circuit breaker
+	_, cbErr := w.cb.Execute(func() (interface{}, error) {
+		return nil, fmt.Errorf("upload failed for source:%s destination:%s: %w", sourceID, destID, err)
+	})
+
+	if cbErr != nil {
+		w.logger.Warnf("Circuit breaker recorded failure for source:%s destination:%s: %v",
+			sourceID, destID, err)
+	}
+}
+
+// SuccessfulUpload should be called by the partition worker when an upload succeeds
+func (w *worker) SuccessfulUpload(sourceID, destID string) {
+	// Execute the circuit breaker with success to properly track statistics
+	// This will help reset the failure counters in the circuit breaker
+	_, _ = w.cb.Execute(func() (interface{}, error) {
+		return nil, nil // Successful execution
+	})
+}
+
 // Work retrieves jobs from batch router for the worker's partition and processes them,
 // grouped by destination and in parallel.
 // The function returns when processing completes and the return value is true if at least 1 job was processed,
 // false otherwise.
 func (w *worker) Work() bool {
+	// Check if circuit breaker is open before doing any work
+	if w.cb.State() == gobreaker.StateOpen {
+		w.logger.Warnf("Circuit breaker is open for partition %s, skipping job processing", w.partition)
+		return false
+	}
+
 	brt := w.brt
 	workerJobs := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
