@@ -445,6 +445,8 @@ func (rs *Redshift) loadTable(
 	tableSchemaAfterUpload model.TableSchema,
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
+	shouldMerge := rs.ShouldMerge(tableName)
+
 	log := rs.logger.With(
 		logfield.SourceID, rs.Warehouse.Source.ID,
 		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -453,9 +455,14 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.ShouldMerge(tableName),
+		logfield.ShouldMerge, shouldMerge,
 	)
 	log.Infow("started loading")
+
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+
+	log.Debugw("creating staging table")
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -463,7 +470,6 @@ func (rs *Redshift) loadTable(
 		tableNameLimit,
 	)
 
-	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
 		rs.Namespace,
 		stagingTableName,
@@ -479,6 +485,51 @@ func (rs *Redshift) loadTable(
 		}()
 	}
 
+	if !shouldMerge {
+		return rs.loadTableWithoutMerge(ctx, log, tableName, stagingTableName, strKeys)
+	}
+
+	return rs.loadTableWithMerge(ctx, log, tableName, stagingTableName, strKeys, tableSchemaAfterUpload)
+}
+
+func (rs *Redshift) loadTableWithoutMerge(
+	ctx context.Context,
+	log logger.Logger,
+	tableName string,
+	stagingTableName string,
+	strKeys []string,
+) (*types.LoadTableStats, string, error) {
+	log.Infow("loading data into staging table")
+	err := rs.copyIntoLoadTable(ctx, rs.DB, tableName, stagingTableName, strKeys)
+	if err != nil {
+		return nil, "", fmt.Errorf("loading data into table: %w", err)
+	}
+
+	log.Infow("inserting into load table")
+	res, err := rs.insertIntoLoadTable(ctx, rs.DB, tableName, stagingTableName, strKeys)
+	if err != nil {
+		return nil, "", fmt.Errorf("inserting into table: %w", err)
+	}
+
+	rowsInserted, err := res.RowsAffected()
+	if err != nil {
+		return nil, "", fmt.Errorf("getting rows affected: %w", err)
+	}
+
+	log.Infow("completed loading")
+	return &types.LoadTableStats{
+		RowsInserted: rowsInserted,
+	}, "", nil
+}
+
+func (rs *Redshift) loadTableWithMerge(
+	ctx context.Context,
+	log logger.Logger,
+	tableName string,
+	stagingTableName string,
+	strKeys []string,
+	tableSchemaAfterUpload model.TableSchema,
+) (*types.LoadTableStats, string, error) {
 	txn, err := rs.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return nil, "", fmt.Errorf("begin transaction: %w", err)
@@ -489,9 +540,6 @@ func (rs *Redshift) loadTable(
 		}
 	}()
 
-	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
-	sort.Strings(strKeys)
-
 	log.Infow("loading data into staging table")
 	err = rs.copyIntoLoadTable(
 		ctx, txn, tableName, stagingTableName,
@@ -501,35 +549,29 @@ func (rs *Redshift) loadTable(
 		return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 	}
 
-	var (
-		rowsDeletedResult, rowsInsertedResult sql.Result
-		rowsDeleted, rowsInserted             int64
+	log.Infow("deleting from load table")
+	rowsDeletedResult, err := rs.deleteFromLoadTable(
+		ctx, txn, tableName,
+		stagingTableName, tableSchemaAfterUpload,
 	)
-	if rs.ShouldMerge(tableName) {
-		log.Infow("deleting from load table")
-		rowsDeletedResult, err = rs.deleteFromLoadTable(
-			ctx, txn, tableName,
-			stagingTableName, tableSchemaAfterUpload,
-		)
-		if err != nil {
-			return nil, "", fmt.Errorf("delete from load table: %w", err)
-		}
+	if err != nil {
+		return nil, "", fmt.Errorf("delete from load table: %w", err)
 	}
 
 	log.Infow("inserting into load table")
-	rowsInsertedResult, err = rs.insertIntoLoadTable(
+	rowsInsertedResult, err := rs.insertIntoLoadTable(
 		ctx, txn, tableName,
 		stagingTableName, strKeys,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("insert into: %w", err)
 	}
-
-	log.Debugw("committing transaction")
+	log.Infow("committing transaction")
 	if err = txn.Commit(); err != nil {
 		return nil, "", fmt.Errorf("commit transaction: %w", err)
 	}
 
+	var rowsDeleted, rowsInserted int64
 	if rowsDeletedResult != nil {
 		rowsDeleted, err = rowsDeletedResult.RowsAffected()
 		if err != nil {
@@ -551,11 +593,15 @@ func (rs *Redshift) loadTable(
 	}, stagingTableName, nil
 }
 
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+}
+
 func (rs *Redshift) copyIntoLoadTable(
 	ctx context.Context,
-	txn *sqlmiddleware.Tx,
+	sqlExecutor sqlExecutor,
 	tableName string,
-	stagingTableName string,
+	targetTableName string,
 	strKeys []string,
 ) error {
 	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
@@ -601,7 +647,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			SECRET_ACCESS_KEY '%s'
 			SESSION_TOKEN '%s'
 			%s FORMAT PARQUET;`,
-			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, targetTableName),
 			s3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -622,7 +668,7 @@ func (rs *Redshift) copyIntoLoadTable(
 			%s TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS
 			COMPUPDATE OFF
 			STATUPDATE OFF;`,
-			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, targetTableName),
 			sortedColumnNames,
 			s3Location,
 			tempAccessKeyId,
@@ -633,9 +679,11 @@ func (rs *Redshift) copyIntoLoadTable(
 		)
 	}
 
-	if _, err := txn.ExecContext(ctx, copyStmt); err != nil {
+	_, err = sqlExecutor.ExecContext(ctx, copyStmt)
+	if err != nil {
 		return fmt.Errorf("running copy command: %w", normalizeError(err))
 	}
+
 	return nil
 }
 
@@ -689,7 +737,7 @@ func (rs *Redshift) deleteFromLoadTable(
 
 func (rs *Redshift) insertIntoLoadTable(
 	ctx context.Context,
-	txn *sqlmiddleware.Tx,
+	sqlExecutor sqlExecutor,
 	tableName string,
 	stagingTableName string,
 	sortedColumnKeys []string,
@@ -725,7 +773,7 @@ func (rs *Redshift) insertIntoLoadTable(
 		partitionKey,
 	)
 
-	result, err := txn.ExecContext(ctx, insertStmt)
+	result, err := sqlExecutor.ExecContext(ctx, insertStmt)
 	if err != nil {
 		return nil, fmt.Errorf("inserting into main table: %w", err)
 	}
