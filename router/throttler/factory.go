@@ -80,7 +80,7 @@ func (f *factory) Get(destName, destID string) Throttler {
 		}
 		at = &adaptiveThrottler{
 			limiter:                f.adaptiveLimiter,
-			algorithm:              newAdaptiveAlgorithm(f.config, adaptiveConf.window),
+			algorithm:              newAdaptiveAlgorithm(destName, f.config, adaptiveConf.window),
 			config:                 adaptiveConf,
 			limitFactorMeasurement: limitFactorMeasurement,
 		}
