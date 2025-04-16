@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
@@ -187,7 +188,7 @@ func setDataAndMetadataFromRules(
 	return nil
 }
 
-func storeRudderEvent(
+func (t *Transformer) storeRudderEvent(
 	tec *transformEventContext,
 	data map[string]any, metadata map[string]string,
 ) error {
@@ -203,6 +204,24 @@ func storeRudderEvent(
 	eventJSON, err := jsonrs.Marshal(tec.event.Message)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
+	}
+	if t.config.populateSrcDestInfoInContext.Load() {
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.sourceId", tec.event.Metadata.SourceID)
+		if err != nil {
+			return fmt.Errorf("setting source id: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.sourceType", tec.event.Metadata.SourceType)
+		if err != nil {
+			return fmt.Errorf("setting source type: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.destinationId", tec.event.Metadata.DestinationID)
+		if err != nil {
+			return fmt.Errorf("setting destination id: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.destinationType", tec.event.Metadata.DestinationType)
+		if err != nil {
+			return fmt.Errorf("setting destination type: %w", err)
+		}
 	}
 
 	data[columnName] = string(eventJSON)

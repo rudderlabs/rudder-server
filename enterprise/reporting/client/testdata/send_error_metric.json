@@ -1,0 +1,29 @@
+{
+  "workspaceId": "test-workspace",
+  "namespace": "",
+  "reportedBy": "",
+  "reportedAt": 0,
+  "bucket": 0,
+  "sourceId": "",
+  "destinationId": "",
+  "sourceDefinitionId": "",
+  "destinationDefinitionId": "",
+  "destinationDefinitionName": "",
+  "errors": [
+    {
+      "statusCode": 400,
+      "errorCode": "ERR_001",
+      "errorMessage": "Test error",
+      "eventType": "track",
+      "eventName": "test_event",
+      "sampleResponse": "error response",
+      "sampleEvent": {
+        "event": "test_event",
+        "properties": {
+          "test": "value"
+        }
+      },
+      "count": 5
+    }
+  ]
+}

@@ -128,10 +128,15 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
-
-	bytesPerTableJSON, err := jsonrs.Marshal(stagingFile.BytesPerTable)
-	if err != nil {
-		return id, fmt.Errorf("marshaling bytes per table: %w", err)
+	var bytesPerTablePayload interface{}
+	if stagingFile.BytesPerTable != nil {
+		marshalled, err := jsonrs.Marshal(stagingFile.BytesPerTable)
+		if err != nil {
+			return id, fmt.Errorf("marshaling bytes per table: %w", err)
+		}
+		bytesPerTablePayload = marshalled
+	} else {
+		bytesPerTablePayload = nil
 	}
 
 	err = sf.db.QueryRowContext(ctx,
@@ -168,7 +173,7 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		now.UTC(),
 		now.UTC(),
 		rawMetadata,
-		bytesPerTableJSON,
+		bytesPerTablePayload,
 	).Scan(&id)
 	if err != nil {
 		return id, fmt.Errorf("inserting staging file: %w", err)
@@ -233,9 +238,11 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 			return nil, fmt.Errorf("unmarshal metadata: %w", err)
 		}
 
-		err = jsonrs.Unmarshal(bytesPerTableRaw, &stagingFile.BytesPerTable)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal bytes per table: %w", err)
+		if bytesPerTableRaw != nil {
+			err = jsonrs.Unmarshal(bytesPerTableRaw, &stagingFile.BytesPerTable)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal bytes per table: %w", err)
+			}
 		}
 
 		m.SetStagingFile(&stagingFile)

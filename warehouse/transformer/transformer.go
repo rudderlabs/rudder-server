@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -133,33 +134,41 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 }
 
 func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {
-	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
-		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
+	if err := t.checkValidContext(event); err != nil {
+		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
 	t.addMandatoryFields(event)
 	return t.handleEvent(event, cache)
 }
 
-func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerEvent) error {
+func (t *Transformer) checkValidContext(event *types.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
 		return nil
 	}
-
-	messageContext, ok := event.Message["context"]
-	if !ok || messageContext == nil {
-		messageContext = map[string]any{}
+	contextVal, exists := event.Message["context"]
+	if !exists || contextVal == nil {
+		return nil
 	}
-	messageContextMap, ok := messageContext.(map[string]any)
-	if !ok {
+	if !utils.IsObject(contextVal) {
 		return response.ErrContextNotMap
 	}
-	messageContextMap["sourceId"] = event.Metadata.SourceID
-	messageContextMap["sourceType"] = event.Metadata.SourceType
-	messageContextMap["destinationId"] = event.Metadata.DestinationID
-	messageContextMap["destinationType"] = event.Metadata.DestinationType
-
-	event.Message["context"] = messageContextMap
 	return nil
+}
+
+func (t *Transformer) eventContext(tec *transformEventContext) any {
+	contextVal, exists := tec.event.Message["context"]
+	if !t.config.populateSrcDestInfoInContext.Load() {
+		return contextVal
+	}
+	if !exists || contextVal == nil {
+		contextVal = map[string]interface{}{}
+	}
+	clonedContext := maps.Clone(contextVal.(map[string]any))
+	clonedContext["sourceId"] = tec.event.Metadata.SourceID
+	clonedContext["sourceType"] = tec.event.Metadata.SourceType
+	clonedContext["destinationId"] = tec.event.Metadata.DestinationID
+	clonedContext["destinationType"] = tec.event.Metadata.DestinationType
+	return clonedContext
 }
 
 func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
@@ -171,7 +180,6 @@ func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
 	messageID, exists := event.Message["messageId"]
 	if !exists || utils.IsBlank(messageID) {
 		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
-		event.Message["messageId"] = event.Metadata.MessageID
 	}
 }
 
@@ -192,7 +200,6 @@ func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
 	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
 		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
 	}
-	event.Message["receivedAt"] = event.Metadata.ReceivedAt
 }
 
 func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {

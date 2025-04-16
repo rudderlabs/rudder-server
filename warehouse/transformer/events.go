@@ -36,7 +36,7 @@ func (t *Transformer) trackCommonProps(tec *transformEventContext) (map[string]a
 	commonData := make(map[string]any)
 	commonMetadata := make(map[string]string)
 
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], commonData, commonMetadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), commonData, commonMetadata, &prefixInfo{
 		completePrefix: "track_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -83,7 +83,7 @@ func (t *Transformer) tracksResponse(tec *transformEventContext, commonData map[
 	if err := setDataAndMetadataFromRules(tec, data, metadata, rules.TrackTableRules); err != nil {
 		return nil, fmt.Errorf("tracks response: setting data and column types from rules: %w", err)
 	}
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("tracks response: storing rudder event: %w", err)
 	}
 
@@ -167,7 +167,7 @@ func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]an
 	data := make(map[string]any)
 	metadata := make(map[string]string)
 
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], data, metadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
 		completePrefix: "extract_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -279,7 +279,7 @@ func (t *Transformer) identifyCommonProps(tec *transformEventContext) (map[strin
 	}); err != nil {
 		return nil, nil, fmt.Errorf("identify common props: setting data and column types from message: %w", err)
 	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], commonData, commonMetadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), commonData, commonMetadata, &prefixInfo{
 		completePrefix: "identify_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -310,7 +310,7 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 	if err := setDataAndMetadataFromRules(tec, data, metadata, rules.DefaultRules); err != nil {
 		return nil, fmt.Errorf("identifies response: setting data and column types from rules: %w", err)
 	}
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("identifies response: storing rudder event: %w", err)
 	}
 
@@ -412,7 +412,7 @@ func (t *Transformer) pageEvents(tec *transformEventContext) ([]map[string]any, 
 	}); err != nil {
 		return nil, fmt.Errorf("page: setting data and column types from input: %w", err)
 	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], data, metadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
 		completePrefix: "page_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -426,7 +426,7 @@ func (t *Transformer) pageEvents(tec *transformEventContext) ([]map[string]any, 
 		return nil, fmt.Errorf("page: setting data and column types from rules: %w", err)
 	}
 
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("page: storing rudder event: %w", err)
 	}
 
@@ -466,7 +466,7 @@ func (t *Transformer) screenEvents(tec *transformEventContext) ([]map[string]any
 	}); err != nil {
 		return nil, fmt.Errorf("screen: setting data and column types from input: %w", err)
 	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], data, metadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
 		completePrefix: "screen_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -480,7 +480,7 @@ func (t *Transformer) screenEvents(tec *transformEventContext) ([]map[string]any
 		return nil, fmt.Errorf("screen: setting data and column types from rules: %w", err)
 	}
 
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("screen: storing rudder event: %w", err)
 	}
 
@@ -520,7 +520,7 @@ func (t *Transformer) groupEvents(tec *transformEventContext) ([]map[string]any,
 	}); err != nil {
 		return nil, fmt.Errorf("group: setting data and column types from input: %w", err)
 	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], data, metadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
 		completePrefix: "group_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -534,7 +534,7 @@ func (t *Transformer) groupEvents(tec *transformEventContext) ([]map[string]any,
 		return nil, fmt.Errorf("group: setting data and column types from rules: %w", err)
 	}
 
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("group: storing rudder event: %w", err)
 	}
 
@@ -574,7 +574,7 @@ func (t *Transformer) aliasEvents(tec *transformEventContext) ([]map[string]any,
 	}); err != nil {
 		return nil, fmt.Errorf("alias: setting data and column types from input: %w", err)
 	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["context"], data, metadata, &prefixInfo{
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
 		completePrefix: "alias_context_",
 		completeLevel:  2,
 		prefix:         "context_",
@@ -588,7 +588,7 @@ func (t *Transformer) aliasEvents(tec *transformEventContext) ([]map[string]any,
 		return nil, fmt.Errorf("alias: setting data and column types from rules: %w", err)
 	}
 
-	if err := storeRudderEvent(tec, data, metadata); err != nil {
+	if err := t.storeRudderEvent(tec, data, metadata); err != nil {
 		return nil, fmt.Errorf("alias: storing rudder event: %w", err)
 	}
 

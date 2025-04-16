@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.47.0](https://github.com/rudderlabs/rudder-server/compare/v1.46.0...v1.47.0) (2025-04-14)
+
+
+### Features
+
+* add a common package for validation ([#5579](https://github.com/rudderlabs/rudder-server/issues/5579)) ([f2cee9d](https://github.com/rudderlabs/rudder-server/commit/f2cee9dc1fd4363eca36cabba0b5bbd485691497))
+* add support for table size metadata in warehouse /v1/process API ([#5705](https://github.com/rudderlabs/rudder-server/issues/5705)) ([cbebd23](https://github.com/rudderlabs/rudder-server/commit/cbebd2349b3d81e72436db2ee0f802df708ea6a3))
+* add tracer support to partition and pipeline workers ([#5668](https://github.com/rudderlabs/rudder-server/issues/5668)) ([a38b4f5](https://github.com/rudderlabs/rudder-server/commit/a38b4f5d06303621fd90b6e3c656482528ec3cdc))
+* add upload_id column in wh_load_files table ([#5682](https://github.com/rudderlabs/rudder-server/issues/5682)) ([9def123](https://github.com/rudderlabs/rudder-server/commit/9def1237428115560260379a655935206c8c033e))
+* embedded google pubsub transformer ([#5525](https://github.com/rudderlabs/rudder-server/issues/5525)) ([dcdb681](https://github.com/rudderlabs/rudder-server/commit/dcdb6815d99f08ed1cae8a1ae2e9e2d09470b616))
+* embedded kafka transformer ([#5575](https://github.com/rudderlabs/rudder-server/issues/5575)) ([224228b](https://github.com/rudderlabs/rudder-server/commit/224228b0877ddb9c159cbff5314735faf216c2e6))
+* **jobsdb:** introduce jobMinRowsLeftMigrateThres ([#5704](https://github.com/rudderlabs/rudder-server/issues/5704)) ([b1f4ce0](https://github.com/rudderlabs/rudder-server/commit/b1f4ce00f33248b4a6400d606a1ba6b1fb201a28))
+* **processor:** concurrent store steps ([#5687](https://github.com/rudderlabs/rudder-server/issues/5687)) ([2435cba](https://github.com/rudderlabs/rudder-server/commit/2435cba3993300794d226131f87031cd4cf7a3a0))
+* support compacted destination transformation payloads ([#5667](https://github.com/rudderlabs/rudder-server/issues/5667)) ([15ccaac](https://github.com/rudderlabs/rudder-server/commit/15ccaaceec0965e3bfbb17d0bedd963cb80335d2))
+
+
+### Bug Fixes
+
+* handle consent management filtering per connection ([#5718](https://github.com/rudderlabs/rudder-server/issues/5718)) ([69f1baf](https://github.com/rudderlabs/rudder-server/commit/69f1baff51e05c561f0b3122a020e315c62c37bc))
+* handling isBlank for nested and empty arrays ([#5714](https://github.com/rudderlabs/rudder-server/issues/5714)) ([69f1baf](https://github.com/rudderlabs/rudder-server/commit/69f1baff51e05c561f0b3122a020e315c62c37bc))
+* kafka message batching applies to Confluent Cloud and Azure Event Hub ([#5699](https://github.com/rudderlabs/rudder-server/issues/5699)) ([7d8cdb9](https://github.com/rudderlabs/rudder-server/commit/7d8cdb9704addb59fda769ebe99779cfb3df0a50))
+* **router:** applying excessive read pressure to the database when jobs are being throttled ([#5685](https://github.com/rudderlabs/rudder-server/issues/5685)) ([f0e8b75](https://github.com/rudderlabs/rudder-server/commit/f0e8b75a6288c89dfe7b3f7ea711ef33a16d763e))
+* snowflake fetch schema privileges ([#5692](https://github.com/rudderlabs/rudder-server/issues/5692)) ([0b83028](https://github.com/rudderlabs/rudder-server/commit/0b83028c9abd4182660c294d17a0caa0168120bd))
+* unmarshalling error for staging files without bytes per table ([#5725](https://github.com/rudderlabs/rudder-server/issues/5725)) ([8c35d0a](https://github.com/rudderlabs/rudder-server/commit/8c35d0a75364f4cfc74fd7e283caba60046d8b1f))
+* warehouse transformations comparisions ([#5694](https://github.com/rudderlabs/rudder-server/issues/5694)) ([0b83028](https://github.com/rudderlabs/rudder-server/commit/0b83028c9abd4182660c294d17a0caa0168120bd))
+* warehouse transformations concurrent writes ([#5724](https://github.com/rudderlabs/rudder-server/issues/5724)) ([68e6309](https://github.com/rudderlabs/rudder-server/commit/68e630960c03a7d8dddb0f486a2ad7eead411cc8))
+* warehouse transformations ordering for comparison ([#5670](https://github.com/rudderlabs/rudder-server/issues/5670)) ([28ba26e](https://github.com/rudderlabs/rudder-server/commit/28ba26e5ae8559f484c5f1eb970e2c3ac20c6e7a))
+* warehouse transformations ordering while processing properties ([#5713](https://github.com/rudderlabs/rudder-server/issues/5713)) ([69f1baf](https://github.com/rudderlabs/rudder-server/commit/69f1baff51e05c561f0b3122a020e315c62c37bc))
+* warehouse transformations valid timestamp formats and log file path ([#5707](https://github.com/rudderlabs/rudder-server/issues/5707)) ([69f1baf](https://github.com/rudderlabs/rudder-server/commit/69f1baff51e05c561f0b3122a020e315c62c37bc))
+
+
+### Miscellaneous
+
+* add sourceDef field to stats and related structures for enhanced observability ([#5660](https://github.com/rudderlabs/rudder-server/issues/5660)) ([632bfca](https://github.com/rudderlabs/rudder-server/commit/632bfcaff710493a192e2fa7a02f61d18c845bb7))
+* avoid using reflections for warehouse transformations ([#5673](https://github.com/rudderlabs/rudder-server/issues/5673)) ([3290794](https://github.com/rudderlabs/rudder-server/commit/32907940c13508942dd3b7f950d72f4d50fab639))
+* clean up tests because transformer defaults to v2 ([#5712](https://github.com/rudderlabs/rudder-server/issues/5712)) ([e9b96cf](https://github.com/rudderlabs/rudder-server/commit/e9b96cf964a51c39d9893b6df333c892e7a68d73))
+* datetime detection ([#5675](https://github.com/rudderlabs/rudder-server/issues/5675)) ([1c53807](https://github.com/rudderlabs/rudder-server/commit/1c538076e0d07f051815cc8e5e5ed490f6fa6857))
+* default webhook contract version to v2 ([#5659](https://github.com/rudderlabs/rudder-server/issues/5659)) ([7dbf5d8](https://github.com/rudderlabs/rudder-server/commit/7dbf5d86413555fcb6f64863c096139bb6401d38))
+* **deps:** bump beatlabs/delete-old-branches-action from 0.0.10 to 0.0.11 ([#5620](https://github.com/rudderlabs/rudder-server/issues/5620)) ([451c593](https://github.com/rudderlabs/rudder-server/commit/451c5930474ce61f2b55119613bc1b34b805f392))
+* **deps:** bump google.golang.org/api from 0.227.0 to 0.228.0 in the frequent group ([#5708](https://github.com/rudderlabs/rudder-server/issues/5708)) ([cbce33a](https://github.com/rudderlabs/rudder-server/commit/cbce33a4437f651d8e7e287b42286cef91bfe911))
+* **deps:** bump the frequent group across 1 directory with 3 updates ([#5702](https://github.com/rudderlabs/rudder-server/issues/5702)) ([00a1bc5](https://github.com/rudderlabs/rudder-server/commit/00a1bc5d00f2a8656f85adcb1224f3f39883888f))
+* **deps:** bump the go-deps group across 1 directory with 12 updates ([#5698](https://github.com/rudderlabs/rudder-server/issues/5698)) ([4c3e4ff](https://github.com/rudderlabs/rudder-server/commit/4c3e4ffdaec2f8d8766c26b9bbcee36419055edf))
+* **deps:** bump the go-deps group with 2 updates ([#5701](https://github.com/rudderlabs/rudder-server/issues/5701)) ([27c71e6](https://github.com/rudderlabs/rudder-server/commit/27c71e61e5cdedaa61a42e2fae2b89088c24a767))
+* **deps:** bump the go-deps group with 2 updates ([#5709](https://github.com/rudderlabs/rudder-server/issues/5709)) ([1335fa6](https://github.com/rudderlabs/rudder-server/commit/1335fa6fe52591ab133ee37bb5e8b8c24635c921))
+* **deps:** bump the go-deps group with 2 updates ([#5719](https://github.com/rudderlabs/rudder-server/issues/5719)) ([d3ab3e6](https://github.com/rudderlabs/rudder-server/commit/d3ab3e6b5d67b6f8dd7c9c92061d262fcf279c1f))
+* remove explicit schema synchronization in upload job ([#5672](https://github.com/rudderlabs/rudder-server/issues/5672)) ([462db8a](https://github.com/rudderlabs/rudder-server/commit/462db8a70e385a9a01ccacf679e32290b8499c8a))
+* remove unused schema v1 code ([#5661](https://github.com/rudderlabs/rudder-server/issues/5661)) ([3290794](https://github.com/rudderlabs/rudder-server/commit/32907940c13508942dd3b7f950d72f4d50fab639))
+* snowflake integrations tests to use keypair instead of password ([#5684](https://github.com/rudderlabs/rudder-server/issues/5684)) ([3ed7a11](https://github.com/rudderlabs/rudder-server/commit/3ed7a11ef3e39e5b90e19bbea67a4c479d8e4be7))
+
 ## [1.46.3](https://github.com/rudderlabs/rudder-server/compare/v1.46.2...v1.46.3) (2025-04-11)
 
 

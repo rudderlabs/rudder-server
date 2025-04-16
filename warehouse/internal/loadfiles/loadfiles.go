@@ -45,8 +45,8 @@ type StageFileRepo interface {
 
 type LoadFileRepo interface {
 	Insert(ctx context.Context, loadFiles []model.LoadFile) error
-	DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error
-	GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error)
+	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
+	Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error)
 }
 
 type ControlPlaneClient interface {
@@ -166,7 +166,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 	// Delete previous load files for the staging files
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
-	if err := lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs); err != nil {
+	if err := lf.LoadRepo.Delete(ctx, job.Upload.ID, stagingFileIDs); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
 
@@ -335,7 +335,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		return 0, 0, err
 	}
 
-	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, stagingFileIDs)
+	loadFiles, err := lf.LoadRepo.Get(ctx, job.Upload.ID, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}
