@@ -6,6 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -18,7 +22,6 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-// TODO test the actual UT mirroring
 func TestUTMirroring(t *testing.T) {
 	messages := map[string]mockEventData{
 		// this message should only be delivered to destination B
@@ -110,119 +113,178 @@ func TestUTMirroring(t *testing.T) {
 		},
 	}
 
-	mockTransformerClients := transformer.NewSimpleClients()
-	processor := NewHandle(config.Default, mockTransformerClients)
-	isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	processor.isolationStrategy = isolationStrategy
-	processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+	pool.MaxWait = time.Minute
 
-	c := &testContext{}
-	c.Setup(t)
-	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-	t.Cleanup(c.Finish)
-
-	c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
-		CustomValFilters: gatewayCustomVal,
-		JobsLimit:        processor.config.maxEventsToProcess.Load(),
-		EventsLimit:      processor.config.maxEventsToProcess.Load(),
-		PayloadSizeLimit: processor.payloadLimit.Load(),
-	}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-
-	mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
-		outputEvents := make([]types.TransformerResponse, 0)
-		for _, event := range clientEvents {
-			event.Message["user-transform"] = "value"
-			outputEvents = append(outputEvents, types.TransformerResponse{
-				Output: event.Message,
-			})
-		}
-		response := types.Response{Events: outputEvents}
-		return response
-	})
-
-	transformExpectations := map[string]transformExpectation{
-		DestinationIDEnabledB: {
-			events:                    3,
-			messageIds:                "message-1,message-3,message-4",
-			destinationDefinitionName: "minio",
-		},
-	}
-	mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
-		return assertDestinationTransform(
-			messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
-		)(ctx, clientEvents, 1)
-	})
-
-	assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
-		isValidUUID, err := testutils.BeValidUUID().Match(job.UUID.String())
+	t.Run("mirror does not return anything", func(t *testing.T) {
+		minioContainer, err := minio.Setup(pool, t)
 		require.NoError(t, err)
-		require.True(t, isValidUUID)
-		require.EqualValues(t, 0, job.JobID)
-		requireTimeCirca(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
-		requireTimeCirca(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
-		require.JSONEq(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
-		require.Len(t, job.LastJobStatus.JobState, 0)
-		require.JSONEq(t, fmt.Sprintf(`{
-			"source_id": "source-from-transformer",
-			"source_name": "%s",
-			"destination_id": "destination-from-transformer",
-			"received_at": "",
-			"transform_at": "processor",
-			"message_id": "",
-			"gateway_job_id": 0,
-			"source_task_run_id": "",
-			"source_job_id": "",
-			"source_job_run_id": "",
-			"event_name": "",
-			"event_type": "",
-			"source_definition_id": "",
-			"destination_definition_id": "",
-			"source_category": "",
-			"record_id": null,
-			"workspaceId": "",
-			"traceparent": ""
-		}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
+
+		conf := config.New()
+		conf.Set("Processor.userTransformationMirroring.sanitySampling", "100")
+		// conf.Set("USER_TRANSFORM_MIRROR_URL", "TODO")
+		conf.Set("UTSampling.Bucket", minioContainer.BucketName)
+		conf.Set("UTSampling.Endpoint", minioContainer.Endpoint)
+		conf.Set("UTSampling.AccessKeyId", minioContainer.AccessKeyID)
+		conf.Set("UTSampling.AccessKey", minioContainer.AccessKeySecret)
+		conf.Set("UTSampling.S3ForcePathStyle", "true")
+		conf.Set("UTSampling.DisableSsl", "true")
+		conf.Set("UTSampling.EnableSse", "false")
+		conf.Set("UTSampling.Region", minioContainer.Region)
+		mockTransformerClients := transformer.NewSimpleClients()
+		processor := NewHandle(conf, mockTransformerClients)
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		require.NoError(t, err)
+		processor.isolationStrategy = isolationStrategy
+		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+		c := &testContext{}
+		c.Setup(t)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+		t.Cleanup(c.Finish)
+
+		c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+			CustomValFilters: gatewayCustomVal,
+			JobsLimit:        processor.config.maxEventsToProcess.Load(),
+			EventsLimit:      processor.config.maxEventsToProcess.Load(),
+			PayloadSizeLimit: processor.payloadLimit.Load(),
+		}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+		mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			outputEvents := make([]types.TransformerResponse, 0)
+			for _, event := range clientEvents {
+				event.Message["user-transform"] = "value"
+				outputEvents = append(outputEvents, types.TransformerResponse{
+					Output: event.Message,
+				})
+			}
+			response := types.Response{Events: outputEvents}
+			return response
+		})
+
+		transformExpectations := map[string]transformExpectation{
+			DestinationIDEnabledB: {
+				events:                    3,
+				messageIds:                "message-1,message-3,message-4",
+				destinationDefinitionName: "minio",
+			},
+		}
+		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return assertDestinationTransform(
+				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+			)(ctx, clientEvents, 1)
+		})
+
+		assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+			isValidUUID, err := testutils.BeValidUUID().Match(job.UUID.String())
+			require.NoError(t, err)
+			require.True(t, isValidUUID)
+			require.EqualValues(t, 0, job.JobID)
+			requireTimeCirca(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
+			requireTimeCirca(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
+			require.JSONEq(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+			require.Len(t, job.LastJobStatus.JobState, 0)
+			require.JSONEq(t, fmt.Sprintf(`{
+				"source_id": "source-from-transformer",
+				"source_name": "%s",
+				"destination_id": "destination-from-transformer",
+				"received_at": "",
+				"transform_at": "processor",
+				"message_id": "",
+				"gateway_job_id": 0,
+				"source_task_run_id": "",
+				"source_job_id": "",
+				"source_job_run_id": "",
+				"event_name": "",
+				"event_type": "",
+				"source_definition_id": "",
+				"destination_definition_id": "",
+				"source_category": "",
+				"record_id": null,
+				"workspaceId": "",
+				"traceparent": ""
+			}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
+		}
+
+		c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			_ = f(jobsdb.EmptyStoreSafeTx())
+		}).Return(nil)
+		callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+			Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+				require.Len(t, jobs, 2)
+				for i, job := range jobs {
+					assertStoreJob(job, i, "value-enabled-destination-b")
+				}
+			})
+
+		c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			_ = f(jobsdb.EmptyStoreSafeTx())
+		}).Return(nil)
+
+		c.mockArchivalDB.EXPECT().
+			StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+			AnyTimes()
+		c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+			_ = f(jobsdb.EmptyUpdateSafeTx())
+		}).Return(nil).Times(1)
+		c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+			Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+				for i := range unprocessedJobsList {
+					require.Equal(t, statuses[i].JobID, unprocessedJobsList[i].JobID)
+					require.Equal(t, statuses[i].JobState, jobsdb.Succeeded.State)
+					requireTimeCirca(t, time.Now(), statuses[i].RetryTime, 200*time.Millisecond)
+					requireTimeCirca(t, time.Now(), statuses[i].ExecTime, 200*time.Millisecond)
+				}
+			})
+
+		Setup(processor, c, false, false, t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+		t.Log("Processor setup and init done")
+		didWork := processor.handlePendingGatewayJobs("")
+		require.True(t, didWork)
+
+		var files []minio.File
+		require.Eventuallyf(t, func() bool {
+			files, err = minioContainer.Contents(context.Background(), "")
+			return err == nil && len(files) == 1
+		}, 10*time.Second, 100*time.Millisecond, "Expected one file in the bucket: %v [%+v]", err, files)
+		require.Equal(t, "Expected Events length 3, got 0", files[0].Content)
+	})
+}
+
+func TestShouldSample(t *testing.T) {
+	var (
+		timesPerTest      = 1000
+		repeatEachTestFor = 10
+		errorMargin       = float64(8) // %
+		testCases         = []float64{10, 20, 30, 40, 50, 60, 70, 80, 90}
+	)
+
+	test := func() {
+		for i := 0; i < timesPerTest; i++ { // no error margin for 0% and 100%
+			require.True(t, shouldSample(100))
+			require.False(t, shouldSample(0))
+		}
+		for _, testCase := range testCases {
+			var hits int64
+			for i := 0; i < timesPerTest; i++ {
+				if shouldSample(testCase) {
+					hits++
+				}
+			}
+			actualPercentage := float64(hits) * 100 / float64(timesPerTest)
+			require.InDeltaf(t, testCase, actualPercentage, errorMargin,
+				"Expected  %.0f%% (±5%%), got %.2f%%", testCase, actualPercentage,
+			)
+		}
 	}
 
-	c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-		_ = f(jobsdb.EmptyStoreSafeTx())
-	}).Return(nil)
-	callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-		Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-			require.Len(t, jobs, 2)
-			for i, job := range jobs {
-				assertStoreJob(job, i, "value-enabled-destination-b")
-			}
-		})
-
-	c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
-		_ = f(jobsdb.EmptyStoreSafeTx())
-	}).Return(nil)
-
-	c.mockArchivalDB.EXPECT().
-		StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes()
-	c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
-		_ = f(jobsdb.EmptyUpdateSafeTx())
-	}).Return(nil).Times(1)
-	c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
-		Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-			for i := range unprocessedJobsList {
-				require.Equal(t, statuses[i].JobID, unprocessedJobsList[i].JobID)
-				require.Equal(t, statuses[i].JobState, jobsdb.Succeeded.State)
-				requireTimeCirca(t, time.Now(), statuses[i].RetryTime, 200*time.Millisecond)
-				requireTimeCirca(t, time.Now(), statuses[i].ExecTime, 200*time.Millisecond)
-			}
-		})
-
-	Setup(processor, c, false, false, t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
-	t.Log("Processor setup and init done")
-	didWork := processor.handlePendingGatewayJobs("")
-	require.True(t, didWork)
+	for k := 0; k < repeatEachTestFor; k++ {
+		test()
+	}
 }
 
 func requireTimeCirca(t require.TestingT, expected, actual time.Time, difference time.Duration) {

@@ -402,7 +402,7 @@ func (proc *Handle) Setup(
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
-	proc.reportingEnabled = config.GetBoolVar(reportingtypes.DefaultReportingEnabled, "Reporting.enabled")
+	proc.reportingEnabled = proc.conf.GetBoolVar(reportingtypes.DefaultReportingEnabled, "Reporting.enabled")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -612,27 +612,27 @@ func (proc *Handle) Start(ctx context.Context) error {
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
 	proc.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_read",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
 	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
 	proc.limiter.pretransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pretransform",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.utransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_utransform",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.utransform.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.utransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.utransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.dtransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_dtransform",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.dtransform.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.dtransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.dtransform.dynamicPeriod", 1, time.Second)))
 	proc.limiter.store = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_store",
-		config.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
@@ -727,10 +727,10 @@ func (proc *Handle) loadConfig() {
 	defaultPayloadLimit := 100 * bytesize.MB
 
 	defaultIsolationMode := isolation.ModeSource
-	if config.IsSet("WORKSPACE_NAMESPACE") {
+	if proc.conf.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	proc.config.isolationMode = isolation.Mode(config.GetString("Processor.isolationMode", string(defaultIsolationMode)))
+	proc.config.isolationMode = isolation.Mode(proc.conf.GetString("Processor.isolationMode", string(defaultIsolationMode)))
 	// If isolation mode is not none, we need to reduce the values for some of the config variables to more sensible defaults
 	if proc.config.isolationMode != isolation.ModeNone {
 		defaultSubJobSize = 400
@@ -738,39 +738,39 @@ func (proc *Handle) loadConfig() {
 		defaultPayloadLimit = 20 * bytesize.MB
 	}
 
-	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
-	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
-	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
-	proc.config.pipelinesPerPartition = config.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
+	proc.config.enablePipelining = proc.conf.GetBoolVar(true, "Processor.enablePipelining")
+	proc.config.pipelineBufferedItems = proc.conf.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
+	proc.config.subJobSize = proc.conf.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.pipelinesPerPartition = proc.conf.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
 	// Enable dedup of incoming events by default
-	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
-	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
+	proc.config.enableDedup = proc.conf.GetBoolVar(false, "Dedup.enableDedup")
+	proc.config.eventSchemaV2Enabled = proc.conf.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
-	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
+	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
-	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
 func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
-	proc.payloadLimit = config.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
-	proc.config.maxLoopSleep = config.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
-	proc.config.storeTimeout = config.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
-	proc.config.pingerSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
-	proc.config.readLoopSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
-	proc.config.transformBatchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-	proc.config.userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
-	proc.config.enableEventCount = config.GetReloadableBoolVar(true, "Processor.enableEventCount")
-	proc.config.maxEventsToProcess = config.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
-	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
+	proc.payloadLimit = proc.conf.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
+	proc.config.maxLoopSleep = proc.conf.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
+	proc.config.storeTimeout = proc.conf.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
+	proc.config.pingerSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
+	proc.config.readLoopSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
+	proc.config.transformBatchSize = proc.conf.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
+	proc.config.userTransformBatchSize = proc.conf.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
+	proc.config.enableEventCount = proc.conf.GetReloadableBoolVar(true, "Processor.enableEventCount")
+	proc.config.maxEventsToProcess = proc.conf.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
+	proc.config.archivalEnabled = proc.conf.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
-	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
-	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
-	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
-	proc.config.enableConcurrentStore = config.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
+	proc.config.captureEventNameStats = proc.conf.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
+	proc.config.enableWarehouseTransformations = proc.conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	proc.config.enableUpdatedEventNameReporting = proc.conf.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
+	proc.config.enableConcurrentStore = proc.conf.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
 	// UserTransformation mirroring settings
-	proc.config.userTransformationMirroringSanitySampling = config.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
-	proc.config.userTransformationMirroringFireAndForget = config.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
+	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
+	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 }
 
 type connection struct {
@@ -3004,9 +3004,9 @@ func (proc *Handle) userTransformAndFilter(
 		transformAt = val
 	}
 	// Check for overrides through env
-	transformAtOverrideFound := config.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
+	transformAtOverrideFound := proc.conf.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
 	if transformAtOverrideFound {
-		transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
+		transformAt = proc.conf.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 	}
 	// Filtering events based on the supported message types - START
 	s := time.Now()
@@ -3348,8 +3348,7 @@ func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response
 
 	// Determine if mirroring should be enabled based on sampling percentage.
 	// Sampling percentage precision can be with two decimals like 12.34%
-	randomValue := float64(rand.Intn(10000)) / 100
-	if randomValue > mirroringSanityChecksSampling {
+	if ok := shouldSample(mirroringSanityChecksSampling); !ok {
 		// Sanity checks were enabled but the random value was less than the sampling percentage.
 		// Disabling mirroring altogether.
 		return false, nil
@@ -3716,8 +3715,8 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
-	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
-	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	jobdDBQueryRequestTimeout := proc.conf.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	jobdDBMaxRetries := proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
 	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
@@ -3744,6 +3743,15 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// shouldSample sampling percentage precision can be with two decimals like 12.34%.
+// To sample everything use 100. To sample nothing use 0.
+func shouldSample(samplingPercentage float64) bool {
+	if samplingPercentage == 0 || samplingPercentage == 100 {
+		return samplingPercentage == 100
+	}
+	return float64(rand.Intn(10000))/100 <= samplingPercentage
 }
 
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
