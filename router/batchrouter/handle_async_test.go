@@ -791,7 +791,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Destination: destination,
 				},
 			})
-			require.NoError(t, err)
+			require.Error(t, err)
 		})
 	})
 }
