@@ -1875,6 +1875,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					"record_id":null,
 					"workspaceId":"",
 					"traceparent":""
+					"connection_id":"source-from-transformer:destination-from-transformer"
 				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
 			}
 			// One Store call is expected for all events
@@ -2301,7 +2302,8 @@ var _ = Describe("Processor", Ordered, func() {
 					"source_category":"",
 					"record_id":null,
 					"workspaceId":"",
-					"traceparent":""
+					"traceparent":"",
+					"connection_id":"source-from-transformer:destination-from-transformer"
 				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
 			}
 			// One Store call is expected for all events
@@ -2555,7 +2557,8 @@ var _ = Describe("Processor", Ordered, func() {
 					"source_category": "",
 					"record_id": null,
 					"workspaceId": "",
-					"traceparent": ""
+					"traceparent": "",
+					"connection_id":"source-from-transformer:destination-from-transformer"
 				}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
 			}
 
