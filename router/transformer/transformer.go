@@ -708,7 +708,6 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	defer func() { httputil.CloseResponse(resp) }()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
 		trans.logger.Errorn(`[TransformerProxy] Failure`, logger.NewIntField("statusCode", http.StatusBadRequest), logger.NewErrorField(err))
 		return httpProxyResponse{
 			respData:   []byte{}, // sending this as it is not getting sent at all
