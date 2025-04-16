@@ -59,7 +59,6 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.destinationsMap = make(map[string]*routerutils.DestinationWithSources)
 	batchRouter.uploadIntervalMap = make(map[string]time.Duration)
 	batchRouter.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
-	batchRouter.failingDestinations = make(map[string]bool)
 	batchRouter.setupReloadableVars()
 	batchRouter.logger = logger.NOP
 	batchRouter.conf = config.Default

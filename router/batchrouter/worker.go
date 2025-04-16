@@ -192,23 +192,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 		}
 	}
 
-	// Mark jobs as executing in a single batch operation
-	if len(statusList) > 0 {
-		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
-		}, brt.sendRetryUpdateStats)
-		if err != nil {
-			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))
-		}
-		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
-
-		// Now that all statuses are updated, we can safely send jobs to channels
-		for _, entry := range jobsToBuffer {
-			w.pw.AddJob(entry.job, entry.sourceID, entry.destID)
-		}
-	}
-
 	// Mark the drainList jobs as Aborted
 	if len(drainList) > 0 {
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
@@ -250,19 +233,27 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			w.brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(destDrainStat.Count))
 		}
 	}
+
+	// Mark jobs as executing in a single batch operation
+	if len(statusList) > 0 {
+		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
+		}, brt.sendRetryUpdateStats)
+		if err != nil {
+			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))
+		}
+		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+
+		// Now that all statuses are updated, we can safely send jobs to channels
+		for _, entry := range jobsToBuffer {
+			w.pw.AddJob(entry.job, entry.sourceID, entry.destID)
+		}
+	}
 }
 
 // SleepDurations returns the min and max sleep durations for the worker when idle, i.e when [Work] returns false.
 func (w *worker) SleepDurations() (min, max time.Duration) {
-	w.brt.lastExecTimesMu.Lock()
-	defer w.brt.lastExecTimesMu.Unlock()
-	if lastExecTime, ok := w.brt.lastExecTimes[w.partition]; ok {
-		if nextAllowedTime := lastExecTime.Add(w.brt.uploadFreq.Load()); nextAllowedTime.After(time.Now()) {
-			sleepTime := time.Until(nextAllowedTime)
-			// sleep at least until the next upload frequency window opens
-			return sleepTime, w.brt.uploadFreq.Load()
-		}
-	}
 	return w.brt.minIdleSleep.Load(), w.brt.uploadFreq.Load() / 2
 }
 

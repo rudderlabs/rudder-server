@@ -126,12 +126,6 @@ type Handle struct {
 		upload  kitsync.Limiter
 	}
 
-	lastExecTimesMu sync.RWMutex
-	lastExecTimes   map[string]time.Time
-
-	failingDestinationsMu sync.RWMutex
-	failingDestinations   map[string]bool
-
 	batchRequestsMetricMu sync.RWMutex
 	batchRequestsMetric   []batchRequestMetric
 
@@ -235,21 +229,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	})
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
-			var processJobs bool
-			brt.lastExecTimesMu.Lock()
-			brt.failingDestinationsMu.RLock()
-			if limitsReached && !brt.failingDestinations[destID] { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
-				processJobs = true
-			} else { // honour upload frequency
-				lastExecTime := brt.lastExecTimes[destID]
-				if lastExecTime.IsZero() || time.Since(lastExecTime) >= brt.uploadFreq.Load() {
-					processJobs = true
-					brt.lastExecTimes[destID] = time.Now()
-				}
-			}
-			brt.failingDestinationsMu.RUnlock()
-			brt.lastExecTimesMu.Unlock()
-			if processJobs {
+			if limitsReached { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
 				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 			}
 		} else {
@@ -618,9 +598,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		batchReqMetric.batchRequestSuccess = 1
 	}
 	brt.trackRequestMetrics(batchReqMetric)
-	brt.failingDestinationsMu.Lock()
-	brt.failingDestinations[batchJobs.Connection.Destination.ID] = batchReqMetric.batchRequestFailed > 0
-	brt.failingDestinationsMu.Unlock()
 
 	var statusList []*jobsdb.JobStatusT
 
