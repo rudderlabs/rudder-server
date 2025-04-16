@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -80,6 +81,9 @@ type DefaultReporter struct {
 	eventSamplingEnabled  config.ValueLoader[bool]
 	eventSamplingDuration config.ValueLoader[time.Duration]
 	eventSampler          event_sampler.EventSampler
+
+	useCommonClient config.ValueLoader[bool]
+	commonClient    *client.Client
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -88,6 +92,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
+	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.useCommonClient")
+
 	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
 
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
@@ -139,6 +145,8 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventSamplingEnabled:                 eventSamplingEnabled,
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
+		useCommonClient:                      useCommonClient,
+		commonClient:                         client.New(client.PathMetrics, conf, log, stats),
 	}
 }
 
@@ -239,7 +247,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 		return nil, 0, nil
 	}
 
-	bucketStart, bucketEnd := getAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
+	bucketStart, bucketEnd := GetAggregationBucketMinute(queryMin.Int64, aggregationIntervalMin)
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
@@ -320,7 +328,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 func (r *DefaultReporter) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 	maxReportsCountInARequest := r.maxReportsCountInARequest.Load()
-	sampleEventBucket, _ := getAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
+	sampleEventBucket, _ := GetAggregationBucketMinute(reports[0].ReportedAt, int64(r.eventSamplingDuration.Load().Minutes()))
 	var values []*types.Metric
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -414,8 +422,10 @@ func (r *DefaultReporter) emitLagMetric(ctx context.Context, c types.SyncerConfi
 func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	r.configSubscriber.Wait()
 
+	// DEPRECATED: Remove this after migration to commonClient, use r.commonClient.Send instead.
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
+
 	tags := r.getTags(c.Label)
 	mainLoopTimer := r.stats.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
 	getReportsTimer := r.stats.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
@@ -516,7 +526,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					return err
 				}
 				// Use the same aggregationIntervalMin value that was used to query the reports in getReports()
-				bucketStart, bucketEnd := getAggregationBucketMinute(reportedAt, aggregationIntervalMin)
+				bucketStart, bucketEnd := GetAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
 					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
@@ -588,7 +598,12 @@ func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tag
 	return nil
 }
 
+// DEPRECATED: in favor of commonClient. Remove this after migration to commonClient, use r.commonClient.Send instead.
 func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client, label string, metric *types.Metric) error {
+	if r.useCommonClient.Load() {
+		return r.commonClient.Send(ctx, metric)
+	}
+
 	payload, err := jsonrs.Marshal(metric)
 	if err != nil {
 		panic(err)

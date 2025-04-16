@@ -185,7 +185,6 @@ var _ = Describe("Http/Client", func() {
 			Expect(err).To(BeNil())
 			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"REFRESH_TOKEN\"}]}","interceptorResponse":{"statusCode":500}}`)))
 		})
-
 		It("Use OAuthHttpClient to transform event for a oauth destination with returned oauthStatus as AUTH_STATUS_INACTIVE", func() {
 			cache := v2.NewCache()
 			ctrl := gomock.NewController(GinkgoT())
@@ -233,6 +232,75 @@ var _ = Describe("Http/Client", func() {
 			respData, err := io.ReadAll(res.Body)
 			Expect(err).To(BeNil())
 			Expect(respData).To(Equal([]byte(`{"originalResponse":"{\"output\":[{\"authErrorCategory\":\"AUTH_STATUS_INACTIVE\"}]}","interceptorResponse":{"statusCode":400}}`)))
+		})
+
+		It("Use OAuthHttpClient to transform event for a oauth destination with success in transforming and secret sent through routerHeaderAugmenter", func() {
+			// Define the secret once
+			secretJSON := `{"access_token":"newaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`
+			cache := v2.NewCache()
+			ctrl := gomock.NewController(GinkgoT())
+			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).
+				Do(func(req *http.Request) {
+					// Verify headers here
+					Expect(req.Header.Get("OAuth-Secret")).To(Equal(secretJSON))
+				}).Return(&http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(bytes.NewReader([]byte(`{"output":[{"version":"1","type":"REST","method":"POST","endpoint":"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs","headers":{"Authorization":"Bearer dummy-access","Content-Type":"application/json","developer-token":"dummy-dev-token"},"params":{"listId":"list111","customerId":"7693729833","consent":{}},"body":{"JSON":{"enablePartialFailure":true,"operations":[{"create":{"userIdentifiers":[{"hashedEmail":"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419"},{"hashedPhoneNumber":"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45"},{"addressInfo":{"hashedFirstName":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","hashedLastName":"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251","countryCode":"US","postalCode":"1245"}}]}}]},"JSON_ARRAY":{},"XML":{},"FORM":{}},"files":{},"userId":""}]}`))),
+			}, nil)
+
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":`+secretJSON+`}`)
+			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+
+			// Invoke code under test
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			optionalArgs := httpClient.HttpClientOptionalArgs{
+				Transport:    mockRoundTrip,
+				Augmenter:    extensions.RouterHeaderAugmenter,
+				OAuthHandler: oauthHandler,
+			}
+			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
+
+			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"responseRules":{},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
+			destination := &v2.DestinationInfo{
+				DefinitionName:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
+				DefinitionConfig: oauthDefinitionConfig,
+				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]interface{}{
+					"rudderAccountId": "7693729833",
+				},
+				WorkspaceID: "1234",
+			}
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			res, err := httpClient.Do(req)
+
+			Expect(res.StatusCode).To(Equal(200))
+			Expect(err).To(BeNil())
+			Expect(res).To(Equal(&http.Response{
+				Status:           "",
+				StatusCode:       200,
+				Proto:            "",
+				ProtoMajor:       0,
+				ProtoMinor:       0,
+				Header:           nil,
+				Body:             io.NopCloser(bytes.NewReader([]byte(`{"originalResponse":"{\"output\":[{\"version\":\"1\",\"type\":\"REST\",\"method\":\"POST\",\"endpoint\":\"https://googleads.googleapis.com/v15/customers/7693729833/offlineUserDataJobs\",\"headers\":{\"Authorization\":\"Bearer dummy-access\",\"Content-Type\":\"application/json\",\"developer-token\":\"dummy-dev-token\"},\"params\":{\"listId\":\"list111\",\"customerId\":\"7693729833\",\"consent\":{}},\"body\":{\"JSON\":{\"enablePartialFailure\":true,\"operations\":[{\"create\":{\"userIdentifiers\":[{\"hashedEmail\":\"d3142c8f9c9129484daf28df80cc5c955791efed5e69afabb603bc8cb9ffd419\"},{\"hashedPhoneNumber\":\"8846dcb6ab2d73a0e67dbd569fa17cec2d9d391e5b05d1dd42919bc21ae82c45\"},{\"addressInfo\":{\"hashedFirstName\":\"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\",\"hashedLastName\":\"dcf000c2386fb76d22cefc0d118a8511bb75999019cd373df52044bccd1bd251\",\"countryCode\":\"US\",\"postalCode\":\"1245\"}}]}}]},\"JSON_ARRAY\":{},\"XML\":{},\"FORM\":{}},\"files\":{},\"userId\":\"\"}]}","interceptorResponse":{"statusCode":0}}`))),
+				ContentLength:    0,
+				TransferEncoding: nil,
+				Close:            false,
+				Uncompressed:     false,
+				Trailer:          nil,
+				Request:          nil,
+				TLS:              nil,
+			}))
 		})
 	})
 })

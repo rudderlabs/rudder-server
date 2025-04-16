@@ -132,15 +132,24 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		"regulation_worker_cleaning_time",
 		stats.TimerType,
 		stats.Tags{
-			"destinationId": job.DestinationID,
-			"workspaceId":   job.WorkspaceID,
-			"jobType":       "api",
+			"destinationId":   job.DestinationID,
+			"workspaceId":     job.WorkspaceID,
+			"destinationType": destination.Name,
+			"jobType":         "api",
 		}).RecordDuration()()
 
 	resp, err := m.Client.Do(req)
 	if err != nil {
 		if os.IsTimeout(err) {
-			stats.Default.NewStat("regulation_worker_delete_api_timeout", stats.CountType).Count(1)
+			stats.Default.NewTaggedStat(
+				"regulation_worker_delete_api_timeout",
+				stats.CountType,
+				stats.Tags{
+					"destinationId":   job.DestinationID,
+					"workspaceId":     job.WorkspaceID,
+					"destinationType": destination.Name,
+					"jobType":         "api",
+				}).Count(1)
 		}
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}

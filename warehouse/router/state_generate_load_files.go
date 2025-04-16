@@ -69,7 +69,7 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 }
 
 func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
-	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.stagingFileIDs, []string{
+	exportedEvents, err := job.loadFilesRepo.TotalExportedEvents(ctx, job.upload.ID, job.stagingFileIDs, []string{
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
 	if err != nil {
