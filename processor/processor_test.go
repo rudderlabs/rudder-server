@@ -2781,7 +2781,7 @@ var _ = Describe("Processor", Ordered, func() {
 				var paramsMap, expectedParamsMap map[string]interface{}
 				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
 				Expect(err).To(BeNil())
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null,"connection_id":""enabled-source:enabled-destination-a"}`, SourceIDEnabled, i+1))
+				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null,"connection_id":"enabled-source:enabled-destination-a"}`, SourceIDEnabled, i+1))
 				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 				Expect(err).To(BeNil())
 				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
