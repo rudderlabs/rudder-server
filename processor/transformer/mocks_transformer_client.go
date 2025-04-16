@@ -120,6 +120,11 @@ func (s *SimpleClients) WithDynamicUserTransform(transformFn func(context.Contex
 	s.userClient = &dynamicUserClient{transformFn: transformFn}
 }
 
+// WithDynamicUserMirrorTransform sets a custom function for UserMirror transformer
+func (s *SimpleClients) WithDynamicUserMirrorTransform(transformFn func(context.Context, []types.TransformerEvent) types.Response) {
+	s.userMirrorClient = &dynamicUserClient{transformFn: transformFn}
+}
+
 // WithDynamicDestinationTransform sets a custom function for Destination transformer
 func (s *SimpleClients) WithDynamicDestinationTransform(transformFn func(context.Context, []types.TransformerEvent) types.Response) {
 	s.destinationClient = &dynamicDestinationClient{transformFn: transformFn}
