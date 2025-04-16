@@ -222,6 +222,9 @@ type processorStats struct {
 	statUtransformStageCount   func(partition string) stats.Measurement
 	statDtransformStageCount   func(partition string) stats.Measurement
 	statStoreStageCount        func(partition string) stats.Measurement
+
+	utMirroringEqualResponses     func(partition string) stats.Measurement
+	utMirroringDifferentResponses func(partition string) stats.Measurement
 }
 type DestStatT struct {
 	numEvents               stats.Measurement
@@ -549,6 +552,18 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.statStoreStageCount = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_store_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.utMirroringEqualResponses = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
+			"equal":     "true",
+			"partition": partition,
+		})
+	}
+	proc.stats.utMirroringDifferentResponses = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
+			"equal":     "false",
 			"partition": partition,
 		})
 	}
@@ -2756,7 +2771,7 @@ type userTransformAndFilterOutput struct {
 
 func (proc *Handle) userTransformAndFilter(
 	ctx context.Context,
-	_ string,
+	partition string,
 	srcAndDestKey string,
 	eventList []types.TransformerEvent,
 	trackingPlanEnabledMap map[SourceIDT]bool,
@@ -2893,8 +2908,11 @@ func (proc *Handle) userTransformAndFilter(
 					mirroredResponse := <-utMirroringSanityChecks
 					diff, equal := response.Equal(&mirroredResponse)
 					if equal {
+						proc.stats.utMirroringEqualResponses(partition).Increment()
 						return
 					}
+
+					defer proc.stats.utMirroringDifferentResponses(partition).Increment()
 
 					var (
 						tr  *types.TransformerResponse
