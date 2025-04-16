@@ -1,37 +1,31 @@
 package batchrouter
 
 import (
-	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/samber/lo"
 
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/rudderlabs/rudder-server/router/batchrouter/circuitbreaker"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type PartitionWorker struct {
-	ctx            context.Context
-	cancel         context.CancelFunc
-	logger         logger.Logger
-	brt            *Handle
-	channel        chan *JobEntry
-	partitionMutex sync.RWMutex
-	active         *config.Reloadable[int]
-	worker         PartitionWorkerOwner
-}
-
-// Interface to allow access to worker methods without circular imports
-type PartitionWorkerOwner interface {
-	MarkUploadFailure(sourceID, destID string, err error)
-	SuccessfulUpload(sourceID, destID string)
+	wg      sync.WaitGroup
+	logger  logger.Logger
+	brt     *Handle
+	channel chan *JobEntry
+	active  *config.Reloadable[int]
+	cb      circuitbreaker.CircuitBreaker
+	limiter kitsync.Limiter
 }
 
 type JobEntry struct {
@@ -40,22 +34,16 @@ type JobEntry struct {
 	destID   string
 }
 
-func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle) *PartitionWorker {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb circuitbreaker.CircuitBreaker) *PartitionWorker {
 	maxJobsToBuffer := brt.conf.GetInt("BatchRouter.partitionWorker.maxJobsToBuffer", 100000)
-	return &PartitionWorker{
-		ctx:     ctx,
-		cancel:  cancel,
+	pw := &PartitionWorker{
 		channel: make(chan *JobEntry, maxJobsToBuffer),
 		logger:  logger.With("partition", partition),
 		active:  brt.conf.GetReloadableIntVar(1, 1, "BatchRouter.partitionWorker.active"),
 		brt:     brt,
+		cb:      cb,
 	}
-}
-
-// SetWorker sets the worker that owns this partition worker
-func (pw *PartitionWorker) SetWorker(worker PartitionWorkerOwner) {
-	pw.worker = worker
+	return pw
 }
 
 func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
@@ -69,89 +57,35 @@ func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
 func (pw *PartitionWorker) Start() {
 	uploadFreq := pw.brt.uploadFreq.Load()
 	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq)
-	jobBatch := make([]*JobEntry, 0)
-	active := 0
-	timer := time.NewTimer(uploadFreq)
-	// Helper function to safely stop and reset the timer
-	resetTimer := func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	processJobs := func(jobs []*JobEntry) {
+		pw.wg.Add(1)
+		done := pw.limiter.Begin("")
+		go func() {
+			defer done()
+			defer pw.wg.Done()
+			jobsPerConnection := lo.GroupBy(jobs, func(job *JobEntry) lo.Tuple2[string, string] {
+				return lo.Tuple2[string, string]{A: job.sourceID, B: job.destID}
+			})
+			var wg sync.WaitGroup
+			for connection, jobs := range jobsPerConnection {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					pw.processAndUploadBatch(connection.A, connection.B, lo.Map(jobs, func(job *JobEntry, _ int) *jobsdb.JobT { return job.job }))
+				}()
 			}
-		}
-		timer.Reset(uploadFreq)
+			wg.Wait()
+		}()
 	}
-
-	processBatch := func(jobBatch []*JobEntry) {
-		jobsPerConnection := make(map[string]map[string][]*jobsdb.JobT)
-		for _, job := range jobBatch {
-			if _, ok := jobsPerConnection[job.sourceID]; !ok {
-				jobsPerConnection[job.sourceID] = make(map[string][]*jobsdb.JobT)
-			}
-			jobsPerConnection[job.sourceID][job.destID] = append(jobsPerConnection[job.sourceID][job.destID], job.job)
-		}
-		for sourceID, destJobs := range jobsPerConnection {
-			for destID, jobs := range destJobs {
-				pw.processAndUploadBatch(sourceID, destID, jobs)
-			}
-		}
-	}
-
+	pw.wg.Add(1)
 	go func() {
+		defer pw.wg.Done()
 		for {
-			select {
-			case job, ok := <-pw.channel:
-				if !ok {
-					if len(jobBatch) > 0 {
-						processBatch(jobBatch)
-					}
-					return
-				}
-				jobBatch = append(jobBatch, job)
-				if len(jobBatch) > pw.brt.maxEventsInABatch {
-					pw.partitionMutex.Lock()
-					if active <= pw.active.Load() {
-						active++
-						// Create a copy of the current batch
-						currentBatch := make([]*JobEntry, len(jobBatch))
-						copy(currentBatch, jobBatch)
-						// Reset job batch
-						jobBatch = make([]*JobEntry, 0)
-						go func(batch []*JobEntry) {
-							defer func() {
-								pw.partitionMutex.Lock()
-								active--
-								resetTimer()
-								pw.partitionMutex.Unlock()
-							}()
-							processBatch(batch)
-						}(currentBatch)
-					}
-					pw.partitionMutex.Unlock()
-				}
-			case <-timer.C:
-				pw.partitionMutex.Lock()
-				if active <= pw.active.Load() && len(jobBatch) > 0 {
-					active++
-					// Create a copy of the current batch
-					currentBatch := make([]*JobEntry, len(jobBatch))
-					copy(currentBatch, jobBatch)
-					// Reset job batch
-					jobBatch = make([]*JobEntry, 0)
-					go func(batch []*JobEntry) {
-						defer func() {
-							pw.partitionMutex.Lock()
-							active--
-							resetTimer()
-							pw.partitionMutex.Unlock()
-						}()
-						processBatch(batch)
-					}(currentBatch)
-				}
-				pw.partitionMutex.Unlock()
-				resetTimer()
-			case <-pw.ctx.Done():
+			jobs, jobsLength, _, ok := lo.BufferWithTimeout(pw.channel, pw.brt.maxEventsInABatch, uploadFreq)
+			if jobsLength > 0 {
+				processJobs(jobs)
+			}
+			if !ok {
 				return
 			}
 		}
@@ -211,13 +145,9 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		}
 		if output.Error == nil {
 			pw.brt.recordUploadStats(*batchedJobs.Connection, output)
-			if pw.worker != nil {
-				// Notify worker about the success
-				pw.worker.SuccessfulUpload(sourceID, destID)
-			}
-		} else if pw.worker != nil {
-			// Notify worker about the failure
-			pw.worker.MarkUploadFailure(sourceID, destID, output.Error)
+			pw.cb.Success()
+		} else {
+			pw.cb.Failure()
 		}
 	}
 
@@ -243,23 +173,18 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 			pw.brt.updateJobStatus(batchJob, true, output.Error, notifyWarehouseErr)
 			misc.RemoveFilePaths(output.LocalFilePaths...)
 
-			// Notify worker about results
-			if pw.worker != nil {
-				if output.Error == nil {
-					pw.worker.SuccessfulUpload(sourceID, destID)
-				} else {
-					pw.worker.MarkUploadFailure(sourceID, destID, output.Error)
-				}
+			if output.Error == nil {
+				pw.cb.Success()
+			} else {
+				pw.cb.Failure()
 			}
 		}
 	case asynccommon.IsAsyncDestination(pw.brt.destType):
 		err := pw.brt.sendJobsToStorage(batchedJobs)
-		if pw.worker != nil {
-			if err != nil {
-				pw.worker.MarkUploadFailure(sourceID, destID, err)
-			} else {
-				pw.worker.SuccessfulUpload(sourceID, destID)
-			}
+		if err != nil {
+			pw.cb.Failure()
+		} else {
+			pw.cb.Success()
 		}
 	default:
 		// Handle any other destination types
@@ -269,6 +194,6 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 }
 
 func (pw *PartitionWorker) Stop() {
-	pw.cancel()
 	close(pw.channel)
+	pw.wg.Wait()
 }
