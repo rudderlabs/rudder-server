@@ -1,0 +1,230 @@
+package processor
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/isolation"
+	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+)
+
+// TODO test the actual UT mirroring
+func TestUTMirroring(t *testing.T) {
+	messages := map[string]mockEventData{
+		// this message should only be delivered to destination B
+		"message-1": {
+			id:                        "1",
+			jobid:                     1010,
+			originalTimestamp:         "2000-01-02T01:23:45",
+			expectedOriginalTimestamp: "2000-01-02T01:23:45.000Z",
+			sentAt:                    "2000-01-02 01:23",
+			expectedSentAt:            "2000-01-02T01:23:00.000Z",
+			expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+			integrations:              map[string]bool{"All": false, "enabled-destination-b-definition-display-name": true},
+		},
+		// this message should not be delivered to destination B
+		"message-2": {
+			id:                        "2",
+			jobid:                     1010,
+			originalTimestamp:         "2000-02-02T01:23:45",
+			expectedOriginalTimestamp: "2000-02-02T01:23:45.000Z",
+			expectedReceivedAt:        "2001-01-02T02:23:45.000Z",
+			integrations:              map[string]bool{"All": true, "enabled-destination-b-definition-display-name": false},
+		},
+		// this message should be delivered to all destinations
+		"message-3": {
+			id:                 "3",
+			jobid:              2010,
+			originalTimestamp:  "malformed timestamp",
+			sentAt:             "2000-03-02T01:23:15",
+			expectedSentAt:     "2000-03-02T01:23:15.000Z",
+			expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+			integrations:       map[string]bool{"All": true},
+		},
+		// this message should be delivered to all destinations (default All value)
+		"message-4": {
+			id:                        "4",
+			jobid:                     2010,
+			originalTimestamp:         "2000-04-02T02:23:15.000Z", // missing sentAt
+			expectedOriginalTimestamp: "2000-04-02T02:23:15.000Z",
+			expectedReceivedAt:        "2002-01-02T02:23:45.000Z",
+			integrations:              map[string]bool{},
+		},
+		// this message should not be delivered to any destination
+		"message-5": {
+			id:                 "5",
+			jobid:              2010,
+			expectedReceivedAt: "2002-01-02T02:23:45.000Z",
+			integrations:       map[string]bool{"All": false},
+		},
+	}
+
+	unprocessedJobsList := []*jobsdb.JobT{
+		{
+			UUID:      uuid.New(),
+			JobID:     1010,
+			CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabledOnlyUT,
+				"2001-01-02T02:23:45.000Z",
+				[]mockEventData{
+					messages["message-1"],
+					messages["message-2"],
+				},
+				createMessagePayloadWithoutSources,
+			),
+			EventCount:    1,
+			LastJobStatus: jobsdb.JobStatusT{},
+			Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
+		},
+		{
+			UUID:      uuid.New(),
+			JobID:     2010,
+			CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+			ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
+			CustomVal: gatewayCustomVal[0],
+			EventPayload: createBatchPayload(
+				WriteKeyEnabledOnlyUT,
+				"2002-01-02T02:23:45.000Z",
+				[]mockEventData{
+					messages["message-3"],
+					messages["message-4"],
+					messages["message-5"],
+				},
+				createMessagePayloadWithoutSources,
+			),
+			EventCount: 1,
+			Parameters: createBatchParameters(SourceIDEnabledOnlyUT),
+		},
+	}
+
+	mockTransformerClients := transformer.NewSimpleClients()
+	processor := NewHandle(config.Default, mockTransformerClients)
+	isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+	require.NoError(t, err)
+	processor.isolationStrategy = isolationStrategy
+	processor.config.enableConcurrentStore = config.SingleValueLoader(false)
+
+	c := &testContext{}
+	c.Setup(t)
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+	t.Cleanup(c.Finish)
+
+	c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParams{
+		CustomValFilters: gatewayCustomVal,
+		JobsLimit:        processor.config.maxEventsToProcess.Load(),
+		EventsLimit:      processor.config.maxEventsToProcess.Load(),
+		PayloadSizeLimit: processor.payloadLimit.Load(),
+	}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
+
+	mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+		outputEvents := make([]types.TransformerResponse, 0)
+		for _, event := range clientEvents {
+			event.Message["user-transform"] = "value"
+			outputEvents = append(outputEvents, types.TransformerResponse{
+				Output: event.Message,
+			})
+		}
+		response := types.Response{Events: outputEvents}
+		return response
+	})
+
+	transformExpectations := map[string]transformExpectation{
+		DestinationIDEnabledB: {
+			events:                    3,
+			messageIds:                "message-1,message-3,message-4",
+			destinationDefinitionName: "minio",
+		},
+	}
+	mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+		return assertDestinationTransform(
+			messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+		)(ctx, clientEvents, 1)
+	})
+
+	assertStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+		isValidUUID, err := testutils.BeValidUUID().Match(job.UUID.String())
+		require.NoError(t, err)
+		require.True(t, isValidUUID)
+		require.EqualValues(t, 0, job.JobID)
+		requireTimeCirca(t, time.Now(), job.CreatedAt, 200*time.Millisecond)
+		requireTimeCirca(t, time.Now(), job.ExpireAt, 200*time.Millisecond)
+		require.JSONEq(t, fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination), string(job.EventPayload))
+		require.Len(t, job.LastJobStatus.JobState, 0)
+		require.JSONEq(t, fmt.Sprintf(`{
+			"source_id": "source-from-transformer",
+			"source_name": "%s",
+			"destination_id": "destination-from-transformer",
+			"received_at": "",
+			"transform_at": "processor",
+			"message_id": "",
+			"gateway_job_id": 0,
+			"source_task_run_id": "",
+			"source_job_id": "",
+			"source_job_run_id": "",
+			"event_name": "",
+			"event_type": "",
+			"source_definition_id": "",
+			"destination_definition_id": "",
+			"source_category": "",
+			"record_id": null,
+			"workspaceId": "",
+			"traceparent": ""
+		}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
+	}
+
+	c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+		_ = f(jobsdb.EmptyStoreSafeTx())
+	}).Return(nil)
+	callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+		Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
+			require.Len(t, jobs, 2)
+			for i, job := range jobs {
+				assertStoreJob(job, i, "value-enabled-destination-b")
+			}
+		})
+
+	c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+		_ = f(jobsdb.EmptyStoreSafeTx())
+	}).Return(nil)
+
+	c.mockArchivalDB.EXPECT().
+		StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes()
+	c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+		_ = f(jobsdb.EmptyUpdateSafeTx())
+	}).Return(nil).Times(1)
+	c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
+		Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			for i := range unprocessedJobsList {
+				require.Equal(t, statuses[i].JobID, unprocessedJobsList[i].JobID)
+				require.Equal(t, statuses[i].JobState, jobsdb.Succeeded.State)
+				requireTimeCirca(t, time.Now(), statuses[i].RetryTime, 200*time.Millisecond)
+				requireTimeCirca(t, time.Now(), statuses[i].ExecTime, 200*time.Millisecond)
+			}
+		})
+
+	Setup(processor, c, false, false, t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+	t.Log("Processor setup and init done")
+	didWork := processor.handlePendingGatewayJobs("")
+	require.True(t, didWork)
+}
+
+func requireTimeCirca(t require.TestingT, expected, actual time.Time, difference time.Duration) {
+	require.InDelta(t, float64(expected.UnixMilli()), float64(actual.UnixMilli()), float64(difference))
+}
