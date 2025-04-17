@@ -46,7 +46,7 @@ func TestNewProducer(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	producer := &FireHoseProducer{}
 	sampleEventJson := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error :: Could not create producer", respMsg)
@@ -59,14 +59,14 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 	// Invalid Payload
 	sampleEventJson := []byte("invalid json")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error :: message from payload not found", respMsg)
 
 	// Empty Payload
 	sampleEventJson = []byte("{}")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error :: message from payload not found", respMsg)
@@ -75,7 +75,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	sampleEventJson, _ = jsonrs.Marshal(map[string]string{
 		"message": sampleMessage,
 	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error  :: Delivery Stream not found", respMsg)
@@ -85,7 +85,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": "",
 	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error :: empty delivery stream", respMsg)
@@ -95,7 +95,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": 1,
 	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[FireHose] error :: Could not parse delivery stream to string", respMsg)
@@ -124,7 +124,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		EXPECT().
 		PutRecord(&sampleRecord).
 		Return(&firehose.PutRecordOutput{}, nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -136,7 +136,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		PutRecord(&sampleRecord).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 500, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -149,7 +149,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)

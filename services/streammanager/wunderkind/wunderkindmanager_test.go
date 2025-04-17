@@ -59,7 +59,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 	t.Run("Invalid input", func(t *testing.T) {
 		sampleEventJson := []byte("invalid json")
-		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 		require.Equal(t, http.StatusBadRequest, statusCode)
 		require.Equal(t, "Failure", statusMsg)
 		require.Contains(t, respMsg, "[Wunderkind] error while unmarshalling jsonData ")
@@ -69,7 +69,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 		sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
 			"payload": "",
 		})
-		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 		require.Equal(t, http.StatusBadRequest, statusCode)
 		require.Equal(t, "Failure", statusMsg)
 		require.Contains(t, respMsg, "[Wunderkind] error :: Invalid payload")
@@ -92,7 +92,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		"payload": sampleMessage,
 	})
 
-	destConfig := map[string]string{}
+	destConfig := map[string]interface{}{}
 
 	var sampleInput lambda.InvokeInput
 	sampleInput.SetFunctionName(sampleFunction)

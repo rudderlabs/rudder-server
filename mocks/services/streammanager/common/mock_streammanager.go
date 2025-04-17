@@ -55,7 +55,7 @@ func (mr *MockStreamProducerMockRecorder) Close() *gomock.Call {
 }
 
 // Produce mocks base method.
-func (m *MockStreamProducer) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
+func (m *MockStreamProducer) Produce(jsonData json.RawMessage, destConfig map[string]any) (int, string, string) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Produce", jsonData, destConfig)
 	ret0, _ := ret[0].(int)

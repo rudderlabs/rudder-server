@@ -43,7 +43,7 @@ func TestNewProducer(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	producer := &PersonalizeProducer{}
 	sampleJsonPayload := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Could not create producer for Personalize", statusMsg)
 	assert.Equal(t, "Could not create producer for Personalize", respMsg)
@@ -56,14 +56,14 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 	// Invalid Json
 	sampleJsonPayload := []byte("invalid json")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.NotEmpty(t, statusMsg)
 	assert.Equal(t, "Could not unmarshal jsonData according to PutEvents input structure", respMsg)
 
 	// Empty Payload
 	sampleJsonPayload = []byte("{}")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Contains(t, statusMsg, "InvalidParameter")
 	assert.Equal(t, "input does not have required fields", respMsg)
@@ -74,7 +74,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 			"choice":  choice,
 			"payload": "invalid json",
 		})
-		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 		assert.Equal(t, 400, statusCode)
 		assert.NotEmpty(t, statusMsg)
 		assert.Equal(t, fmt.Sprintf("Could not unmarshal jsonData according to %s input structure", choice), respMsg)
@@ -84,7 +84,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 			"choice":  choice,
 			"payload": "{}",
 		})
-		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 		assert.Equal(t, 400, statusCode)
 		assert.Contains(t, statusMsg, "InvalidParameter")
 		assert.Equal(t, "input does not have required fields", respMsg)
@@ -121,14 +121,14 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutEventsInput variable and use in expect
 	mockClient.EXPECT().PutEvents(&putEventsInput).Return(&personalizeevents.PutEventsOutput{}, nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	// Put event without event choice in the payload so pull payload will be sent to PutEvents
 	mockClient.EXPECT().PutEvents(&putEventsInput).Return(&personalizeevents.PutEventsOutput{}, nil)
-	statusCode, statusMsg, respMsg = producer.Produce(eventPayload, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(eventPayload, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -139,7 +139,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -167,7 +167,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutUsersInput variable and use in expect
 	mockClient.EXPECT().PutUsers(&putUsersInput).Return(&personalizeevents.PutUsersOutput{}, nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -177,7 +177,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -205,7 +205,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutItemsInput variable and use in expect
 	mockClient.EXPECT().PutItems(&putItemsInput).Return(&personalizeevents.PutItemsOutput{}, nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -215,7 +215,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)

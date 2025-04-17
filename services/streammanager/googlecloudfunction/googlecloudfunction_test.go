@@ -86,7 +86,7 @@ func TestNewProduceWithBadServer(t *testing.T) {
 		FunctionUrl:           "http://rudderstack-non-existing-server:54321",
 	}
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
-	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
+	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]interface{}{})
 	assert.Equal(t, http.StatusBadRequest, statusCode)
 	assert.Equal(t, "Failure", responseStatus)
 	assert.Contains(t, responseMessage, "Function call was not executed")
@@ -104,7 +104,7 @@ func TestNewProduceWithInvalidData(t *testing.T) {
 		FunctionUrl:           testSrv.URL,
 	}
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
-	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]string{})
+	statusCode, responseStatus, responseMessage := producer.Produce([]byte("invalid_json"), map[string]interface{}{})
 	assert.Equal(t, http.StatusBadRequest, statusCode)
 	assert.Equal(t, "Failure", responseStatus)
 	assert.Contains(t, responseMessage, "Bad Request")
@@ -127,7 +127,7 @@ func TestNewProduceForWithoutAuthenticationAndValidData(t *testing.T) {
 	producer := &GoogleCloudFunctionProducer{client: mockClient, config: conf, httpClient: http.DefaultClient}
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, http.StatusOK, statusCode)
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function call is executed")
@@ -156,7 +156,7 @@ func TestNewProduceForWithAuthenticationAndGetTokenFailed(t *testing.T) {
 		Return(nil, errors.New("token is failed to generate")).MaxTimes(1)
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, http.StatusUnauthorized, statusCode)
 	assert.Equal(t, "Failure", responseStatus)
 	assert.Contains(t, responseMessage, "Failed to receive token")
@@ -185,7 +185,7 @@ func TestNewProduceForWithAuthenticationAndValidData(t *testing.T) {
 		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).MaxTimes(1)
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function call is executed")
@@ -216,14 +216,14 @@ func TestNewProduceForWithAuthenticationAndTokenTimeout(t *testing.T) {
 		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).Times(2)
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function call is executed")
 	time.Sleep(1 * time.Millisecond)
 	statusCode, responseStatus, responseMessage = producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function call is executed")
@@ -257,7 +257,7 @@ func TestNewProduceWhenRequestTimedout(t *testing.T) {
 		Return(&oauth2.Token{AccessToken: "someAccessToken"}, nil).MaxTimes(1)
 	statusCode, responseStatus, responseMessage := producer.Produce(
 		[]byte(validData),
-		map[string]string{})
+		map[string]interface{}{})
 	assert.Equal(t, http.StatusAccepted, statusCode)
 	assert.Equal(t, "Success", responseStatus)
 	assert.Contains(t, responseMessage, "Function is called")

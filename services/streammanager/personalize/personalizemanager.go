@@ -45,7 +45,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Perso
 	return &PersonalizeProducer{client: personalizeevents.New(awsSession)}, nil
 }
 
-func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessag string) {
+func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ map[string]interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Could not create producer for Personalize", "Could not create producer for Personalize"

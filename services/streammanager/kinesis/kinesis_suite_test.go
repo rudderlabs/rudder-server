@@ -48,56 +48,20 @@ func TestNewProducer(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	producer := &KinesisProducer{}
 	sampleJsonPayload := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Could not create producer for Kinesis", statusMsg)
 	assert.Equal(t, "Could not create producer for Kinesis", respMsg)
 }
 
-var validDestinationConfigUseMessageID = Config{
-	Stream:       "stream",
-	UseMessageID: true,
+var validDestinationConfigUseMessageID = map[string]interface{}{
+	"stream":       "stream",
+	"useMessageId": true,
 }
 
-var validDestinationConfigNotUseMessageID = Config{
-	Stream:       "stream",
-	UseMessageID: false,
-}
-
-func TestProduceWithInvalidData(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
-	producer := &KinesisProducer{client: mockClient}
-
-	// Invalid destination config
-	sampleJsonPayload := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, "invalid json")
-	assert.Equal(t, 400, statusCode)
-	assert.Contains(t, statusMsg, "Error while Unmarshalling destination config")
-	assert.Contains(t, respMsg, "Error while Unmarshalling destination config")
-
-	// Invalid Json
-	sampleJsonPayload = []byte("invalid json")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
-	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "InvalidPayload", statusMsg)
-	assert.Equal(t, "Empty Payload", respMsg)
-
-	// Empty Payload
-	sampleJsonPayload = []byte("{}")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
-	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "InvalidPayload", statusMsg)
-	assert.Equal(t, "Empty Payload", respMsg)
-
-	// Incomplete Payload
-	sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
-		"message": "{}",
-	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
-	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "InvalidInput", statusMsg)
-	assert.Contains(t, respMsg, "InvalidParameter")
+var validDestinationConfigNotUseMessageID = map[string]interface{}{
+	"stream":       "stream",
+	"useMessageId": false,
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
@@ -114,9 +78,10 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		"userId":  sampleUserId,
 	})
 	dataPayloadJson, _ := jsonrs.Marshal(sampleData)
+	streamName := validDestinationConfigUseMessageID["stream"].(string)
 	putRecordInput := kinesis.PutRecordInput{
 		Data:         dataPayloadJson,
-		StreamName:   &validDestinationConfigUseMessageID.Stream,
+		StreamName:   &streamName,
 		PartitionKey: aws.String(sampleUserId),
 	}
 

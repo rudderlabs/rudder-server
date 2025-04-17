@@ -56,7 +56,7 @@ func TestProduceHappyCase(t *testing.T) {
 		}}).
 		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{{}}}, nil)
 	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -65,7 +65,7 @@ func TestProduceHappyCase(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	producer := &EventBridgeProducer{}
 	sampleEventJson := []byte("Invalid json")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Could not create producer for EventBridge", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -76,7 +76,7 @@ func TestProduceWithInvalidJson(t *testing.T) {
 	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
 	producer := &EventBridgeProducer{client: mockClient}
 	sampleEventJson := []byte("Invalid json")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "[EventBridge] Failed to create eventbridge event", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -99,7 +99,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 			{ErrorCode: aws.String(errorCode), ErrorMessage: aws.String(errorCode)},
 		}}, nil)
 	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.Equal(t, errorCode, respMsg)
@@ -111,7 +111,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 			&sampleEvent,
 		}}).
 		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{}}, nil)
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failed to send event to eventbridge", statusMsg)
@@ -128,7 +128,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 		))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)

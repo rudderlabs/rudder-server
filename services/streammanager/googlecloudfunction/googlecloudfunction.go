@@ -114,7 +114,7 @@ func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*Googl
 	}, err
 }
 
-func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ map[string]interface{}) (statusCode int, respStatus, responseMessage string) {
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, producer.config.FunctionUrl, bytes.NewReader(jsonData))
 	if err != nil {
