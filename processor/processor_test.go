@@ -5263,7 +5263,7 @@ func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReporte
 
 func assertDestinationTransform(
 	messages map[string]mockEventData,
-	sourceId, destinationID string,
+	sourceId, destinationID string, // nolint: unparam
 	expectations transformExpectation,
 	tb ...require.TestingT,
 ) func(
