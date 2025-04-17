@@ -553,7 +553,7 @@ func (w *worker) processDestinationJobs() {
 									respBodyArrs = append(respBodyArrs, respBodyTemps)
 								}
 							} else {
-								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
+								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout.Load())
 								rdlTime := time.Now()
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
@@ -1192,9 +1192,9 @@ func (w *worker) accept(wj workerJob) {
 func (w *worker) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if w.rt.reloadableConfig.transformerProxy.Load() {
-		d = (w.rt.transformerTimeout + w.rt.netClientTimeout) * 2
+		d = (w.rt.transformerTimeout + w.rt.netClientTimeout.Load()) * 2
 	} else {
-		d = w.rt.netClientTimeout * 2
+		d = w.rt.netClientTimeout.Load() * 2
 	}
 
 	ch := make(chan struct{}, 1)
