@@ -583,6 +583,7 @@ func TestRouter(t *testing.T) {
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
+		r.config.skipDestinationIDs = config.SingleValueLoader([]string{})
 		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 		r.destType = destinationType
@@ -718,6 +719,7 @@ func TestRouter(t *testing.T) {
 		r.statsFactory = stats.NOP
 		r.conf = config.New()
 		r.config.allowMultipleSourcesForJobsPickup = true
+		r.config.skipDestinationIDs = config.SingleValueLoader([]string{})
 		r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
 		r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 		r.config.noOfWorkers = config.SingleValueLoader(10)
@@ -869,6 +871,7 @@ func TestRouter(t *testing.T) {
 			r.statsFactory = stats.NOP
 			r.conf = config.New()
 			r.config.allowMultipleSourcesForJobsPickup = true
+			r.config.skipDestinationIDs = config.SingleValueLoader([]string{})
 			r.config.stagingFilesBatchSize = config.SingleValueLoader(100)
 			r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 			r.config.noOfWorkers = config.SingleValueLoader(0)
