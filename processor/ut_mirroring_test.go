@@ -158,8 +158,11 @@ func TestUTMirroring(t *testing.T) {
 		},
 	}
 
+	type confSetting struct{ key, value string }
+
 	prepareProcessor := func(
 		t testing.TB, tcs *transformer.SimpleClients, sanitySampling float64, fireAndForget bool,
+		confSettings ...confSetting,
 	) (*minio.Resource, *Handle, *testContext) {
 		minioContainer, err := minio.Setup(pool, t)
 		require.NoError(t, err)
@@ -176,6 +179,9 @@ func TestUTMirroring(t *testing.T) {
 		conf.Set("UTSampling.DisableSsl", "true")
 		conf.Set("UTSampling.EnableSse", "false")
 		conf.Set("UTSampling.Region", minioContainer.Region)
+		for _, setting := range confSettings {
+			conf.Set(setting.key, setting.value)
+		}
 
 		processor := NewHandle(conf, tcs)
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
@@ -413,6 +419,79 @@ func TestUTMirroring(t *testing.T) {
 		expectedDiff, err := os.ReadFile("./testdata/goldenUtMirrorDiff.txt")
 		require.NoError(t, err)
 		require.Equal(t, string(expectedDiff), files[0].Content)
+	})
+
+	t.Run("fire and forget", func(t *testing.T) {
+		mockTransformerClients := transformer.NewSimpleClients()
+		minioContainer, processor, tc := prepareProcessor(t, mockTransformerClients, 0, true)
+
+		setupMocksExpectations(t, tc, processor)
+
+		done := make(chan struct{})
+		userTransformation := func(mirror bool) func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+				if mirror {
+					defer close(done)
+				}
+				outputEvents := make([]types.TransformerResponse, 0)
+				for _, event := range clientEvents {
+					event.Message["user-transform"] = "value"
+					outputEvents = append(outputEvents, types.TransformerResponse{
+						Output:     event.Message,
+						StatusCode: 200,
+						Metadata: types.Metadata{
+							SourceID:        SourceIDEnabledOnlyUT,
+							SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+							DestinationID:   DestinationIDEnabledB,
+							DestinationType: "MINIO",
+						},
+					})
+				}
+				return types.Response{Events: outputEvents}
+			}
+		}
+		mockTransformerClients.WithDynamicUserTransform(userTransformation(false))
+		mockTransformerClients.WithDynamicUserMirrorTransform(userTransformation(true))
+		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return assertDestinationTransform(
+				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+			)(ctx, clientEvents, 1)
+		})
+
+		memStats, err := memstats.New()
+		require.NoError(t, err)
+		handlePendingGatewayJobs(t, processor, tc, func(h *Handle) {
+			h.statsFactory = memStats
+		})
+
+		select {
+		case <-done:
+			t.Log("Mirror request completed")
+		case <-time.After(20 * time.Second):
+			t.Fatal("Timeout waiting for mirror request")
+		}
+
+		require.Eventually(t, func() bool {
+			metric := memStats.Get("proc_transform_stage_out_count", stats.Tags{
+				"destType":                  "MINIO",
+				"destination":               DestinationIDEnabledB,
+				"error":                     "false",
+				"mirroring":                 "true",
+				"module":                    "batch_router",
+				"source":                    SourceIDEnabledOnlyUT,
+				"transformationType":        "USER_TRANSFORMATION",
+				"transformation_id":         "",
+				"transformation_version_id": "transformation-version-id",
+				"workspaceId":               "",
+			})
+			return metric != nil && metric.LastValue() == 3
+		}, 10*time.Second, 10*time.Millisecond, "Expected 3 events to be sent via mirroring")
+
+		var files []minio.File
+		require.Eventually(t, func() bool {
+			files, err = minioContainer.Contents(context.Background(), "")
+			return err == nil && len(files) == 0
+		}, 10*time.Second, 50*time.Millisecond, "Expected zero files in the bucket")
 	})
 }
 
