@@ -190,7 +190,6 @@ Processor:
   maxLoopProcessEvents: 10000
   transformBatchSize: 100
   userTransformBatchSize: 200
-  maxConcurrency: 200
   maxHTTPConnections: 100
   maxHTTPIdleConnections: 50
   maxRetry: 30
