@@ -213,7 +213,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if !lf.AllowUploadV2JobCreation(job) {
 		err = lf.createUploadJobs(ctx, job, toProcessStagingFiles, publishBatchSize, uniqueLoadGenID)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, fmt.Errorf("creating upload jobs: %w", err)
 		}
 		return lf.getLoadFileIDs(ctx, job, stagingFileIDs, uniqueLoadGenID)
 	}
@@ -343,7 +343,7 @@ func (lf *LoadFileGenerator) publishJobs(
 		Priority:     job.Upload.Priority,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error publishing to notifier: %w", err)
+		return nil, fmt.Errorf("publishing to notifier: %w", err)
 	}
 	return ch, nil
 }
