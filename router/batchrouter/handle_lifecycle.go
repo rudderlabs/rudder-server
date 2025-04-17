@@ -123,8 +123,6 @@ func (brt *Handle) Setup(
 	brt.connectionWHNamespaceMap = map[string]string{}
 	brt.encounteredMergeRuleMap = map[string]map[string]bool{}
 	brt.uploadIntervalMap = map[string]time.Duration{}
-	brt.lastExecTimes = map[string]time.Time{}
-	brt.failingDestinations = map[string]bool{}
 	brt.dateFormatProvider = &storageDateFormatProvider{dateFormatsCache: make(map[string]string)}
 	diagnosisTickerTime := config.GetDurationVar(600, time.Second, "Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS")
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
@@ -161,8 +159,16 @@ func (brt *Handle) Setup(
 	)
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
-
 	brt.crashRecover()
+
+	if asynccommon.IsAsyncDestination(brt.destType) {
+		brt.startAsyncDestinationManager()
+	}
+
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
+		brt.backendConfigSubscriber()
+		return nil
+	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck batch router
@@ -189,15 +195,6 @@ func (brt *Handle) Setup(
 
 	brt.backgroundGroup.Go(crash.Wrapper(func() error {
 		brt.collectMetrics(brt.backgroundCtx)
-		return nil
-	}))
-
-	if asynccommon.IsAsyncDestination(destType) {
-		brt.startAsyncDestinationManager()
-	}
-
-	brt.backgroundGroup.Go(crash.Wrapper(func() error {
-		brt.backendConfigSubscriber()
 		return nil
 	}))
 }
@@ -262,8 +259,12 @@ func (brt *Handle) Start() {
 
 // Shutdown stops the batch router
 func (brt *Handle) Shutdown() {
+	// Signal all goroutines to stop via context cancellation
+	brt.logger.Info("Initiating batch router shutdown")
 	brt.backgroundCancel()
+	// Wait for all background goroutines to complete
 	_ = brt.backgroundWait()
+	brt.logger.Info("Batch router shutdown complete")
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
@@ -399,7 +400,9 @@ func (brt *Handle) backendConfigSubscriber() {
 						if destination.DestinationDefinition.Name == brt.destType && destination.Enabled {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
-								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								if asynccommon.IsAsyncDestination(brt.destType) {
+									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
 							brt.refreshDestination(destination)

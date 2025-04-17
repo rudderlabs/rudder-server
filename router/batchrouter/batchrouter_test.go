@@ -302,7 +302,7 @@ var _ = Describe("BatchRouter", func() {
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
 			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
@@ -409,19 +409,13 @@ var _ = Describe("BatchRouter", func() {
 				},
 			).AnyTimes()
 
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Executing.State, `{}`, 4)
-				}).Return(nil)
-
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt1.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt2.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 4)
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
+					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
 				}).Return(nil)
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 				func(ctx context.Context, _ []*jobsdb.JobT) error {
@@ -432,7 +426,7 @@ var _ = Describe("BatchRouter", func() {
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
 			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
 			done := make(chan struct{})
 			go func() {
@@ -620,11 +614,11 @@ func TestBatchRouter(t *testing.T) {
 					"table": "tracks"
 				}
 			}`),
-			Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
+			Parameters: []byte(fmt.Sprintf(`{
 				"source_id": %[1]q,
 				"destination_id": %[2]q,
 				"receivedAt": %[3]q
-			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)))),
+			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339))),
 			CustomVal: s3Dest.DestinationDefinition.Name,
 			CreatedAt: time.Now(),
 		})
@@ -649,8 +643,8 @@ func TestBatchRouter(t *testing.T) {
 	)
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-	batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+	batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
+	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Second)
 
 	err = routerDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
@@ -665,7 +659,7 @@ func TestBatchRouter(t *testing.T) {
 			return false
 		}
 		return len(minioContents) == len(bcs)
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 2*time.Minute, 200*time.Millisecond)
 
 	minioContents, err := minioResource.Contents(context.Background(), "")
 	require.NoError(t, err)

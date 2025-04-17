@@ -244,6 +244,7 @@ type ParametersT struct {
 	RecordID                interface{} `json:"record_id"`
 	WorkspaceId             string      `json:"workspaceId"`
 	TraceParent             string      `json:"traceparent"`
+	ConnectionID            string      `json:"connection_id"`
 }
 
 type MetricMetadata struct {
@@ -1417,6 +1418,7 @@ func (proc *Handle) getTransformationMetrics(
 			"stage":              pu,
 			"record_id":          failedEvent.Metadata.RecordID,
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
+			"connection_id":      generateConnectionID(commonMetaData.SourceID, commonMetaData.DestinationID),
 		}
 		if eventContext, castOk := failedEvent.Output["context"].(map[string]interface{}); castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
@@ -1459,6 +1461,10 @@ func (proc *Handle) getTransformationMetrics(
 	// REPORTING - END
 
 	return jobs, metrics, countMap
+}
+
+func generateConnectionID(s1, s2 string) string {
+	return fmt.Sprintf("%s:%s", s1, s2)
 }
 
 func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
@@ -3164,6 +3170,7 @@ func (proc *Handle) destTransform(
 				RecordID:                recordId,
 				WorkspaceId:             workspaceId,
 				TraceParent:             metadata.TraceParent,
+				ConnectionID:            generateConnectionID(sourceID, destID),
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
