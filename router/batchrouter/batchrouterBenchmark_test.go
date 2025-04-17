@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -109,7 +110,11 @@ func (mockFileManager) Upload(context.Context, *os.File, ...string) (filemanager
 	return filemanager.UploadedFile{}, nil
 }
 
-func (mockFileManager) Download(context.Context, *os.File, string) error {
+func (mockFileManager) UploadReader(context.Context, string, io.Reader) (filemanager.UploadedFile, error) {
+	return filemanager.UploadedFile{}, nil
+}
+
+func (mockFileManager) Download(context.Context, io.WriterAt, string) error {
 	return nil
 }
 

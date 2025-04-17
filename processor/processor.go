@@ -596,28 +596,28 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "proc_read",
-		config.GetInt("Processor.Limiter.read.limit", 50),
+	proc.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_read",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = kitsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
-		config.GetInt("Processor.Limiter.preprocess.limit", 50),
+	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.pretransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_pretransform",
-		config.GetInt("Processor.Limiter.pretransform.limit", 50),
+	proc.limiter.pretransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pretransform",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.utransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_utransform",
-		config.GetInt("Processor.Limiter.utransform.limit", 50),
+	proc.limiter.utransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_utransform",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.utransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.utransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.dtransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_dtransform",
-		config.GetInt("Processor.Limiter.dtransform.limit", 50),
+	proc.limiter.dtransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_dtransform",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.dtransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.dtransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
-		config.GetInt("Processor.Limiter.store.limit", 50),
+	proc.limiter.store = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_store",
+		config.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
