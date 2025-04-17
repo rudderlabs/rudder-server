@@ -78,6 +78,7 @@ type scanFn func(dest ...any) error
 type ProcessOptions struct {
 	SkipIdentifiers                   []string
 	SkipWorkspaces                    []string
+	SkipDestinations                  []string
 	AllowMultipleSourcesForJobsPickup bool
 }
 
@@ -283,12 +284,12 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(opts.SkipIdentifiers) > 0 {
-		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($5)`
+		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($6)`
 	}
 
 	if opts.AllowMultipleSourcesForJobsPickup {
 		if len(opts.SkipIdentifiers) > 0 {
-			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($5)`
+			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($6)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
@@ -308,7 +309,8 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 					t.status != $2 AND
 					t.status != $3 %s AND
 					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
-          			workspace_id <> ALL ($4)
+          			workspace_id <> ALL ($4) AND
+					destination_id <> ALL ($5)
 			) grouped_uploads
 			WHERE
 				grouped_uploads.row_number = 1
@@ -330,12 +332,16 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 	if opts.SkipWorkspaces == nil {
 		opts.SkipWorkspaces = []string{}
 	}
+	if opts.SkipDestinations == nil {
+		opts.SkipDestinations = []string{}
+	}
 
 	args := []any{
 		destType,
 		model.ExportedData,
 		model.Aborted,
 		pq.Array(opts.SkipWorkspaces),
+		pq.Array(opts.SkipDestinations),
 	}
 
 	if len(opts.SkipIdentifiers) > 0 {
@@ -388,10 +394,14 @@ func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts Pro
 			status != $3 AND
 			status != $4  AND
 			COALESCE((metadata->>'nextRetryTime')::TIMESTAMPTZ, $1::TIMESTAMPTZ) <= $1::TIMESTAMPTZ AND
-			workspace_id <> ALL ($5)`
+			workspace_id <> ALL ($5) AND
+			destination_id <> ALL ($6)`
 
 	if opts.SkipWorkspaces == nil {
 		opts.SkipWorkspaces = []string{}
+	}
+	if opts.SkipDestinations == nil {
+		opts.SkipDestinations = []string{}
 	}
 
 	args := []any{
@@ -400,10 +410,11 @@ func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts Pro
 		model.ExportedData,
 		model.Aborted,
 		pq.Array(opts.SkipWorkspaces),
+		pq.Array(opts.SkipDestinations),
 	}
 
 	if len(opts.SkipIdentifiers) > 0 {
-		query += `AND ((destination_id || '_' || namespace)) != ALL($6)`
+		query += `AND ((destination_id || '_' || namespace)) != ALL($7)`
 		args = append(args, pq.Array(opts.SkipIdentifiers))
 	}
 

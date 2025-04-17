@@ -106,6 +106,7 @@ type Router struct {
 		warehouseSyncFreqIgnore           config.ValueLoader[bool]
 		cronTrackerRetries                config.ValueLoader[int64]
 		uploadBufferTimeInMin             config.ValueLoader[time.Duration]
+		skipDestinationIDs                config.ValueLoader[[]string]
 	}
 
 	stats struct {
@@ -410,6 +411,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 	uploads, err := r.uploadRepo.GetToProcess(ctx, r.destType, availableWorkers, repo.ProcessOptions{
 		SkipIdentifiers:                   skipIdentifiers,
 		SkipWorkspaces:                    r.tenantManager.DegradedWorkspaces(),
+		SkipDestinations:                  r.config.skipDestinationIDs.Load(),
 		AllowMultipleSourcesForJobsPickup: r.config.allowMultipleSourcesForJobsPickup,
 	})
 	if err != nil {
@@ -468,8 +470,9 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 	}
 
 	jobsStats, err := r.uploadRepo.UploadJobsStats(ctx, r.destType, repo.ProcessOptions{
-		SkipIdentifiers: skipIdentifiers,
-		SkipWorkspaces:  r.tenantManager.DegradedWorkspaces(),
+		SkipIdentifiers:  skipIdentifiers,
+		SkipWorkspaces:   r.tenantManager.DegradedWorkspaces(),
+		SkipDestinations: r.config.skipDestinationIDs.Load(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("processing stats: %w", err)
@@ -713,6 +716,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 	r.config.uploadBufferTimeInMin = r.conf.GetReloadableDurationVar(180, time.Minute, "Warehouse.uploadBufferTimeInMin")
+	r.config.skipDestinationIDs = r.conf.GetReloadableStringSliceVar(nil, fmt.Sprintf(`Warehouse.%v.skipDestinationIDs`, whName))
 }
 
 func (r *Router) loadStats() {

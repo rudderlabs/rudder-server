@@ -449,6 +449,40 @@ func TestUploads_GetToProcess(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, toProcess, 0)
 	})
+	t.Run("skip destinations", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			db         = setupDB(t)
+			repoUpload = repo.NewUploads(db)
+			priority   = 100
+
+			uploads []model.Upload
+		)
+
+		uploads = append(uploads,
+			prepareUpload(db, sourceID, model.Waiting, priority,
+				time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+				time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC),
+			),
+			prepareUpload(db, sourceID, model.ExportingDataFailed, priority,
+				time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+				time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC),
+			),
+		)
+		require.Len(t, uploads, 2)
+
+		toProcess, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
+		require.NoError(t, err)
+		require.Len(t, toProcess, 1)
+		require.Equal(t, uploads[0].ID, toProcess[0].ID)
+
+		toProcess, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+			SkipDestinations: []string{destID},
+		})
+		require.NoError(t, err)
+		require.Len(t, toProcess, 0)
+	})
 
 	t.Run("ordering by priority", func(t *testing.T) {
 		t.Parallel()
@@ -721,6 +755,22 @@ func TestUploads_Processing(t *testing.T) {
 
 		s, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			SkipWorkspaces: []string{"workspace_id"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []model.Upload{uploads[4]}, s)
+	})
+
+	t.Run("skip destinations", func(t *testing.T) {
+		t.Parallel()
+
+		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+			SkipDestinations: []string{"destination_id", "destination_id_4"},
+		})
+		require.NoError(t, err)
+		require.Empty(t, s)
+
+		s, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+			SkipDestinations: []string{"destination_id"},
 		})
 		require.NoError(t, err)
 		require.Equal(t, []model.Upload{uploads[4]}, s)
