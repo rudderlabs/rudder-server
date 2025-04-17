@@ -17,10 +17,10 @@ type adaptiveAlgorithm interface {
 	LimitFactor() float64
 }
 
-func newAdaptiveAlgorithm(config *config.Config, window config.ValueLoader[time.Duration]) adaptiveAlgorithm {
+func newAdaptiveAlgorithm(destination string, config *config.Config, window config.ValueLoader[time.Duration]) adaptiveAlgorithm {
 	name := config.GetString("Router.throttler.adaptive.algorithm", "")
 	switch name {
 	default:
-		return adaptivethrottlercounter.New(config, window)
+		return adaptivethrottlercounter.New(destination, config, window)
 	}
 }
