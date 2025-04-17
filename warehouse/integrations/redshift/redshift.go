@@ -445,6 +445,7 @@ func (rs *Redshift) loadTable(
 	tableSchemaAfterUpload model.TableSchema,
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
+	shouldMerge := rs.ShouldMerge(tableName)
 	log := rs.logger.With(
 		logfield.SourceID, rs.Warehouse.Source.ID,
 		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -453,22 +454,19 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.ShouldMerge(tableName),
+		logfield.ShouldMerge, shouldMerge,
 	)
 	log.Infow("started loading")
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
 
-	if !rs.ShouldMerge(tableName) {
+	if !shouldMerge {
 		err := rs.copyIntoLoadTable(ctx, rs.DB, tableName, tableName, strKeys)
 		if err != nil {
 			return nil, "", fmt.Errorf("copy into load table: %w", err)
 		}
-		return &types.LoadTableStats{
-			RowsInserted: 0,
-			RowsUpdated:  0,
-		}, "", nil
+		return &types.LoadTableStats{}, "", nil
 	}
 
 	stagingTableName := warehouseutils.StagingTableName(
@@ -516,7 +514,7 @@ func (rs *Redshift) loadTable(
 		rowsDeletedResult, rowsInsertedResult sql.Result
 		rowsDeleted, rowsInserted             int64
 	)
-	if rs.ShouldMerge(tableName) {
+	if shouldMerge {
 		log.Infow("deleting from load table")
 		rowsDeletedResult, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
