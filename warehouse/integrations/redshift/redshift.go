@@ -471,7 +471,6 @@ func (rs *Redshift) loadTable(
 		}, "", nil
 	}
 
-
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
 		tableName,
