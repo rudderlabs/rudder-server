@@ -406,7 +406,6 @@ type JobT struct {
 	CustomVal     string          `json:"CustomVal"`
 	EventCount    int             `json:"EventCount"`
 	EventPayload  json.RawMessage `json:"EventPayload"`
-	PayloadSize   int64           `json:"PayloadSize"`
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
@@ -2189,9 +2188,9 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
 									jobs.created_at, jobs.expire_at, jobs.workspace_id,
-									pg_column_size(jobs.event_payload) as payload_size,
+									octet_length(jobs.event_payload::text) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
-									sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size,
+									sum(octet_length(jobs.event_payload::text)) over (order by jobs.job_id) as running_payload_size,
 									job_latest_state.job_state, job_latest_state.attempt,
 									job_latest_state.exec_time, job_latest_state.retry_time,
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
@@ -2244,6 +2243,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	var payloadSize int64
 	resultsetStates := map[string]struct{}{}
 	for rows.Next() {
+		var payloadSize int64
 		var job JobT
 		var payload []byte
 		var jsState sql.NullString
@@ -2254,7 +2254,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &payloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)

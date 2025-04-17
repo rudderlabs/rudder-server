@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.47.1](https://github.com/rudderlabs/rudder-server/compare/v1.47.0...v1.47.1) (2025-04-16)
+
+
+### Bug Fixes
+
+* jobsdb payload limit used compressed column sizes instead of actual payload length ([#5723](https://github.com/rudderlabs/rudder-server/issues/5723)) ([966b8dd](https://github.com/rudderlabs/rudder-server/commit/966b8dd2d7aaca1241b8ac181e2c711b0341902d))
+* version downgrade for databricks-sql-go to 1.6.1 ([#5741](https://github.com/rudderlabs/rudder-server/issues/5741)) ([09f2615](https://github.com/rudderlabs/rudder-server/commit/09f26152e7c766ba539afbc2541d2f1063b44861))
+
+
+### Miscellaneous
+
+* granular configuration for adaptive rate limiting ([#5739](https://github.com/rudderlabs/rudder-server/issues/5739)) ([5e6eb81](https://github.com/rudderlabs/rudder-server/commit/5e6eb8145a6540ad4e05934fb97860e54850bfd3))
+
 ## [1.47.0](https://github.com/rudderlabs/rudder-server/compare/v1.46.0...v1.47.0) (2025-04-14)
 
 
