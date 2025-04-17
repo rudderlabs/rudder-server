@@ -462,7 +462,6 @@ func (rs *Redshift) loadTable(
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
 
-	log.Debugw("creating staging table")
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -470,6 +469,7 @@ func (rs *Redshift) loadTable(
 		tableNameLimit,
 	)
 
+	log.Debugw("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
 		rs.Namespace,
 		stagingTableName,
