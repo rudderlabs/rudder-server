@@ -361,7 +361,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		stagingFile.DestinationRevisionID = "invalid_revision_id"
 
 		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-		require.EqualError(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
+		require.ErrorContains(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
 	})
