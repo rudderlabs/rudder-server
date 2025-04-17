@@ -3,7 +3,7 @@ package context
 import (
 	"context"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // GetRequestTypeFromCtx : get request type from context
