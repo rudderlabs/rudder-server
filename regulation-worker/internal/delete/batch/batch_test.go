@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -197,8 +198,27 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 	}, nil
 }
 
+func (fm *mockFileManager) UploadReader(ctx context.Context, objName string, rdr io.Reader) (filemanager.UploadedFile, error) {
+	fileName := uuid.New().String()
+	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
+	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return filemanager.UploadedFile{}, err
+	}
+	defer uploadFilePtr.Close()
+	_, err = io.Copy(uploadFilePtr, rdr)
+	if err != nil {
+		return filemanager.UploadedFile{}, err
+	}
+
+	return filemanager.UploadedFile{
+		Location:   fm.mockBucketLocation + "/" + fileName,
+		ObjectName: fileName,
+	}, nil
+}
+
 // Given a file name download & simply save it in the given file pointer.
-func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, location string) error {
+func (fm *mockFileManager) Download(_ context.Context, outputFilePtr io.WriterAt, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0o644)
 	if err != nil {
@@ -207,7 +227,7 @@ func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, l
 		}
 		return err
 	}
-	_, err = io.Copy(outputFilePtr, uploadFilePtr)
+	_, err = io.Copy(io.NewOffsetWriter(outputFilePtr, 0), uploadFilePtr)
 	if err != nil {
 		return err
 	}
