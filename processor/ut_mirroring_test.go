@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -338,6 +339,81 @@ func TestUTMirroring(t *testing.T) {
 			return err == nil && len(files) == 0
 		}, 10*time.Second, 50*time.Millisecond, "Expected zero files in the bucket")
 	})
+
+	t.Run("mirror returns slightly different events", func(t *testing.T) {
+		mockTransformerClients := transformer.NewSimpleClients()
+		minioContainer, processor, tc := prepareProcessor(t, mockTransformerClients, 100, false)
+
+		setupMocksExpectations(t, tc, processor)
+
+		mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			outputEvents := make([]types.TransformerResponse, 0)
+			for _, event := range clientEvents {
+				event.Message["user-transform"] = "value"
+				outputEvents = append(outputEvents, types.TransformerResponse{
+					Output:     event.Message,
+					StatusCode: 200,
+					Metadata: types.Metadata{
+						SourceID:        SourceIDEnabledOnlyUT,
+						SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+						DestinationID:   DestinationIDEnabledB,
+						DestinationType: "MINIO",
+					},
+				})
+			}
+			return types.Response{Events: outputEvents}
+		})
+		mockTransformerClients.WithDynamicUserMirrorTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			outputEvents := make([]types.TransformerResponse, 0)
+			for _, event := range clientEvents {
+				messageCopy := make(map[string]any)
+				for k, v := range event.Message {
+					messageCopy[k] = v
+				}
+				messageCopy["user-transform"] = "value-mirror"
+				outputEvents = append(outputEvents, types.TransformerResponse{
+					Output:     messageCopy,
+					StatusCode: 200,
+					Metadata: types.Metadata{
+						SourceID:        SourceIDEnabledOnlyUT,
+						SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+						DestinationID:   DestinationIDEnabledB,
+						DestinationType: "MINIO",
+					},
+				})
+			}
+			return types.Response{Events: outputEvents}
+		})
+		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return assertDestinationTransform(
+				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+			)(ctx, clientEvents, 1)
+		})
+
+		memStats, err := memstats.New()
+		require.NoError(t, err)
+		handlePendingGatewayJobs(t, processor, tc, func(h *Handle) {
+			h.statsFactory = memStats
+		})
+
+		require.Eventually(t, func() bool {
+			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
+				"equal":     "false",
+				"partition": "",
+			})
+			return metric != nil && metric.LastValue() == 1
+		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
+
+		var files []minio.File
+		require.Eventually(t, func() bool {
+			files, err = minioContainer.Contents(context.Background(), "")
+			return err == nil && len(files) == 1
+		}, 10*time.Second, 50*time.Millisecond, "Expected one file in the bucket")
+
+		expectedDiff, err := os.ReadFile("./testdata/goldenUtMirrorDiff.txt")
+		require.NoError(t, err)
+		require.Equal(t, string(expectedDiff), files[0].Content)
+	})
 }
 
 func TestShouldSample(t *testing.T) {
@@ -348,11 +424,14 @@ func TestShouldSample(t *testing.T) {
 		testCases         = []float64{10, 20, 30, 40, 50, 60, 70, 80, 90}
 	)
 
-	test := func() {
+	for k := 0; k < repeatEachTestFor; k++ {
 		for i := 0; i < timesPerTest; i++ { // no error margin for 0% and 100%
 			require.True(t, shouldSample(100))
 			require.False(t, shouldSample(0))
 		}
+	}
+
+	for k := 0; k < repeatEachTestFor; k++ {
 		for _, testCase := range testCases {
 			var hits int64
 			for i := 0; i < timesPerTest; i++ {
@@ -365,10 +444,6 @@ func TestShouldSample(t *testing.T) {
 				"Expected  %.0f%% (±5%%), got %.2f%%", testCase, actualPercentage,
 			)
 		}
-	}
-
-	for k := 0; k < repeatEachTestFor; k++ {
-		test()
 	}
 }
 
