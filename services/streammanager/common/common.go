@@ -13,7 +13,7 @@ import (
 
 type StreamProducer interface {
 	io.Closer
-	Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string)
+	Produce(jsonData json.RawMessage, destConfig map[string]interface{}) (int, string, string)
 }
 
 type Opts struct {

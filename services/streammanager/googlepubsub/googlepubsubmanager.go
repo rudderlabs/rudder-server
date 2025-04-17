@@ -53,6 +53,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		endpoint, _ = testConfig["endpoint"].(string)
 	}
 	eventToTopicMapArr, ok := destination.Config["eventToTopicMap"].([]interface{})
+	if !ok {
+		eventToTopicMapArr = []interface{}{}
+	}
 	var err error
 	var client *pubsub.Client
 	var options []option.ClientOption
@@ -84,7 +87,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
 }
 
-func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ map[string]interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	message := parsedJSON.Get("message").String()
 	attributes := parsedJSON.Get("attributes").Map()

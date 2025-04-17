@@ -56,7 +56,7 @@ func TestNewProducer(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	producer := &LambdaProducer{}
 	sampleEventJson := []byte("{}")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Equal(t, "[Lambda] error :: Could not create client", respMsg)
@@ -71,7 +71,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 	// Invalid input
 	sampleEventJson := []byte("invalid json")
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling jsonData")
@@ -80,7 +80,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
 		"payload": "",
 	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "[Lambda] error :: Invalid payload")
@@ -97,7 +97,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		"payload": sampleMessage,
 	})
 
-	destConfig := map[string]string{
+	destConfig := map[string]interface{}{
 		"lambda":        sampleFunction,
 		"clientContext": sampleClientContext,
 	}

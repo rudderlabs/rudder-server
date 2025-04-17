@@ -712,17 +712,6 @@ func TestProduce(t *testing.T) {
 		require.Equal(t, "Could not create producer", err)
 	})
 
-	t.Run("invalid destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
-
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
-		sc, res, err := pm.Produce(nil, destConfig)
-		require.Equal(t, 400, sc)
-		require.Contains(t, res, "unsupported type")
-		require.Contains(t, err, "unsupported type")
-	})
-
 	t.Run("empty destination configuration", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
@@ -1271,7 +1260,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, destConfig)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
@@ -1355,7 +1344,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, destConfig)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
@@ -1381,7 +1370,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, destConfig)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming

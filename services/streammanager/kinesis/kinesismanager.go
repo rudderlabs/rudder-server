@@ -56,24 +56,15 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Kines
 }
 
 // Produce creates a producer and send data to Kinesis.
-func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig map[string]interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Could not create producer for Kinesis", "Could not create producer for Kinesis"
 	}
 
 	config := Config{}
-
-	jsonConfig, err := jsonrs.Marshal(destConfig)
-	if err != nil {
-		outErr := fmt.Errorf("[KinesisManager] Error while Marshalling destination config %+v Error: %w", destConfig, err)
-		return 400, outErr.Error(), outErr.Error()
-	}
-	err = jsonrs.Unmarshal(jsonConfig, &config)
-	if err != nil {
-		outErr := fmt.Errorf("[KinesisManager] Error while Unmarshalling destination config: %w", err)
-		return 400, outErr.Error(), outErr.Error()
-	}
+	config.Stream, _ = destConfig["stream"].(string)
+	config.UseMessageID, _ = destConfig["useMessageId"].(bool)
 
 	streamName := aws.String(config.Stream)
 	parsedJSON := gjson.ParseBytes(jsonData)

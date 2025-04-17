@@ -200,7 +200,7 @@ func TestProduceWithMissingTableId(t *testing.T) {
 		EXPECT().
 		Put(gomock.Any(), "bigquery_batching", "", genericRecs).
 		Return(errors.New("invalid data"))
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "error in data insertion")
@@ -225,7 +225,7 @@ func TestProduceWithArrayOfRecords(t *testing.T) {
 		EXPECT().
 		Put(gomock.Any(), "bigquery_batching", "Streaming", genericRecs).
 		Return(nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -252,7 +252,7 @@ func TestProduceWithWithSingleRecord(t *testing.T) {
 		EXPECT().
 		Put(gomock.Any(), "bigquery_batching", "Streaming", genericRecs).
 		Return(nil)
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
@@ -270,7 +270,7 @@ func TestProduceFailedCase(t *testing.T) {
 		"properties": json.RawMessage(`"id"`),
 	})
 
-	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]interface{}{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "error in unmarshalling data")

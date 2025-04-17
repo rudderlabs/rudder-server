@@ -103,7 +103,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStr
 	return &BQStreamProducer{Client: &Client{bqClient: bqClient}, Opts: o}, nil
 }
 
-func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ map[string]interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.Client
 	if client == nil {
 		return http.StatusBadRequest, "Failure", "[BQStream] error :: invalid client"

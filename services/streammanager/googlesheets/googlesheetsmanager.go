@@ -109,7 +109,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	return &GoogleSheetsProducer{client}, err
 }
 
-func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ map[string]interface{}) (statusCode int, respStatus, responseMessage string) {
 	client := producer.client
 	if client == nil {
 		respStatus = "Failure"
@@ -330,10 +330,7 @@ func generateOAuthClient(jwtconfig *jwt.Config) (*http.Client, error) {
 	}
 	// Once the token is received we are generating the oauth-config client which are using for generating the google-sheets service
 	client := oauthconfig.Client(ctx, token)
-	if err != nil {
-		return nil, fmt.Errorf("[GoogleSheets] error  :: Unable to create oauth client :: %w", err)
-	}
-	return client, err
+	return client, nil
 }
 
 func testClientOptions(config *Config) []option.ClientOption {
