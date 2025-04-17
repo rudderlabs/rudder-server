@@ -84,8 +84,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.loggedEventsMu = sync.Mutex{}
 	handle.loggedFileName = generateLogFileName()
 
-	handle.config.forceCompactionEnabled = conf.GetBoolVar(false, "Processor.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
-	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+	handle.config.compactionEnabled = conf.GetReloadableBoolVar(true, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -106,9 +105,8 @@ type Client struct {
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		forceCompactionEnabled bool // option to force usage of compaction for testing
-		compactionEnabled      config.ValueLoader[bool]
-		compactionSupported    bool
+		compactionEnabled   config.ValueLoader[bool]
+		compactionSupported bool
 	}
 	guardConcurrency chan struct{}
 	conf             *config.Config
@@ -407,7 +405,7 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (d *Client) compactRequestPayloads() bool {
-	return (d.config.compactionSupported && d.config.compactionEnabled.Load()) || d.config.forceCompactionEnabled
+	return (d.config.compactionSupported && d.config.compactionEnabled.Load())
 }
 
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
