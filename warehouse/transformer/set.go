@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/stringlikeobject"
@@ -28,7 +31,8 @@ func setDataAndMetadataFromInput(
 	if shouldHandleStringLikeObject(inputMap, pi) {
 		return handleStringLikeObject(tec, inputMap, data, metadata, pi)
 	}
-	for key, val := range inputMap {
+	for _, key := range tec.sorter(lo.Keys(inputMap)) {
+		val := inputMap[key]
 		if utils.IsBlank(val) {
 			continue
 		}
@@ -158,7 +162,8 @@ func setDataAndMetadataFromRules(
 	data map[string]any, metadata map[string]string,
 	rules map[string]rules.Rules,
 ) error {
-	for colKey, rule := range rules {
+	for _, colKey := range tec.sorter(lo.Keys(rules)) {
+		rule := rules[colKey]
 		columnName, err := safeColumnNameCached(tec, colKey)
 		if err != nil {
 			return fmt.Errorf("safe column name: %w", err)
@@ -183,7 +188,7 @@ func setDataAndMetadataFromRules(
 	return nil
 }
 
-func storeRudderEvent(
+func (t *Transformer) storeRudderEvent(
 	tec *transformEventContext,
 	data map[string]any, metadata map[string]string,
 ) error {
@@ -199,6 +204,24 @@ func storeRudderEvent(
 	eventJSON, err := jsonrs.Marshal(tec.event.Message)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
+	}
+	if t.config.populateSrcDestInfoInContext.Load() {
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.sourceId", tec.event.Metadata.SourceID)
+		if err != nil {
+			return fmt.Errorf("setting source id: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.sourceType", tec.event.Metadata.SourceType)
+		if err != nil {
+			return fmt.Errorf("setting source type: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.destinationId", tec.event.Metadata.DestinationID)
+		if err != nil {
+			return fmt.Errorf("setting destination id: %w", err)
+		}
+		eventJSON, err = sjson.SetBytes(eventJSON, "context.destinationType", tec.event.Metadata.DestinationType)
+		if err != nil {
+			return fmt.Errorf("setting destination type: %w", err)
+		}
 	}
 
 	data[columnName] = string(eventJSON)

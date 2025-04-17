@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
@@ -22,10 +23,10 @@ func TestTableUploadRepo(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+	r := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
-	l := repo.NewLoadFiles(db, repo.WithNow(func() time.Time {
+	l := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -80,7 +81,7 @@ func TestTableUploadRepo(t *testing.T) {
 	t.Run("SyncsInfo", func(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			updatedAt := now.Add(10 * time.Second)
-			updatedRepo := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+			updatedRepo := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 				return updatedAt
 			}))
 
@@ -192,7 +193,7 @@ func TestTableUploadRepo(t *testing.T) {
 			now          = now.Add(time.Second)
 		)
 
-		r := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+		r := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -363,6 +364,46 @@ func TestTableUploadRepo(t *testing.T) {
 			})
 		})
 
+		t.Run("PopulateTotalEventsWithTx with upload id", func(t *testing.T) {
+			tables2 := []string{"table_name_11", "table_name_12", "table_name_13", "table_name_14", "table_name_15", "table_name_16", "table_name_17", "table_name_18", "table_name_19", "table_name_20"}
+			uploadId := createUpload(t, ctx, db)
+			conf := config.New()
+			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", true)
+			r := repo.NewTableUploads(db, conf, repo.WithNow(func() time.Time {
+				return now
+			}))
+			err := r.Insert(ctx, uploadId, tables2)
+			require.NoError(t, err)
+			var loadFiles []model.LoadFile
+			for i := 0; i < 10; i++ {
+				loadFiles = append(loadFiles, model.LoadFile{
+					TableName: tables2[i],
+					TotalRows: i + 1,
+					UploadID:  &uploadId,
+				})
+			}
+			insertErr := l.Insert(ctx, loadFiles)
+			require.NoError(t, insertErr)
+
+			txErr := r.WithTx(ctx, func(tx *sqlmw.Tx) error {
+				for _, table := range tables2 {
+					populateErr := r.PopulateTotalEventsWithTx(ctx, tx, uploadId, table, []int64{})
+					require.NoError(t, populateErr)
+				}
+				return nil
+			})
+			require.NoError(t, txErr)
+			for _, loadFile := range loadFiles {
+				tableName := loadFile.TableName
+				expectedTotal := int64(loadFile.TotalRows)
+				tableUpload, getErr := r.GetByUploadIDAndTableName(ctx, uploadId, tableName)
+				require.NoError(t, getErr)
+				require.Equal(t, uploadId, tableUpload.UploadID)
+				require.Equal(t, tableName, tableUpload.TableName)
+				require.Equal(t, expectedTotal, tableUpload.TotalEvents)
+			}
+		})
+
 		t.Run("TotalExportedEvents", func(t *testing.T) {
 			t.Run("all exported tables", func(t *testing.T) {
 				status := model.TableUploadExported
@@ -442,7 +483,7 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+	repoTableUpload := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 

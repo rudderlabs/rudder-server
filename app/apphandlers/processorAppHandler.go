@@ -223,11 +223,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithJobMaxAge(
-			func() time.Duration {
-				return config.GetDuration("archival.jobRetention", 24, time.Hour)
-			},
-		),
+		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
 		jobsdb.WithDBHandle(dbPool),
 	)
 	defer archivalDB.Close()

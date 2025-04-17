@@ -128,6 +128,7 @@ func (rt *Handle) Setup(
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
 		backendConfig, rt.reloadableConfig.oauthV2Enabled,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
+		rt.transformerFeaturesService,
 	)
 	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)

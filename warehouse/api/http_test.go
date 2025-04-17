@@ -214,7 +214,7 @@ func TestHTTPApi(t *testing.T) {
 	uploadsRepo := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	tableUploadsRepo := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+	tableUploadsRepo := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
 		return now
 	}))
 
