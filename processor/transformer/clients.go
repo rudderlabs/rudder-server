@@ -29,12 +29,14 @@ type TrackingPlanClient interface {
 
 type Clients struct {
 	user         UserClient
+	userMirror   UserClient
 	destination  DestinationClient
 	trackingplan TrackingPlanClient
 }
 
 type TransformerClients interface {
 	User() UserClient
+	UserMirror() UserClient
 	Destination() DestinationClient
 	TrackingPlan() TrackingPlanClient
 }
@@ -54,22 +56,19 @@ func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats
 	}
 	return &Clients{
 		user:         user_transformer.New(conf, log, statsFactory),
+		userMirror:   user_transformer.New(conf, log, statsFactory, user_transformer.ForMirroring()),
 		destination:  destination_transformer.New(conf, log, statsFactory, opts.destinationOpts...),
 		trackingplan: trackingplan_validation.New(conf, log, statsFactory),
 	}
 }
 
-func (c *Clients) User() UserClient {
-	return c.user
-}
+func (c *Clients) User() UserClient { return c.user }
 
-func (c *Clients) Destination() DestinationClient {
-	return c.destination
-}
+func (c *Clients) UserMirror() UserClient { return c.user }
 
-func (c *Clients) TrackingPlan() TrackingPlanClient {
-	return c.trackingplan
-}
+func (c *Clients) Destination() DestinationClient { return c.destination }
+
+func (c *Clients) TrackingPlan() TrackingPlanClient { return c.trackingplan }
 
 type opts struct {
 	destinationOpts []destination_transformer.Opt
