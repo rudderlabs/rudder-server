@@ -110,6 +110,19 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 
 	if !ok {
 		// Handle destination not found
+		batchedJobs := BatchedJobs{
+			Jobs: jobs,
+			Connection: &Connection{
+				Destination: backendconfig.DestinationT{
+					ID: destID,
+				},
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+			},
+		}
+		err := fmt.Errorf("BRT: Batch destination not found in config for destID: %s", destID)
+		pw.brt.updateJobStatus(&batchedJobs, false, err, false)
 		pw.logger.Errorf("Destination not found for ID: %s", destID)
 		return
 	}
@@ -127,6 +140,19 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 
 	if !sourceFound {
 		// Handle source not found
+		batchedJobs := BatchedJobs{
+			Jobs: jobs,
+			Connection: &Connection{
+				Destination: backendconfig.DestinationT{
+					ID: destID,
+				},
+				Source: backendconfig.SourceT{
+					ID: sourceID,
+				},
+			},
+		}
+		err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
+		pw.brt.updateJobStatus(&batchedJobs, false, err, false)
 		pw.logger.Errorf("Source not found for ID: %s", sourceID)
 		return
 	}
