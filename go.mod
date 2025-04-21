@@ -6,7 +6,7 @@ go 1.24.2
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
 replace (
-	github.com/containerd/containerd => github.com/containerd/containerd v1.6.32
+	github.com/containerd/containerd => github.com/containerd/containerd v1.7.27
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
@@ -177,7 +177,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/cncf/xds/go v0.0.0-20250121191232-2f005788dc42 // indirect
-	github.com/containerd/containerd v1.7.22 // indirect
+	github.com/containerd/containerd v1.7.27 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/coreos/go-oidc/v3 v3.11.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
