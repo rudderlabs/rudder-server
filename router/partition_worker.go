@@ -37,6 +37,10 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerProxyStat:           stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
 		}
+		// Initialize cached stats
+		worker.eventsDeliveredStats = make(map[string]stats.Measurement)
+		worker.eventsDeliveryTimeStats = make(map[string]stats.Measurement)
+
 		pw.workers[i] = worker
 
 		pw.g.Go(crash.Wrapper(func() error {

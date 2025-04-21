@@ -54,6 +54,10 @@ type worker struct {
 	batchTimeStat             stats.Measurement
 	latestAssignedTime        time.Time
 	processingStartTime       time.Time
+
+	// Cached stats for optimization
+	eventsDeliveredStats    map[string]stats.Measurement // key: sourceID-destinationID
+	eventsDeliveryTimeStats map[string]stats.Measurement // key: sourceID-destinationID-sourceCategory
 }
 
 type workerJob struct {
@@ -1112,35 +1116,59 @@ func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destinat
 }
 
 func (w *worker) sendEventDeliveryStat(destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
-	destinationTag := misc.GetTagName(destination.ID, destination.Name)
-	if status.JobState == jobsdb.Succeeded.State {
-		eventsDeliveredStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
+	if status.JobState != jobsdb.Succeeded.State {
+		return
+	}
+
+	// Get or create cached delivery stat
+	sourceID := destinationJobMetadata.SourceID
+	destID := destinationJobMetadata.DestinationID
+	deliveryKey := sourceID + ":" + destID
+
+	deliveredStat, ok := w.eventsDeliveredStats[deliveryKey]
+	if !ok {
+		destinationTag := misc.GetTagName(destination.ID, destination.Name)
+		deliveredStat = stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
 			"module":      "router",
 			"destType":    w.rt.destType,
 			"destID":      destination.ID,
 			"destination": destinationTag,
 			"workspaceId": status.WorkspaceId,
-			"source":      destinationJobMetadata.SourceID,
+			"source":      sourceID,
 		})
-		eventsDeliveredStat.Count(1)
-		if destinationJobMetadata.ReceivedAt != "" {
-			receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
-			if err == nil {
-				eventsDeliveryTimeStat := stats.Default.NewTaggedStat(
-					"event_delivery_time", stats.TimerType, map[string]string{
-						"module":         "router",
-						"destType":       w.rt.destType,
-						"destID":         destination.ID,
-						"destination":    destinationTag,
-						"workspaceId":    status.WorkspaceId,
-						"sourceId":       destinationJobMetadata.SourceID,
-						"sourceCategory": destinationJobMetadata.SourceCategory,
-					})
-
-				eventsDeliveryTimeStat.SendTiming(time.Since(receivedTime))
-			}
-		}
+		w.eventsDeliveredStats[deliveryKey] = deliveredStat
 	}
+	deliveredStat.Count(1)
+
+	// Only proceed with timing stat if we have ReceivedAt
+	if destinationJobMetadata.ReceivedAt == "" {
+		return
+	}
+
+	receivedTime, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.ReceivedAt)
+	if err != nil {
+		return
+	}
+
+	// Get or create cached timing stat
+	timingStat, ok := w.eventsDeliveryTimeStats[deliveryKey]
+	if !ok {
+		destinationTag := misc.GetTagName(destination.ID, destination.Name)
+		timingStat = stats.Default.NewTaggedStat(
+			"event_delivery_time",
+			stats.TimerType,
+			map[string]string{
+				"module":         "router",
+				"destType":       w.rt.destType,
+				"destID":         destination.ID,
+				"destination":    destinationTag,
+				"workspaceId":    status.WorkspaceId,
+				"sourceId":       sourceID,
+				"sourceCategory": destinationJobMetadata.SourceCategory,
+			})
+		w.eventsDeliveryTimeStats[deliveryKey] = timingStat
+	}
+	timingStat.SendTiming(time.Since(receivedTime))
 }
 
 func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
