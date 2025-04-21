@@ -1464,7 +1464,7 @@ func (proc *Handle) getTransformationMetrics(
 }
 
 func generateConnectionID(s1, s2 string) string {
-	return fmt.Sprintf("%s:%s", s1, s2)
+	return s1 + ":" + s2
 }
 
 func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
