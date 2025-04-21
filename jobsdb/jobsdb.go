@@ -775,7 +775,7 @@ func (jd *Handle) init() {
 	}
 
 	if string(jd.conf.payloadColumnType) == "" {
-		jd.conf.payloadColumnType = payloadColumnType(jd.config.GetStringVar(string(JSONB), jd.configKeys("payloadColumnType")...))
+		jd.conf.payloadColumnType = TEXT
 	}
 
 	if jd.stats == nil {
