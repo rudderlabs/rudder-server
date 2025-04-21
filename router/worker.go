@@ -56,8 +56,9 @@ type worker struct {
 	processingStartTime       time.Time
 
 	// Cached stats for optimization
-	eventsDeliveredStats    map[string]stats.Measurement // key: sourceID-destinationID
-	eventsDeliveryTimeStats map[string]stats.Measurement // key: sourceID-destinationID-sourceCategory
+	eventsDeliveredStats    map[string]stats.Measurement // key: sourceID:destinationID
+	eventsDeliveryTimeStats map[string]stats.Measurement // key: sourceID:destinationID
+	routerResponseStats     map[string]stats.Measurement // key: destID:errorCode:errorAt:retry:alert
 }
 
 type workerJob struct {
@@ -1100,18 +1101,26 @@ func (w *worker) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destinat
 		alert = !w.rt.reloadableConfig.skipRtAbortAlertForTransformation.Load() || !w.rt.reloadableConfig.skipRtAbortAlertForDelivery.Load()
 		errorAt = ""
 	}
-	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
-		"destType":       w.rt.destType,
-		"respStatusCode": status.ErrorCode,
-		"destination":    destinationTag,
-		"destId":         destination.ID,
-		"workspaceId":    status.WorkspaceId,
-		// To indicate if the failure should be alerted for router-aborted-count
-		"alert": strconv.FormatBool(alert),
-		// To specify at which point failure happened
-		"errorAt": errorAt,
-		"retry":   strconv.FormatBool(status.AttemptNum > 1),
-	})
+
+	// Create a composite key for the stat
+	key := destination.ID + ":" + status.ErrorCode + ":" + errorAt + ":" + strconv.FormatBool(status.AttemptNum > 1) + ":" + strconv.FormatBool(alert)
+
+	routerResponseStat, ok := w.routerResponseStats[key]
+	if !ok {
+		routerResponseStat = stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
+			"destType":       w.rt.destType,
+			"respStatusCode": status.ErrorCode,
+			"destination":    destinationTag,
+			"destId":         destination.ID,
+			"workspaceId":    status.WorkspaceId,
+			// To indicate if the failure should be alerted for router-aborted-count
+			"alert": strconv.FormatBool(alert),
+			// To specify at which point failure happened
+			"errorAt": errorAt,
+			"retry":   strconv.FormatBool(status.AttemptNum > 1),
+		})
+		w.routerResponseStats[key] = routerResponseStat
+	}
 	routerResponseStat.Count(1)
 }
 

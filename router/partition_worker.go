@@ -40,6 +40,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		// Initialize cached stats
 		worker.eventsDeliveredStats = make(map[string]stats.Measurement)
 		worker.eventsDeliveryTimeStats = make(map[string]stats.Measurement)
+		worker.routerResponseStats = make(map[string]stats.Measurement)
 
 		pw.workers[i] = worker
 
