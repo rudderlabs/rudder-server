@@ -82,7 +82,7 @@ type destinationStrategy struct {
 
 // ActivePartitions returns the list of active destinationIDs in jobsdb
 func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	unfiltered, err := db.GetDistinctParameterValues(ctx, "destination_id")
+	unfiltered, err := db.GetDistinctParameterValues(ctx, jobsdb.DestinationID)
 	if err != nil {
 		return nil, err
 	}

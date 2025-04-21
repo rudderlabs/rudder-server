@@ -206,8 +206,8 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			if err = jd.doRefreshDSRangeList(l); err != nil {
 				return fmt.Errorf("refresh ds range list: %w", err)
 			}
+			jd.resetParametersCache()
 		}
-
 	}
 	return err
 }

@@ -65,7 +65,7 @@ type sourceStrategy struct{}
 
 // ActivePartitions returns the list of active sourceIDs in jobsdb
 func (sourceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetDistinctParameterValues(ctx, "source_id")
+	return db.GetDistinctParameterValues(ctx, jobsdb.SourceID)
 }
 
 // AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter

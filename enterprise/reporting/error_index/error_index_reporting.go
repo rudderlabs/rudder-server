@@ -279,7 +279,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 
 	for {
 		start := time.Now()
-		sources, err := errIndexDB.GetDistinctParameterValues(ctx, "source_id")
+		sources, err := errIndexDB.GetDistinctParameterValues(ctx, jobsdb.SourceID)
 		if err != nil && ctx.Err() != nil {
 			return nil //nolint:nilerr
 		}

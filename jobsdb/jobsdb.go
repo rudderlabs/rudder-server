@@ -300,8 +300,8 @@ type JobsDB interface {
 	// GetActiveWorkspaces returns a list of active workspace ids. If customVal is not empty, it will be used as a filter
 	GetActiveWorkspaces(ctx context.Context, customVal string) (workspaces []string, err error)
 
-	// GetDistinctParameterValues returns the list of distinct parameter values inside the jobs tables
-	GetDistinctParameterValues(ctx context.Context, parameterName string) (values []string, err error)
+	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id") values inside the jobs tables
+	GetDistinctParameterValues(ctx context.Context, parameter ParameterName) (values []string, err error)
 
 	/* Admin */
 
@@ -318,6 +318,21 @@ type JobsDB interface {
 
 	IsMasterBackupEnabled() bool
 }
+
+type ParameterName interface {
+	string() string
+}
+
+type parameterName string
+
+func (p parameterName) string() string {
+	return string(p)
+}
+
+const (
+	SourceID      parameterName = "source_id"
+	DestinationID parameterName = "destination_id"
+)
 
 /*
 assertInterface contains public assert methods
@@ -461,6 +476,7 @@ type Handle struct {
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
 	dsRangeFuncMap                map[string]func() (dsRangeMinMax, error)
+	dsParametersFuncMap           map[ParameterName]func() ([]string, error)
 	distinctParameterSingleFlight *singleflight.Group
 	dsListLock                    *lock.Locker
 	dsMigrationLock               *lock.Locker
@@ -768,6 +784,7 @@ func (jd *Handle) init() {
 		jd.logger = logger.NewLogger().Child("jobsdb").Child(jd.tablePrefix)
 	}
 	jd.dsRangeFuncMap = make(map[string]func() (dsRangeMinMax, error))
+	jd.dsParametersFuncMap = make(map[ParameterName]func() ([]string, error))
 	jd.distinctParameterSingleFlight = new(singleflight.Group)
 
 	if jd.config == nil {
@@ -1027,6 +1044,7 @@ func (jd *Handle) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
 		case ReadWrite:
 			jd.readerWriterSetup(ctx, l)
 		}
+		jd.resetParametersCache()
 	})
 }
 
@@ -1967,22 +1985,14 @@ func (jd *Handle) GetActiveWorkspaces(ctx context.Context, customVal string) ([]
 	return workspaceIds, nil
 }
 
-func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
-	res, err, shared := jd.distinctParameterSingleFlight.Do(parameterName, func() (interface{}, error) {
-		if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-			return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-		}
-		defer jd.dsMigrationLock.RUnlock()
-		if !jd.dsListLock.RTryLockWithCtx(ctx) {
-			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-		}
-		dsList := jd.getDSList()
-		jd.dsListLock.RUnlock()
-
-		var values []string
-		var queries []string
-		for _, ds := range dsList {
-			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+func (jd *Handle) getDistinctParams(ctx context.Context, dsList []dataSetT, parameterName string) ([]string, error) {
+	var values []string
+	var queries []string
+	if len(dsList) == 0 {
+		return values, nil
+	}
+	for _, ds := range dsList {
+		queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
 				(SELECT parameters->>'%[1]s' as parameter FROM %[2]q ORDER BY parameters->>'%[1]s' LIMIT 1)
 				UNION ALL
 				(SELECT s.* FROM t, LATERAL(
@@ -1991,29 +2001,72 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameterName 
 					ORDER BY parameters->>'%[1]s' LIMIT 1) s)
 					)
 					SELECT * FROM t) a`, parameterName, ds.JobTable))
-		}
-		query := strings.Join(queries, " UNION ")
-		rows, err := jd.dbHandle.QueryContext(ctx, query)
+	}
+	query := strings.Join(queries, " UNION ")
+	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", parameterName, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value string
+		err := rows.Scan(&value)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", parameterName, err)
+			return nil, fmt.Errorf("couldn't scan distinct parameter-%s: %w", parameterName, err)
 		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var value string
-			err := rows.Scan(&value)
-			if err != nil {
-				return nil, fmt.Errorf("couldn't scan distinct parameter-%s: %w", parameterName, err)
-			}
-			values = append(values, value)
+		values = append(values, value)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows.Err() on distinct parameter-%s: %w", parameterName, err)
+	}
+	return values, nil
+}
+
+func (jd *Handle) cachedDistinctParamsFunc(ctx context.Context, dsList []dataSetT, parameterName string) func() ([]string, error) {
+	allExceptLast := sync.OnceValues(
+		func() ([]string, error) {
+			return jd.getDistinctParams(ctx, dsList[:len(dsList)-1], parameterName)
+		},
+	)
+	return func() ([]string, error) {
+		allExceptLastParams, err := allExceptLast()
+		if err != nil {
+			return nil, fmt.Errorf("cached %s query: %w", parameterName, err)
 		}
-		if err = rows.Err(); err != nil {
-			return nil, fmt.Errorf("rows.Err() on distinct parameter-%s: %w", parameterName, err)
+		lastParams, err := jd.getDistinctParams(ctx, dsList[len(dsList)-1:], parameterName)
+		if err != nil {
+			return nil, fmt.Errorf("live %s query: %w", parameterName, err)
 		}
-		return values, nil
+		return lo.Uniq(append(allExceptLastParams, lastParams...)), nil
+	}
+}
+
+// Only with a write lock on dsListLock
+func (jd *Handle) resetParametersCache() {
+	jd.dsParametersFuncMap[DestinationID] = jd.cachedDistinctParamsFunc(context.Background(), jd.getDSList(), "destination_id")
+	jd.dsParametersFuncMap[SourceID] = jd.cachedDistinctParamsFunc(context.Background(), jd.getDSList(), "source_id")
+}
+
+func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName) ([]string, error) {
+	res, err, shared := jd.distinctParameterSingleFlight.Do(parameter.string(), func() (interface{}, error) {
+		if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+		}
+		defer jd.dsMigrationLock.RUnlock()
+		if !jd.dsListLock.RTryLockWithCtx(ctx) {
+			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		}
+		parameterValueQuery, ok := jd.dsParametersFuncMap[parameter]
+		if !ok {
+			return nil, errors.New("parameters func not found")
+		}
+		jd.dsListLock.RUnlock()
+
+		return parameterValueQuery()
 	})
 	if shared {
 		jd.stats.NewTaggedStat("jobsdb_get_distinct_parameter_values_shared", stats.CountType, stats.Tags{
-			"parameter":   parameterName,
+			"parameter":   parameter.string(),
 			"tablePrefix": jd.tablePrefix,
 		}).Increment()
 	}
@@ -2507,6 +2560,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 				if err = jd.doRefreshDSRangeList(dsListLock); err != nil {
 					return fmt.Errorf("refreshDSRangeList: %w", err)
 				}
+				jd.resetParametersCache()
 			}
 			return nil
 		}
