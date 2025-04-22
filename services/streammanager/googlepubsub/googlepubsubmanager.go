@@ -87,6 +87,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = 100 * time.Millisecond
 		topic.PublishSettings.CountThreshold = 512
+		topic.PublishSettings.ByteThreshold = 1024 * 1024 * 10
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
