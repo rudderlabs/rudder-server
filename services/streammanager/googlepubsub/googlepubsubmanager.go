@@ -90,6 +90,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = 1000
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = -1
 		topicMap[s["to"]] = topic
 	}
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
