@@ -461,7 +461,7 @@ func (rs *Redshift) loadTable(
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
 
-	// Users table still needs to be deduped by partition key. 
+	// Users table still needs to be deduped by partition key.
 	// In case of users table, staging table should be created, so that users table can be deduped by partition key
 	if !shouldMerge && tableName != warehouseutils.UsersTable {
 		err := rs.copyIntoLoadTable(ctx, rs.DB, tableName, tableName, strKeys)
