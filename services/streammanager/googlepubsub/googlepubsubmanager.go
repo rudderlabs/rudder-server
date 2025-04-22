@@ -95,6 +95,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = 1000
 		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = -1
 		topic.PublishSettings.NumGoroutines = 512
+		topic.EnableMessageOrdering = true
 		topicMap[s["to"]] = topic
 	}
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
