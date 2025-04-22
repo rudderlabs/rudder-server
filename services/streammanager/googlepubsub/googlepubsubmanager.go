@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/tidwall/gjson"
@@ -84,7 +85,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = 0
+		topic.PublishSettings.DelayThreshold = 50 * time.Millisecond
+		topic.PublishSettings.CountThreshold = 512
 		topicMap[s["to"]] = topic
 	}
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
