@@ -21,11 +21,11 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -45,8 +45,9 @@ type worker struct {
 	inputReservations int                 // number of slots reserved in the input channel
 	barrier           *eventorder.Barrier // barrier to ensure ordering of events
 
-	routerJobs      []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs []types.DestinationJobT // slice to hold destination jobs
+	routerJobs               []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs          []types.DestinationJobT // slice to hold destination jobs
+	customDestinationManager customDestinationManager.DestinationManager
 
 	deliveryTimeStat          stats.Measurement
 	routerDeliveryLatencyStat stats.Measurement
@@ -505,17 +506,14 @@ func (w *worker) processDestinationJobs() {
 					w.latestAssignedTime = destinationJob.JobMetadataArray[0].WorkerAssignedTime
 					w.processingStartTime = time.Now()
 				}
-				// TODO: remove trackStuckDelivery once we verify it is not needed,
-				//			router_delivery_exceeded_timeout -> goes to zero
-				ch := w.trackStuckDelivery()
 
-				if w.rt.customDestinationManager != nil {
+				if w.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if destinationID != destinationJobMetadata.DestinationID {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
-					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
+					respStatusCode, respBody := w.customDestinationManager.SendData(destinationJob.Message, destinationID)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					errorAt = routerutils.ERROR_AT_CUST
 				} else {
@@ -612,7 +610,6 @@ func (w *worker) processDestinationJobs() {
 						}).Observe(float64(len(destinationJob.Message)))
 					}
 				}
-				ch <- struct{}{}
 				timeTaken := time.Since(startedAt)
 
 				w.deliveryTimeStat.SendTiming(timeTaken)
@@ -1224,30 +1221,6 @@ func (w *worker) releaseSlot() {
 func (w *worker) accept(wj workerJob) {
 	w.releaseSlot()
 	w.input <- wj
-}
-
-func (w *worker) trackStuckDelivery() chan struct{} {
-	var d time.Duration
-	if w.rt.reloadableConfig.transformerProxy.Load() {
-		d = (w.rt.transformerTimeout + w.rt.netClientTimeout) * 2
-	} else {
-		d = w.rt.netClientTimeout * 2
-	}
-
-	ch := make(chan struct{}, 1)
-	rruntime.Go(func() {
-		select {
-		case <-ch:
-			// do nothing
-		case <-time.After(d):
-			w.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", w.rt.destType)
-			stat := stats.Default.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, stats.Tags{
-				"destType": w.rt.destType,
-			})
-			stat.Increment()
-		}
-	})
-	return ch
 }
 
 func (w *worker) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {

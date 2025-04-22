@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -26,12 +27,15 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	pw.workers = make([]*worker, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &worker{
-			logger:                    pw.logger.Child("w-" + strconv.Itoa(i)),
-			partition:                 partition,
-			id:                        i,
-			input:                     make(chan workerJob, rt.workerInputBufferSize),
-			barrier:                   rt.barrier,
-			rt:                        rt,
+			logger:    pw.logger.Child("w-" + strconv.Itoa(i)),
+			partition: partition,
+			id:        i,
+			input:     make(chan workerJob, rt.workerInputBufferSize),
+			barrier:   rt.barrier,
+			rt:        rt,
+			customDestinationManager: customDestinationManager.New(rt.destType, customDestinationManager.Opts{
+				Timeout: rt.netClientTimeout,
+			}),
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			batchTimeStat:             stats.Default.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
@@ -43,6 +47,15 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		worker.routerResponseStats = make(map[string]stats.Measurement)
 
 		pw.workers[i] = worker
+
+		if worker.customDestinationManager != nil {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-worker.customDestinationManager.BackendConfigInitialized():
+				// no-op, just wait
+			}
+		}
 
 		pw.g.Go(crash.Wrapper(func() error {
 			worker.workLoop()

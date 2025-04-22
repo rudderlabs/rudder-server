@@ -20,7 +20,6 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
@@ -90,10 +89,6 @@ func (rt *Handle) Setup(
 		netHandle.Setup(destType, rt.netClientTimeout)
 		rt.netHandle = netHandle
 	}
-
-	rt.customDestinationManager = customDestinationManager.New(destType, customDestinationManager.Opts{
-		Timeout: rt.netClientTimeout,
-	})
 	rt.telemetry = &Diagnostic{}
 	rt.telemetry.failuresMetric = make(map[string]map[string]int)
 	rt.telemetry.diagnosisTicker = time.NewTicker(rt.diagnosisTickerTime)
@@ -351,15 +346,6 @@ func (rt *Handle) Start() {
 			// proceed
 		}
 		rt.logger.Info("Router: Transformer features received")
-
-		if rt.customDestinationManager != nil {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-rt.customDestinationManager.BackendConfigInitialized():
-				// no-op, just wait
-			}
-		}
 
 		// start the ping loop
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newPartitionWorker(ctx, rt, partition) }, rt.logger)

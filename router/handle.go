@@ -25,7 +25,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
@@ -88,7 +87,6 @@ type Handle struct {
 	destinationResponseHandler     ResponseHandler
 	telemetry                      *Diagnostic
 	netHandle                      NetHandle
-	customDestinationManager       customDestinationManager.DestinationManager
 	transformer                    transformer.Transformer
 	isOAuthDestination             bool
 	oauth                          oauth.Authorizer
