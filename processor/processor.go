@@ -2938,14 +2938,15 @@ func (proc *Handle) userTransformAndFilter(
 					}
 
 					// Upload clientEvents using jsonrs.Marshal
-					clientEventsObjName := uuid.NewString()
+					objNameSuffix := uuid.New().String()
+					clientEventsObjName := objNameSuffix + "-events"
 					clientEventsJSON, err := jsonrs.Marshal(eventList)
 					if err != nil {
 						log.Errorn("UserTransform sanity check failed (cannot encode clientEvents)", obskit.Error(err))
 						return
 					}
 
-					diffObjName := uuid.NewString()
+					diffObjName := objNameSuffix + "-diff"
 					diffFile, err := proc.utSamplingFileManager.UploadReader(ctx, diffObjName, strings.NewReader(diff))
 					if err != nil {
 						log.Errorn("Error uploading UserTransform sanity check diff file", obskit.Error(err))

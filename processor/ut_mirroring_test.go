@@ -297,10 +297,10 @@ func TestUTMirroring(t *testing.T) {
 		// Find which file is the diff and which is the clientEvents
 		var diffFile, clientEventsFile minio.File
 		for _, file := range files {
-			if strings.Contains(file.Content, "\"Message\"") || strings.Contains(file.Content, "\"message\"") {
-				clientEventsFile = file
-			} else {
+			if strings.HasSuffix(file.Key, "-diff") {
 				diffFile = file
+			} else {
+				clientEventsFile = file
 			}
 		}
 
@@ -312,6 +312,11 @@ func TestUTMirroring(t *testing.T) {
 		var clientEvents []types.TransformerEvent
 		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
 		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
+
+		// Verify clientEvents file content matches the expected content
+		expectedClientEvents, err := os.ReadFile("./testdata/goldenUtMirrorClientEvents.json")
+		require.NoError(t, err)
+		require.JSONEq(t, string(expectedClientEvents), clientEventsFile.Content)
 	})
 
 	t.Run("mirror returns the same events", func(t *testing.T) {
@@ -439,10 +444,10 @@ func TestUTMirroring(t *testing.T) {
 		// Find which file is the diff and which is the clientEvents
 		var diffFile, clientEventsFile minio.File
 		for _, file := range files {
-			if strings.Contains(file.Content, "\"Message\"") || strings.Contains(file.Content, "\"message\"") {
-				clientEventsFile = file
-			} else {
+			if strings.HasSuffix(file.Key, "-diff") {
 				diffFile = file
+			} else {
+				clientEventsFile = file
 			}
 		}
 
@@ -457,6 +462,11 @@ func TestUTMirroring(t *testing.T) {
 		var clientEvents []types.TransformerEvent
 		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
 		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
+
+		// Verify clientEvents file content matches the expected content
+		expectedClientEvents, err := os.ReadFile("./testdata/goldenUtMirrorClientEvents.json")
+		require.NoError(t, err)
+		require.JSONEq(t, string(expectedClientEvents), clientEventsFile.Content)
 	})
 
 	t.Run("fire and forget", func(t *testing.T) {
