@@ -201,3 +201,24 @@ func IsJSONPathSupportedAsPartOfConfig(destType string) bool {
 	_, ok := destinationSupportJSONPathAsPartOfConfig[destType]
 	return ok
 }
+
+func ExtractMessageID(event *types.TransformerEvent, uuidGenerator func() string) any {
+	messageID, exists := event.Message["messageId"]
+	if !exists || IsBlank(messageID) {
+		return "auto-" + uuidGenerator()
+	}
+	return messageID
+}
+
+func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) string {
+	receivedAt, exists := event.Message["receivedAt"]
+	if !exists || IsBlank(receivedAt) {
+		return now().Format(misc.RFC3339Milli)
+	}
+
+	strReceivedAt, isString := receivedAt.(string)
+	if !isString || !ValidTimestamp(strReceivedAt) {
+		return now().Format(misc.RFC3339Milli)
+	}
+	return strReceivedAt
+}

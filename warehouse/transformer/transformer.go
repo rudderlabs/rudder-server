@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -137,7 +137,6 @@ func (t *Transformer) processWarehouseMessage(cache *cache, event *types.Transfo
 	if err := t.checkValidContext(event); err != nil {
 		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
-	t.addMandatoryFields(event)
 	return t.handleEvent(event, cache)
 }
 
@@ -171,37 +170,6 @@ func (t *Transformer) eventContext(tec *transformEventContext) any {
 	return clonedContext
 }
 
-func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
-	t.ensureMessageID(event)
-	t.ensureReceivedAt(event)
-}
-
-func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
-	messageID, exists := event.Message["messageId"]
-	if !exists || utils.IsBlank(messageID) {
-		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
-	}
-}
-
-func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
-	receivedAt, exists := event.Message["receivedAt"]
-	if !exists || utils.IsBlank(receivedAt) {
-		t.setDefaultReceivedAt(event)
-		return
-	}
-
-	strReceivedAt, isString := receivedAt.(string)
-	if !isString || !utils.ValidTimestamp(strReceivedAt) {
-		t.setDefaultReceivedAt(event)
-	}
-}
-
-func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
-	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
-		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
-	}
-}
-
 func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
 	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
 	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Destination.Config)
@@ -209,8 +177,13 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 
 	eventType := strings.ToLower(event.Metadata.EventType)
 
+	warehouseEvent := &wtypes.WarehouseTransformerEvent{}
+	warehouseEvent.TransformerEvent = event
+	warehouseEvent.MessageID = utils.ExtractMessageID(event, t.uuidGenerator)
+	warehouseEvent.ReceivedAt = utils.ExtractReceivedAt(event, t.now)
+
 	tec := &transformEventContext{
-		event:         event,
+		event:         warehouseEvent,
 		intrOpts:      &intrOpts,
 		destOpts:      &destOpts,
 		jsonPathsInfo: &jsonPathsInfo,
