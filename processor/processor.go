@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -2931,24 +2932,41 @@ func (proc *Handle) userTransformAndFilter(
 						)
 					}
 
-					if proc.utSamplingFileManager == nil { // Cannot upload, log the diff
-						log.Errorn("UserTransform sanity check failed", logger.NewStringField("diff", diff))
+					if proc.utSamplingFileManager == nil { // Cannot upload, we should just report the issue with no diff
+						log.Errorn("UserTransform sanity check failed")
 						return
 					}
 
-					objName := uuid.NewString()
-					file, err := proc.utSamplingFileManager.UploadReader(ctx, objName, strings.NewReader(diff))
+					// Upload clientEvents using jsonrs.Marshal
+					clientEventsObjName := uuid.NewString()
+					clientEventsJSON, err := jsonrs.Marshal(eventList)
 					if err != nil {
-						log.Errorn("Error uploading UserTransform sanity check diff file",
+						log.Errorn("UserTransform sanity check failed (cannot encode clientEvents)", obskit.Error(err))
+						return
+					}
+
+					diffObjName := uuid.NewString()
+					diffFile, err := proc.utSamplingFileManager.UploadReader(ctx, diffObjName, strings.NewReader(diff))
+					if err != nil {
+						log.Errorn("Error uploading UserTransform sanity check diff file", obskit.Error(err))
+						return
+					}
+
+					clientEventsFile, err := proc.utSamplingFileManager.UploadReader(ctx, clientEventsObjName, bytes.NewReader(clientEventsJSON))
+					if err != nil {
+						log.Errorn("Error uploading UserTransform clientEvents file",
 							obskit.Error(err),
-							logger.NewStringField("diff", diff),
+							logger.NewStringField("diffLocation", diffFile.Location),
+							logger.NewStringField("diffObjectName", diffFile.ObjectName),
 						)
 						return
 					}
 
 					log.Errorn("UserTransform sanity check failed",
-						logger.NewStringField("location", file.Location),
-						logger.NewStringField("objectName", file.ObjectName),
+						logger.NewStringField("diffLocation", diffFile.Location),
+						logger.NewStringField("diffObjectName", diffFile.ObjectName),
+						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),
+						logger.NewStringField("clientEventsObjectName", clientEventsFile.ObjectName),
 					)
 				}()
 			}

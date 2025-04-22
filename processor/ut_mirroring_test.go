@@ -2,9 +2,11 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -289,9 +291,27 @@ func TestUTMirroring(t *testing.T) {
 		var files []minio.File
 		require.Eventually(t, func() bool {
 			files, err = minioContainer.Contents(context.Background(), "")
-			return err == nil && len(files) == 1
-		}, 10*time.Second, 50*time.Millisecond, "Expected one file in the bucket")
-		require.Equal(t, "Expected Events length 3, got 0", files[0].Content)
+			return err == nil && len(files) == 2
+		}, 10*time.Second, 50*time.Millisecond, "Expected two files in the bucket")
+
+		// Find which file is the diff and which is the clientEvents
+		var diffFile, clientEventsFile minio.File
+		for _, file := range files {
+			if strings.Contains(file.Content, "\"Message\"") || strings.Contains(file.Content, "\"message\"") {
+				clientEventsFile = file
+			} else {
+				diffFile = file
+			}
+		}
+
+		require.NotNil(t, diffFile, "Diff file not found")
+		require.NotNil(t, clientEventsFile, "ClientEvents file not found")
+		require.Equal(t, "Expected Events length 3, got 0", diffFile.Content)
+
+		// Verify clientEvents file contains valid JSON that can be unmarshalled into a slice of types.TransformerEvent
+		var clientEvents []types.TransformerEvent
+		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
+		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
 	})
 
 	t.Run("mirror returns the same events", func(t *testing.T) {
@@ -413,12 +433,30 @@ func TestUTMirroring(t *testing.T) {
 		var files []minio.File
 		require.Eventually(t, func() bool {
 			files, err = minioContainer.Contents(context.Background(), "")
-			return err == nil && len(files) == 1
-		}, 10*time.Second, 50*time.Millisecond, "Expected one file in the bucket")
+			return err == nil && len(files) == 2
+		}, 10*time.Second, 50*time.Millisecond, "Expected two files in the bucket")
+
+		// Find which file is the diff and which is the clientEvents
+		var diffFile, clientEventsFile minio.File
+		for _, file := range files {
+			if strings.Contains(file.Content, "\"Message\"") || strings.Contains(file.Content, "\"message\"") {
+				clientEventsFile = file
+			} else {
+				diffFile = file
+			}
+		}
+
+		require.NotNil(t, diffFile, "Diff file not found")
+		require.NotNil(t, clientEventsFile, "ClientEvents file not found")
 
 		expectedDiff, err := os.ReadFile("./testdata/goldenUtMirrorDiff.txt")
 		require.NoError(t, err)
-		require.Equal(t, string(expectedDiff), files[0].Content)
+		require.Equal(t, string(expectedDiff), diffFile.Content)
+
+		// Verify clientEvents file contains valid JSON that can be unmarshalled into a slice of types.TransformerEvent
+		var clientEvents []types.TransformerEvent
+		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
+		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
 	})
 
 	t.Run("fire and forget", func(t *testing.T) {
