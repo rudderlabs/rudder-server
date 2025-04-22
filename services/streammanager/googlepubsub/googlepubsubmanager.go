@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -85,7 +86,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = 25 * time.Millisecond
+		topic.PublishSettings.DelayThreshold = 0 * time.Millisecond //	with random(UUID) orderingID
 		topic.PublishSettings.CountThreshold = 512
 		topic.PublishSettings.ByteThreshold = 1024 * 1024 * 10
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
@@ -93,6 +94,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		}
 		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = 1000
 		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = -1
+		topic.PublishSettings.NumGoroutines = 512
 		topicMap[s["to"]] = topic
 	}
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
@@ -163,15 +165,17 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 		result = topic.Publish(
 			ctx,
 			&pubsub.Message{
-				Data:       value,
-				Attributes: attributesMap,
+				Data:        value,
+				Attributes:  attributesMap,
+				OrderingKey: uuid.New().String(),
 			},
 		)
 	} else {
 		result = topic.Publish(
 			ctx,
 			&pubsub.Message{
-				Data: value,
+				Data:        value,
+				OrderingKey: uuid.New().String(),
 			},
 		)
 	}
