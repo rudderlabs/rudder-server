@@ -438,6 +438,24 @@ func (rs *Redshift) dropStagingTables(ctx context.Context, stagingTableNames []s
 	}
 }
 
+func (rs *Redshift) createStagingTable(ctx context.Context, sourceTableName string) (string, error) {
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		sourceTableName,
+		tableNameLimit,
+	)
+	rs.logger.Debugw("creating staging table")
+	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		sourceTableName,
+	)
+	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+		return "", err
+	}
+	return stagingTableName, nil
+}
+
 func (rs *Redshift) loadTable(
 	ctx context.Context,
 	tableName string,
@@ -471,19 +489,8 @@ func (rs *Redshift) loadTable(
 		return &types.LoadTableStats{}, "", nil
 	}
 
-	stagingTableName := warehouseutils.StagingTableName(
-		provider,
-		tableName,
-		tableNameLimit,
-	)
-
-	log.Debugw("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
-		rs.Namespace,
-		stagingTableName,
-		tableName,
-	)
-	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+	stagingTableName, err := rs.createStagingTable(ctx, tableName)
+	if err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -782,14 +789,8 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	}
 
 	if !rs.ShouldMerge(warehouseutils.IdentifiesTable) {
-		identifyStagingTable = warehouseutils.StagingTableName(provider, warehouseutils.IdentifiesTable, tableNameLimit)
-		rs.logger.Debugw("creating staging table")
-		createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
-			rs.Namespace,
-			identifyStagingTable,
-			warehouseutils.IdentifiesTable,
-		)
-		if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+		identifyStagingTable, err = rs.createStagingTable(ctx, warehouseutils.IdentifiesTable)
+		if err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: fmt.Errorf("creating staging table: %w", err),
 			}
