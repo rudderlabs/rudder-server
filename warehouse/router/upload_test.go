@@ -24,8 +24,19 @@ import (
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+type mockSchemaRepo struct {}
+
+func (m *mockSchemaRepo) GetForNamespace(ctx context.Context, sourceID, destinationID, namespace string) (model.WHSchema, error) {
+	return model.WHSchema{}, nil
+}
+
+func (m *mockSchemaRepo) Insert(ctx context.Context, schema *model.WHSchema) (int64, error) {
+	return 0, nil
+}
 
 func TestExtractUploadErrorsByState(t *testing.T) {
 	input := []struct {
@@ -153,24 +164,27 @@ func TestColumnCountStat(t *testing.T) {
 			whManager, err := manager.New(warehouseutils.POSTGRES, conf, logger.NOP, statsStore)
 			require.NoError(t, err)
 			ctx := context.Background()
+			warehouse := model.Warehouse{
+				Type: tc.destinationType,
+				Destination: backendconfig.DestinationT{
+					ID:   destinationID,
+					Name: destinationName,
+				},
+				Source: backendconfig.SourceT{
+					ID:   sourceID,
+					Name: sourceName,
+				},
+			}
 			j := uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{
 				Upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
 				},
-				Warehouse: model.Warehouse{
-					Type: tc.destinationType,
-					Destination: backendconfig.DestinationT{
-						ID:   destinationID,
-						Name: destinationName,
-					},
-					Source: backendconfig.SourceT{
-						ID:   sourceID,
-						Name: sourceName,
-					},
-				},
+				Warehouse: warehouse,
 			}, whManager)
+			j.schemaHandle, err = schema.New(ctx, warehouse, conf, logger.NOP, statsStore, nil, &mockSchemaRepo{}, nil)
+			require.NoError(t, err)
 			err = j.schemaHandle.UpdateTableSchema(ctx, tableName, model.TableSchema{
 				"test-column-1": "string",
 				"test-column-2": "string",

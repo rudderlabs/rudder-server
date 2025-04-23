@@ -167,19 +167,10 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db),
 		whSchemaRepo:         repo.NewWHSchemas(f.db),
-		schemaHandle: schema.New(
-			f.db,
-			dto.Warehouse,
-			f.conf,
-			f.logger.Child("warehouse"),
-			f.statsFactory,
-			whManager,
-		),
-
-		upload:         dto.Upload,
-		warehouse:      dto.Warehouse,
-		stagingFiles:   dto.StagingFiles,
-		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
+		upload:               dto.Upload,
+		warehouse:            dto.Warehouse,
+		stagingFiles:         dto.StagingFiles,
+		stagingFileIDs:       repo.StagingFileIDs(dto.StagingFiles),
 
 		pendingTableUploadsRepo: repo.NewUploads(f.db),
 		pendingTableUploads:     []model.PendingTableUpload{},
@@ -301,6 +292,21 @@ func (job *UploadJob) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup(job.ctx)
+
+	job.schemaHandle, err = schema.New(
+		job.ctx,
+		job.warehouse,
+		job.conf,
+		job.logger.Child("warehouse"),
+		job.statsFactory,
+		whManager,
+		repo.NewWHSchemas(job.db),
+		repo.NewStagingFiles(job.db),
+	)
+	if err != nil {
+		_, _ = job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
 
 	var (
 		newStatus       string
