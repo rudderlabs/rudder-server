@@ -131,7 +131,7 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 			},
 		}
 		pw.brt.updateJobStatus(&batchedJobs, false, err, false)
-		pw.logger.Error("Error while getting source and destination", obskit.Error(err))
+		pw.logger.Errorn("Error while getting source and destination", obskit.Error(err))
 		return
 	}
 

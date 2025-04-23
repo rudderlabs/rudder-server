@@ -131,7 +131,7 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-	c.jobQueryBatchSize = 100000
+	c.jobQueryBatchSize = 20000
 	c.mockConfigPrefix = sampleConfigPrefix
 	c.mockFileObjects = sampleFileObjects
 }
