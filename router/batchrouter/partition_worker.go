@@ -35,7 +35,7 @@ type JobEntry struct {
 }
 
 func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb circuitbreaker.CircuitBreaker) *PartitionWorker {
-	maxJobsToBuffer := brt.conf.GetInt("BatchRouter.partitionWorker.maxJobsToBuffer", 100000)
+	maxJobsToBuffer := brt.conf.GetIntVar(100000, 1, "BatchRouter."+brt.destType+".partitionWorker.maxJobsToBuffer", "BatchRouter.partitionWorker.maxJobsToBuffer")
 	pw := &PartitionWorker{
 		channel: make(chan *JobEntry, maxJobsToBuffer),
 		logger:  logger.With("partition", partition),
@@ -43,7 +43,7 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb 
 		cb:      cb,
 		limiter: kitsync.NewReloadableLimiter(
 			context.Background(), &sync.WaitGroup{}, "batchrouter_partition_worker",
-			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter.partitionWorker.concurrency"),
+			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter."+brt.destType+".partitionWorker.concurrency", "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
 		),
 	}

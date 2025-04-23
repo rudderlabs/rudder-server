@@ -303,7 +303,7 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
 			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -427,7 +427,7 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
 			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -644,7 +644,7 @@ func TestBatchRouter(t *testing.T) {
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
 	batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
-	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Second)
+	batchrouter.pingFrequency = config.SingleValueLoader(time.Second)
 
 	err = routerDB.Store(context.Background(), jobs)
 	require.NoError(t, err)

@@ -93,7 +93,7 @@ type Handle struct {
 	jobdDBMaxRetries             config.ValueLoader[int]
 	minIdleSleep                 config.ValueLoader[time.Duration]
 	uploadFreq                   config.ValueLoader[time.Duration]
-	mainLoopFreq                 config.ValueLoader[time.Duration]
+	pingFrequency                config.ValueLoader[time.Duration]
 	disableEgress                bool
 	warehouseServiceMaxRetryTime config.ValueLoader[time.Duration]
 	transformerURL               string
@@ -153,16 +153,16 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
-	mainLoopSleep := time.Duration(0)
+	pingFrequency := time.Duration(0)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(mainLoopSleep):
+		case <-time.After(pingFrequency):
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
-			mainLoopSleep = brt.mainLoopFreq.Load()
+			pingFrequency = brt.pingFrequency.Load()
 		}
 	}
 }
