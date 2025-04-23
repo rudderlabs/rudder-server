@@ -1876,6 +1876,14 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			}
 		}
 
+		proc.logger.Infon("Mihir Processing event",
+			logger.NewStringField("partition", partition),
+			logger.NewIntField("eventCount", int64(totalEvents)),
+			logger.NewBoolField("archivalEnabled", proc.config.archivalEnabled.Load()),
+			logger.NewBoolField("sourceIsTransient", sourceIsTransient),
+			logger.NewStringField("sourceId", sourceId),
+			logger.NewStringField("sourceJobRunId", commonMetadataFromSingularEvent.SourceJobRunID),
+		)
 		if proc.config.archivalEnabled.Load() &&
 			commonMetadataFromSingularEvent.SourceJobRunID == "" && // archival enabled&&
 			!sourceIsTransient {
@@ -1894,6 +1902,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				)
 			}
 		}
+		proc.logger.Infon("Mihir archival events", logger.NewIntField("eventCount", int64(len(archivalJobs))))
 		// REPORTING - GATEWAY metrics - START
 		// dummy event for metrics purposes only
 		transformerEvent := &types.TransformerResponse{}
@@ -1997,6 +2006,13 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	spanTags := stats.Tags{"partition": partition}
 	_, mainSpan := proc.tracer.Trace(preTrans.subJobs.ctx, "pretransformStage", tracing.WithTraceTags(spanTags))
 	defer mainSpan.End()
+
+	proc.logger.Infon("Mihir Pretransform stage started",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("subJobs", int64(len(preTrans.subJobs.subJobs))),
+		logger.NewIntField("totalEvents", int64(preTrans.totalEvents)),
+		logger.NewIntField("eventSchemaJobs", int64(len(preTrans.eventSchemaJobs))),
+		logger.NewIntField("archivalJobs", int64(len(preTrans.archivalJobs))))
 
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
