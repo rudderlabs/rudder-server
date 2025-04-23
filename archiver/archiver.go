@@ -93,7 +93,7 @@ func New(
 }
 
 func (a *archiver) Start() error {
-	a.log.Info("Starting archiver")
+	a.log.Info("Mihir Starting archiver")
 	ctx, cancel := context.WithCancel(context.Background())
 	a.stopArchivalTrigger = cancel
 	g, ctx := errgroup.WithContext(ctx)
@@ -160,6 +160,7 @@ func (a *archiver) Start() error {
 		defer workerPool.Shutdown()
 		// pinger loop
 		for {
+			a.log.Infon("Mihir Pinging workers", logger.NewIntField("workers", int64(workerPool.Size())), logger.NewBoolField("enabled", a.config.enabled()))
 			if a.config.enabled() {
 				start := time.Now()
 				sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")

@@ -54,6 +54,7 @@ type worker struct {
 
 func (w *worker) Work() bool {
 start:
+	w.log.Infon("Mihir starting archiving")
 	jobs, limitReached, err := w.getJobs()
 	if err != nil {
 		if w.lifecycle.ctx.Err() != nil {
@@ -62,6 +63,7 @@ start:
 		w.log.Errorw("failed to fetch jobs for archiving", "error", err)
 		panic(err)
 	}
+	w.log.Infon("Mihir fetching jobs for archiving", logger.NewIntField("count", int64(len(jobs))), logger.NewBoolField("limitReached", limitReached))
 
 	if len(jobs) == 0 {
 		return false
