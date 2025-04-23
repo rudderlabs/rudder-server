@@ -81,7 +81,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 	config.Set("BatchRouter.isolationMode", "none")
 	config.Set("BatchRouter.asyncUploadWorkerTimeout", "10ms")
 	config.Set("BatchRouter.pollStatusLoopSleep", "10ms")
-	config.Set("BatchRouter.mainLoopFreq", "10ms")
+	config.Set("BatchRouter.pingFrequency", "10ms")
 	config.Set("BatchRouter.maxEventsInABatch", 1)
 	config.Set("BatchRouter.maxPayloadSizeInBytes", 1*bytesize.KB)
 	config.Set("Router.jobRetention", "175200h")

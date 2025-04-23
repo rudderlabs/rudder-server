@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -129,9 +130,8 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 				Source:      source,
 			},
 		}
-		err := fmt.Errorf("BRT: Batch destination not found in config for destID: %s", destID)
 		pw.brt.updateJobStatus(&batchedJobs, false, err, false)
-		pw.logger.Errorf("Destination not found for ID: %s", destID)
+		pw.logger.Error("Error while getting source and destination", obskit.Error(err))
 		return
 	}
 
