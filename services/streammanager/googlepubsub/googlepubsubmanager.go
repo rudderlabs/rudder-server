@@ -80,7 +80,6 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	for _, s := range eventToTopicMapArr {
 		sMap := s.(map[string]interface{})
 		topic := client.Topic(sMap["to"].(string))
-		topic.PublishSettings.DelayThreshold = 0
 		topicMap[sMap["to"].(string)] = topic
 	}
 	pkgLogger.Infof("topicMap: %+v", topicMap)
