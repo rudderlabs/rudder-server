@@ -97,6 +97,8 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			SourceID:      sourceID,
 			DestinationID: destinationID,
 		}
+
+		// Check if source exists for the destination
 		sourceFound := false
 		for _, s := range destWithSources.Sources {
 			if s.ID == sourceID {
@@ -104,42 +106,21 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 				break
 			}
 		}
-		if !sourceFound {
-			status := jobsdb.JobStatusT{
-				JobID:         job.JobID,
-				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
-				JobState:      jobsdb.Aborted.State,
-				ExecTime:      time.Now(),
-				RetryTime:     time.Now(),
-				ErrorCode:     routerutils.DRAIN_ERROR_CODE,
-				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", "source_not_found"),
-				Parameters:    []byte(`{}`),
-				JobParameters: job.Parameters,
-				WorkspaceId:   job.WorkspaceId,
-			}
-			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
-			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", "source_not_found")
-			drainList = append(drainList, &status)
-			drainJobList = append(drainJobList, job)
-			if _, ok := drainStatsbyDest[destinationID]; !ok {
-				drainStatsbyDest[destinationID] = &routerutils.DrainStats{
-					Count:     0,
-					Reasons:   []string{},
-					Workspace: job.WorkspaceId,
-				}
-			}
-			drainStatsbyDest[destinationID].Count = drainStatsbyDest[destinationID].Count + 1
-			if !slices.Contains(drainStatsbyDest[destinationID].Reasons, "source_not_found") {
-				drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, "source_not_found")
-			}
-			continue
-		}
 
-		if drain, reason := brt.drainer.Drain(
+		// Check standard drain conditions
+		drain, reason := brt.drainer.Drain(
 			job.CreatedAt,
 			destWithSources.Destination.ID,
 			gjson.GetBytes(job.Parameters, "source_job_run_id").String(),
-		); drain {
+		)
+
+		// Consolidate drain checks: either source not found OR drainer says so
+		if !sourceFound || drain {
+			finalReason := reason
+			if !sourceFound {
+				finalReason = "source_not_found"
+			}
+
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -147,15 +128,16 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     routerutils.DRAIN_ERROR_CODE,
-				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", reason),
+				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", finalReason),
 				Parameters:    []byte(`{}`),
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 			}
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
-			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", reason)
+			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", finalReason)
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
+
 			if _, ok := drainStatsbyDest[destinationID]; !ok {
 				drainStatsbyDest[destinationID] = &routerutils.DrainStats{
 					Count:     0,
@@ -163,11 +145,12 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 					Workspace: job.WorkspaceId,
 				}
 			}
-			drainStatsbyDest[destinationID].Count = drainStatsbyDest[destinationID].Count + 1
-			if !slices.Contains(drainStatsbyDest[destinationID].Reasons, reason) {
-				drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, reason)
+			drainStatsbyDest[destinationID].Count++
+			if !slices.Contains(drainStatsbyDest[destinationID].Reasons, finalReason) {
+				drainStatsbyDest[destinationID].Reasons = append(drainStatsbyDest[destinationID].Reasons, finalReason)
 			}
 		} else {
+			// Job is not drained, prepare it for buffering
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
