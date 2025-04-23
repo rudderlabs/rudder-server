@@ -101,7 +101,7 @@ func (t *Transformer) tracksResponse(tec *transformEventContext, commonData map[
 		"metadata": map[string]any{
 			"table":      table,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -156,7 +156,7 @@ func (t *Transformer) trackEventsResponse(tec *transformEventContext, transforme
 		"metadata": map[string]any{
 			"table":      excludeTable,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -216,7 +216,7 @@ func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]an
 		"metadata": map[string]any{
 			"table":      excludeTableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -328,7 +328,7 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 		"metadata": map[string]any{
 			"table":      identifiesTable,
 			"columns":    identifiesColumns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -372,7 +372,7 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 		return nil, fmt.Errorf("users response: safe column name: %w", err)
 	}
 
-	data[receivedAtColName] = convertValIfDateTime(tec.event.Metadata.ReceivedAt, model.DateTimeDataType)
+	data[receivedAtColName] = convertValIfDateTime(tec.event.ReceivedAt, model.DateTimeDataType)
 	metadata[receivedAtColName] = model.DateTimeDataType
 
 	tableName, err := safeTableNameCached(tec, "users")
@@ -389,7 +389,7 @@ func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[s
 		"metadata": map[string]any{
 			"table":      tableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -449,7 +449,7 @@ func (t *Transformer) pageEvents(tec *transformEventContext) ([]map[string]any, 
 		"metadata": map[string]any{
 			"table":      tableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -503,7 +503,7 @@ func (t *Transformer) screenEvents(tec *transformEventContext) ([]map[string]any
 		"metadata": map[string]any{
 			"table":      tableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -557,7 +557,7 @@ func (t *Transformer) groupEvents(tec *transformEventContext) ([]map[string]any,
 		"metadata": map[string]any{
 			"table":      tableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}
@@ -611,7 +611,7 @@ func (t *Transformer) aliasEvents(tec *transformEventContext) ([]map[string]any,
 		"metadata": map[string]any{
 			"table":      tableName,
 			"columns":    columns,
-			"receivedAt": tec.event.Metadata.ReceivedAt,
+			"receivedAt": tec.event.ReceivedAt,
 		},
 		"userId": "",
 	}

@@ -63,6 +63,13 @@ type UserTransformerEvent struct {
 	Credentials []Credential             `json:"credentials,omitempty"`
 }
 
+// TrackingPlanValidationEvent is the event sent to the trackingplan transformer,
+// whose fields are a subset of the [TransformerEvent]
+type TrackingPlanValidationEvent struct {
+	Message  SingularEventT `json:"message"`
+	Metadata Metadata       `json:"metadata"`
+}
+
 // CompactedTransformerEvent is similar to a [TransformerEvent] but without the connection and destination fields
 type CompactedTransformerEvent struct {
 	Message     SingularEventT           `json:"message"`
@@ -119,6 +126,15 @@ func (e *TransformerEvent) ToUserTransformerEvent() *UserTransformerEvent {
 		})
 	}
 	return ute
+}
+
+// ToTrackingPlanValidationEvent only keeps the message and metadata fields from the event
+// before sending it to the trackingplan validator thereby reducing the payload size
+func (e *TransformerEvent) ToTrackingPlanValidationEvent() *TrackingPlanValidationEvent {
+	return &TrackingPlanValidationEvent{
+		Message:  e.Message,
+		Metadata: e.Metadata,
+	}
 }
 
 type Credential struct {

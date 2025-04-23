@@ -191,7 +191,6 @@ func TestDestinationTransformer(t *testing.T) {
 					statsStore, err := memstats.New()
 					require.NoError(t, err)
 
-					conf.Set("Processor.maxConcurrency", 200)
 					conf.Set("Processor.Transformer.failOnUserTransformTimeout", true)
 					conf.Set("Processor.Transformer.failOnError", true)
 					conf.Set("Processor.Transformer.maxRetryBackoffInterval", 1*time.Second)
