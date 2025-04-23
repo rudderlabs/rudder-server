@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -310,7 +310,7 @@ func TestUTMirroring(t *testing.T) {
 
 		// Verify clientEvents file contains valid JSON that can be unmarshalled into a slice of types.TransformerEvent
 		var clientEvents []types.TransformerEvent
-		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
+		require.NoError(t, jsonrs.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
 		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
 
 		// Verify clientEvents file content matches the expected content
@@ -460,7 +460,7 @@ func TestUTMirroring(t *testing.T) {
 
 		// Verify clientEvents file contains valid JSON that can be unmarshalled into a slice of types.TransformerEvent
 		var clientEvents []types.TransformerEvent
-		require.NoError(t, json.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
+		require.NoError(t, jsonrs.Unmarshal([]byte(clientEventsFile.Content), &clientEvents), "Failed to unmarshal clientEvents")
 		require.NotEmpty(t, clientEvents, "ClientEvents should not be empty")
 
 		// Verify clientEvents file content matches the expected content
