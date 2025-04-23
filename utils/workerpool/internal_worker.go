@@ -86,7 +86,6 @@ func (w *internalWorker) setIdleSince(t time.Time) {
 
 // Ping triggers the worker to pick more jobs
 func (w *internalWorker) Ping() {
-	w.logger.Infof("Mihir worker %q pinged", w.partition)
 	w.lifecycle.stoppedMu.Lock()
 	defer w.lifecycle.stoppedMu.Unlock()
 	if w.lifecycle.stopped {
