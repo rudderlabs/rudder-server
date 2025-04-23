@@ -937,13 +937,11 @@ func TestIntegration(t *testing.T) {
 
 				loadTableStat, err := d.LoadTable(ctx, tableName)
 				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				require.Empty(t, loadTableStat)
 
 				loadTableStat, err = d.LoadTable(ctx, tableName)
 				require.NoError(t, err)
-				require.Equal(t, loadTableStat.RowsInserted, int64(14))
-				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+				require.Empty(t, loadTableStat)
 
 				records := whth.RetrieveRecordsFromWarehouse(
 					t,
@@ -1156,13 +1154,11 @@ func TestIntegration(t *testing.T) {
 
 			loadTableStat, err := rs.LoadTable(ctx, tableName)
 			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+			require.Empty(t, loadTableStat)
 
 			loadTableStat, err = rs.LoadTable(ctx, tableName)
 			require.NoError(t, err)
-			require.Equal(t, loadTableStat.RowsInserted, int64(14))
-			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+			require.Empty(t, loadTableStat)
 
 			records := whth.RetrieveRecordsFromWarehouse(
 				t,

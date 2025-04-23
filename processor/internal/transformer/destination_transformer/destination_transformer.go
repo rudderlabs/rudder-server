@@ -65,8 +65,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.log = log
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "DestinationTransformer"))
-	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.DestinationTransformer.maxRetry", "Processor.maxRetry")
@@ -84,8 +82,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.loggedEventsMu = sync.Mutex{}
 	handle.loggedFileName = generateLogFileName()
 
-	handle.config.forceCompactionEnabled = conf.GetBoolVar(false, "Processor.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
-	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+	handle.config.compactionEnabled = conf.GetReloadableBoolVar(true, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -99,22 +96,19 @@ type Client struct {
 		destTransformationURL   string
 		maxRetry                config.ValueLoader[int]
 		failOnError             config.ValueLoader[bool]
-		maxConcurrency          int
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
 		batchSize               config.ValueLoader[int]
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		forceCompactionEnabled bool // option to force usage of compaction for testing
-		compactionEnabled      config.ValueLoader[bool]
-		compactionSupported    bool
+		compactionEnabled   config.ValueLoader[bool]
+		compactionSupported bool
 	}
-	guardConcurrency chan struct{}
-	conf             *config.Config
-	log              logger.Logger
-	stat             stats.Stats
-	client           transformerclient.Client
+	conf   *config.Config
+	log    logger.Logger
+	stat   stats.Stats
+	client transformerclient.Client
 
 	stats struct {
 		comparisonTime   stats.Timer
@@ -175,13 +169,11 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 	lo.ForEach(
 		batches,
 		func(batch []types.TransformerEvent, i int) {
-			d.guardConcurrency <- struct{}{}
 			go func() {
 				transformResponse[i], err = d.sendBatch(ctx, destURL, labels, batch)
 				if err != nil {
 					foundError = true
 				}
-				<-d.guardConcurrency
 				wg.Done()
 			}()
 		},
@@ -407,7 +399,7 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (d *Client) compactRequestPayloads() bool {
-	return (d.config.compactionSupported && d.config.compactionEnabled.Load()) || d.config.forceCompactionEnabled
+	return (d.config.compactionSupported && d.config.compactionEnabled.Load())
 }
 
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {

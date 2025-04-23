@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -873,7 +874,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		ctx             = context.Background()
 		db              = setupDB(t)
 		repoUpload      = repo.NewUploads(db)
-		repoTableUpload = repo.NewTableUploads(db)
+		repoTableUpload = repo.NewTableUploads(db, config.New())
 		repoStaging     = repo.NewStagingFiles(db)
 	)
 
@@ -1733,7 +1734,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoTableUpload := repo.NewTableUploads(db, repo.WithNow(func() time.Time {
+		repoTableUpload := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 

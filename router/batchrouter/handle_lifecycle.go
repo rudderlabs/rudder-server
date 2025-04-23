@@ -132,8 +132,8 @@ func (brt *Handle) Setup(
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
-	brt.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "brt_read",
-		getBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
+	brt.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_read",
+		getReloadableBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -141,8 +141,8 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
+	brt.limiter.process = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_process",
+		getReloadableBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -150,8 +150,8 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
-		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
+	brt.limiter.upload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_upload",
+		getReloadableBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),

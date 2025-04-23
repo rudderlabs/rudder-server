@@ -1154,8 +1154,8 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		t.Run(tCase.payloadColumnType, func(t *testing.T) {
 			_ = startPostgres(t)
 			conf := config.New()
-			conf.Set("JobsDB.payloadColumnType", tCase.payloadColumnType)
 			jobDB := Handle{config: conf}
+			jobDB.conf.payloadColumnType = payloadColumnType(tCase.payloadColumnType)
 			err := jobDB.Setup(ReadWrite, true, tCase.payloadColumnType+"_"+strings.ToLower(rand.String(5)))
 			require.NoError(t, err, tCase.payloadColumnType)
 			eventPayload := []byte(`{"batch":[{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)
