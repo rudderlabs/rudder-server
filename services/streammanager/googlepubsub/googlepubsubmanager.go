@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	conf "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -46,6 +47,7 @@ func init() {
 
 type GooglePubSubProducer struct {
 	client *PubsubClient
+	conf   *conf.Config
 }
 
 // NewProducer creates a producer based on destination config
@@ -85,17 +87,17 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = 10 * time.Millisecond
-		topic.PublishSettings.CountThreshold = 512
-		topic.PublishSettings.ByteThreshold = 1024 * 1024 * 10
+		topic.PublishSettings.DelayThreshold = conf.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
+		topic.PublishSettings.CountThreshold = conf.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold")
+		topic.PublishSettings.ByteThreshold = conf.GetIntVar(10, 1024*1024, "StreamManager.GooglePubSub.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = 1000
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = -1
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = conf.GetIntVar(1000, 1, "StreamManager.GooglePubSub.MaxOutstandingMessages")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = conf.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
 		topicMap[s["to"]] = topic
 	}
-	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}}, nil
+	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: conf.New()}, nil
 }
 
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
