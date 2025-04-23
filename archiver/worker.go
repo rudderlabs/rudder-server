@@ -208,6 +208,7 @@ func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
 	params.PayloadSizeLimit = w.payloadLimitFunc(w.config.payloadLimit())
 	params.EventsLimit = w.config.eventsLimit()
 	params.JobsLimit = w.config.eventsLimit()
+	w.log.Infon("Mihir fetching jobs for archiving", logger.NewStringField("params", fmt.Sprintf("%+v", params)))
 	unProcessed, err := w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
 	if err != nil {
 		w.log.Errorw("failed to fetch unprocessed jobs for backup", "error", err)
