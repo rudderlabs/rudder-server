@@ -7,7 +7,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -25,7 +24,6 @@ type PartitionWorker struct {
 	logger  logger.Logger
 	brt     *Handle
 	channel chan *JobEntry
-	active  *config.Reloadable[int]
 	cb      circuitbreaker.CircuitBreaker
 	limiter kitsync.Limiter
 }
@@ -41,12 +39,11 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb 
 	pw := &PartitionWorker{
 		channel: make(chan *JobEntry, maxJobsToBuffer),
 		logger:  logger.With("partition", partition),
-		active:  brt.conf.GetReloadableIntVar(1, 1, "BatchRouter.partitionWorker.active"),
 		brt:     brt,
 		cb:      cb,
-		limiter: kitsync.NewLimiter(
+		limiter: kitsync.NewReloadableLimiter(
 			context.Background(), &sync.WaitGroup{}, "batchrouter_partition_worker",
-			brt.conf.GetInt("BatchRouter.partitionWorker.concurrency", 10),
+			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
 		),
 	}
@@ -62,8 +59,8 @@ func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
 }
 
 func (pw *PartitionWorker) Start() {
-	uploadFreq := pw.brt.uploadFreq.Load()
-	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq)
+	uploadFreq := pw.brt.uploadFreq
+	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq.Load())
 	processJobs := func(jobs []*JobEntry) {
 		pw.wg.Add(1)
 		done := pw.limiter.Begin("")
@@ -88,7 +85,7 @@ func (pw *PartitionWorker) Start() {
 	go func() {
 		defer pw.wg.Done()
 		for {
-			jobs, jobsLength, _, ok := lo.BufferWithTimeout(pw.channel, pw.brt.maxEventsInABatch, uploadFreq)
+			jobs, jobsLength, _, ok := lo.BufferWithTimeout(pw.channel, pw.brt.maxEventsInABatch, uploadFreq.Load())
 			if jobsLength > 0 {
 				processJobs(jobs)
 			}
@@ -103,22 +100,33 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 	if len(jobs) == 0 {
 		return
 	}
-	// Get destination and source details
-	pw.brt.configSubscriberMu.RLock()
-	destWithSources, ok := pw.brt.destinationsMap[destID]
-	pw.brt.configSubscriberMu.RUnlock()
 
-	if !ok {
-		// Handle destination not found
+	// getSource is a helper function to get the source from the config
+	getSourceAndDestination := func(destID string, sourceID string) (backendconfig.SourceT, backendconfig.DestinationT, error) {
+		pw.brt.configSubscriberMu.RLock()
+		destWithSources, ok := pw.brt.destinationsMap[destID]
+		pw.brt.configSubscriberMu.RUnlock()
+		if !ok {
+			return backendconfig.SourceT{}, backendconfig.DestinationT{}, fmt.Errorf("destination not found in config for id: %s", destID)
+		}
+		s, found := lo.Find(destWithSources.Sources, func(s backendconfig.SourceT) bool {
+			return s.ID == sourceID
+		})
+		if !found {
+			return backendconfig.SourceT{}, backendconfig.DestinationT{
+				ID: destID,
+			}, fmt.Errorf("source not found in config for id: %s", sourceID)
+		}
+		return s, destWithSources.Destination, nil
+	}
+
+	source, destination, err := getSourceAndDestination(destID, sourceID)
+	if err != nil {
 		batchedJobs := BatchedJobs{
 			Jobs: jobs,
 			Connection: &Connection{
-				Destination: backendconfig.DestinationT{
-					ID: destID,
-				},
-				Source: backendconfig.SourceT{
-					ID: sourceID,
-				},
+				Destination: destination,
+				Source:      source,
 			},
 		}
 		err := fmt.Errorf("BRT: Batch destination not found in config for destID: %s", destID)
@@ -127,39 +135,10 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		return
 	}
 
-	// Find the source
-	var source backendconfig.SourceT
-	sourceFound := false
-	for _, s := range destWithSources.Sources {
-		if s.ID == sourceID {
-			source = s
-			sourceFound = true
-			break
-		}
-	}
-
-	if !sourceFound {
-		// Handle source not found
-		batchedJobs := BatchedJobs{
-			Jobs: jobs,
-			Connection: &Connection{
-				Destination: backendconfig.DestinationT{
-					ID: destID,
-				},
-				Source: backendconfig.SourceT{
-					ID: sourceID,
-				},
-			},
-		}
-		err := fmt.Errorf("BRT: Batch destination source not found in config for sourceID: %s", sourceID)
-		pw.brt.updateJobStatus(&batchedJobs, false, err, false)
-		pw.logger.Errorf("Source not found for ID: %s", sourceID)
-		return
-	}
 	batchedJobs := BatchedJobs{
 		Jobs: jobs,
 		Connection: &Connection{
-			Destination: destWithSources.Destination,
+			Destination: destination,
 			Source:      source,
 		},
 	}

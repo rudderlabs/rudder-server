@@ -121,7 +121,6 @@ func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", "source_not_found")
 			drainList = append(drainList, &status)
 			drainJobList = append(drainJobList, job)
-			drainJobList = append(drainJobList, job)
 			if _, ok := drainStatsbyDest[destinationID]; !ok {
 				drainStatsbyDest[destinationID] = &routerutils.DrainStats{
 					Count:     0,
