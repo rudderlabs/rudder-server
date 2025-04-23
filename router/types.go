@@ -82,6 +82,5 @@ type reloadableConfig struct {
 	transformerProxy                  config.ValueLoader[bool]
 	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
-	oauthV2Enabled                    config.ValueLoader[bool]
 	oauthV2ExpirationTimeDiff         config.ValueLoader[time.Duration]
 }
