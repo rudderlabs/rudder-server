@@ -28,7 +28,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type mockSchemaRepo struct {}
+type mockSchemaRepo struct{}
 
 func (m *mockSchemaRepo) GetForNamespace(ctx context.Context, sourceID, destinationID, namespace string) (model.WHSchema, error) {
 	return model.WHSchema{}, nil
