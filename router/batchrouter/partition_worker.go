@@ -102,7 +102,7 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 	}
 
 	// getSource is a helper function to get the source from the config
-	getSourceAndDestination := func(destID string, sourceID string) (backendconfig.SourceT, backendconfig.DestinationT, error) {
+	getSourceAndDestination := func(destID, sourceID string) (backendconfig.SourceT, backendconfig.DestinationT, error) {
 		pw.brt.configSubscriberMu.RLock()
 		destWithSources, ok := pw.brt.destinationsMap[destID]
 		pw.brt.configSubscriberMu.RUnlock()
