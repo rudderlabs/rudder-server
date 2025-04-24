@@ -214,7 +214,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries")
 	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter."+brt.destType+".minIdleSleep", "BatchRouter.minIdleSleep")
 	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".uploadFreqInS", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
-	brt.pingFrequency = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".pingFrequency", "BatchRouter.pingFrequency")
+	brt.pingFrequency = config.GetReloadableDurationVar(1, time.Second, "BatchRouter."+brt.destType+".pingFrequency", "BatchRouter.pingFrequency")
 	brt.schemaGenerationWorkers = config.GetReloadableIntVar(2, 1, "BatchRouter."+brt.destType+".schemaGenerationWorkers", "BatchRouter.schemaGenerationWorkers")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
