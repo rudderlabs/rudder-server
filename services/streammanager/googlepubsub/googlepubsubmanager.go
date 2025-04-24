@@ -88,7 +88,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	for _, s := range config.EventToTopicMap {
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = conf.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
-		topic.PublishSettings.CountThreshold = conf.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold")
+		topic.PublishSettings.CountThreshold = conf.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers")
 		topic.PublishSettings.ByteThreshold = conf.GetIntVar(10, 1024*1024, "StreamManager.GooglePubSub.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
@@ -97,7 +97,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = conf.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
 		topicMap[s["to"]] = topic
 	}
-	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: conf.New()}, nil
+	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: conf.Default}, nil
 }
 
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
