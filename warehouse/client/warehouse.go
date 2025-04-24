@@ -30,6 +30,7 @@ type StagingFile struct {
 	LastEventAt           string
 	TotalEvents           int
 	TotalBytes            int
+	BytesPerTable         map[string]int64
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
@@ -50,6 +51,7 @@ type legacyPayload struct {
 	LastEventAt           string
 	TotalEvents           int
 	TotalBytes            int
+	BytesPerTable         map[string]int64
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
@@ -105,6 +107,7 @@ func (w *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error 
 		LastEventAt:           stagingFile.LastEventAt,
 		TotalEvents:           stagingFile.TotalEvents,
 		TotalBytes:            stagingFile.TotalBytes,
+		BytesPerTable:         stagingFile.BytesPerTable,
 		UseRudderStorage:      stagingFile.UseRudderStorage,
 		DestinationRevisionID: stagingFile.DestinationRevisionID,
 		SourceTaskRunID:       stagingFile.SourceTaskRunID,

@@ -15,7 +15,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	conf "github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -23,7 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-type Config struct {
+type PubSubConfig struct {
 	Credentials     string              `json:"credentials"`
 	ProjectId       string              `json:"projectId"`
 	EventToTopicMap []map[string]string `json:"eventToTopicMap"`
@@ -47,57 +48,57 @@ func init() {
 
 type GooglePubSubProducer struct {
 	client *PubsubClient
-	conf   *conf.Config
+	conf   *config.Config
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GooglePubSubProducer, error) {
-	var config Config
+	var pubsubConfig PubSubConfig
 	ctx := context.Background()
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GooglePubSub] Error while marshalling destination config :: %w", err)
 	}
-	err = jsonrs.Unmarshal(jsonConfig, &config)
+	err = jsonrs.Unmarshal(jsonConfig, &pubsubConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[GooglePubSub] error  :: error in GooglePubSub while unmarshelling destination config:: %w", err)
 	}
-	if config.ProjectId == "" {
+	if pubsubConfig.ProjectId == "" {
 		return nil, fmt.Errorf("invalid configuration provided, missing projectId")
 	}
 	var client *pubsub.Client
 	var options []option.ClientOption
-	if config.TestConfig.Endpoint != "" { // Normal configuration requires credentials
+	if pubsubConfig.TestConfig.Endpoint != "" { // Normal configuration requires credentials
 		opts := []option.ClientOption{
 			option.WithoutAuthentication(),
 			option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-			option.WithEndpoint(config.TestConfig.Endpoint),
+			option.WithEndpoint(pubsubConfig.TestConfig.Endpoint),
 		}
 		options = append(options, opts...)
-	} else if !googleutil.ShouldSkipCredentialsInit(config.Credentials) { // Test configuration requires a custom endpoint
-		credsBytes := []byte(config.Credentials)
+	} else if !googleutil.ShouldSkipCredentialsInit(pubsubConfig.Credentials) { // Test configuration requires a custom endpoint
+		credsBytes := []byte(pubsubConfig.Credentials)
 		if err = googleutil.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
 			return nil, err
 		}
 		options = append(options, option.WithCredentialsJSON(credsBytes))
 	}
-	if client, err = pubsub.NewClient(ctx, config.ProjectId, options...); err != nil {
+	if client, err = pubsub.NewClient(ctx, pubsubConfig.ProjectId, options...); err != nil {
 		return nil, err
 	}
-	topicMap := make(map[string]*pubsub.Topic, len(config.EventToTopicMap))
-	for _, s := range config.EventToTopicMap {
+	topicMap := make(map[string]*pubsub.Topic, len(pubsubConfig.EventToTopicMap))
+	for _, s := range pubsubConfig.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = conf.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
-		topic.PublishSettings.CountThreshold = conf.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers")
-		topic.PublishSettings.ByteThreshold = conf.GetIntVar(10, 1024*1024, "StreamManager.GooglePubSub.ByteThreshold")
+		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
+		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
+		topic.PublishSettings.ByteThreshold = config.GetIntVar(10, int(bytesize.MB), "StreamManager.GooglePubSub.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = conf.GetIntVar(1000, 1, "StreamManager.GooglePubSub.MaxOutstandingMessages")
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = conf.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = config.GetIntVar(1000, 1, "StreamManager.GooglePubSub.MaxOutstandingMessages")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = config.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
 		topicMap[s["to"]] = topic
 	}
-	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: conf.Default}, nil
+	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: config.Default}, nil
 }
 
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
