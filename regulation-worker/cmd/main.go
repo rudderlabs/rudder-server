@@ -152,7 +152,7 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration) *http.Clie
 	}
 	return oauthv2http.NewOAuthHttpClient(
 		cli,
-		common.RudderFlow(common.RudderFlowDelete),
+		common.RudderFlowDelete,
 		&cache, backendconfig.DefaultBackendConfig,
 		api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 	)

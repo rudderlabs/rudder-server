@@ -522,7 +522,9 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			transResp.routerJobResponseBodys[metadata.JobID] = transportResponse.InterceptorResponse.Response
 		}
 	}
-	respData = []byte(transportResponse.InterceptorResponse.Response)
+	if transportResponse.InterceptorResponse.Response != "" {
+		respData = []byte(transportResponse.InterceptorResponse.Response)
+	}
 
 	trans.stats.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels).Count(len(transResp.routerJobResponseCodes))
 

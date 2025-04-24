@@ -40,10 +40,6 @@ type APIManager struct {
 	TransformerFeaturesService   transformer.FeaturesService
 }
 
-type oauthDetail struct {
-	id string
-}
-
 func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
 	var jobResp []JobRespSchema
 	if err := jsonrs.Unmarshal(bodyBytes, &jobResp); err != nil {
