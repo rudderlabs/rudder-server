@@ -90,7 +90,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		topic := client.Topic(s["to"])
 		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
 		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
-		topic.PublishSettings.ByteThreshold = config.GetIntVar(10, int(bytesize.MB), "StreamManager.GooglePubSub.ByteThreshold")
+		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "StreamManager.GooglePubSub.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
