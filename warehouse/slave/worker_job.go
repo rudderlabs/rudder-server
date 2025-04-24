@@ -58,6 +58,25 @@ type basePayload struct {
 	LoadFileType                 string                 `json:"load_file_type"`
 }
 
+// payload represents the job payload for upload type jobs
+type payload struct {
+	basePayload
+	StagingFileID       int64  `json:"staging_file_id"`
+	StagingFileLocation string `json:"staging_file_location"`
+}
+
+// payloadV2 represents the job payload for upload_v2 type jobs
+type payloadV2 struct {
+	basePayload
+	StagingFiles []stagingFileInfo `json:"staging_files"`
+}
+
+// stagingFileInfo contains information about a staging file
+type stagingFileInfo struct {
+	ID       int64  `json:"id"`
+	Location string `json:"location"`
+}
+
 func (p *basePayload) discardsTable() string {
 	return warehouseutils.ToProviderCase(p.DestinationType, warehouseutils.DiscardsTable)
 }
