@@ -269,24 +269,33 @@ func (as *AzureSynapse) loadTable(
 		}()
 	}
 
-	txn, err := as.db.BeginTx(ctx, nil)
+	txn, err := as.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return nil, "", fmt.Errorf("beginning transaction: %w", err)
+		return nil, "", fmt.Errorf("begin transaction: %w", err)
 	}
+	defer func() {
+		_ = txn.Rollback()
+	}()
+
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
+	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(as.uploader.GetTableSchemaInWarehouse(tableName))
+
+	// copy into for azure synapse works only with azure blob storage and Azure Data Lake Storage Gen2
+	// refer https://learn.microsoft.com/en-us/sql/t-sql/statements/copy-into-transact-sql?view=azure-sqldw-latest#external-locations
 	if as.objectStorage == warehouseutils.AzureBlob {
-		for _, filename := range fileNames {
-			err = as.loadStagingTableCopyInto(ctx, stagingTableName, filename)
+		loadFiles, err := as.uploader.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{Table: tableName})
+		if err != nil {
+			return nil, "", fmt.Errorf("getting load files metadata: %w", err)
+		}
+
+		for _, loadFile := range loadFiles {
+			err = as.loadStagingTableCopyInto(ctx, stagingTableName, loadFile.Location)
 			if err != nil {
-				return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", filename, err)
+				return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", loadFile.Location, err)
 			}
 		}
 	} else {
-		defer func() {
-			if err := txn.Rollback(); err != nil {
-				log.Warnw("rolling back transaction: %w", err)
-			}
-		}()
-		err = as.loadStagingTableCopyIn(ctx, txn, log, tableName, stagingTableName, fileNames, tableSchemaInUpload)
+		err = as.loadStagingTableCopyIn(ctx, txn, log, tableName, stagingTableName, fileNames, sortedColumnKeys, previousColumnKeys)
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 		}
@@ -1036,15 +1045,7 @@ func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }
 
-func (as *AzureSynapse) loadStagingTableCopyIn(ctx context.Context, txn *sqlmw.Tx, log logger.Logger, tableName, stagingTableName string, filenames []string, tableSchemaInUpload model.TableSchema) error {
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		tableSchemaInUpload,
-	)
-	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		as.uploader.GetTableSchemaInWarehouse(
-			tableName,
-		),
-	)
+func (as *AzureSynapse) loadStagingTableCopyIn(ctx context.Context, txn *sqlmw.Tx, log logger.Logger, tableName, stagingTableName string, filenames []string, sortedColumnKeys, previousColumnKeys []string) error {
 	extraColumns := lo.Filter(previousColumnKeys, func(item string, index int) bool {
 		return !slices.Contains(sortedColumnKeys, item)
 	})
@@ -1068,7 +1069,7 @@ func (as *AzureSynapse) loadStagingTableCopyIn(ctx context.Context, txn *sqlmw.T
 		err = as.loadDataIntoStagingTable(
 			ctx, log, stmt,
 			fileName, sortedColumnKeys,
-			extraColumns, tableSchemaInUpload,
+			extraColumns, as.uploader.GetTableSchemaInUpload(tableName),
 			varcharLengthMap,
 		)
 		if err != nil {
@@ -1093,20 +1094,14 @@ func getAzureCredential(config map[string]interface{}) (azureCredential, error) 
 	if config["useSASTokens"] != nil {
 		useSASTokens := config["useSASTokens"].(bool)
 		if useSASTokens {
-			sasToken, ok := config["sasToken"].(string)
-			if !ok {
-				return azureCredential{}, fmt.Errorf("sasToken is not a string")
-			}
+			sasToken := config["sasToken"].(string)
 			credential = azureCredential{
 				identity: "Shared Access Signature",
 				secret:   sasToken,
 			}
 		}
 	} else if config["accountKey"] != nil {
-		accountKey, ok := config["accountKey"].(string)
-		if !ok {
-			return azureCredential{}, fmt.Errorf("accountKey is not a string")
-		}
+		accountKey := config["accountKey"].(string)
 		credential = azureCredential{
 			identity: "Storage Account Key",
 			secret:   accountKey,
