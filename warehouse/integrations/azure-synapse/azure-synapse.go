@@ -269,56 +269,35 @@ func (as *AzureSynapse) loadTable(
 		}()
 	}
 
-	txn, err := as.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return nil, "", fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = txn.Rollback()
+	var (
+		txn              *sqlmw.Tx
+		sortedColumnKeys []string
+	)
+
+	if as.objectStorage == warehouseutils.AzureBlob {
+		for _, filename := range fileNames {
+			err = as.loadStagingTableCopyInto(ctx, stagingTableName, filename)
+			if err != nil {
+				return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", filename, err)
+			}
 		}
-	}()
-
-	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		tableSchemaInUpload,
-	)
-	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
-		as.uploader.GetTableSchemaInWarehouse(
-			tableName,
-		),
-	)
-	extraColumns := lo.Filter(previousColumnKeys, func(item string, index int) bool {
-		return !slices.Contains(sortedColumnKeys, item)
-	})
-
-	log.Debugw("creating prepared stmt for loading data")
-	copyInStmt := mssql.CopyIn(as.namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
-		append(sortedColumnKeys, extraColumns...)...,
-	)
-	stmt, err := txn.PrepareContext(ctx, copyInStmt)
-	if err != nil {
-		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
-	}
-
-	varcharLengthMap, err := as.getVarcharLengthMap(ctx, tableName)
-	if err != nil {
-		return nil, "", fmt.Errorf("getting varchar column length map: %w", err)
-	}
-
-	log.Infow("loading data into staging table")
-	for _, fileName := range fileNames {
-		err = as.loadDataIntoStagingTable(
-			ctx, log, stmt,
-			fileName, sortedColumnKeys,
-			extraColumns, tableSchemaInUpload,
-			varcharLengthMap,
-		)
+	} else {
+		txn, err = as.db.BeginTx(ctx, nil)
 		if err != nil {
-			return nil, "", fmt.Errorf("loading data into staging table from file %s: %w", fileName, err)
+			return nil, "", fmt.Errorf("beginning transaction: %w", err)
 		}
-	}
-	if _, err = stmt.ExecContext(ctx); err != nil {
-		return nil, "", fmt.Errorf("executing copyIn statement: %w", err)
+		defer func() {
+			if err := txn.Rollback(); err != nil {
+				log.Warnw("rolling back transaction: %w", err)
+			}
+		}()
+		err = as.loadStagingTableCopyIn(ctx, txn, log, tableName, stagingTableName, fileNames, tableSchemaInUpload)
+		if err != nil {
+			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
+		}
+		if err = txn.Commit(); err != nil {
+			return nil, "", fmt.Errorf("committing transaction: %w", err)
+		}	
 	}
 
 	log.Infow("deleting from load table")
@@ -1060,4 +1039,77 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 
 func (*AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func (as *AzureSynapse) loadStagingTableCopyIn(ctx context.Context, txn *sqlmw.Tx, log logger.Logger, tableName, stagingTableName string, filenames []string, tableSchemaInUpload model.TableSchema) error {
+	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
+		tableSchemaInUpload,
+	)
+	previousColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(
+		as.uploader.GetTableSchemaInWarehouse(
+			tableName,
+		),
+	)
+	extraColumns := lo.Filter(previousColumnKeys, func(item string, index int) bool {
+		return !slices.Contains(sortedColumnKeys, item)
+	})
+
+	log.Debugw("creating prepared stmt for loading data")
+	copyInStmt := mssql.CopyIn(as.namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false},
+		append(sortedColumnKeys, extraColumns...)...,
+	)
+	stmt, err := txn.PrepareContext(ctx, copyInStmt)
+	if err != nil {
+		return fmt.Errorf("preparing copyIn statement: %w", err)
+	}
+
+	varcharLengthMap, err := as.getVarcharLengthMap(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("getting varchar column length map: %w", err)
+	}
+
+	log.Infow("loading data into staging table")
+	for _, fileName := range filenames {
+		err = as.loadDataIntoStagingTable(
+			ctx, log, stmt,
+			fileName, sortedColumnKeys,
+			extraColumns, tableSchemaInUpload,
+			varcharLengthMap,
+		)
+		if err != nil {
+			return fmt.Errorf("loading data into staging table from file %s: %w", fileName, err)
+		}
+	}
+	if _, err = stmt.ExecContext(ctx); err != nil {
+		return fmt.Errorf("executing copyIn statement: %w", err)
+	}
+	return nil
+}
+
+func (as *AzureSynapse) loadStagingTableCopyInto(ctx context.Context, stagingTableName string, fileLocation string) error {
+	copyIntoStmt := fmt.Sprintf(`
+		COPY INTO %[1]s.%[2]s
+		FROM '%[3]s'
+		WITH (
+			FILE_TYPE = 'CSV',
+			CREDENTIAL = (IDENTITY = '%[4]s', SECRET = '%[5]s'),
+			FIELDQUOTE = '"',
+			FIELDTERMINATOR = ',',
+			ROWTERMINATOR = '\n',
+			ENCODING = 'UTF8',
+			FIRSTROW = 1,
+			COMPRESSION = 'GZIP'
+		)`,
+		as.namespace,
+		stagingTableName,
+		fileLocation,
+		as.warehouse.GetStringDestinationConfig(as.conf, model.UserSetting),
+		as.warehouse.GetStringDestinationConfig(as.conf, model.PasswordSetting),
+	)
+
+	_, err := as.db.ExecContext(ctx, copyIntoStmt)
+	if err != nil {
+		return fmt.Errorf("executing COPY INTO statement: %w", err)
+	}
+	return nil
 }
