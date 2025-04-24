@@ -34,29 +34,29 @@ import (
 )
 
 type payload struct {
-	BatchID                      string
-	UploadID                     int64
-	StagingFileID                int64
-	StagingFileLocation          string
-	UploadSchema                 model.Schema
-	WorkspaceID                  string
-	SourceID                     string
-	SourceName                   string
-	DestinationID                string
-	DestinationName              string
-	DestinationType              string
-	DestinationNamespace         string
-	DestinationRevisionID        string
-	StagingDestinationRevisionID string
-	DestinationConfig            map[string]interface{}
-	StagingDestinationConfig     interface{}
-	UseRudderStorage             bool
-	StagingUseRudderStorage      bool
-	UniqueLoadGenID              string
-	RudderStoragePrefix          string
-	Output                       []uploadResult
-	LoadFilePrefix               string // prefix for the load file name
-	LoadFileType                 string
+	BatchID                      string                 `json:"batch_id"`
+	UploadID                     int64                  `json:"upload_id"`
+	StagingFileID                int64                  `json:"staging_file_id"`
+	StagingFileLocation          string                 `json:"staging_file_location"`
+	UploadSchema                 model.Schema           `json:"upload_schema"`
+	WorkspaceID                  string                 `json:"workspace_id"`
+	SourceID                     string                 `json:"source_id"`
+	SourceName                   string                 `json:"source_name"`
+	DestinationID                string                 `json:"destination_id"`
+	DestinationName              string                 `json:"destination_name"`
+	DestinationType              string                 `json:"destination_type"`
+	DestinationNamespace         string                 `json:"destination_namespace"`
+	DestinationRevisionID        string                 `json:"destination_revision_id"`
+	StagingDestinationRevisionID string                 `json:"staging_destination_revision_id"`
+	DestinationConfig            map[string]interface{} `json:"destination_config"`
+	StagingDestinationConfig     interface{}            `json:"staging_destination_config"`
+	UseRudderStorage             bool                   `json:"use_rudder_storage"`
+	StagingUseRudderStorage      bool                   `json:"staging_use_rudder_storage"`
+	UniqueLoadGenID              string                 `json:"unique_load_gen_id"`
+	RudderStoragePrefix          string                 `json:"rudder_storage_prefix"`
+	Output                       []uploadResult         `json:"output"`
+	LoadFilePrefix               string                 `json:"load_file_prefix"`
+	LoadFileType                 string                 `json:"load_file_type"`
 }
 
 func (p *payload) discardsTable() string {
