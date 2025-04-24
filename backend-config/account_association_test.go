@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMergeAccounts(t *testing.T) {
+func TestAccountAssociations(t *testing.T) {
 	t.Run("basic account merge", func(t *testing.T) {
 		c := &ConfigT{
 			Sources: []SourceT{

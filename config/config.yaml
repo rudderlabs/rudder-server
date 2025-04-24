@@ -106,7 +106,7 @@ Router:
   kafkaDialTimeout: 10s
   minRetryBackoff: 10s
   maxRetryBackoff: 300s
-  noOfWorkers: 1
+  noOfWorkers: 64
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
@@ -114,7 +114,6 @@ Router:
   saveDestinationResponseOverride: false
   transformerProxy: false
   transformerProxyRetryCount: 15
-  oAuthV2Enabled: true
   GOOGLESHEETS:
     noOfWorkers: 1
   MARKETO:

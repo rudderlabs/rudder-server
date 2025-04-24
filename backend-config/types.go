@@ -55,8 +55,8 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
-	Account               AccountWithDefinition
-	DeleteAccount         AccountWithDefinition
+	Account               *AccountWithDefinition `json:"account,omitempty"`
+	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
 }
 
 type SourceT struct {
