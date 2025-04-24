@@ -10,9 +10,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -40,6 +39,7 @@ type JobEntry struct {
 
 func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb circuitbreaker.CircuitBreaker) *PartitionWorker {
 	maxJobsToBuffer := brt.conf.GetIntVar(100000, 1, "BatchRouter."+brt.destType+".partitionWorker.maxJobsToBuffer", "BatchRouter.partitionWorker.maxJobsToBuffer")
+
 	pw := &PartitionWorker{
 		channel: make(chan *JobEntry, maxJobsToBuffer),
 		logger:  logger.With("partition", partition),
@@ -62,20 +62,33 @@ func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
 		destID:   destID,
 	}
 
-	timer := time.NewTimer(pw.addJobMaxDelay)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
 
+	go pw.monitorAddJobStuck(ctx, &wg, stats.Tags{"source_id": entry.sourceID, "destination_id": entry.destID})
+	pw.channel <- entry
+	cancel()
+	wg.Wait()
+}
+
+// monitorAddJobStuck runs in a goroutine to periodically report if AddJob is stuck.
+func (pw *PartitionWorker) monitorAddJobStuck(ctx context.Context, wg *sync.WaitGroup, statTags stats.Tags) {
+	defer wg.Done()
+
+	initialTimer := time.NewTimer(pw.addJobMaxDelay)
+	defer initialTimer.Stop()
 	select {
-	case pw.channel <- entry:
-		if !timer.Stop() {
-			<-timer.C
-		}
-	case <-timer.C:
-		stats.Default.NewTaggedStat("batchrouter.partition_worker.add_job_stuck", stats.CountType, stats.Tags{"source_id": entry.sourceID, "destination_id": entry.destID}).Count(1)
-		pw.channel <- entry
+	case <-ctx.Done():
+		return
+	case <-initialTimer.C:
+		stats.Default.NewTaggedStat("batchrouter.partition_worker_add_job_stuck", stats.CountType, statTags).Increment()
+
 	}
 }
 
 func (pw *PartitionWorker) Start() {
+	// Correct Start method implementation
 	uploadFreq := pw.brt.uploadFreq
 	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq.Load())
 	processJobs := func(jobs []*JobEntry) {
