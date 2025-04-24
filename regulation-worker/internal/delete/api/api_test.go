@@ -714,60 +714,60 @@ var oauthTests = []oauthTestCases{
 		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive)},
 		expectedPayload:              `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
 	},
-	// {
-	// 	name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
-	// 	job: model.Job{
-	// 		ID:            17,
-	// 		WorkspaceID:   "1001",
-	// 		DestinationID: "1234",
-	// 		Status:        model.JobStatus{Status: model.JobStatusPending},
-	// 		Users: []model.User{
-	// 			{
-	// 				ID: "203984798477",
-	// 				Attributes: map[string]string{
-	// 					"phone": "8463633841",
-	// 					"email": "greymore@gmail.com",
-	// 				},
-	// 			},
-	// 		},
-	// 	},
-	// 	dest: model.Destination{
-	// 		DestinationID: "1234",
-	// 		Config: map[string]interface{}{
-	// 			"rudderDeleteAccountId": "xyz",
-	// 			"authStatus":            "active",
-	// 		},
-	// 		Name:          "GA",
-	// 		DestDefConfig: defaultDestDefConfig,
-	// 	},
-	// 	deleteResponses: []deleteResponseParams{
-	// 		{
-	// 			status:      500,
-	// 			jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
-	// 		},
-	// 	},
+	{
+		name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
+		job: model.Job{
+			ID:            17,
+			WorkspaceID:   "1001",
+			DestinationID: "1234",
+			Status:        model.JobStatus{Status: model.JobStatusPending},
+			Users: []model.User{
+				{
+					ID: "203984798477",
+					Attributes: map[string]string{
+						"phone": "8463633841",
+						"email": "greymore@gmail.com",
+					},
+				},
+			},
+		},
+		dest: model.Destination{
+			DestinationID: "1234",
+			Config: map[string]interface{}{
+				"rudderDeleteAccountId": "xyz",
+				"authStatus":            "active",
+			},
+			Name:          "GA",
+			DestDefConfig: defaultDestDefConfig,
+		},
+		deleteResponses: []deleteResponseParams{
+			{
+				status:      500,
+				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+			},
+		},
 
-	// 	cpResponses: []testutils.CpResponseParams{
-	// 		// fetch token http request
-	// 		{
-	// 			Code:     200,
-	// 			Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
-	// 		},
-	// 		// refresh token http request
-	// 		{
-	// 			Code:     403,
-	// 			Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
-	// 		},
-	// 		// authStatus inactive http request
-	// 		{
-	// 			Code: 200,
-	// 		},
-	// 	},
+		cpResponses: []testutils.CpResponseParams{
+			// fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+			},
+			// refresh token http request
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+			},
+			// authStatus inactive http request
+			{
+				Code: 200,
+			},
+		},
 
-	// 	expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
-	// 	expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
-	// 	expectedPayload:              `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
-	// },
+		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
+		expectedPayload:              `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
+	},
 }
 
 type mockIdentifier struct {
