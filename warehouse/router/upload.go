@@ -103,6 +103,7 @@ type UploadJob struct {
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
+		queryLoadFilesWithUploadID          config.ValueLoader[bool]
 	}
 
 	errorHandler    ErrorHandler
@@ -205,6 +206,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
 	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
+	uj.config.queryLoadFilesWithUploadID = f.conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -821,37 +823,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 	if options.Limit != 0 {
 		limitSQL = fmt.Sprintf(`LIMIT %d`, options.Limit)
 	}
-
-	sqlStatement := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			location,
-			metadata,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v) %[3]s
-		)
-		SELECT
-		  location,
-		  metadata
-		FROM
-		  row_numbered_load_files
-		WHERE
-		  row_number = 1
-		%[4]s;
-`,
-		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
-		tableFilterSQL,
-		limitSQL,
-	)
+	sqlStatement := job.getLoadFilesMetadataQuery(tableFilterSQL, limitSQL)
 
 	job.logger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := job.db.QueryContext(ctx, sqlStatement)
@@ -876,6 +848,70 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 		return nil, fmt.Errorf("iterate query results: %s\nwith Error : %w", sqlStatement, err)
 	}
 	return
+}
+
+func (job *UploadJob) getLoadFilesMetadataQuery(tableFilterSQL, limitSQL string) string {
+	if job.config.queryLoadFilesWithUploadID.Load() {
+		return fmt.Sprintf(`
+			WITH row_numbered_load_files as (
+			  SELECT
+				location,
+				metadata,
+				row_number() OVER (
+				PARTITION BY upload_id,
+				table_name
+				ORDER BY
+					id DESC
+				) AS row_number
+			  FROM
+				%[1]s
+			  WHERE upload_id = %[2]d %[3]s
+			)
+			SELECT
+			  location,
+			  metadata
+			FROM
+			  row_numbered_load_files
+			WHERE
+			  row_number = 1
+			%[4]s;
+			`,
+			whutils.WarehouseLoadFilesTable,
+			job.upload.ID,
+			tableFilterSQL,
+			limitSQL,
+		)
+	}
+	return fmt.Sprintf(`
+		WITH row_numbered_load_files as (
+		  SELECT
+			location,
+			metadata,
+			row_number() OVER (
+			  PARTITION BY staging_file_id,
+			  table_name
+			  ORDER BY
+				id DESC
+			) AS row_number
+		  FROM
+			%[1]s
+		  WHERE
+			staging_file_id IN (%[2]v) %[3]s
+		)
+		SELECT
+		  location,
+		  metadata
+		FROM
+		  row_numbered_load_files
+		WHERE
+		  row_number = 1
+		%[4]s;
+		`,
+		whutils.WarehouseLoadFilesTable,
+		misc.IntArrayToString(job.stagingFileIDs, ","),
+		tableFilterSQL,
+		limitSQL,
+	)
 }
 
 func (job *UploadJob) GetSampleLoadFileLocation(ctx context.Context, tableName string) (location string, err error) {

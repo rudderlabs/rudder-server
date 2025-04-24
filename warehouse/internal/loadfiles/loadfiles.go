@@ -437,6 +437,12 @@ func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <
 	if err := lf.LoadRepo.Insert(ctx, loadFiles); err != nil {
 		return fmt.Errorf("inserting load files: %w", err)
 	}
+	stagingFileIds := lo.Map(chunk, func(file *model.StagingFile, _ int) int64 {
+		return file.ID
+	})
+	if err := lf.StageRepo.SetStatuses(ctx, stagingFileIds, warehouseutils.StagingFileSucceededState); err != nil {
+		return fmt.Errorf("setting staging file status to succeeded: %w", err)
+	}
 	return nil
 }
 
@@ -478,8 +484,8 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 		return fmt.Errorf("populating destination revision ID: %w", err)
 	}
 	g, gCtx := errgroup.WithContext(ctx)
-	for _, chunk := range lo.Chunk(stagingFiles, publishBatchSize) {
-		fileGroups := lf.GroupStagingFiles(chunk, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128))
+	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128))
+	for _, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
 		for _, group := range fileGroups {
 			baseReq := lf.generateBaseRequest(job, uniqueLoadGenID, group[0], destinationRevisionIDMap)
 
@@ -500,13 +506,13 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 			}
 
 			messages := []stdjson.RawMessage{rawPayload}
-			ch, err := lf.publishToNotifier(gCtx, job, messages, notifier.JobTypeUploadV2)
+			ch, err := lf.publishToNotifier(ctx, job, messages, notifier.JobTypeUploadV2)
 			if err != nil {
 				return fmt.Errorf("error publishing to notifier: %w", err)
 			}
 			gr := group // capture for goroutine
 			g.Go(func() error {
-				return lf.processNotifierResponseV2(ctx, ch, job, gr)
+				return lf.processNotifierResponseV2(gCtx, ch, job, gr)
 			})
 		}
 	}
