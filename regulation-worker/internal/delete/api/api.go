@@ -211,7 +211,7 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 
 func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
 	return lo.Find(jobResponses, func(item JobRespSchema) bool {
-		return lo.Contains([]string{common.AuthStatusInActive, common.CategoryRefreshToken}, item.AuthErrorCategory)
+		return lo.Contains([]string{common.CategoryAuthStatusInactive, common.CategoryRefreshToken}, item.AuthErrorCategory)
 	})
 }
 
