@@ -110,6 +110,7 @@ func (gw *Handle) sourceIDAuth(delegate http.HandlerFunc) http.HandlerFunc {
 			errorMessage = response.NoSourceIdInHeader
 			return
 		}
+		gw.logger.Infof("sourceID %s not found in sourceIDSourceMap", sourceID)
 		arctx = gw.authRequestContextForSourceID(sourceID)
 		if arctx == nil {
 			errorMessage = response.InvalidSourceID
