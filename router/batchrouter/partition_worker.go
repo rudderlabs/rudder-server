@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/samber/lo"
 
@@ -27,6 +28,8 @@ type PartitionWorker struct {
 	channel chan *JobEntry
 	cb      circuitbreaker.CircuitBreaker
 	limiter kitsync.Limiter
+
+	addJobMaxDelay time.Duration
 }
 
 type JobEntry struct {
@@ -47,15 +50,28 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb 
 			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter."+brt.destType+".partitionWorker.concurrency", "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
 		),
+		addJobMaxDelay: brt.conf.GetDurationVar(5, time.Second, "BatchRouter."+brt.destType+".partitionWorker.addJobMaxDelaySeconds", "BatchRouter.partitionWorker.addJobMaxDelaySeconds"),
 	}
 	return pw
 }
 
 func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
-	pw.channel <- &JobEntry{
+	entry := &JobEntry{
 		job:      job,
 		sourceID: sourceID,
 		destID:   destID,
+	}
+
+	timer := time.NewTimer(pw.addJobMaxDelay)
+
+	select {
+	case pw.channel <- entry:
+		if !timer.Stop() {
+			<-timer.C
+		}
+	case <-timer.C:
+		stats.Default.NewTaggedStat("batchrouter.partition_worker.add_job_stuck", stats.CountType, stats.Tags{"source_id": entry.sourceID, "destination_id": entry.destID}).Count(1)
+		pw.channel <- entry
 	}
 }
 

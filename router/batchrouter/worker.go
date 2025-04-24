@@ -26,8 +26,8 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 		cb: circuitbreaker.NewCircuitBreaker(
 			partition,
 			circuitbreaker.WithMaxRequests(1),
-			circuitbreaker.WithTimeout(brt.conf.GetDuration("BatchRouter.timeout", 10, time.Second)),
-			circuitbreaker.WithConsecutiveFailures(brt.conf.GetInt("BatchRouter.maxConsecutiveFailures", 3)),
+			circuitbreaker.WithTimeout(brt.conf.GetDurationVar(10, time.Second, "BatchRouter.timeout", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreq")),
+			circuitbreaker.WithConsecutiveFailures(brt.conf.GetIntVar(3, 1, "BatchRouter.maxConsecutiveFailures", "BatchRouter."+brt.destType+".maxConsecutiveFailures")),
 			circuitbreaker.WithLogger(logger),
 		),
 	}
