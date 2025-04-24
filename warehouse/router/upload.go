@@ -61,6 +61,7 @@ type UploadJobFactory struct {
 	encodingFactory      *encoding.Factory
 }
 
+// add comment
 type UploadJob struct {
 	ctx                  context.Context
 	db                   *sqlquerywrapper.DB
