@@ -452,24 +452,9 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
-	destConfig := confluentCloudConfig{}
-	jsonConfig, err := jsonrs.Marshal(destination.Config)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"[Confluent Cloud] Error while marshaling destination configuration %+v, got error: %w",
-			destination.Config, err,
-		)
-	}
+	destConfig := getConfleuntConfigFromDestinationConfig(destination.Config)
 
-	err = jsonrs.Unmarshal(jsonConfig, &destConfig)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"[Confluent Cloud] Error while unmarshaling destination configuration %+v, got error: %w",
-			destination.Config, err,
-		)
-	}
-
-	if err = destConfig.validate(); err != nil {
+	if err := destConfig.validate(); err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] invalid configuration: %w", err)
 	}
 
@@ -497,6 +482,15 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		p: p, timeout: o.Timeout,
 		enableBatching: config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching"),
 	}, nil
+}
+
+func getConfleuntConfigFromDestinationConfig(destConfig map[string]interface{}) confluentCloudConfig {
+	confluentConfig := confluentCloudConfig{}
+	confluentConfig.APIKey, _ = destConfig["apiKey"].(string)
+	confluentConfig.APISecret, _ = destConfig["apiSecret"].(string)
+	confluentConfig.BootstrapServer, _ = destConfig["bootstrapServer"].(string)
+	confluentConfig.Topic, _ = destConfig["topic"].(string)
+	return confluentConfig
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
