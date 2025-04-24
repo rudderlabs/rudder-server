@@ -269,11 +269,10 @@ func (as *AzureSynapse) loadTable(
 		}()
 	}
 
-	var (
-		txn              *sqlmw.Tx
-		sortedColumnKeys []string
-	)
-
+	txn, err := as.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("beginning transaction: %w", err)
+	}
 	if as.objectStorage == warehouseutils.AzureBlob {
 		for _, filename := range fileNames {
 			err = as.loadStagingTableCopyInto(ctx, stagingTableName, filename)
@@ -282,10 +281,6 @@ func (as *AzureSynapse) loadTable(
 			}
 		}
 	} else {
-		txn, err = as.db.BeginTx(ctx, nil)
-		if err != nil {
-			return nil, "", fmt.Errorf("beginning transaction: %w", err)
-		}
 		defer func() {
 			if err := txn.Rollback(); err != nil {
 				log.Warnw("rolling back transaction: %w", err)
@@ -1086,7 +1081,50 @@ func (as *AzureSynapse) loadStagingTableCopyIn(ctx context.Context, txn *sqlmw.T
 	return nil
 }
 
+type azureCredential struct {
+	identity string
+	secret   string
+}
+// returns azureCredential with identity and secret
+// refer https://learn.microsoft.com/en-us/sql/t-sql/statements/copy-into-transact-sql?view=azure-sqldw-latest#credential-identity---secret--
+// azure blob storage supports only Shared Access Signature and Storage Account Keys
+func getAzureCredential(config map[string]interface{}) (azureCredential, error) {
+	var credential azureCredential
+	if config["useSASTokens"] != nil {
+		useSASTokens := config["useSASTokens"].(bool)
+		if useSASTokens {
+			sasToken, ok := config["sasToken"].(string)
+			if !ok {
+				return azureCredential{}, fmt.Errorf("sasToken is not a string")
+			}
+			credential = azureCredential{
+				identity: "Shared Access Signature",
+				secret:   sasToken,
+			}
+		}
+	} else if config["accountKey"] != nil {
+		accountKey, ok := config["accountKey"].(string)
+		if !ok {
+			return azureCredential{}, fmt.Errorf("accountKey is not a string")
+		}
+		credential = azureCredential{
+			identity: "Storage Account Key",
+			secret:   accountKey,
+		}
+	}
+	// check if credential is empty
+	if len(credential.identity) == 0 || len(credential.secret) == 0 {
+		return azureCredential{}, errors.New("invalid azure blob storage credentials")
+	}
+	return credential, nil
+}
+
 func (as *AzureSynapse) loadStagingTableCopyInto(ctx context.Context, stagingTableName string, fileLocation string) error {
+	credential, err := getAzureCredential(as.warehouse.Destination.Config)
+	if err != nil {
+		return fmt.Errorf("invalid azure blob storage credentials: %w", err)
+	}
+
 	copyIntoStmt := fmt.Sprintf(`
 		COPY INTO %[1]s.%[2]s
 		FROM '%[3]s'
@@ -1103,11 +1141,11 @@ func (as *AzureSynapse) loadStagingTableCopyInto(ctx context.Context, stagingTab
 		as.namespace,
 		stagingTableName,
 		fileLocation,
-		as.warehouse.GetStringDestinationConfig(as.conf, model.UserSetting),
-		as.warehouse.GetStringDestinationConfig(as.conf, model.PasswordSetting),
+		credential.identity,
+		credential.secret,
 	)
 
-	_, err := as.db.ExecContext(ctx, copyIntoStmt)
+	_, err = as.db.ExecContext(ctx, copyIntoStmt)
 	if err != nil {
 		return fmt.Errorf("executing COPY INTO statement: %w", err)
 	}
