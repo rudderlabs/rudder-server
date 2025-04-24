@@ -576,7 +576,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.proxyClientOAuth = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
-	trans.compactionEnabled = config.GetReloadableBoolVar(true, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+	trans.compactionEnabled = config.GetReloadableBoolVar(false, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 	if featuresService != nil {
 		go func() {
 			<-featuresService.Wait()
