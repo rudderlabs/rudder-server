@@ -13,19 +13,19 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
 )
 
-type Rules func(event *wtypes.WarehouseTransformerEvent) (any, error)
+type Rules func(event *wtypes.TransformerEvent) (any, error)
 
 var (
 	DefaultRules = map[string]Rules{
-		"id":                 messageIDFromEvent(), // Use extracted messageID
+		"id":                 messageIDFromEvent(),
 		"anonymous_id":       staticRule("anonymousId"),
 		"user_id":            staticRule("userId"),
 		"sent_at":            staticRule("sentAt"),
 		"timestamp":          staticRule("timestamp"),
-		"received_at":        receivedAtFromEvent(), // Use extracted receivedAt
+		"received_at":        receivedAtFromEvent(),
 		"original_timestamp": staticRule("originalTimestamp"),
 		"channel":            staticRule("channel"),
-		"context_ip": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"context_ip": func(event *wtypes.TransformerEvent) (any, error) {
 			return firstValidValue(event.Message, []string{"context.ip", "request_ip"}), nil
 		},
 		"context_request_ip": staticRule("request_ip"),
@@ -36,17 +36,17 @@ var (
 		"event_text": staticRule("event"),
 	}
 	TrackEventTableRules = map[string]Rules{
-		"id": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"id": func(event *wtypes.TransformerEvent) (any, error) {
 			eventType := event.Metadata.EventType
 			canUseRecordID := utils.CanUseRecordID(event.Metadata.SourceCategory)
 			if eventType == "track" && canUseRecordID {
-				return extractCloudRecordID(event.Message, &event.Metadata, event.MessageID) // Use extracted messageID
+				return extractCloudRecordID(event.Message, &event.Metadata, event.Metadata.MessageID)
 			}
-			return event.MessageID, nil // Use extracted messageID
+			return event.Metadata.MessageID, nil
 		},
 	}
 	TrackTableRules = map[string]Rules{
-		"record_id": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"record_id": func(event *wtypes.TransformerEvent) (any, error) {
 			eventType := event.Metadata.EventType
 			canUseRecordID := utils.CanUseRecordID(event.Metadata.SourceCategory)
 			if eventType == "track" && canUseRecordID {
@@ -61,14 +61,14 @@ var (
 	}
 
 	IdentifyRules = map[string]Rules{
-		"context_ip": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"context_ip": func(event *wtypes.TransformerEvent) (any, error) {
 			return firstValidValue(event.Message, []string{"context.ip", "request_ip"}), nil
 		},
 		"context_request_ip": staticRule("request_ip"),
 		"context_passed_ip":  staticRule("context.ip"),
 	}
 	IdentifyRulesNonDataLake = map[string]Rules{
-		"context_ip": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"context_ip": func(event *wtypes.TransformerEvent) (any, error) {
 			return firstValidValue(event.Message, []string{"context.ip", "request_ip"}), nil
 		},
 		"context_request_ip": staticRule("request_ip"),
@@ -79,13 +79,13 @@ var (
 	}
 
 	PageRules = map[string]Rules{
-		"name": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"name": func(event *wtypes.TransformerEvent) (any, error) {
 			return firstValidValue(event.Message, []string{"name", "properties.name"}), nil
 		},
 	}
 
 	ScreenRules = map[string]Rules{
-		"name": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"name": func(event *wtypes.TransformerEvent) (any, error) {
 			return firstValidValue(event.Message, []string{"name", "properties.name"}), nil
 		},
 	}
@@ -99,29 +99,29 @@ var (
 	}
 
 	ExtractRules = map[string]Rules{
-		"id": func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+		"id": func(event *wtypes.TransformerEvent) (any, error) {
 			return extractRecordID(&event.Metadata)
 		},
-		"received_at": receivedAtFromEvent(), // Use extracted receivedAt
+		"received_at": receivedAtFromEvent(),
 		"event":       staticRule("event"),
 	}
 )
 
 func staticRule(key string) Rules {
-	return func(event *wtypes.WarehouseTransformerEvent) (any, error) {
+	return func(event *wtypes.TransformerEvent) (any, error) {
 		return misc.MapLookup(event.Message, strings.Split(key, ".")...), nil
 	}
 }
 
 func messageIDFromEvent() Rules {
-	return func(event *wtypes.WarehouseTransformerEvent) (any, error) {
-		return event.MessageID, nil
+	return func(event *wtypes.TransformerEvent) (any, error) {
+		return event.Metadata.MessageID, nil
 	}
 }
 
 func receivedAtFromEvent() Rules {
-	return func(event *wtypes.WarehouseTransformerEvent) (any, error) {
-		return event.ReceivedAt, nil
+	return func(event *wtypes.TransformerEvent) (any, error) {
+		return event.Metadata.ReceivedAt, nil
 	}
 }
 
@@ -151,7 +151,7 @@ func firstValidValue(message map[string]any, props []string) any {
 	return nil
 }
 
-func extractRecordID(metadata *types.Metadata) (any, error) {
+func extractRecordID(metadata *wtypes.Metadata) (any, error) {
 	if utils.IsBlank(metadata.RecordID) {
 		return nil, response.ErrRecordIDEmpty
 	}
@@ -161,7 +161,7 @@ func extractRecordID(metadata *types.Metadata) (any, error) {
 	return metadata.RecordID, nil
 }
 
-func extractCloudRecordID(message types.SingularEventT, metadata *types.Metadata, fallbackValue any) (any, error) {
+func extractCloudRecordID(message types.SingularEventT, metadata *wtypes.Metadata, fallbackValue any) (any, error) {
 	if sv := misc.MapLookup(message, "context", "sources", "version"); !utils.IsBlank(sv) {
 		return extractRecordID(metadata)
 	}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -48,7 +49,7 @@ func (t *Transformer) mergeEvents(tec *transformEventContext) ([]map[string]any,
 		"table":        tableName,
 		"columns":      columnTypes,
 		"isMergeRule":  true,
-		"receivedAt":   tec.event.ReceivedAt,
+		"receivedAt":   tec.event.Metadata.ReceivedAt,
 		"mergePropOne": data[columns.Prop1Value],
 	}
 
@@ -69,7 +70,7 @@ func (t *Transformer) mergeEvents(tec *transformEventContext) ([]map[string]any,
 	return []map[string]any{mergeOutput}, nil
 }
 
-func mergeProps(message types.SingularEventT, metadata types.Metadata) (*mergeRule, *mergeRule, error) {
+func mergeProps(message types.SingularEventT, metadata wtypes.Metadata) (*mergeRule, *mergeRule, error) {
 	switch strings.ToLower(metadata.EventType) {
 	case "merge":
 		return mergePropsForMergeEventType(message)
