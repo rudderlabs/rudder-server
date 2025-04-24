@@ -418,8 +418,8 @@ var _ = Describe("Proxy Request", func() {
 						ProxyRequestResponseBody: "Err",
 						RespContentType:          "application/json",
 						RespStatusCodes: map[int64]int{
-							1: 500,
-							2: 501,
+							1: 400,
+							2: 400,
 						},
 						RespBodys: map[int64]string{
 							1: "err1",
