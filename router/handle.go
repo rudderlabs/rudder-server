@@ -35,7 +35,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -90,7 +89,6 @@ type Handle struct {
 	customDestinationManager       customDestinationManager.DestinationManager
 	transformer                    transformer.Transformer
 	isOAuthDestination             bool
-	oauth                          oauth.Authorizer
 	destinationsMapMu              sync.RWMutex
 	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
 	connectionsMap                 map[types.SourceDest]types.ConnectionWithID
@@ -729,27 +727,4 @@ func (rt *Handle) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
 
 func (*Handle) crashRecover() {
 	// NO-OP
-}
-
-func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
-	inactiveAuthStatusStatTags := stats.Tags{
-		"id":          destination.ID,
-		"destType":    destination.DestinationDefinition.Name,
-		"workspaceId": workspaceID,
-		"success":     "true",
-		"flowType":    string(oauth.RudderFlow_Delivery),
-	}
-	errCatStatusCode, _ := rt.oauth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-		Destination:     destination,
-		WorkspaceId:     workspaceID,
-		RudderAccountId: rudderAccountId,
-		AuthStatus:      oauth.AuthStatusInactive,
-	})
-	if errCatStatusCode != http.StatusOK {
-		// Error while inactivating authStatus
-		inactiveAuthStatusStatTags["success"] = "false"
-	}
-	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
-	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest
 }

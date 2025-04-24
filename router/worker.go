@@ -26,7 +26,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -196,26 +195,6 @@ func (w *worker) workLoop() {
 			}
 			destination := batchDestination.Destination
 			connection := conn.Connection
-
-			// if w.rt.isOAuthDestination && !oauthV2Enabled {
-			// 	rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
-
-			// 	if routerutils.IsNotEmptyString(rudderAccountID) {
-			// 		w.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
-			// 		// Get Access Token Information to send it as part of the event
-			// 		tokenStatusCode, accountSecretInfo := w.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
-			// 			AccountId:   rudderAccountID,
-			// 			WorkspaceId: jobMetadata.WorkspaceID,
-			// 			DestDefName: destination.DestinationDefinition.Name,
-			// 		})
-			// 		w.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
-			// 		if tokenStatusCode == http.StatusOK {
-			// 			jobMetadata.Secret = accountSecretInfo.Account.Secret
-			// 		} else {
-			// 			w.logger.Errorf(`[%s][FetchToken] Token Fetch Method error (statusCode, error): (%d, %s)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
-			// 		}
-			// 	}
-			// }
 
 			if w.rt.enableBatching {
 				w.routerJobs = append(w.routerJobs, types.RouterJobT{
@@ -805,25 +784,6 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
 	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
-	if !oauth.IsOAuthDestination(destinationJob.Destination.DestinationDefinition.Config) {
-		return proxyRequestResponse
-	}
-	// if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
-	// 	w.logger.Debugn(`Sending for OAuth destination`)
-	// 	// Token from header of the request
-	// 	respStatusCode, respBodyTemp, contentType := w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
-	// 		ctx:            ctx,
-	// 		destinationJob: destinationJob,
-	// 		workerID:       w.id,
-	// 		trRespStCd:     proxyRequestResponse.ProxyRequestStatusCode,
-	// 		trRespBody:     proxyRequestResponse.ProxyRequestResponseBody,
-	// 		secret:         m[0].Secret,
-	// 		contentType:    proxyRequestResponse.RespContentType,
-	// 	}, proxyRequestResponse.OAuthErrorCategory)
-
-	// 	proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
-	// 	proxyRequestResponse.RespContentType = contentType
-	// }
 	return proxyRequestResponse
 }
 

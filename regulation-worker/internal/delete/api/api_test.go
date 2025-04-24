@@ -23,7 +23,6 @@ import (
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -269,7 +268,6 @@ type oauthTestCases struct {
 	expectedDeleteStatus         model.JobStatus
 	expectedDeleteStatus_OAuthV2 model.JobStatus
 	expectedPayload              string
-	isOAuthV2Enabled             bool
 }
 
 var defaultDestDefConfig = map[string]interface{}{
@@ -650,7 +648,7 @@ var oauthTests = []oauthTestCases{
 		deleteResponses: []deleteResponseParams{
 			{
 				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.AuthStatusInActive),
 			},
 		},
 		cpResponses: []testutils.CpResponseParams{
@@ -697,7 +695,7 @@ var oauthTests = []oauthTestCases{
 		deleteResponses: []deleteResponseParams{
 			{
 				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.AuthStatusInActive),
 			},
 		},
 		cpResponses: []testutils.CpResponseParams{
@@ -784,7 +782,6 @@ func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
 func TestOAuth(t *testing.T) {
 	for _, tc := range oauthTests {
 		tc.name = fmt.Sprintf("[OAuthV2] %s", tc.name)
-		tc.isOAuthV2Enabled = true
 		oauthTests = append(oauthTests, tc)
 		// oauthTests[i] = tc
 	}
@@ -821,41 +818,33 @@ func TestOAuth(t *testing.T) {
 				},
 			}
 
-			oauth.Init()
-			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
-			if tt.isOAuthV2Enabled {
-				cache := oauthV2.NewCache()
-				oauthLock := rudderSync.NewPartitionRWLocker()
+			cache := oauthV2.NewCache()
+			oauthLock := rudderSync.NewPartitionRWLocker()
 
-				if tt.oauthHttpClientTimeout.Seconds() > 0 {
-					config.Set("HttpClient.oauth.timeout", tt.oauthHttpClientTimeout.Seconds())
-				}
-				optionalArgs := oauthv2_http.HttpClientOptionalArgs{
-					Augmenter: extensions.HeaderAugmenter,
-					Locker:    oauthLock,
-				}
-				cli = oauthv2_http.NewOAuthHttpClient(
-					cli, common.RudderFlow(oauth.RudderFlow_Delete),
-					&cache, mockBackendConfig,
-					api.GetAuthErrorCategoryFromResponse, &optionalArgs,
-				)
+			if tt.oauthHttpClientTimeout.Seconds() > 0 {
+				config.Set("HttpClient.oauth.timeout", tt.oauthHttpClientTimeout.Seconds())
 			}
+			optionalArgs := oauthv2_http.HttpClientOptionalArgs{
+				Augmenter: extensions.HeaderAugmenter,
+				Locker:    oauthLock,
+			}
+			cli = oauthv2_http.NewOAuthHttpClient(
+				cli, common.RudderFlow(common.RudderFlowDelete),
+				&cache, mockBackendConfig,
+				api.GetAuthErrorCategoryFromResponse, &optionalArgs,
+			)
 
 			api := api.APIManager{
 				Client:                       cli,
 				DestTransformURL:             svr.URL,
-				OAuth:                        OAuth,
 				MaxOAuthRefreshRetryAttempts: 1,
-				IsOAuthV2Enabled:             tt.isOAuthV2Enabled,
 			}
 
 			status := api.Delete(ctx, tt.job, tt.dest)
 			require.Equal(t, tt.expectedDeleteStatus.Status, status.Status)
 			if tt.expectedDeleteStatus.Status != model.JobStatusComplete {
 				exp := tt.expectedDeleteStatus.Error.Error()
-				if tt.isOAuthV2Enabled {
-					exp = tt.expectedDeleteStatus_OAuthV2.Error.Error()
-				}
+				exp = tt.expectedDeleteStatus_OAuthV2.Error.Error()
 				jobError := strings.Replace(exp, "__cfgBE_server__", cfgBeSrv.URL, 1)
 
 				require.Contains(t, strings.ToLower(status.Error.Error()), strings.ToLower(jobError))

@@ -19,11 +19,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
@@ -39,15 +36,12 @@ var (
 type APIManager struct {
 	Client                       *http.Client
 	DestTransformURL             string
-	OAuth                        oauth.Authorizer
 	MaxOAuthRefreshRetryAttempts int
 	TransformerFeaturesService   transformer.FeaturesService
-	IsOAuthV2Enabled             bool
 }
 
 type oauthDetail struct {
-	secretToken *oauth.AuthResponse
-	id          string
+	id string
 }
 
 func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
@@ -109,22 +103,8 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		pkgLogger.Error(err)
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
-	var oAuthDetail oauthDetail
-	if isOAuth && !m.IsOAuthV2Enabled {
-		oAuthDetail, err = m.getOAuthDetail(&destination, job.WorkspaceID)
-		if err != nil {
-			pkgLogger.Error(err)
-			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-		}
-		err = setOAuthHeader(oAuthDetail.secretToken, req)
-		if err != nil {
-			pkgLogger.Errorf("[%v] error occurred while setting oauth header for workspace: %v, destination: %v", destination.Name, job.WorkspaceID, destination.DestinationID)
-			pkgLogger.Error(err)
-			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-		}
-	}
 
-	if isOAuth && m.IsOAuthV2Enabled {
+	if isOAuth {
 		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), dest))
 	}
 
@@ -161,7 +141,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	respStatusCode := resp.StatusCode
 	respBodyBytes := bodyBytes
 	// Post response work to be done for OAuthV2
-	if isOAuth && m.IsOAuthV2Enabled {
+	if isOAuth {
 		var transportResponse oauthv2.TransportResponse
 		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
 		// It's acceptable if the structure of bodyBytes doesn't match the oauthv2.TransportResponse struct.
@@ -187,7 +167,6 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		job:                      job,
 		isOAuthEnabled:           isOAuth,
 		currentOAuthRetryAttempt: currentOauthRetryAttempt,
-		oAuthDetail:              oAuthDetail,
 		responseBodyBytes:        respBodyBytes,
 		responseStatusCode:       respStatusCode,
 	})
@@ -232,82 +211,8 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 
 func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
 	return lo.Find(jobResponses, func(item JobRespSchema) bool {
-		return lo.Contains([]string{oauth.AUTH_STATUS_INACTIVE, oauth.REFRESH_TOKEN}, item.AuthErrorCategory)
+		return lo.Contains([]string{common.AuthStatusInActive, common.CategoryRefreshToken}, item.AuthErrorCategory)
 	})
-}
-
-func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
-	payload, marshalErr := jsonrs.Marshal(secretToken.Account)
-	if marshalErr != nil {
-		marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
-		pkgLogger.Errorf(marshalFailErr)
-		return errors.New(marshalFailErr)
-	}
-	req.Header.Set("X-Rudder-Dest-Info", string(payload))
-	return nil
-}
-
-func (m *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (oauthDetail, error) {
-	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
-	if strings.TrimSpace(id) == "" {
-		return oauthDetail{}, fmt.Errorf("[%v] Delete account ID key (%v) is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
-	}
-	tokenStatusCode, secretToken := m.OAuth.FetchToken(&oauth.RefreshTokenParams{
-		AccountId:   id,
-		WorkspaceId: workspaceId,
-		DestDefName: destDetail.Name,
-	})
-	if tokenStatusCode != http.StatusOK {
-		return oauthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.ErrorMessage)
-	}
-	return oauthDetail{
-		id:          id,
-		secretToken: secretToken,
-	}, nil
-}
-
-func (m *APIManager) inactivateAuthStatus(destination *model.Destination, job model.Job, oAuthDetail oauthDetail) (jobStatus model.JobStatus) {
-	dest := &backendconfig.DestinationT{
-		ID:     destination.DestinationID,
-		Config: destination.Config,
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name:   destination.Name,
-			Config: destination.DestDefConfig,
-		},
-	}
-	_, resp := m.OAuth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-		Destination:     dest,
-		WorkspaceId:     job.WorkspaceID,
-		RudderAccountId: oAuthDetail.id,
-		AuthStatus:      oauth.AuthStatusInactive,
-	})
-	jobStatus.Status = model.JobStatusAborted
-	jobStatus.Error = errors.New(resp)
-	return jobStatus
-}
-
-func (m *APIManager) refreshOAuthToken(destination *model.Destination, job model.Job, oAuthDetail oauthDetail) error {
-	refTokenParams := &oauth.RefreshTokenParams{
-		Secret:      oAuthDetail.secretToken.Account.Secret,
-		WorkspaceId: job.WorkspaceID,
-		AccountId:   oAuthDetail.id,
-		DestDefName: destination.Name,
-	}
-	statusCode, refreshResponse := m.OAuth.RefreshToken(refTokenParams)
-	if statusCode != http.StatusOK {
-		if refreshResponse.Err == oauth.REF_TOKEN_INVALID_GRANT {
-			// authStatus should be made inactive
-			m.inactivateAuthStatus(destination, job, oAuthDetail)
-			return errors.New(refreshResponse.ErrorMessage)
-		}
-
-		var refreshRespErr string
-		if refreshResponse != nil {
-			refreshRespErr = refreshResponse.ErrorMessage
-		}
-		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destination.Name, job.WorkspaceID, oAuthDetail.id, refreshRespErr)
-	}
-	return nil
 }
 
 type PostResponseParams struct {
@@ -315,7 +220,6 @@ type PostResponseParams struct {
 	isOAuthEnabled           bool
 	currentOAuthRetryAttempt int
 	job                      model.Job
-	oAuthDetail              oauthDetail
 	responseBodyBytes        []byte
 	responseStatusCode       int
 }
@@ -334,23 +238,8 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 	if oauthErrorJob, ok := getOAuthErrorJob(jobResp); ok {
 		authErrorCategory = oauthErrorJob.AuthErrorCategory
 	}
-	// old oauth handling
-	if authErrorCategory != "" && params.isOAuthEnabled && !m.IsOAuthV2Enabled {
-		if authErrorCategory == oauth.AUTH_STATUS_INACTIVE {
-			return m.inactivateAuthStatus(&params.destination, params.job, params.oAuthDetail)
-		}
-		if authErrorCategory == oauth.REFRESH_TOKEN && params.currentOAuthRetryAttempt < m.MaxOAuthRefreshRetryAttempts {
-			if err := m.refreshOAuthToken(&params.destination, params.job, params.oAuthDetail); err != nil {
-				pkgLogger.Errorn("Error while refreshing authToken", obskit.Error(err))
-				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
-			}
-			// retry the request
-			pkgLogger.Infon("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", logger.NewStringField("destinationName", params.destination.Name), logger.NewIntField("jobId", int64(params.job.ID)), logger.NewIntField("retryAttempt", int64(params.currentOAuthRetryAttempt+1)))
-			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)
-		}
-	}
 	// new oauth handling
-	if params.isOAuthEnabled && m.IsOAuthV2Enabled {
+	if params.isOAuthEnabled {
 		if authErrorCategory == common.CategoryRefreshToken {
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
