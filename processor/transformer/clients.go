@@ -64,7 +64,7 @@ func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats
 
 func (c *Clients) User() UserClient { return c.user }
 
-func (c *Clients) UserMirror() UserClient { return c.user }
+func (c *Clients) UserMirror() UserClient { return c.userMirror }
 
 func (c *Clients) Destination() DestinationClient { return c.destination }
 
