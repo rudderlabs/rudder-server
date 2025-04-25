@@ -66,7 +66,7 @@ type (
 	}
 
 	transformEventContext struct {
-		event         *wtypes.WarehouseTransformerEvent
+		event         *wtypes.TransformerEvent
 		intrOpts      *intrOptions
 		destOpts      *destOptions
 		jsonPathsInfo *jsonPathInfo
