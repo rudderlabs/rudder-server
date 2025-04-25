@@ -79,14 +79,18 @@ func NewClient(config *ClientConfig) Client {
 			return client
 		}, clientTTL)
 	case "httplb":
+		tr := &httplbtransport{
+			MaxConnsPerHost:     transport.MaxConnsPerHost,
+			MaxIdleConnsPerHost: transport.MaxIdleConnsPerHost,
+		}
 		return httplb.NewClient(
 			httplb.WithRootContext(context.TODO()),
 			httplb.WithPicker(getPicker(config.PickerType)),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
-			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),
-			httplb.WithIdleTransportTimeout(2*transport.IdleConnTimeout),
 			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
+			httplb.WithTransport("http", tr),
+			httplb.WithTransport("https", tr),
 		)
 	default:
 		return client
@@ -110,10 +114,26 @@ func getPicker(pickerType string) func(prev picker.Picker, allConns conn.Conns) 
 	}
 }
 
-type HTTPLBTransport struct {
+type httplbtransport struct {
+	MaxConnsPerHost     int
+	MaxIdleConnsPerHost int
 	*http.Transport
 }
 
-func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
-	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
+func (s httplbtransport) NewRoundTripper(_, _ string, opts httplb.TransportConfig) httplb.RoundTripperResult {
+	transport := &http.Transport{
+		Proxy:                  opts.ProxyFunc,
+		GetProxyConnectHeader:  opts.ProxyConnectHeadersFunc,
+		DialContext:            opts.DialFunc,
+		ForceAttemptHTTP2:      true,
+		MaxConnsPerHost:        s.MaxConnsPerHost,
+		MaxIdleConns:           s.MaxIdleConnsPerHost,
+		MaxIdleConnsPerHost:    s.MaxIdleConnsPerHost,
+		IdleConnTimeout:        opts.IdleConnTimeout,
+		TLSHandshakeTimeout:    opts.TLSHandshakeTimeout,
+		TLSClientConfig:        opts.TLSClientConfig,
+		MaxResponseHeaderBytes: opts.MaxResponseHeaderBytes,
+		ExpectContinueTimeout:  1 * time.Second,
+	}
+	return httplb.RoundTripperResult{RoundTripper: transport, Close: transport.CloseIdleConnections}
 }
