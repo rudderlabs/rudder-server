@@ -345,6 +345,7 @@ func TestProxyRequest(t *testing.T) {
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
+					DestInfo:     &v2.DestinationInfo{},
 				}
 				r := tr.ProxyRequest(ctx, reqParams)
 				stCd := r.ProxyRequestStatusCode
@@ -384,6 +385,7 @@ func TestProxyRequest(t *testing.T) {
 				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
+				DestInfo:     &v2.DestinationInfo{},
 			}
 			r := tr.ProxyRequest(ctx, reqParams)
 			stCd := r.ProxyRequestStatusCode
@@ -1967,6 +1969,7 @@ func TestTransformerMetrics(t *testing.T) {
 		stats:                     statsStore,
 		logger:                    logger.NOP,
 		tr:                        &http.Transport{},
+		clientOAuth:               srv.Client(),
 		expirationTimeDiff:        expTimeDiff,
 		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType), // Add this line
 	}

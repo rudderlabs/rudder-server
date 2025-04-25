@@ -354,10 +354,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out")))
 		})
 	})
 
@@ -573,10 +573,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out")))
 		})
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func() {
