@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -23,9 +21,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -290,6 +288,7 @@ func TestDestinationTransformer(t *testing.T) {
 								"workspaceId":      Metadata.WorkspaceID,
 								"language":         "",
 								"transformationId": "",
+								"mirroring":        "false",
 
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,
