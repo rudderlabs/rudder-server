@@ -416,10 +416,10 @@ func (job *UploadJob) run() (err error) {
 		// record metric for time taken by the current state
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
-		if newStatus == model.ExportedData {
-			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID, job.stagingFileIDs)
-			break
-		}
+		// if newStatus == model.ExportedData {
+		// 	_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID, job.stagingFileIDs)
+		// 	break
+		// }
 
 		nextUploadState = nextState(newStatus)
 	}
