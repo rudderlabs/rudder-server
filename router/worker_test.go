@@ -392,7 +392,7 @@ var _ = Describe("Proxy Request", func() {
 			require.Equal(GinkgoT(), expectedRespBodys, respBodys)
 			require.Equal(GinkgoT(), "application/json", contentType)
 		})
-		It("should return responses after going through OAuth handling for every job on transformer.ProxyRequest's non 200 and authType is OAuth", func() {
+		It("should return responses directly for OAuth destinations", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &Handle{
@@ -488,7 +488,7 @@ var _ = Describe("Proxy Request", func() {
 				URL: "https://www.test.com",
 			}
 
-			// Note: Taking advantage of empty rudderAccountID check in handleOAuthDestResponse function
+			// With OAuth v2, the response should be passed through directly
 			expectedRespCodes := map[int64]int{
 				1: 400,
 				2: 400,
