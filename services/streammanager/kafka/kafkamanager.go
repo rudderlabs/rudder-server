@@ -714,46 +714,58 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 		return 400, "Failure", "Invalid message"
 	}
 
-	value, err := jsonrs.Marshal(messageValue)
-	if err != nil {
-		return makeErrorResponse(err)
+	userID := parsedJSON.Get("userId").String()
+	topic := parsedJSON.Get("topic").String()
+	if topic == "" {
+		topic = defaultTopic
 	}
 
-	timestamp := time.Now()
-	userID := parsedJSON.Get("userId").String()
+	var value []byte
+	var err error
+
 	codecs := p.getCodecs()
 	if len(codecs) > 0 {
+		// AVRO serialization path
 		schemaId := parsedJSON.Get("schemaId").String()
-		messageId := parsedJSON.Get("message.messageId").String()
 		if schemaId == "" {
+			messageId := parsedJSON.Get("message.messageId").String()
 			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
 		}
+
 		codec, ok := codecs[schemaId]
 		if !ok {
 			return makeErrorResponse(fmt.Errorf("unable to find schema with ID %v", schemaId))
 		}
-		value, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), value, *codec)
-		if err != nil {
+
+		// Marshal only once before AVRO processing
+		if value, err = jsonrs.Marshal(messageValue); err != nil {
+			return makeErrorResponse(err)
+		}
+
+		if value, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), value, *codec); err != nil {
+			messageId := parsedJSON.Get("message.messageId").String()
 			return makeErrorResponse(fmt.Errorf(
 				"unable to serialize event with schemaId %q and messageId %s: %s",
 				schemaId, messageId, err,
 			))
 		}
+	} else {
+		// Regular JSON path - only marshal once
+		if value, err = jsonrs.Marshal(messageValue); err != nil {
+			return makeErrorResponse(err)
+		}
 	}
 
-	topic := parsedJSON.Get("topic").String()
-
-	if topic == "" {
-		topic = defaultTopic
-	}
-
+	// Use a single timestamp for the entire operation
+	timestamp := time.Now()
 	message := prepareMessage(topic, userID, value, timestamp)
 
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
 	}
 
-	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
+	// Avoid sprintf for simple concatenation
+	returnMessage := "Message delivered to topic: " + topic
 	return 200, returnMessage, returnMessage
 }
 
