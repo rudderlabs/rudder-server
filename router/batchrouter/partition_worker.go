@@ -21,14 +21,15 @@ import (
 )
 
 type PartitionWorker struct {
-	wg      sync.WaitGroup
+	wg      *sync.WaitGroup
+	cancel  context.CancelFunc
 	logger  logger.Logger
 	brt     *Handle
 	channel chan *JobEntry
 	cb      circuitbreaker.CircuitBreaker
 	limiter kitsync.Limiter
 
-	addJobMaxDelay time.Duration
+	delayedJobAdditionTimerFrequency time.Duration
 }
 
 type JobEntry struct {
@@ -39,51 +40,50 @@ type JobEntry struct {
 
 func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb circuitbreaker.CircuitBreaker) *PartitionWorker {
 	maxJobsToBuffer := brt.conf.GetIntVar(100000, 1, "BatchRouter."+brt.destType+".partitionWorker.maxJobsToBuffer", "BatchRouter.partitionWorker.maxJobsToBuffer")
-
+	wg := &sync.WaitGroup{}
+	ctx, cancel := context.WithCancel(context.Background())
 	pw := &PartitionWorker{
+		wg:      wg,
+		cancel:  cancel,
 		channel: make(chan *JobEntry, maxJobsToBuffer),
 		logger:  logger.With("partition", partition),
 		brt:     brt,
 		cb:      cb,
 		limiter: kitsync.NewReloadableLimiter(
-			context.Background(), &sync.WaitGroup{}, "batchrouter_partition_worker",
+			ctx, wg, "batchrouter_partition_worker",
 			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter."+brt.destType+".partitionWorker.concurrency", "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
 		),
-		addJobMaxDelay: brt.conf.GetDurationVar(5, time.Second, "BatchRouter."+brt.destType+".partitionWorker.addJobMaxDelaySeconds", "BatchRouter.partitionWorker.addJobMaxDelaySeconds"),
+		delayedJobAdditionTimerFrequency: brt.conf.GetDurationVar(5, time.Second, "BatchRouter."+brt.destType+".partitionWorker.addJobMaxDelaySeconds", "BatchRouter.partitionWorker.addJobMaxDelaySeconds"),
 	}
 	return pw
 }
 
 func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
-	entry := &JobEntry{
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go pw.monitorDelayedJobAddition(ctx, &wg, stats.Tags{"source_id": sourceID, "destination_id": destID})
+	pw.channel <- &JobEntry{
 		job:      job,
 		sourceID: sourceID,
 		destID:   destID,
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go pw.monitorAddJobStuck(ctx, &wg, stats.Tags{"source_id": entry.sourceID, "destination_id": entry.destID})
-	pw.channel <- entry
 	cancel()
 	wg.Wait()
 }
 
-// monitorAddJobStuck runs in a goroutine to periodically report if AddJob is stuck.
-func (pw *PartitionWorker) monitorAddJobStuck(ctx context.Context, wg *sync.WaitGroup, statTags stats.Tags) {
+// monitorDelayedJobAddition runs in a goroutine to periodically report delayed job additions.
+func (pw *PartitionWorker) monitorDelayedJobAddition(ctx context.Context, wg *sync.WaitGroup, statTags stats.Tags) {
 	defer wg.Done()
-
-	initialTimer := time.NewTimer(pw.addJobMaxDelay)
+	start := time.Now()
+	initialTimer := time.NewTimer(pw.delayedJobAdditionTimerFrequency)
 	defer initialTimer.Stop()
 	select {
 	case <-ctx.Done():
 		return
 	case <-initialTimer.C:
-		stats.Default.NewTaggedStat("batchrouter.partition_worker_add_job_stuck", stats.CountType, statTags).Increment()
-
+		stats.Default.NewTaggedStat("batchrouter_partition_worker_add_job_delay", stats.TimerType, statTags).SendTiming(time.Since(start))
 	}
 }
 
@@ -236,5 +236,6 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 
 func (pw *PartitionWorker) Stop() {
 	close(pw.channel)
+	pw.cancel()
 	pw.wg.Wait()
 }

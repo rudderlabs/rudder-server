@@ -26,7 +26,7 @@ func newWorker(partition string, logger logger.Logger, brt *Handle) *worker {
 		cb: circuitbreaker.NewCircuitBreaker(
 			partition,
 			circuitbreaker.WithMaxRequests(1),
-			circuitbreaker.WithTimeout(brt.conf.GetDurationVar(10, time.Second, "BatchRouter.timeout", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreq")),
+			circuitbreaker.WithTimeout(brt.conf.GetDurationVar(30, time.Second, "BatchRouter.timeout", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreq")),
 			circuitbreaker.WithConsecutiveFailures(brt.conf.GetIntVar(3, 1, "BatchRouter.maxConsecutiveFailures", "BatchRouter."+brt.destType+".maxConsecutiveFailures")),
 			circuitbreaker.WithLogger(logger),
 		),
@@ -55,7 +55,7 @@ func (w *worker) Work() bool {
 			logger.NewStringField("partition", w.partition))
 		return false
 	}
-
+	scheduleTimeStat := stats.Default.NewTaggedStat("batchrouter_worker_schedule_jobs_time", stats.TimerType, stats.Tags{"partition": w.partition})
 	brt := w.brt
 	workerJobs := brt.getWorkerJobs(w.partition)
 	if len(workerJobs) == 0 {
@@ -63,13 +63,15 @@ func (w *worker) Work() bool {
 	}
 
 	for _, workerJob := range workerJobs {
-		w.routeJobsToBuffer(workerJob)
+		startTime := time.Now()
+		w.scheduleJobs(workerJob)
+		scheduleTimeStat.SendTiming(time.Since(startTime))
 	}
 	return true
 }
 
 // routeJobsToBuffer sends jobs to appropriate channels in the job buffer
-func (w *worker) routeJobsToBuffer(destinationJobs *DestinationJobs) {
+func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 	brt := w.brt
 	destWithSources := destinationJobs.destWithSources
 	parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destWithSources.Destination.ID}}
