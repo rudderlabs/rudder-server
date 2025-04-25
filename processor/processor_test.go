@@ -115,8 +115,14 @@ type testContext struct {
 	mockTrackedUsersReporter *mockTrackedUsersReporter
 }
 
-func (c *testContext) Setup() {
-	c.mockCtrl = gomock.NewController(GinkgoT())
+func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
+	var tr gomock.TestReporter
+	if len(testReporters) > 0 {
+		tr = testReporters[0]
+	} else {
+		tr = GinkgoT()
+	}
+	c.mockCtrl = gomock.NewController(tr)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
@@ -5257,67 +5263,74 @@ func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReporte
 
 func assertDestinationTransform(
 	messages map[string]mockEventData,
-	sourceId, destinationID string,
+	sourceId, destinationID string, // nolint: unparam
 	expectations transformExpectation,
+	tb ...require.TestingT,
 ) func(
 	ctx context.Context,
 	clientEvents []types.TransformerEvent,
 	batchSize int,
 ) types.Response {
+	var ginkgo bool
+	var t require.TestingT
+	if len(tb) == 0 {
+		t = GinkgoT()
+		ginkgo = true
+	} else {
+		t = tb[0]
+	}
 	return func(
 		ctx context.Context,
 		clientEvents []types.TransformerEvent,
 		batchSize int,
 	) types.Response {
-		defer GinkgoRecover()
+		if ginkgo {
+			defer GinkgoRecover()
+		}
 
-		Expect(clientEvents).To(HaveLen(expectations.events))
+		require.Len(t, clientEvents, expectations.events)
 
 		messageIDs := make([]string, 0)
 		for i := range clientEvents {
 			event := clientEvents[i]
 			messageID := event.Message["messageId"].(string)
 			messageIDs = append(messageIDs, messageID)
-
 			// Expect all messages belong to same destination
-			Expect(event.Destination.ID).To(Equal(destinationID))
-
+			require.Equal(t, destinationID, event.Destination.ID)
 			// Expect metadata
-			Expect(event.Metadata.DestinationID).To(Equal(destinationID))
-
+			require.Equal(t, destinationID, event.Metadata.DestinationID)
 			// Metadata are stripped from destination transform, if a user transform occurred before.
 			if expectations.receiveMetadata {
-				Expect(event.Metadata.DestinationType).To(Equal(fmt.Sprintf("%s-definition-name", destinationID)))
-				Expect(event.Metadata.JobID).To(Equal(messages[messageID].jobid))
-				Expect(event.Metadata.MessageID).To(Equal(messageID))
-				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
-				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
+				require.Equal(t, fmt.Sprintf("%s-definition-name", destinationID), event.Metadata.DestinationType)
+				require.Equal(t, messages[messageID].jobid, event.Metadata.JobID)
+				require.Equal(t, messageID, event.Metadata.MessageID)
+				require.Equal(t, sourceId, event.Metadata.SourceID)
+				require.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
 				rawEvent, err := jsonrs.Marshal(event)
-				Expect(err).ToNot(HaveOccurred())
+				require.NoError(t, err)
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
 				if recordID == nil {
-					Expect(event.Metadata.RecordID).To(BeNil())
+					require.Nil(t, event.Metadata.RecordID)
 				} else {
-					Expect(event.Metadata.RecordID).To(Equal(recordID))
+					require.Equal(t, recordID, event.Metadata.RecordID)
 				}
 				jobRunID := messages[messageID].params["source_job_run_id"]
-				Expect(event.Metadata.SourceJobRunID).To(Equal(jobRunID))
+				require.Equal(t, jobRunID, event.Metadata.SourceJobRunID)
 				taskRunID := messages[messageID].params["source_task_run_id"]
-				Expect(event.Metadata.SourceTaskRunID).To(Equal(taskRunID))
+				require.Equal(t, taskRunID, event.Metadata.SourceTaskRunID)
 				sourcesJobID := gjson.GetBytes(rawEvent, "message.context.sources.job_id").String()
-				Expect(event.Metadata.SourceJobID).To(Equal(sourcesJobID))
+				require.Equal(t, sourcesJobID, event.Metadata.SourceJobID)
 			} else {
-				// Expect(event.Metadata.DestinationType).To(Equal(""))
-				Expect(event.Metadata.JobID).To(Equal(int64(0)))
-				Expect(event.Metadata.MessageID).To(Equal(""))
-				Expect(event.Metadata.SourceID).To(Equal(sourceId)) // ???
-				Expect(event.Metadata.SourceName).To(Equal(sourceIDToName[sourceId]))
+				require.EqualValues(t, 0, event.Metadata.JobID)
+				require.Equal(t, "", event.Metadata.MessageID)
+				require.Equal(t, sourceId, event.Metadata.SourceID)
+				require.Equal(t, sourceIDToName[sourceId], event.Metadata.SourceName)
 			}
 
 			// Expect timestamp fields
 			expectTimestamp := func(input string, expected time.Time) {
 				inputTime, _ := time.Parse(misc.RFC3339Milli, input)
-				Expect(inputTime).To(BeTemporally("~", expected, time.Second))
+				requireTimeCirca(t, expected, inputTime, time.Second)
 			}
 
 			parseTimestamp := func(timestamp string, defaultTimeStamp time.Time) time.Time {
@@ -5339,14 +5352,14 @@ func assertDestinationTransform(
 			expectTimestamp(event.Message["timestamp"].(string), misc.GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp))
 
 			// Expect message properties
-			Expect(event.Message["some-property"].(string)).To(Equal(fmt.Sprintf("property-%s", messages[messageID].id)))
+			require.Equal(t, fmt.Sprintf("property-%s", messages[messageID].id), event.Message["some-property"].(string))
 
 			if destinationID == "enabled-destination-b" {
-				Expect(event.Message["user-transform"].(string)).To(Equal("value"))
+				require.Equal(t, "value", event.Message["user-transform"].(string))
 			}
 		}
 
-		Expect(strings.Join(messageIDs, ",")).To(Equal(expectations.messageIds))
+		require.Equal(t, expectations.messageIds, strings.Join(messageIDs, ","))
 
 		return types.Response{
 			Events: []types.TransformerResponse{
@@ -5386,7 +5399,7 @@ func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
+func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool, t ...testing.TB) {
 	setDisableDedupFeature(processor, enableDedup)
 	err := processor.Setup(
 		c.mockBackendConfig,
@@ -5408,7 +5421,11 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 		trackedusers.NewNoopDataCollector(),
 		rmetrics.NewPendingEventsRegistry(),
 	)
-	Expect(err).To(BeNil())
+	if len(t) == 0 {
+		Expect(err).To(BeNil())
+	} else {
+		require.NoError(t[0], err)
+	}
 	processor.reportingEnabled = enableReporting
 	processor.sourceObservers = []sourceObserver{c.MockObserver}
 	processor.tracer = tracing.New(stats.NOPTracer)

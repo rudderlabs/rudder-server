@@ -241,7 +241,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 }
 
 // Setup initializes the module
-func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(destType string, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
 	// Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
@@ -254,10 +254,10 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 	// https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	// Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	forceHTTP1 := getRouterConfigBool("forceHTTP1", destID, false)
+	forceHTTP1 := getRouterConfigBool("forceHTTP1", destType, false)
 	network.logger.Info("forceHTTP1: ", forceHTTP1)
 	if forceHTTP1 {
-		network.logger.Info("Forcing HTTP1 connection for ", destID)
+		network.logger.Info("Forcing HTTP1 connection for ", destType)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
 		if defaultTransportCopy.TLSClientConfig != nil {
@@ -265,11 +265,12 @@ func (network *netHandle) Setup(destID string, netClientTimeout time.Duration) {
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(destID, defaultTransportCopy.TLSClientConfig.NextProtos)
+		network.logger.Info(destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
-	defaultTransportCopy.MaxIdleConns = getRouterConfigInt("httpMaxIdleConns", destID, 100)
-	defaultTransportCopy.MaxIdleConnsPerHost = getRouterConfigInt("httpMaxIdleConnsPerHost", destID, 100)
-	network.logger.Info(destID, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	// by default we should have as many idle connections as the number of workers
+	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConns", "noOfWorkers")
+	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
+	network.logger.Info(destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}

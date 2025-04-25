@@ -67,6 +67,10 @@ func TestWarehouse(t *testing.T) {
 			SourceJobID:           "<source-job-id>",
 			SourceJobRunID:        "<source-job-run-id>",
 			TimeWindow:            time.Date(1, 1, 1, 0, 40, 0, 0, time.UTC),
+			BytesPerTable: map[string]int64{
+				"product_track": 1000,
+				"tracks":        1000,
+			},
 			Schema: map[string]map[string]string{
 				"product_track": {
 					"context_destination_id":   "string",

@@ -25,6 +25,9 @@ type Augmenter interface {
 type routerBodyAugmenter struct {
 	AugmenterPath string
 }
+type routerHeaderAugmenter struct {
+	HeaderName string
+}
 type headerAugmenter struct {
 	HeaderName string
 }
@@ -37,6 +40,10 @@ var RouterBodyAugmenter = &routerBodyAugmenter{
 // HeaderAugmenter is an Augmenter that adds the authorization information to the request header.
 var HeaderAugmenter = &headerAugmenter{
 	HeaderName: "X-Rudder-Dest-Info",
+}
+
+var RouterHeaderAugmenter = &routerHeaderAugmenter{
+	HeaderName: "Oauth-Secret",
 }
 
 // Augment adds the secret information to request body
@@ -68,6 +75,15 @@ func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawM
 		return fmt.Errorf("marshalling secret: %w", err)
 	}
 	r.Header.Set(t.HeaderName, string(secretJson))
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return nil
+}
+
+func (t *routerHeaderAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
+	if secret == nil {
+		return errors.New("secret is nil")
+	}
+	r.Header.Set(t.HeaderName, string(secret))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }

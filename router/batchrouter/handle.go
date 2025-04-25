@@ -307,6 +307,8 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	warehouseConnIdentifier := brt.connectionWHNamespaceMap[connIdentifier]
 	brt.configSubscriberMu.RUnlock()
 	var totalBytes int
+	bytesPerTable := make(map[string]int64)
+
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
@@ -335,12 +337,20 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 				eventsFound = true
 				line := string(job.EventPayload) + "\n"
 				totalBytes += len(line)
+				if isWarehouse {
+					tableName := gjson.GetBytes(job.EventPayload, "metadata.table").String()
+					bytesPerTable[tableName] += int64(len(line))
+				}
 				_ = gzWriter.WriteGZ(line)
 			}
 		} else {
 			eventsFound = true
 			line := string(job.EventPayload) + "\n"
 			totalBytes += len(line)
+			if isWarehouse {
+				tableName := gjson.GetBytes(job.EventPayload, "metadata.table").String()
+				bytesPerTable[tableName] += int64(len(line))
+			}
 			_ = gzWriter.WriteGZ(line)
 		}
 	}
@@ -490,6 +500,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		LastEventAt:      lastEventAt,
 		TotalEvents:      len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
 		TotalBytes:       totalBytes,
+		BytesPerTable:    bytesPerTable,
 		UseRudderStorage: useRudderStorage,
 	}
 }
@@ -513,6 +524,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		LastEventAt:           output.LastEventAt,
 		TotalEvents:           output.TotalEvents,
 		TotalBytes:            output.TotalBytes,
+		BytesPerTable:         output.BytesPerTable,
 		UseRudderStorage:      output.UseRudderStorage,
 		SourceTaskRunID:       sampleParameters.SourceTaskRunID,
 		SourceJobID:           sampleParameters.SourceJobID,

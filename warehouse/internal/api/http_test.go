@@ -61,7 +61,7 @@ func filterPayload(text, match string) string {
 }
 
 func TestAPI_Process(t *testing.T) {
-	body := loadFile(t, "./testdata/process_request_v2.json")
+	body := loadFile(t, "./testdata/process_request.json")
 	expectedStagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
 			ID:                    0,

@@ -49,7 +49,7 @@ func (t *Transformer) mergeEvents(tec *transformEventContext) ([]map[string]any,
 		"table":        tableName,
 		"columns":      columnTypes,
 		"isMergeRule":  true,
-		"receivedAt":   tec.event.Metadata.ReceivedAt,
+		"receivedAt":   tec.event.ReceivedAt,
 		"mergePropOne": data[columns.Prop1Value],
 	}
 

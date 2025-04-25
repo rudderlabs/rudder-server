@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -107,43 +108,38 @@ func TestBatchDelete(t *testing.T) {
 				}
 				return nil
 			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			sort.Strings(goldenFilesList)
 			require.Equal(t, len(goldenFilesList), len(cleanedFilesList), "actual number of files in destination bucket different than expected")
 			for i := 0; i < len(goldenFilesList); i++ {
-				goldenFilePtr, err := os.Open(goldenFilesList[i])
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer goldenFilePtr.Close()
-				goldenFileContent, err := io.ReadAll(goldenFilePtr)
-				if err != nil {
-					t.Fatal(err)
-				}
+				func() {
+					goldenFilePtr, err := os.Open(goldenFilesList[i])
+					require.NoError(t, err)
+					defer func() { _ = goldenFilePtr.Close() }()
 
-				cleanedFilePtr, err := os.Open(cleanedFilesList[i])
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer cleanedFilePtr.Close()
-				cleanedFileContent, err := io.ReadAll(cleanedFilePtr)
-				if err != nil {
-					t.Fatal(err)
-				}
+					goldenFileContent, err := io.ReadAll(goldenFilePtr)
+					require.NoError(t, err)
 
-				require.Equal(t, 0, bytes.Compare(goldenFileContent, cleanedFileContent), fmt.Sprintf("comparing: %v against %v", goldenFilesList[i], cleanedFilesList[i]))
+					cleanedFilePtr, err := os.Open(cleanedFilesList[i])
+					require.NoError(t, err)
+					defer func() { _ = cleanedFilePtr.Close() }()
+
+					cleanedFileContent, err := io.ReadAll(cleanedFilePtr)
+					require.NoError(t, err)
+
+					require.Equalf(t,
+						0, bytes.Compare(goldenFileContent, cleanedFileContent),
+						"comparing: %v against %v", goldenFilesList[i], cleanedFilesList[i],
+					)
+				}()
 			}
 			err = os.RemoveAll(mockBucketLocation)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 		})
 	}
 }
 
-// creates a tmp directory & copy all the content of testData in it, to use it as mockBucket & store it in mockFileManager struct.
+// creates a tmp directory and copy all the content of testData in it, to use it as mockBucket & store it in the mockFileManager struct.
 func mockFileManagerFactory(_ *filemanager.Settings) (filemanager.FileManager, error) {
 	// create tmp directory
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
@@ -179,13 +175,13 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 		fileName = strings.Join(prefixes, "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
-	// copy the content of file to mockBucektLocation+fileName
+	// copy the content of the file to mockBucketLocation+fileName
 	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
 	}
-	defer uploadFilePtr.Close()
+	defer func() { _ = uploadFilePtr.Close() }()
 	_, err = io.Copy(uploadFilePtr, file)
 	if err != nil {
 		return filemanager.UploadedFile{}, err
@@ -197,8 +193,27 @@ func (fm *mockFileManager) Upload(_ context.Context, file *os.File, prefixes ...
 	}, nil
 }
 
-// Given a file name download & simply save it in the given file pointer.
-func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, location string) error {
+func (fm *mockFileManager) UploadReader(_ context.Context, _ string, rdr io.Reader) (filemanager.UploadedFile, error) {
+	fileName := uuid.New().String()
+	finalFileName := fmt.Sprintf("%s/%s", fm.mockBucketLocation, fileName)
+	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return filemanager.UploadedFile{}, err
+	}
+	defer func() { _ = uploadFilePtr.Close() }()
+	_, err = io.Copy(uploadFilePtr, rdr)
+	if err != nil {
+		return filemanager.UploadedFile{}, err
+	}
+
+	return filemanager.UploadedFile{
+		Location:   fm.mockBucketLocation + "/" + fileName,
+		ObjectName: fileName,
+	}, nil
+}
+
+// Given a file name download and simply save it in the given file pointer.
+func (fm *mockFileManager) Download(_ context.Context, outputFilePtr io.WriterAt, location string) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0o644)
 	if err != nil {
@@ -207,7 +222,7 @@ func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, l
 		}
 		return err
 	}
-	_, err = io.Copy(outputFilePtr, uploadFilePtr)
+	_, err = io.Copy(io.NewOffsetWriter(outputFilePtr, 0), uploadFilePtr)
 	if err != nil {
 		return err
 	}
@@ -215,7 +230,7 @@ func (fm *mockFileManager) Download(_ context.Context, outputFilePtr *os.File, l
 	return nil
 }
 
-// Given a file name as key, delete if it is present in the bucket.
+// Given a file name as the key, delete if it is present in the bucket.
 func (fm *mockFileManager) Delete(_ context.Context, keys []string) error {
 	for _, key := range keys {
 		fileLocation := fmt.Sprint(fm.mockBucketLocation, "/", key)
@@ -227,7 +242,7 @@ func (fm *mockFileManager) Delete(_ context.Context, keys []string) error {
 	return nil
 }
 
-// given prefix & maxItems, return with list of Fileobject in the bucket.
+// given prefix & maxItems, return with the list of FileObject in the bucket.
 func (fm *mockFileManager) ListFilesWithPrefix(_ context.Context, _, _ string, _ int64) filemanager.ListSession {
 	return fm
 }

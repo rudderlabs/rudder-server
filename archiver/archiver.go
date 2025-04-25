@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -31,7 +32,7 @@ type archiver struct {
 
 	archiveFrom string
 	config      struct {
-		concurrency      func() int
+		concurrency      config.ValueLoader[int]
 		payloadLimit     func() int64
 		jobsdbMaxRetries func() int
 		instanceID       string
@@ -46,7 +47,7 @@ type archiver struct {
 func New(
 	jobsDB jobsdb.JobsDB,
 	storageProvider fileuploader.Provider,
-	c configGetter,
+	c *config.Config,
 	statHandle stats.Stats,
 	opts ...Option,
 ) *archiver {
@@ -66,9 +67,7 @@ func New(
 	a.config.enabled = func() bool {
 		return c.GetBool("archival.Enabled", true)
 	}
-	a.config.concurrency = func() int {
-		return c.GetInt("archival.ArchiveConcurrency", 10)
-	}
+	a.config.concurrency = c.GetReloadableIntVar(10, 1, "archival.ArchiveConcurrency")
 	a.config.payloadLimit = func() int64 {
 		return c.GetInt64("archival.ArchivePayloadSizeLimit", 1*bytesize.GB)
 	}
@@ -101,25 +100,25 @@ func (a *archiver) Start() error {
 	a.waitGroup = g
 
 	var limiterGroup sync.WaitGroup
-	jobFetchLimit := kitsync.NewLimiter(
+	jobFetchLimit := kitsync.NewReloadableLimiter(
 		ctx,
 		&limiterGroup,
 		"arc_fetch",
-		a.config.concurrency(),
+		a.config.concurrency,
 		a.stats,
 	)
-	uploadLimit := kitsync.NewLimiter(
+	uploadLimit := kitsync.NewReloadableLimiter(
 		ctx,
 		&limiterGroup,
 		"arc_upload",
-		a.config.concurrency(),
+		a.config.concurrency,
 		a.stats,
 	)
-	statusUpdateLimit := kitsync.NewLimiter(
+	statusUpdateLimit := kitsync.NewReloadableLimiter(
 		ctx,
 		&limiterGroup,
 		"arc_update",
-		a.config.concurrency(),
+		a.config.concurrency,
 		a.stats,
 	)
 
