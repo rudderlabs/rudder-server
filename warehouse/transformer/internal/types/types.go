@@ -48,7 +48,11 @@ func New(
 	wEvent.Metadata.RecordID = event.Metadata.RecordID
 	wEvent.Metadata.DestinationConfig = map[string]any{}
 	for _, key := range destConfigFields {
-		wEvent.Metadata.DestinationConfig[key] = event.Destination.Config[key]
+		configValue, ok := event.Destination.Config[key]
+		if !ok {
+			continue
+		}
+		wEvent.Metadata.DestinationConfig[key] = configValue
 	}
 	return wEvent
 }
