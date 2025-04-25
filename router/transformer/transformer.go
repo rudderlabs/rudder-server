@@ -620,6 +620,7 @@ func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
 	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
 	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = !config.GetBoolVar(true, "DEST_TRANSFORM_URL_IS_HEADLESS") || config.GetBoolVar(false, "Transformer.Client.DestinationTransformer.recycle", "Transformer.Client.recycle")
 	return transformerClientConfig
 }
 
