@@ -167,8 +167,8 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 			workspace = &previousConfig
 		} else {
 			workspace.ApplyReplaySources()
+			workspace.processAccountAssociations()
 		}
-
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		workspace.ConnectionFlags.URL = nc.cpRouterURL
 		workspace.ConnectionFlags.Services = map[string]bool{"warehouse": true}
