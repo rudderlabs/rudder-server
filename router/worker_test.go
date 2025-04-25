@@ -418,8 +418,8 @@ var _ = Describe("Proxy Request", func() {
 						ProxyRequestResponseBody: "Err",
 						RespContentType:          "application/json",
 						RespStatusCodes: map[int64]int{
-							1: 500,
-							2: 501,
+							1: 400,
+							2: 400,
 						},
 						RespBodys: map[int64]string{
 							1: "err1",
@@ -517,9 +517,7 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             true,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
+			reloadableConfig:               &reloadableConfig{},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -676,9 +674,7 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             false,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
+			reloadableConfig:               &reloadableConfig{},
 		},
 	}
 	var limiterWg sync.WaitGroup
