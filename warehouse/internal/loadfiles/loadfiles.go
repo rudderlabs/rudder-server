@@ -241,7 +241,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	}
 	if len(v2Files) > 0 {
 		g.Go(func() error {
-			lf.Logger.Infof("V1 job creation enabled. Processing %d v2 staging files", len(v1Files))
+			lf.Logger.Infof("V1 job creation enabled. Processing %d v2 staging files", len(v2Files))
 			return lf.createUploadV2Jobs(gCtx, job, v2Files, publishBatchSize, uniqueLoadGenID)
 		})
 	}
@@ -670,6 +670,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 				newSize := batchTableSizes[tableName] + size
 				if newSize > maxSizeBytes {
 					canAdd = false
+					lf.Logger.Infof("Can't add file %d, current size: %d, maxSize: %d", files[i].file.ID, newSize, maxSizeBytes)
 					break
 				}
 			}
@@ -680,6 +681,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 				for tableName, size := range files[i].file.BytesPerTable {
 					batchTableSizes[tableName] += size
 				}
+				lf.Logger.Infof("Added file %d to batch. New size: %v", files[i].file.ID, batchTableSizes)
 				// Remove the file from remaining by moving the last element
 				files[i] = files[len(files)-1]
 				files = files[:len(files)-1]
@@ -691,6 +693,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 		// If we couldn't add any files to the batch, add the first file anyway
 		// This ensures we make progress even with files larger than maxSizeBytes
 		if len(currentBatch) == 0 {
+			lf.Logger.Infof("Adding only file %d to batch", files[0].file.ID)
 			currentBatch = append(currentBatch, files[0].file)
 			files = files[1:]
 		}
