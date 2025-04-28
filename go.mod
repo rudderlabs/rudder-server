@@ -63,7 +63,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.1
 	github.com/marcboeker/go-duckdb v1.8.5
-	github.com/microsoft/go-mssqldb v1.7.0
+	github.com/microsoft/go-mssqldb v1.8.0
 	github.com/minio/minio-go/v7 v7.0.90
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
