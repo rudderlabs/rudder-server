@@ -121,9 +121,8 @@ type Handle struct {
 	encounteredMergeRuleMap   map[string]map[string]bool
 
 	limiter struct {
-		read    kitsync.Limiter
-		process kitsync.Limiter
-		upload  kitsync.Limiter
+		read   kitsync.Limiter
+		upload kitsync.Limiter
 	}
 
 	batchRequestsMetricMu sync.RWMutex
