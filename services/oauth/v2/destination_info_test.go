@@ -126,6 +126,31 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: true,
 		},
 	},
+	{
+		description:    "success scenario for a non-oauth destination where account is not present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account:        nil,
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description:    "success scenario for a non-oauth destination where account is present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			Config: map[string]interface{}{
+				"oauth": map[string]interface{}{
+					"refreshTokenInDataplane": false,
+					"generateOAuthToken":      true,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
