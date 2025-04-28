@@ -472,7 +472,7 @@ func TestPostToWarehouse(t *testing.T) {
 			responseBody: "OK",
 			responseCode: http.StatusOK,
 
-			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z","BytesPerTable": {"tracks": 200}}`,
 		},
 		{
 			name: "should fail to post to warehouse",
@@ -526,6 +526,9 @@ func TestPostToWarehouse(t *testing.T) {
 			err := job.pingWarehouse(&batchJobs, UploadResult{
 				TotalEvents: 1,
 				TotalBytes:  200,
+				BytesPerTable: map[string]int64{
+					"tracks": 200,
+				},
 			})
 			if input.expectedError != nil {
 				require.Equal(t, fmt.Sprintf(input.expectedError.Error(), ts.URL), err.Error())

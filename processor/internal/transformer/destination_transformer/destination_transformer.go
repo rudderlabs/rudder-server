@@ -82,7 +82,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.loggedEventsMu = sync.Mutex{}
 	handle.loggedFileName = generateLogFileName()
 
-	handle.config.compactionEnabled = conf.GetReloadableBoolVar(true, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
+	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
 	for _, opt := range opts {
 		opt(handle)

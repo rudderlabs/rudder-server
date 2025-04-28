@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -108,18 +108,19 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 
 	for i := range clientEvents {
 		event := clientEvents[i]
-		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+		eventMetadata := event.Metadata
+		eventMetadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
 		g.Go(func() error {
 			r, err := t.processWarehouseMessage(c, &event)
 			if err != nil {
-				results <- transformerResponseFromErr(&event, err)
+				results <- transformerResponseFromErr(&eventMetadata, err)
 				return nil
 			}
 			for _, item := range r {
 				results <- types.TransformerResponse{
 					Output:     item,
-					Metadata:   event.Metadata,
+					Metadata:   eventMetadata,
 					StatusCode: http.StatusOK,
 				}
 			}
@@ -134,14 +135,14 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 }
 
 func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {
-	if err := t.checkValidContext(event); err != nil {
+	wEvent := wtypes.New(event, t.uuidGenerator, t.now)
+	if err := t.checkValidContext(wEvent); err != nil {
 		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
-	t.addMandatoryFields(event)
-	return t.handleEvent(event, cache)
+	return t.handleEvent(wEvent, cache)
 }
 
-func (t *Transformer) checkValidContext(event *types.TransformerEvent) error {
+func (t *Transformer) checkValidContext(event *wtypes.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
 		return nil
 	}
@@ -171,40 +172,9 @@ func (t *Transformer) eventContext(tec *transformEventContext) any {
 	return clonedContext
 }
 
-func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
-	t.ensureMessageID(event)
-	t.ensureReceivedAt(event)
-}
-
-func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
-	messageID, exists := event.Message["messageId"]
-	if !exists || utils.IsBlank(messageID) {
-		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
-	}
-}
-
-func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
-	receivedAt, exists := event.Message["receivedAt"]
-	if !exists || utils.IsBlank(receivedAt) {
-		t.setDefaultReceivedAt(event)
-		return
-	}
-
-	strReceivedAt, isString := receivedAt.(string)
-	if !isString || !utils.ValidTimestamp(strReceivedAt) {
-		t.setDefaultReceivedAt(event)
-	}
-}
-
-func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
-	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
-		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
-	}
-}
-
-func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
+func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) ([]map[string]any, error) {
 	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
-	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Destination.Config)
+	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Metadata.DestinationConfig)
 	jsonPathsInfo := extractJSONPathInfo(append(intrOpts.jsonPaths, destOpts.jsonPaths...))
 
 	eventType := strings.ToLower(event.Metadata.EventType)
@@ -240,19 +210,19 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 	}
 }
 
-func transformerResponseFromErr(event *types.TransformerEvent, err error) types.TransformerResponse {
+func transformerResponseFromErr(metadata *types.Metadata, err error) types.TransformerResponse {
 	var te *response.TransformerError
 	if ok := errors.As(err, &te); ok {
 		return types.TransformerResponse{
 			Output:     nil,
-			Metadata:   event.Metadata,
+			Metadata:   *metadata,
 			Error:      te.Error(),
 			StatusCode: te.StatusCode(),
 		}
 	}
 	return types.TransformerResponse{
 		Output:     nil,
-		Metadata:   event.Metadata,
+		Metadata:   *metadata,
 		Error:      response.ErrInternalServer.Error(),
 		StatusCode: response.ErrInternalServer.StatusCode(),
 	}

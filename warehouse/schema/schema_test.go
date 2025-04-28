@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -24,36 +26,34 @@ func schemaKey(sourceID, destinationID, namespace string) string {
 }
 
 type mockSchemaRepo struct {
-	err       error
 	schemaMap map[string]model.WHSchema
+	mu        sync.RWMutex
 }
 
 func (m *mockSchemaRepo) GetForNamespace(_ context.Context, sourceID, destinationID, namespace string) (model.WHSchema, error) {
-	if m.err != nil {
-		return model.WHSchema{}, m.err
-	}
-
 	key := schemaKey(sourceID, destinationID, namespace)
-	return m.schemaMap[key], nil
+
+	m.mu.RLock()
+	schema := m.schemaMap[key]
+	m.mu.RUnlock()
+
+	return schema, nil
 }
 
 func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
-	if m.err != nil {
-		return 0, m.err
-	}
-
 	key := schemaKey(schema.SourceID, schema.DestinationID, schema.Namespace)
+
+	m.mu.Lock()
 	m.schemaMap[key] = *schema
+	m.mu.Unlock()
+
 	return 0, nil
 }
 
-type mockFetchSchemaRepo struct {
-	count int
-}
+type mockFetchSchemaRepo struct{}
 
 func (m *mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, error) {
-	m.count++
-	schema := model.Schema{
+	return model.Schema{
 		"table1": {
 			"column1": "string",
 			"column2": "int",
@@ -63,12 +63,7 @@ func (m *mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, er
 			"column12": "int",
 			"column13": "int",
 		},
-	}
-	if m.count == 1 {
-		return schema, nil
-	}
-	schema["table2"]["column14"] = "float"
-	return schema, nil
+	}, nil
 }
 
 type mockStagingFileRepo struct {
@@ -83,20 +78,11 @@ func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model
 	return m.schemas, nil
 }
 
-var ttl = 10 * time.Minute
-
-func newSchema(warehouse model.Warehouse, schemaRepo schemaRepo) *schema {
-	sch := &schema{
-		warehouse:                        warehouse,
-		log:                              logger.NOP,
-		ttlInMinutes:                     ttl,
-		schemaRepo:                       schemaRepo,
-		fetchSchemaRepo:                  &mockFetchSchemaRepo{},
-		now:                              timeutil.Now,
-		stagingFilesSchemaPaginationSize: 2,
-	}
-	sch.stats.schemaSize = stats.NOP.NewStat("warehouse_schema_size", stats.HistogramType)
-	return sch
+func newSchema(t *testing.T, warehouse model.Warehouse, schemaRepo schemaRepo) Handler {
+	t.Helper()
+	sh, err := New(context.Background(), warehouse, config.New(), logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, schemaRepo, nil)
+	require.NoError(t, err)
+	return sh
 }
 
 func TestSchema(t *testing.T) {
@@ -109,13 +95,13 @@ func TestSchema(t *testing.T) {
 			ID: "source_id",
 		},
 	}
-	sch := newSchema(warehouse, &mockSchemaRepo{
+	sch := newSchema(t, warehouse, &mockSchemaRepo{
 		schemaMap: make(map[string]model.WHSchema),
 	})
 	ctx := context.Background()
 
 	t.Run("IsSchemaEmpty", func(t *testing.T) {
-		sch := newSchema(warehouse, &mockSchemaRepo{
+		sch := newSchema(t, warehouse, &mockSchemaRepo{
 			schemaMap: make(map[string]model.WHSchema),
 		})
 		require.True(t, sch.IsSchemaEmpty(ctx))
@@ -133,7 +119,7 @@ func TestSchema(t *testing.T) {
 	})
 
 	t.Run("GetTableSchema", func(t *testing.T) {
-		sch := newSchema(warehouse, &mockSchemaRepo{
+		sch := newSchema(t, warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
 					Schema: model.Schema{
@@ -156,8 +142,8 @@ func TestSchema(t *testing.T) {
 		}, tableSchema)
 	})
 
-	t.Run("ttl", func(t *testing.T) {
-		sch := newSchema(warehouse, &mockSchemaRepo{
+	t.Run("ExpiredSchema", func(t *testing.T) {
+		sch := newSchema(t, warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
 				"source_id_dest_id_namespace": {
 					Schema: model.Schema{
@@ -169,18 +155,11 @@ func TestSchema(t *testing.T) {
 							"column11": "string",
 						},
 					},
-					ExpiresAt: timeutil.Now().Add(10 * time.Minute),
+					ExpiresAt: timeutil.Now().Add(-10 * time.Minute),
 				},
 			},
 		})
 		count, err := sch.GetColumnsCount(ctx, "table2")
-		require.NoError(t, err)
-		require.Equal(t, 1, count)
-
-		sch.now = func() time.Time {
-			return timeutil.Now().Add(ttl * 2)
-		}
-		count, err = sch.GetColumnsCount(ctx, "table2")
 		require.NoError(t, err)
 		require.Equal(t, 3, count)
 	})
@@ -1239,22 +1218,20 @@ func TestSchema(t *testing.T) {
 					Namespace:   namespace,
 					Type:        tc.warehouseType,
 				}
-
-				sch := newSchema(warehouse, &mockSchemaRepo{
+				conf := config.New()
+				conf.Set("Warehouse.enableIDResolution", tc.idResolutionEnabled)
+				sch, err := New(context.Background(), warehouse, conf, logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, &mockSchemaRepo{
 					schemaMap: map[string]model.WHSchema{
 						"test_source_id_test_destination_id_test_namespace": {
-							Schema: tc.warehouseSchema,
+							Schema:    tc.warehouseSchema,
+							ExpiresAt: time.Now().Add(time.Second * 10),
 						},
 					},
-				})
-				sch.stagingFileRepo = &mockStagingFileRepo{
+				}, &mockStagingFileRepo{
 					schemas: tc.mockSchemas,
 					err:     tc.mockErr,
-				}
-				sch.enableIDResolution = tc.idResolutionEnabled
-				sch.now = func() time.Time {
-					return time.Time{}
-				}
+				})
+				require.NoError(t, err)
 				uploadSchema, err := sch.ConsolidateStagingFilesSchema(ctx, stagingFiles)
 				if tc.wantError == nil {
 					require.NoError(t, err)
@@ -1263,6 +1240,106 @@ func TestSchema(t *testing.T) {
 				}
 				require.Equal(t, tc.expectedSchema, uploadSchema)
 			})
+		}
+	})
+
+	t.Run("ConcurrentUpdateTableSchema", func(t *testing.T) {
+		mockRepo := &mockSchemaRepo{
+			schemaMap: make(map[string]model.WHSchema),
+		}
+		sch := newSchema(t, warehouse, mockRepo)
+		const numGoroutines = 10
+
+		// Channel to collect errors from goroutines
+		errCh := make(chan error, numGoroutines)
+
+		var wg sync.WaitGroup
+		wg.Add(numGoroutines)
+
+		// Launch multiple goroutines to update different tables concurrently
+		for i := 0; i < numGoroutines; i++ {
+			go func(id int) {
+				defer wg.Done()
+
+				tableName := fmt.Sprintf("concurrent_table_%d", id)
+				tableSchema := model.TableSchema{
+					fmt.Sprintf("column_%d", id): "string",
+				}
+
+				err := sch.UpdateTableSchema(ctx, tableName, tableSchema)
+				if err != nil {
+					errCh <- fmt.Errorf("goroutine %d: %w", id, err)
+					return
+				}
+			}(i)
+		}
+
+		// Wait for all goroutines to complete
+		wg.Wait()
+		close(errCh)
+
+		// Check for any errors
+		for err := range errCh {
+			t.Fatalf("Concurrent update error: %v", err)
+		}
+
+		for i := 0; i < numGoroutines; i++ {
+			tableName := fmt.Sprintf("concurrent_table_%d", i)
+			table := sch.GetTableSchema(ctx, tableName)
+
+			// Each table should have exactly 1 column
+			require.Equal(t, 1, len(table), "Table %s should have 1 column", tableName)
+
+			// Verify the column exists
+			columnName := fmt.Sprintf("column_%d", i)
+			require.Equal(t, "string", table[columnName], "Column %s should exist in table %s", columnName, tableName)
+		}
+	})
+
+	t.Run("ConcurrentReadAndWrite", func(t *testing.T) {
+		mockRepo := &mockSchemaRepo{
+			schemaMap: make(map[string]model.WHSchema),
+		}
+		sch := newSchema(t, warehouse, mockRepo)
+		iterations := 10000
+
+		// Channel to collect errors from goroutines
+		errCh := make(chan error, iterations)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			for i := 0; i < iterations; i++ {
+				tableName := fmt.Sprintf("concurrent_table_%d", i)
+				tableSchema := model.TableSchema{
+					fmt.Sprintf("column_%d", i): "string",
+				}
+
+				err := sch.UpdateTableSchema(ctx, tableName, tableSchema)
+				if err != nil {
+					errCh <- fmt.Errorf("write goroutine %d: %w", i, err)
+					continue
+				}
+			}
+			wg.Done()
+		}()
+
+		go func() {
+			for i := 0; i < iterations; i++ {
+				tableName := fmt.Sprintf("concurrent_table_%d", i)
+				_ = sch.GetTableSchema(ctx, tableName)
+			}
+			wg.Done()
+		}()
+
+		// Wait for all goroutines to complete
+		wg.Wait()
+		close(errCh)
+
+		// Check for any errors
+		for err := range errCh {
+			t.Fatalf("Concurrent operation error: %v", err)
 		}
 	})
 }

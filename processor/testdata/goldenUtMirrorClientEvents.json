@@ -1,0 +1,193 @@
+[
+    {
+        "message": {
+            "context": {},
+            "integrations": {
+                "All": false,
+                "enabled-destination-b-definition-display-name": true
+            },
+            "messageId": "message-1",
+            "originalTimestamp": "2000-01-02T01:23:45.000Z",
+            "receivedAt": "2001-01-02T02:23:45.000Z",
+            "request_ip": "1.2.3.4",
+            "rudderId": "some-rudder-id",
+            "sentAt": "2000-01-02T01:23:00.000Z",
+            "some-property": "property-1",
+            "timestamp": "2001-01-02T02:24:30.000Z",
+            "user-transform": "value"
+        },
+        "metadata": {
+            "sourceId": "enabled-source-only-ut",
+            "sourceName": "SourceIDEnabledOnlyUT",
+            "originalSourceId": "",
+            "workspaceId": "",
+            "sourceType": "",
+            "sourceCategory": "",
+            "destinationId": "enabled-destination-b",
+            "jobId": 1010,
+            "destinationType": "MINIO",
+            "destinationName": "B",
+            "messageId": "message-1",
+            "receivedAt": "2001-01-02T02:23:45.000Z",
+            "transformationVersionId": "transformation-version-id"
+        },
+        "destination": {
+            "ID": "enabled-destination-b",
+            "Name": "B",
+            "DestinationDefinition": {
+                "ID": "enabled-destination-b-definition-id",
+                "Name": "MINIO",
+                "DisplayName": "enabled-destination-b-definition-display-name",
+                "Config": {},
+                "ResponseRules": null
+            },
+            "Config": null,
+            "Enabled": true,
+            "WorkspaceID": "",
+            "Transformations": [
+                {
+                    "VersionID": "transformation-version-id",
+                    "ID": "",
+                    "Config": null
+                }
+            ],
+            "IsProcessorEnabled": true,
+            "RevisionID": ""
+        },
+        "connection": {
+            "sourceId": "",
+            "destinationId": "",
+            "enabled": false,
+            "config": null,
+            "processorEnabled": false
+        },
+        "libraries": null,
+        "credentials": null
+    },
+    {
+        "message": {
+            "context": {},
+            "integrations": {
+                "All": true
+            },
+            "messageId": "message-3",
+            "originalTimestamp": "2002-01-02T02:23:45.000Z",
+            "receivedAt": "2002-01-02T02:23:45.000Z",
+            "request_ip": "1.2.3.4",
+            "rudderId": "some-rudder-id",
+            "sentAt": "2000-03-02T01:23:15.000Z",
+            "some-property": "property-3",
+            "timestamp": "2003-11-04T03:24:15.000Z",
+            "user-transform": "value"
+        },
+        "metadata": {
+            "sourceId": "enabled-source-only-ut",
+            "sourceName": "SourceIDEnabledOnlyUT",
+            "originalSourceId": "",
+            "workspaceId": "",
+            "sourceType": "",
+            "sourceCategory": "",
+            "destinationId": "enabled-destination-b",
+            "jobId": 2010,
+            "destinationType": "MINIO",
+            "destinationName": "B",
+            "messageId": "message-3",
+            "receivedAt": "2002-01-02T02:23:45.000Z",
+            "transformationVersionId": "transformation-version-id"
+        },
+        "destination": {
+            "ID": "enabled-destination-b",
+            "Name": "B",
+            "DestinationDefinition": {
+                "ID": "enabled-destination-b-definition-id",
+                "Name": "MINIO",
+                "DisplayName": "enabled-destination-b-definition-display-name",
+                "Config": {},
+                "ResponseRules": null
+            },
+            "Config": null,
+            "Enabled": true,
+            "WorkspaceID": "",
+            "Transformations": [
+                {
+                    "VersionID": "transformation-version-id",
+                    "ID": "",
+                    "Config": null
+                }
+            ],
+            "IsProcessorEnabled": true,
+            "RevisionID": ""
+        },
+        "connection": {
+            "sourceId": "",
+            "destinationId": "",
+            "enabled": false,
+            "config": null,
+            "processorEnabled": false
+        },
+        "libraries": null,
+        "credentials": null
+    },
+    {
+        "message": {
+            "context": {},
+            "integrations": {},
+            "messageId": "message-4",
+            "originalTimestamp": "2000-04-02T02:23:15.000Z",
+            "receivedAt": "2002-01-02T02:23:45.000Z",
+            "request_ip": "1.2.3.4",
+            "rudderId": "some-rudder-id",
+            "sentAt": "2002-01-02T02:23:45.000Z",
+            "some-property": "property-4",
+            "timestamp": "2000-04-02T02:23:15.000Z",
+            "user-transform": "value"
+        },
+        "metadata": {
+            "sourceId": "enabled-source-only-ut",
+            "sourceName": "SourceIDEnabledOnlyUT",
+            "originalSourceId": "",
+            "workspaceId": "",
+            "sourceType": "",
+            "sourceCategory": "",
+            "destinationId": "enabled-destination-b",
+            "jobId": 2010,
+            "destinationType": "MINIO",
+            "destinationName": "B",
+            "messageId": "message-4",
+            "receivedAt": "2002-01-02T02:23:45.000Z",
+            "transformationVersionId": "transformation-version-id"
+        },
+        "destination": {
+            "ID": "enabled-destination-b",
+            "Name": "B",
+            "DestinationDefinition": {
+                "ID": "enabled-destination-b-definition-id",
+                "Name": "MINIO",
+                "DisplayName": "enabled-destination-b-definition-display-name",
+                "Config": {},
+                "ResponseRules": null
+            },
+            "Config": null,
+            "Enabled": true,
+            "WorkspaceID": "",
+            "Transformations": [
+                {
+                    "VersionID": "transformation-version-id",
+                    "ID": "",
+                    "Config": null
+                }
+            ],
+            "IsProcessorEnabled": true,
+            "RevisionID": ""
+        },
+        "connection": {
+            "sourceId": "",
+            "destinationId": "",
+            "enabled": false,
+            "config": null,
+            "processorEnabled": false
+        },
+        "libraries": null,
+        "credentials": null
+    }
+]

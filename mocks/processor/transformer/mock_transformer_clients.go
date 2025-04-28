@@ -81,3 +81,17 @@ func (mr *MockTransformerClientsMockRecorder) User() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "User", reflect.TypeOf((*MockTransformerClients)(nil).User))
 }
+
+// UserMirror mocks base method.
+func (m *MockTransformerClients) UserMirror() transformer.UserClient {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UserMirror")
+	ret0, _ := ret[0].(transformer.UserClient)
+	return ret0
+}
+
+// UserMirror indicates an expected call of UserMirror.
+func (mr *MockTransformerClientsMockRecorder) UserMirror() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserMirror", reflect.TypeOf((*MockTransformerClients)(nil).UserMirror))
+}

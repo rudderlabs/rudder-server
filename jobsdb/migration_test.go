@@ -106,7 +106,7 @@ func TestMigration(t *testing.T) {
 		// should have enough statuses for a cleanup to be triggered
 		// all non-terminal
 		require.NoError(t, jobDB.Store(context.Background(), jobs[20:30]))
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			require.NoError(
 				t,
 				jobDB.UpdateJobStatus(
@@ -230,7 +230,7 @@ func TestMigration(t *testing.T) {
 		c.Set("JobsDB."+tablePrefix+"."+"maxDSRetention", "1ms")
 
 		// 3 datasets with 10 jobs each, 1 dataset with 0 jobs
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "test", 10, 1)))
 			triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 			triggerAddNewDS <- time.Now() // waits for last loop to finish
@@ -239,10 +239,10 @@ func TestMigration(t *testing.T) {
 
 		// 1st ds 5 statuses each
 		var jobs []*JobT
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			jobs = append(jobs, &JobT{JobID: int64(i + 1)})
 		}
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
 		}
 		var count int
@@ -251,10 +251,10 @@ func TestMigration(t *testing.T) {
 
 		// 2nd ds 10 statuses each
 		jobs = nil
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			jobs = append(jobs, &JobT{JobID: int64(i + 11)})
 		}
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
 		}
 		require.NoError(t, jobDB.dbHandle.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s_job_status_2 `, tablePrefix)).Scan(&count))
@@ -317,10 +317,10 @@ func TestMigration(t *testing.T) {
 		require.Less(t, newTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)], originalTableSizes[fmt.Sprintf("%s_job_status_2", tablePrefix)])
 
 		// after adding some statuses to the 1st DS its table size shouldn't increase
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			jobs = append(jobs, &JobT{JobID: int64(i + 1)})
 		}
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs, "failed"), []string{"test"}, []ParameterFilterT{}))
 		}
 
@@ -332,6 +332,7 @@ func TestMigration(t *testing.T) {
 		config.Reset()
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", 1)
+		c.Set("JobsDB.jobMinRowsLeftMigrateThres", 0.2)
 
 		_ = startPostgres(t)
 
@@ -418,13 +419,6 @@ func TestMigration(t *testing.T) {
 		// add some more jobs to the new DS
 		require.NoError(t, jobDB.Store(context.Background(), jobs[10:20]))
 
-		// triggerMigrateDS <- time.Now()
-		// triggerMigrateDS <- time.Now()
-		// var payloadType_1_1 string
-		// err = jobDB.dbHandle.QueryRowContext(context.Background(), fmt.Sprintf(`select data_type from information_schema.columns where table_name='%s' and column_name='event_payload';`, tablePrefix+"_jobs_1_1")).Scan(&payloadType_1_1)
-		// require.NoError(t, err)
-		// require.EqualValues(t, "bytea", payloadType_1_1)
-
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 		require.EqualValues(t, 3, jobDB.GetMaxDSIndex())
@@ -437,7 +431,7 @@ func TestMigration(t *testing.T) {
 		// should have enough statuses for a cleanup to be triggered
 		// all non-terminal
 		require.NoError(t, jobDB.Store(context.Background(), jobs[20:30]))
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			require.NoError(
 				t,
 				jobDB.UpdateJobStatus(

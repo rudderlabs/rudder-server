@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/response"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 )
 
 func TestIsRudderReservedColumn(t *testing.T) {
@@ -36,16 +37,16 @@ func TestIsRudderReservedColumn(t *testing.T) {
 func TestExtractRecordID(t *testing.T) {
 	testCases := []struct {
 		name             string
-		metadata         types.Metadata
+		metadata         wtypes.Metadata
 		expectedRecordID any
 		expectedError    error
 	}{
-		{name: "recordId is nil", metadata: types.Metadata{RecordID: nil}, expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
-		{name: "recordId is empty", metadata: types.Metadata{RecordID: ""}, expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
-		{name: "recordId is not empty", metadata: types.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
-		{name: "recordId is an object", metadata: types.Metadata{RecordID: map[string]any{"key": "value"}}, expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
-		{name: "recordId is a string", metadata: types.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
-		{name: "recordId is a number", metadata: types.Metadata{RecordID: 123}, expectedRecordID: 123, expectedError: nil},
+		{name: "recordId is nil", metadata: wtypes.Metadata{RecordID: nil}, expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
+		{name: "recordId is empty", metadata: wtypes.Metadata{RecordID: ""}, expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
+		{name: "recordId is not empty", metadata: wtypes.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
+		{name: "recordId is an object", metadata: wtypes.Metadata{RecordID: map[string]any{"key": "value"}}, expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
+		{name: "recordId is a string", metadata: wtypes.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
+		{name: "recordId is a number", metadata: wtypes.Metadata{RecordID: 123}, expectedRecordID: 123, expectedError: nil},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -60,19 +61,19 @@ func TestExtractCloudRecordID(t *testing.T) {
 	testCases := []struct {
 		name             string
 		message          types.SingularEventT
-		metadata         types.Metadata
+		metadata         wtypes.Metadata
 		fallbackValue    any
 		expectedRecordID any
 		expectedError    error
 	}{
-		{name: "sources version is nil", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": nil}}}, metadata: types.Metadata{}, fallbackValue: "fallback", expectedRecordID: "fallback", expectedError: nil},
-		{name: "sources version is empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": ""}}}, metadata: types.Metadata{}, fallbackValue: "fallback", expectedRecordID: "fallback", expectedError: nil},
-		{name: "sources version is not empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{RecordID: "123"}, fallbackValue: "fallback", expectedRecordID: "123", expectedError: nil},
-		{name: "recordId is nil", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
-		{name: "recordId is empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{RecordID: ""}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
-		{name: "recordId is an object", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{RecordID: map[string]any{"key": "value"}}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
-		{name: "recordId is a string", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{RecordID: "123"}, fallbackValue: "fallback", expectedRecordID: "123", expectedError: nil},
-		{name: "recordId is a number", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: types.Metadata{RecordID: 123}, fallbackValue: "fallback", expectedRecordID: 123, expectedError: nil},
+		{name: "sources version is nil", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": nil}}}, metadata: wtypes.Metadata{}, fallbackValue: "fallback", expectedRecordID: "fallback", expectedError: nil},
+		{name: "sources version is empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": ""}}}, metadata: wtypes.Metadata{}, fallbackValue: "fallback", expectedRecordID: "fallback", expectedError: nil},
+		{name: "sources version is not empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: "123"}, fallbackValue: "fallback", expectedRecordID: "123", expectedError: nil},
+		{name: "recordId is nil", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
+		{name: "recordId is empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: ""}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
+		{name: "recordId is an object", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: map[string]any{"key": "value"}}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
+		{name: "recordId is a string", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: "123"}, fallbackValue: "fallback", expectedRecordID: "123", expectedError: nil},
+		{name: "recordId is a number", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: 123}, fallbackValue: "fallback", expectedRecordID: 123, expectedError: nil},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

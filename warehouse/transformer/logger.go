@@ -16,6 +16,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 )
 
 func (t *Transformer) CompareAndLog(events []types.TransformerEvent, pResponse, wResponse types.Response) {
@@ -38,7 +39,7 @@ func (t *Transformer) CompareAndLog(events []types.TransformerEvent, pResponse, 
 	}
 
 	logEntries := lo.Map(events, func(item types.TransformerEvent, index int) string {
-		return stringify.Any(item)
+		return stringify.Any(wtypes.New(&item, t.uuidGenerator, t.now))
 	})
 	if err := t.write(append([]string{sampleDiff}, logEntries...)); err != nil {
 		t.logger.Warnn("Error logging events", obskit.Error(err))

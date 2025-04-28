@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.47.2](https://github.com/rudderlabs/rudder-server/compare/v1.47.1...v1.47.2) (2025-04-23)
+
+
+### Bug Fixes
+
+* race condition in table schema updates causing incorrect schema to be saved ([#5756](https://github.com/rudderlabs/rudder-server/issues/5756)) ([5ec12a0](https://github.com/rudderlabs/rudder-server/commit/5ec12a074a76ea28d3bdcb80482abed0c62c2e9c))
+* warehouse extracting messageId and receivedAt from event payload ([#5757](https://github.com/rudderlabs/rudder-server/issues/5757)) ([2532122](https://github.com/rudderlabs/rudder-server/commit/253212274862af9bf64eea4ee4d29bc987e5bde4))
+
 ## [1.47.1](https://github.com/rudderlabs/rudder-server/compare/v1.47.0...v1.47.1) (2025-04-16)
 
 

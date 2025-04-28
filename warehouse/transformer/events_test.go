@@ -2062,7 +2062,7 @@ func TestEvents(t *testing.T) {
 				configOverride: map[string]any{
 					"Warehouse.enableIDResolution": true,
 				},
-				eventPayload: `{"type":"merge","messageId":"messageId","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
+				eventPayload: `{"type":"merge","messageId":"messageId","receivedAt":"2021-09-01T00:00:00.000Z","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 				metadata:     getMetadata("merge", "BQ"),
 				destination:  getDestination("BQ", map[string]any{}),
 				expectedResponse: types.Response{
@@ -2232,7 +2232,7 @@ func TestEvents(t *testing.T) {
 				configOverride: map[string]any{
 					"Warehouse.enableIDResolution": true,
 				},
-				eventPayload: `{"type":"merge","messageId":"messageId","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
+				eventPayload: `{"type":"merge","messageId":"messageId","receivedAt":"2021-09-01T00:00:00.000Z","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 				metadata:     getMetadata("merge", "SNOWFLAKE"),
 				destination:  getDestination("SNOWFLAKE", map[string]any{}),
 				expectedResponse: types.Response{
@@ -2447,8 +2447,8 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
@@ -2460,8 +2460,8 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
@@ -2473,9 +2473,35 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
+				},
+			},
+			{
+				name:         "messageId different in event and metadata",
+				eventPayload: `{"type":"track","messageId":"messageId-event","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES", MessageID: "messageId-metadata", ReceivedAt: "2021-09-01T00:00:00.000Z"},
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+					require.Equal(t, "messageId-event", misc.MapLookup(resp.Output, "data", "id"))
+					require.Equal(t, "2021-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "data", "received_at"))
+					require.Equal(t, "messageId-metadata", resp.Metadata.MessageID)
+					require.Equal(t, "2021-09-01T00:00:00.000Z", resp.Metadata.ReceivedAt)
+					require.Equal(t, "2021-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "metadata", "receivedAt"))
+				},
+			},
+			{
+				name:         "receivedAt different in event and metadata",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2022-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES", MessageID: "messageId", ReceivedAt: "2023-09-01T00:00:00.000Z"},
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+					require.Equal(t, "messageId", misc.MapLookup(resp.Output, "data", "id"))
+					require.Equal(t, "2022-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "data", "received_at"))
+					require.Equal(t, "messageId", resp.Metadata.MessageID)
+					require.Equal(t, "2023-09-01T00:00:00.000Z", resp.Metadata.ReceivedAt)
+					require.Equal(t, "2022-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
 		}

@@ -19,7 +19,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -78,56 +77,89 @@ type schema struct {
 	fetchSchemaRepo                  fetchSchemaRepo
 	now                              func() time.Time
 	cachedSchema                     model.Schema
-	cacheExpiry                      time.Time
 	cachedSchemaMu                   sync.RWMutex
 }
 
 func New(
-	db *sqlquerywrapper.DB,
+	ctx context.Context,
 	warehouse model.Warehouse,
 	conf *config.Config,
-	logger logger.Logger,
+	slogger logger.Logger,
 	statsFactory stats.Stats,
 	fetchSchemaRepo fetchSchemaRepo,
-) Handler {
+	schemaRepo schemaRepo,
+	stagingFileRepo stagingFileRepo,
+) (Handler, error) {
 	ttlInMinutes := conf.GetDurationVar(720, time.Minute, "Warehouse.schemaTTLInMinutes")
-	schema := &schema{
+	sh := &schema{
 		warehouse:                        warehouse,
-		log:                              logger.Child("schema"),
+		log:                              slogger.Child("schema"),
 		ttlInMinutes:                     ttlInMinutes,
-		schemaRepo:                       repo.NewWHSchemas(db),
+		schemaRepo:                       schemaRepo,
 		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
-		stagingFileRepo:                  repo.NewStagingFiles(db),
+		stagingFileRepo:                  stagingFileRepo,
 		fetchSchemaRepo:                  fetchSchemaRepo,
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 		now:                              timeutil.Now,
 	}
-	schema.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
+	sh.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
 		"module":        "warehouse",
 		"workspaceId":   warehouse.WorkspaceID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 		"sourceId":      warehouse.Source.ID,
 		"destinationId": warehouse.Destination.ID,
 	})
-	return schema
+	// cachedSchema can be computed in the constructor
+	// we need not worry about it getting expired in the middle of the job
+	// since we need the schema to be the same for the entireduration of the job
+	whSchema, err := sh.schemaRepo.GetForNamespace(
+		ctx,
+		sh.warehouse.Source.ID,
+		sh.warehouse.Destination.ID,
+		sh.warehouse.Namespace,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("getting schema for namespace: %w", err)
+	}
+	if whSchema.Schema == nil {
+		sh.cachedSchema = model.Schema{}
+		return sh, nil
+	}
+	if whSchema.ExpiresAt.After(sh.now()) {
+		sh.cachedSchema = whSchema.Schema
+		return sh, nil
+	}
+	sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
+	return sh, sh.fetchSchemaFromWarehouse(ctx)
+}
+
+func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) error {
+	start := sh.now()
+	warehouseSchema, err := sh.fetchSchemaRepo.FetchSchema(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching schema: %w", err)
+	}
+	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
+	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
+	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
+	err = sh.saveSchema(ctx, warehouseSchema)
+	if err != nil {
+		return fmt.Errorf("saving schema: %w", err)
+	}
+	sh.cachedSchema = warehouseSchema
+	return nil
 }
 
 func (sh *schema) IsSchemaEmpty(ctx context.Context) bool {
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		sh.log.Warnn("error getting schema", obskit.Error(err))
-		return true
-	}
-	return len(schema) == 0
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
+	return len(sh.cachedSchema) == 0
 }
 
 func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.TableSchema {
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		sh.log.Warnn("error getting schema", obskit.Error(err))
-		return model.TableSchema{}
-	}
-	return schema[tableName]
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
+	return sh.cachedSchema[tableName]
 }
 
 func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
@@ -136,20 +168,21 @@ func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) 
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
-	return sh.saveSchema(ctx, updatedSchema)
+	sh.cachedSchemaMu.Lock()
+	defer sh.cachedSchemaMu.Unlock()
+	err = sh.saveSchema(ctx, updatedSchema)
+	if err != nil {
+		return fmt.Errorf("saving schema: %w", err)
+	}
+	sh.cachedSchema = updatedSchema
+	return nil
 }
 
 func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, tableSchema model.TableSchema) error {
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		return fmt.Errorf("getting schema: %w", err)
-	}
-	schemaCopy := make(model.Schema)
-	for k, v := range schema {
-		schemaCopy[k] = v
-	}
-	schemaCopy[tableName] = tableSchema
-	err = sh.saveSchema(ctx, schemaCopy)
+	sh.cachedSchemaMu.Lock()
+	defer sh.cachedSchemaMu.Unlock()
+	sh.cachedSchema[tableName] = tableSchema
+	err := sh.saveSchema(ctx, sh.cachedSchema)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -157,11 +190,9 @@ func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, table
 }
 
 func (sh *schema) GetColumnsCount(ctx context.Context, tableName string) (int, error) {
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("getting schema: %w", err)
-	}
-	return len(schema[tableName]), nil
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
+	return len(sh.cachedSchema[tableName]), nil
 }
 
 func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFiles []*model.StagingFile) (model.Schema, error) {
@@ -175,12 +206,10 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 
 		consolidatedSchema = consolidateStagingSchemas(consolidatedSchema, schemas)
 	}
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting schema: %v", err)
-	}
-	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, schema)
-	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, schema)
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
+	consolidatedSchema = consolidateWarehouseSchema(consolidatedSchema, sh.cachedSchema)
+	consolidatedSchema = overrideUsersWithIdentifiesSchema(consolidatedSchema, sh.warehouse.Type, sh.cachedSchema)
 	consolidatedSchema = enhanceDiscardsSchema(consolidatedSchema, sh.warehouse.Type)
 	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
 
@@ -192,23 +221,9 @@ func (sh *schema) isIDResolutionEnabled() bool {
 }
 
 func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error) {
-	schema, err := sh.getSchema(ctx)
-	if err != nil {
-		return whutils.TableSchemaDiff{}, fmt.Errorf("getting schema: %w", err)
-	}
-	return tableSchemaDiff(tableName, schema, tableSchema), nil
-}
-
-func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) (model.Schema, error) {
-	start := sh.now()
-	warehouseSchema, err := sh.fetchSchemaRepo.FetchSchema(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fetching schema: %w", err)
-	}
-	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
-	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
-	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
-	return warehouseSchema, sh.saveSchema(ctx, warehouseSchema)
+	sh.cachedSchemaMu.RLock()
+	defer sh.cachedSchemaMu.RUnlock()
+	return tableSchemaDiff(tableName, sh.cachedSchema, tableSchema), nil
 }
 
 func (sh *schema) saveSchema(ctx context.Context, newSchema model.Schema) error {
@@ -224,46 +239,8 @@ func (sh *schema) saveSchema(ctx context.Context, newSchema model.Schema) error 
 	if err != nil {
 		return fmt.Errorf("inserting schema: %w", err)
 	}
-	sh.cachedSchemaMu.Lock()
-	sh.cachedSchema = newSchema
-	sh.cachedSchemaMu.Unlock()
-	sh.cacheExpiry = expiresAt
+	sh.log.Infon("Saved schema", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace))
 	return nil
-}
-
-func (sh *schema) getSchema(ctx context.Context) (model.Schema, error) {
-	sh.cachedSchemaMu.RLock()
-	if sh.cachedSchema != nil && sh.cacheExpiry.After(sh.now()) {
-		defer sh.cachedSchemaMu.RUnlock()
-		sh.log.Debugn("Returning cached schema", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type))
-		return sh.cachedSchema, nil
-	}
-	sh.cachedSchemaMu.RUnlock()
-	whSchema, err := sh.schemaRepo.GetForNamespace(
-		ctx,
-		sh.warehouse.Source.ID,
-		sh.warehouse.Destination.ID,
-		sh.warehouse.Namespace,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("getting schema for namespace: %w", err)
-	}
-	if whSchema.Schema == nil {
-		sh.cachedSchemaMu.Lock()
-		defer sh.cachedSchemaMu.Unlock()
-		sh.cachedSchema = model.Schema{}
-		sh.cacheExpiry = sh.now().Add(sh.ttlInMinutes)
-		return sh.cachedSchema, nil
-	}
-	if whSchema.ExpiresAt.Before(sh.now()) {
-		sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
-		return sh.fetchSchemaFromWarehouse(ctx)
-	}
-	sh.cachedSchemaMu.Lock()
-	defer sh.cachedSchemaMu.Unlock()
-	sh.cachedSchema = whSchema.Schema
-	sh.cacheExpiry = whSchema.ExpiresAt
-	return sh.cachedSchema, nil
 }
 
 // consolidateStagingSchemas merges multiple schemas into one
