@@ -187,7 +187,9 @@ func IsBlank(value interface{}) bool {
 			return true
 		}
 		if len(v) == 1 {
-			return IsBlank(v[0])
+			if _, isMap := v[0].(map[string]any); !isMap {
+				return IsBlank(v[0])
+			}
 		}
 		return false
 	case []types.ValidationError:
