@@ -32,22 +32,22 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v3 v3.0.0
-	github.com/apache/pulsar-client-go v0.14.0
+	github.com/apache/pulsar-client-go v0.15.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.55.7
 	github.com/bufbuild/httplb v0.4.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/confluentinc/confluent-kafka-go/v2 v2.8.0
-	github.com/databricks/databricks-sql-go v1.6.1
+	github.com/confluentinc/confluent-kafka-go/v2 v2.10.0
+	github.com/databricks/databricks-sql-go v1.7.0
 	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/dlclark/regexp2 v1.11.5
-	github.com/docker/docker v28.0.4+incompatible
+	github.com/docker/docker v28.1.1+incompatible
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golang-migrate/migrate/v4 v4.18.2
+	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/go-cmp v0.7.0
@@ -64,7 +64,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.1
 	github.com/marcboeker/go-duckdb v1.8.5
-	github.com/minio/minio-go/v7 v7.0.90
+	github.com/minio/minio-go/v7 v7.0.91
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.23.4
@@ -85,7 +85,7 @@ require (
 	github.com/rudderlabs/sonnet v1.0.2
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.20.0
-	github.com/samber/lo v1.49.1
+	github.com/samber/lo v1.50.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/segmentio/ksuid v1.0.4
@@ -117,8 +117,12 @@ require (
 )
 
 require (
+	github.com/moby/go-archive v0.1.0 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
+	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
+	gotest.tools/v3 v3.5.2 // indirect
 )
 
 require (
@@ -262,7 +266,6 @@ require (
 	github.com/minio/crc64nvme v1.0.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
