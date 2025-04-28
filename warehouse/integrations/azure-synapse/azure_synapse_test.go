@@ -54,6 +54,7 @@ func TestIntegration(t *testing.T) {
 	user := "SA"
 	password := "reallyStrongPwd123"
 	bucketName := "testbucket"
+	container := "warehouse-integration-test"
 	accessKeyID := "MYACCESSKEY"
 	secretAccessKey := "MYSECRETKEY"
 	region := "us-east-1"
@@ -629,6 +630,480 @@ func TestIntegration(t *testing.T) {
 			)
 			require.Equal(t, records, whth.DiscardTestRecords())
 		})
+		t.Run("varchar max length", func(t *testing.T) {
+			tableName := "varchar_max_length_test_table"
+			smallString, bigString, biggerString := strings.Repeat("a", 512), strings.Repeat("a", 8000), strings.Repeat("a", 65535)
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "testdata/load.maxvarchar.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			require.NoError(t, az.Setup(ctx, warehouse, mockUploader))
+			require.NoError(t, az.CreateSchema(ctx))
+			require.NoError(t, az.CreateTable(ctx, tableName, schemaInWarehouse))
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", smallString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", smallString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", smallString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", smallString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+
+			t.Log("Test varchar for big string (8000)")
+			_, err = db.ExecContext(ctx, "ALTER TABLE "+namespace+"."+tableName+" ALTER COLUMN test_string VARCHAR(8000);")
+			require.NoError(t, err)
+
+			loadTableStat, err = az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(0))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+			records = whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", bigString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", bigString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", bigString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", bigString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+
+			t.Log("Test varchar for bigger string (65535)")
+			_, err = db.ExecContext(ctx, "ALTER TABLE "+namespace+"."+tableName+" ALTER COLUMN test_string VARCHAR(MAX);")
+			require.NoError(t, err)
+
+			loadTableStat, err = az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(0))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+			records = whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, [][]string{
+				{"6734e5db-f918-4efe-1421-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"6734e5db-f918-4efe-2314-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"6734e5db-f918-4efe-2352-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+				{"6734e5db-f918-4efe-2414-872f66e235c5", "2022-12-15T06:53:49Z", "false", "2022-12-15T06:53:49Z", "126.75", "126", biggerString},
+				{"6734e5db-f918-4efe-3555-872f66e235c5", "2022-12-15T06:53:49Z", "false", "", "", "", ""},
+				{"6734e5db-f918-4efe-5152-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", biggerString},
+				{"6734e5db-f918-4efe-5323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-1212-872f66e235c5", "2022-12-15T06:53:49Z", "true", "2022-12-15T06:53:49Z", "125.75", "125", biggerString},
+				{"7274e5db-f918-4efe-1454-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "125", ""},
+				{"7274e5db-f918-4efe-1511-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", ""},
+				{"7274e5db-f918-4efe-2323-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "125.75", "", ""},
+				{"7274e5db-f918-4efe-4524-872f66e235c5", "2022-12-15T06:53:49Z", "true", "", "", "", ""},
+				{"7274e5db-f918-4efe-5151-872f66e235c5", "2022-12-15T06:53:49Z", "", "", "", "", biggerString},
+				{"7274e5db-f918-4efe-5322-872f66e235c5", "2022-12-15T06:53:49Z", "", "2022-12-15T06:53:49Z", "", "", ""},
+			})
+		})
+	})
+
+	t.Run("Load Table Azure Blob", func(t *testing.T) {
+		accountKey := os.Getenv("AZURE_STORAGE_ACCOUNT_KEY")
+		if accountKey == "" {
+			t.Skip("Skipping test. Set AZURE_STORAGE_ACCOUNT_KEY env var to run test.")
+		}
+
+		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml"}))
+		c.Start(context.Background())
+
+		azureSynapsePort := c.Port("azure_synapse", 1433)
+
+		ctx := context.Background()
+		namespace := whth.RandSchema(destType)
+
+		schemaInUpload := model.TableSchema{
+			"test_bool":     "boolean",
+			"test_datetime": "datetime",
+			"test_float":    "float",
+			"test_int":      "int",
+			"test_string":   "string",
+			"id":            "string",
+			"received_at":   "datetime",
+		}
+		schemaInWarehouse := model.TableSchema{
+			"test_bool":           "boolean",
+			"test_datetime":       "datetime",
+			"test_float":          "float",
+			"test_int":            "int",
+			"test_string":         "string",
+			"id":                  "string",
+			"received_at":         "datetime",
+			"extra_test_bool":     "boolean",
+			"extra_test_datetime": "datetime",
+			"extra_test_float":    "float",
+			"extra_test_int":      "int",
+			"extra_test_string":   "string",
+		}
+
+		warehouse := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: "test_source_id",
+			},
+			Destination: backendconfig.DestinationT{
+				ID: "test_destination_id",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+				Config: map[string]any{
+					"host":             host,
+					"database":         database,
+					"user":             user,
+					"password":         password,
+					"port":             strconv.Itoa(azureSynapsePort),
+					"sslMode":          "disable",
+					"namespace":        "",
+					"bucketProvider":   whutils.AzureBlob,
+					"containerName":    container,
+					"accountName":      "warehouseintegtests",
+					"accountKey":       accountKey,
+					"useSSL":           false,
+					"syncFrequency":    "30",
+					"useRudderStorage": false,
+				},
+			},
+			WorkspaceID: "test_workspace_id",
+			Namespace:   namespace,
+		}
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: whutils.AzureBlob,
+			Config: map[string]any{
+				"accountKey":     accountKey,
+				"bucketProvider": whutils.AzureBlob,
+				"containerName":  container,
+				"accountName":    "warehouseintegtests",
+			},
+		})
+		require.NoError(t, err)
+
+		db := pingAzureSynapse(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
+			user, password, host, azureSynapsePort, database,
+		))
+
+		t.Run("schema does not exists", func(t *testing.T) {
+			tableName := "schema_not_exists_test_table"
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+
+		t.Run("table does not exists", func(t *testing.T) {
+			tableName := "table_not_exists_test_table"
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+
+		t.Run("merge", func(t *testing.T) {
+			tableName := "merge_test_table"
+
+			t.Run("without dedup", func(t *testing.T) {
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/load.csv.gz", tableName)
+
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+				err := az.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = az.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := az.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(14))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+				loadTableStat, err = az.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := whth.RetrieveRecordsFromWarehouse(t, db,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+						`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, whth.SampleTestRecords())
+			})
+
+			t.Run("with dedup", func(t *testing.T) {
+				uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/dedup.csv.gz", tableName)
+
+				loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+				mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+				az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+				err := az.Setup(ctx, warehouse, mockUploader)
+				require.NoError(t, err)
+
+				err = az.CreateSchema(ctx)
+				require.NoError(t, err)
+
+				err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+				require.NoError(t, err)
+
+				loadTableStat, err := az.LoadTable(ctx, tableName)
+				require.NoError(t, err)
+				require.Equal(t, loadTableStat.RowsInserted, int64(0))
+				require.Equal(t, loadTableStat.RowsUpdated, int64(14))
+
+				records := whth.RetrieveRecordsFromWarehouse(t, db,
+					fmt.Sprintf(`
+						SELECT
+						  id,
+						  received_at,
+						  test_bool,
+						  test_datetime,
+						  cast(test_float AS float) AS test_float,
+						  test_int,
+						  test_string
+						FROM
+						  %q.%q
+						ORDER BY
+						  id;
+					`,
+						namespace,
+						tableName,
+					),
+				)
+				require.Equal(t, records, whth.DedupTestRecords())
+			})
+		})
+
+		t.Run("load file does not exists", func(t *testing.T) {
+			tableName := "load_file_not_exists_test_table"
+
+			loadFiles := []whutils.LoadFile{{
+				Location: "http://localhost:1234/testbucket/rudder-warehouse-load-objects/load_file_not_exists_test_table/test_source_id/f31af97e-03e8-46d0-8a1a-1786cb85b22c-load_file_not_exists_test_table/load.csv.gz",
+			}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.Error(t, err)
+			require.Nil(t, loadTableStat)
+		})
+
+		t.Run("mismatch in schema", func(t *testing.T) {
+			tableName := "mismatch_schema_test_table"
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/mismatch-schema.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, schemaInUpload, schemaInWarehouse)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = az.CreateTable(ctx, tableName, schemaInWarehouse)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(14))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+					SELECT
+					  id,
+					  received_at,
+					  test_bool,
+					  test_datetime,
+					  cast(test_float AS float) AS test_float,
+					  test_int,
+					  test_string
+					FROM
+					  %q.%q
+					ORDER BY
+					  id;
+					`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, whth.MismatchSchemaTestRecords())
+		})
+
+		t.Run("discards", func(t *testing.T) {
+			tableName := whutils.DiscardsTable
+
+			uploadOutput := whth.UploadLoadFile(t, fm, "../testdata/discards.csv.gz", tableName)
+
+			loadFiles := []whutils.LoadFile{{Location: uploadOutput.Location}}
+			mockUploader := newMockUploader(t, loadFiles, tableName, whutils.DiscardsSchema, whutils.DiscardsSchema)
+
+			az := azuresynapse.New(config.New(), logger.NOP, stats.NOP)
+			err := az.Setup(ctx, warehouse, mockUploader)
+			require.NoError(t, err)
+
+			err = az.CreateSchema(ctx)
+			require.NoError(t, err)
+
+			err = az.CreateTable(ctx, tableName, whutils.DiscardsSchema)
+			require.NoError(t, err)
+
+			loadTableStat, err := az.LoadTable(ctx, tableName)
+			require.NoError(t, err)
+			require.Equal(t, loadTableStat.RowsInserted, int64(6))
+			require.Equal(t, loadTableStat.RowsUpdated, int64(0))
+
+			records := whth.RetrieveRecordsFromWarehouse(t, db,
+				fmt.Sprintf(`
+					SELECT
+					  column_name,
+					  column_value,
+					  reason,
+					  received_at,
+					  row_id,
+					  table_name,
+					  uuid_ts
+					FROM
+					  %q.%q
+					ORDER BY row_id ASC;
+					`,
+					namespace,
+					tableName,
+				),
+			)
+			require.Equal(t, records, whth.DiscardTestRecords())
+		})
+
 		t.Run("varchar max length", func(t *testing.T) {
 			tableName := "varchar_max_length_test_table"
 			smallString, bigString, biggerString := strings.Repeat("a", 512), strings.Repeat("a", 8000), strings.Repeat("a", 65535)
