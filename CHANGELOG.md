@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.48.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.47.0...v1.48.0-rc.2) (2025-04-28)
+
+
+### Features
+
+* introduce common http client for reporting ([#5669](https://github.com/rudderlabs/rudder-server/issues/5669)) ([594bdce](https://github.com/rudderlabs/rudder-server/commit/594bdce9d4b04b5a15c661bd6f7ae9a875b56977))
+* populate bytesPerTable for warehouse process API ([#5737](https://github.com/rudderlabs/rudder-server/issues/5737)) ([fd46379](https://github.com/rudderlabs/rudder-server/commit/fd4637910b28935cc9ba1c6dc62d15086dfdd08b))
+* query load files using upload_id instead of staging_file_id ([#5700](https://github.com/rudderlabs/rudder-server/issues/5700)) ([3749ba9](https://github.com/rudderlabs/rudder-server/commit/3749ba96e6d0e75e9286d49e07527fb73e3b8a21))
+* support for creating upload v2 notifier jobs ([#5729](https://github.com/rudderlabs/rudder-server/issues/5729)) ([dbc830f](https://github.com/rudderlabs/rudder-server/commit/dbc830f2aab30f9bc3371ee18ea667e08db2ea3b))
+* use header augmenter for router transformer client ([#5640](https://github.com/rudderlabs/rudder-server/issues/5640)) ([3749ba9](https://github.com/rudderlabs/rudder-server/commit/3749ba96e6d0e75e9286d49e07527fb73e3b8a21))
+
+
+### Bug Fixes
+
+* httplb client doesn't respect connection limits ([#5773](https://github.com/rudderlabs/rudder-server/issues/5773)) ([ef0a15e](https://github.com/rudderlabs/rudder-server/commit/ef0a15e0b7b79f3bcb1eb3b4069c90afe71da34c))
+* jobsdb payload limit used compressed column sizes instead of actual payload length ([#5723](https://github.com/rudderlabs/rudder-server/issues/5723)) ([c711b25](https://github.com/rudderlabs/rudder-server/commit/c711b25cac2e03b12c356244cbd4e8f9f7ced390))
+* race condition in table schema updates causing incorrect schema to be saved ([#5756](https://github.com/rudderlabs/rudder-server/issues/5756)) ([f5ab51a](https://github.com/rudderlabs/rudder-server/commit/f5ab51a0c2407a4d79cd86ab2e7eebe7104021e2))
+* use copy to load table in append mode for redshift([#5743](https://github.com/rudderlabs/rudder-server/issues/5743)) ([877da25](https://github.com/rudderlabs/rudder-server/commit/877da256a894df506ca8e5ab4e5a4b9896ae77dd))
+* use warehouse transformer event instead of using processor event ([#5764](https://github.com/rudderlabs/rudder-server/issues/5764)) ([f51e260](https://github.com/rudderlabs/rudder-server/commit/f51e260baf5f79a723d14a373052e32264a71a4e))
+* version downgrade for databricks-sql-go to 1.6.1 ([#5741](https://github.com/rudderlabs/rudder-server/issues/5741)) ([c711b25](https://github.com/rudderlabs/rudder-server/commit/c711b25cac2e03b12c356244cbd4e8f9f7ced390))
+* warehouse extracting messageId and receivedAt from event payload ([#5757](https://github.com/rudderlabs/rudder-server/issues/5757)) ([f5ab51a](https://github.com/rudderlabs/rudder-server/commit/f5ab51a0c2407a4d79cd86ab2e7eebe7104021e2))
+
+
+### Miscellaneous
+
+* add destination type in metrics ([#5727](https://github.com/rudderlabs/rudder-server/issues/5727)) ([fa38f34](https://github.com/rudderlabs/rudder-server/commit/fa38f34b7790e27150a469774273a4a9a1675873))
+* **batchrouter:** limiter cleanup adjust stats and use harmonized config ([#5783](https://github.com/rudderlabs/rudder-server/issues/5783)) ([96aba9d](https://github.com/rudderlabs/rudder-server/commit/96aba9d2c213d01eca8deda774eed04204e9db02))
+* change jobsdb payload column type default to text ([#5746](https://github.com/rudderlabs/rudder-server/issues/5746)) ([0f436e7](https://github.com/rudderlabs/rudder-server/commit/0f436e79c2fc164466fa02035eff5228596da823))
+* configure pubsub publish settings ([#5755](https://github.com/rudderlabs/rudder-server/issues/5755)) ([e481992](https://github.com/rudderlabs/rudder-server/commit/e4819927e965c074d6de2a4fdd8b456d62cbe674))
+* **deps:** bump google.golang.org/api from 0.228.0 to 0.229.0 in the frequent group ([#5734](https://github.com/rudderlabs/rudder-server/issues/5734)) ([32854cc](https://github.com/rudderlabs/rudder-server/commit/32854cc6f1229cb2c6e0a6bc1d488c53efac5d0f))
+* **deps:** bump the frequent group with 3 updates ([#5769](https://github.com/rudderlabs/rudder-server/issues/5769)) ([12b7d96](https://github.com/rudderlabs/rudder-server/commit/12b7d96e0d0a7cfe663fef21beeb6cb0bd426d05))
+* disable transformer compaction by default ([#5766](https://github.com/rudderlabs/rudder-server/issues/5766)) ([c504aa0](https://github.com/rudderlabs/rudder-server/commit/c504aa05133971cf00295d1378a1b69af3553dc5))
+* granular configuration for adaptive rate limiting ([#5739](https://github.com/rudderlabs/rudder-server/issues/5739)) ([c711b25](https://github.com/rudderlabs/rudder-server/commit/c711b25cac2e03b12c356244cbd4e8f9f7ced390))
+* improve BRT performance ([#5730](https://github.com/rudderlabs/rudder-server/issues/5730)) ([61642c8](https://github.com/rudderlabs/rudder-server/commit/61642c82b324bdbed3ecb3b13c098aca9b00d5d0))
+* **jobsdb:** remove jobMinRowsMigrateThres configuration option ([#5763](https://github.com/rudderlabs/rudder-server/issues/5763)) ([5d2fae9](https://github.com/rudderlabs/rudder-server/commit/5d2fae9cb2ca6dab5bfe2384a55fd29064fb44c4))
+* processor UT mirroring ([#5710](https://github.com/rudderlabs/rudder-server/issues/5710)) ([f4f056c](https://github.com/rudderlabs/rudder-server/commit/f4f056c28cfb45ae21aa5396d779cce167042be2))
+* remove payload logging ([#5447](https://github.com/rudderlabs/rudder-server/issues/5447)) ([8e08c11](https://github.com/rudderlabs/rudder-server/commit/8e08c11b5547cadf7059be074ea43bc3ca65e864))
+* trim down tracking plan validation payload ([#5749](https://github.com/rudderlabs/rudder-server/issues/5749)) ([e711579](https://github.com/rudderlabs/rudder-server/commit/e711579eac45033cd8138cbd24172b15aae93bd0))
+* use reloadable limiters ([#5744](https://github.com/rudderlabs/rudder-server/issues/5744)) ([d344d40](https://github.com/rudderlabs/rudder-server/commit/d344d406ad0b8489281727c40506cfcdabc59e46))
+* use transformer compaction by default ([#5740](https://github.com/rudderlabs/rudder-server/issues/5740)) ([53792f2](https://github.com/rudderlabs/rudder-server/commit/53792f25451e949932b54ed5acc424816945466d))
+
 ## [1.47.2](https://github.com/rudderlabs/rudder-server/compare/v1.47.1...v1.47.2) (2025-04-23)
 
 
