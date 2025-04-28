@@ -226,6 +226,7 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
+				nil,
 			)
 			router.transformer = mockTransformer
 
@@ -330,6 +331,7 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
+				nil,
 			)
 			router.transformer = mockTransformer
 
@@ -441,6 +443,7 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
+				nil,
 			)
 			router.transformer = mockTransformer
 

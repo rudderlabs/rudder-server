@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
@@ -20,6 +21,7 @@ type destInfoTestCase struct {
 	flow           common.RudderFlow
 	inputDefConfig map[string]interface{}
 	expected       isOAuthResult
+	account        *backendconfig.AccountWithDefinition
 }
 
 var isOAuthDestTestCases = []destInfoTestCase{
@@ -109,6 +111,21 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: false,
 		},
 	},
+	{
+		description:    "success scenario for a oauth destination where account is present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			Config: map[string]interface{}{
+				"oauth": map[string]interface{}{
+					"refreshTokenInDataplane": true,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
@@ -119,6 +136,7 @@ var _ = Describe("DestinationInfo tests", func() {
 					DefinitionName: "dest_def_name",
 				}
 				d.DefinitionConfig = tc.inputDefConfig
+				d.Account = tc.account
 				isOAuth, err := d.IsOAuthDestination(tc.flow)
 
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))

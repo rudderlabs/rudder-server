@@ -50,6 +50,7 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		f.Debugger,
 		f.ThrottlerFactory,
 		f.PendingEventsRegistry,
+		destination.Account,
 	)
 	return r
 }

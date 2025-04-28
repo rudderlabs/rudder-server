@@ -54,6 +54,7 @@ func (rt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
 	pendingEventsRegistry rmetrics.PendingEventsRegistry,
+	account *backendconfig.AccountWithDefinition,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
@@ -132,8 +133,8 @@ func (rt *Handle) Setup(
 		rt.transformerFeaturesService,
 	)
 	destination := oauthv2.DestinationInfo{
-		DefinitionName: destinationDefinition.Name,
-		Config:         destinationDefinition.Config,
+		Config:  destinationDefinition.Config,
+		Account: account,
 	}
 	rt.isOAuthDestination, _ = destination.IsOAuthDestination(common.RudderFlowDelivery)
 	rt.isBackendConfigInitialized = false
