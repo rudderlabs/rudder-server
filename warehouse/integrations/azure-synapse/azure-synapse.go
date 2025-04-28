@@ -18,7 +18,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	mssql "github.com/denisenkom/go-mssqldb"
+	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
