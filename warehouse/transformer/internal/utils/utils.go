@@ -1,22 +1,20 @@
 package utils
 
 import (
-	"errors"
+	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-)
-
-const (
-	DateTimeISO8601  = "2006-01-02T15:04:05"
-	DateTimeMillisTZ = "2006-01-02 15:04:05.000-0700"
 )
 
 var (
@@ -42,22 +40,19 @@ var (
 		whutils.AzureDatalake:     model.StringDataType,
 	}
 
-	validTimestampFormats = []string{
-		time.RFC3339,
-		misc.RFC3339Milli,
-		time.DateTime,
-		DateTimeISO8601,
-		DateTimeMillisTZ,
-		time.DateOnly,
-		time.RFC3339Nano,
-	}
-	validTimestampFormatsMaxLength = len(lo.MaxBy(validTimestampFormats, func(a, b string) bool {
-		return len(a) > len(b)
-	}))
+	reDateTime = regexp.MustCompile(
+		`^([+-]?\d{4})((-)((0[1-9]|1[0-2])(-([12]\d|0[1-9]|3[01])))([T\s]((([01]\d|2[0-3])((:)[0-5]\d))(:\d+)?)?(:[0-5]\d([.]\d+)?)?([zZ]|([+-])([01]\d|2[0-3]):?([0-5]\d)?)?)?)$`,
+	)
+	maxTimestampFormat             = "2012-08-03 18:31:59.257000000 +00:00 UTC"
+	validTimestampFormatsMaxLength = len(maxTimestampFormat)
 
 	minTimeInMs = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
 	maxTimeInMs = time.Date(9999, 12, 31, 23, 59, 59, 999000000, time.UTC)
 )
+
+func init() {
+	_ = dateparse.MustParse(maxTimestampFormat)
+}
 
 func sliceToMap(slice []string) map[string]struct{} {
 	return lo.SliceToMap(slice, func(item string) (string, struct{}) {
@@ -121,6 +116,9 @@ func ValidTimestamp(input string) bool {
 	if len(input) > validTimestampFormatsMaxLength {
 		return false
 	}
+	if !reDateTime.MatchString(input) {
+		return false
+	}
 
 	t, err := parseTimestamp(input)
 	if err != nil {
@@ -141,13 +139,7 @@ func ToTimestamp(val any) any {
 }
 
 func parseTimestamp(input string) (time.Time, error) {
-	for _, format := range validTimestampFormats {
-		t, err := time.Parse(format, input)
-		if err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, errors.New("invalid timestamp format")
+	return dateparse.ParseAny(input)
 }
 
 // ToString converts any value to a string representation.
@@ -181,15 +173,19 @@ func IsBlank(value interface{}) bool {
 	case fmt.Stringer:
 		return v.String() == ""
 	case map[string]any:
-		return len(v) == 0
+		return false
 	case []any:
 		if len(v) == 0 {
 			return true
 		}
 		if len(v) == 1 {
-			if _, isMap := v[0].(map[string]any); !isMap {
-				return IsBlank(v[0])
+			if _, isMap := v[0].(map[string]any); isMap {
+				return false
 			}
+			if v[0] == nil {
+				return false
+			}
+			return IsBlank(v[0])
 		}
 		return false
 	case []types.ValidationError:
@@ -215,12 +211,30 @@ func ExtractMessageID(event *types.TransformerEvent, uuidGenerator func() string
 func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) string {
 	receivedAt, exists := event.Message["receivedAt"]
 	if !exists || IsBlank(receivedAt) {
+		if len(event.Metadata.ReceivedAt) > 0 {
+			return event.Metadata.ReceivedAt
+		}
 		return now().Format(misc.RFC3339Milli)
 	}
 
 	strReceivedAt, isString := receivedAt.(string)
 	if !isString || !ValidTimestamp(strReceivedAt) {
+		if len(event.Metadata.ReceivedAt) > 0 {
+			return event.Metadata.ReceivedAt
+		}
 		return now().Format(misc.RFC3339Milli)
 	}
 	return strReceivedAt
+}
+
+func MarshalJSON(input any) ([]byte, error) {
+	var buf bytes.Buffer
+
+	enc := jsonrs.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(input); err != nil {
+		return nil, fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	return bytes.TrimSpace(buf.Bytes()), nil
 }

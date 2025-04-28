@@ -17,7 +17,7 @@ type Metadata struct {
 	SourceCategory    string         `json:"sourceCategory"`
 	EventType         string         `json:"eventType,omitempty"`
 	RecordID          interface{}    `json:"recordId,omitempty"`
-	DestinationConfig map[string]any `json:"-"`
+	DestinationConfig map[string]any `json:"destinationConfig"`
 }
 
 type TransformerEvent struct {

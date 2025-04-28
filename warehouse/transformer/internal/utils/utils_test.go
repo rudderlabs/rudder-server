@@ -1,11 +1,13 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/araddon/dateparse"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -78,6 +80,9 @@ func TestValidTimestamp(t *testing.T) {
 		{name: "Malicious string input should return false", timestamp: "%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216Windows%u2216win%u002ein", expected: false},
 		{name: "Date time ISO 8601", timestamp: "2025-04-02T01:09:03", expected: true},
 		{name: "Date time Millis timezone", timestamp: "2025-04-02 01:09:03.000+0530", expected: true},
+		{name: "Date time Micros Colon timezone", timestamp: "2025-02-22 03:46:41.714247+00:00", expected: true},
+		{name: "Date time ISO millis timezone", timestamp: "2025-04-13T11:24:48.000+1000", expected: true},
+		{name: "Date time Colon timezone", timestamp: "2025-04-18 02:00:00+00:00", expected: true},
 	}
 
 	for _, tc := range testCases {
@@ -87,28 +92,119 @@ func TestValidTimestamp(t *testing.T) {
 	}
 }
 
-// BenchmarkValidTimestamp/ValidTimestamp_Valid
-// BenchmarkValidTimestamp/ValidTimestamp_Valid-12         				36466681		32.00 ns/op
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid-12       	 			2823615	       	423.4 ns/op
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String
-// BenchmarkValidTimestamp/ValidTimestamp_Invalid_Big_String-12     	7731496	       	154.8 ns/op
+// BenchmarkValidTimestamp
+// BenchmarkValidTimestamp/old_parser
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Valid
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Valid-12         	   77277	     16020 ns/op
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid-12       	 1314688	       903.8 ns/op
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid_Big_String
+// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid_Big_String-12         	  294691	      4207 ns/op
+// BenchmarkValidTimestamp/new_parser
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Valid
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Valid-12                      	  310105	      3711 ns/op
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid-12                    	 4276358	       278.7 ns/op
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid_Big_String
+// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid_Big_String-12         	  162741	      7419 ns/op
 func BenchmarkValidTimestamp(b *testing.B) {
-	b.Run("ValidTimestamp_Valid", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ValidTimestamp("2023-11-10T12:34:56Z")
+	testDates := []string{
+		"2012/03/19 10:11:59",
+		"2012/03/19 10:11:59.3186369",
+		"2009-08-12T22:15:09-07:00",
+		"2014-04-26 17:24:37.3186369",
+		"2012-08-03 18:31:59.257000000",
+		"2013-04-01 22:43:22",
+		"2014-04-26 17:24:37.123",
+		"2014-12-16 06:20:00 UTC",
+		"1384216367189",
+		"1332151919",
+		"2014-05-11 08:20:13,787",
+		"2014-04-26 05:24:37 PM",
+		"2014-04-26",
+	}
+	timeFormats := []string{
+		// ISO 8601ish formats
+		time.RFC3339Nano,
+		time.RFC3339,
+
+		// Unusual formats, prefer formats with timezones
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC822Z,
+		time.RFC822,
+		time.UnixDate,
+		time.RubyDate,
+		time.ANSIC,
+
+		// Hilariously, Go doesn't have a const for it's own time layout.
+		// See: https://code.google.com/p/go/issues/detail?id=6587
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+
+		// No timezone information
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	}
+
+	oldParser := func(input string) (time.Time, error) {
+		for _, format := range timeFormats {
+			t, err := time.Parse(format, input)
+			if err == nil {
+				return t, nil
+			}
 		}
+		return time.Time{}, errors.New("invalid timestamp")
+	}
+	newParser := func(input string) (time.Time, error) {
+		return dateparse.ParseAny(input)
+	}
+
+	var t time.Time
+	var err error
+
+	b.Run("old parser", func(b *testing.B) {
+		b.Run("ValidTimestamp_Valid", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, dateStr := range testDates {
+					t, err = oldParser(dateStr)
+				}
+			}
+		})
+		b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				t, err = oldParser("invalid-timestamp")
+			}
+		})
+		b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				t, err = oldParser(strings.Repeat("a", 1000))
+			}
+		})
 	})
-	b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ValidTimestamp("invalid-timestamp")
-		}
+	b.Run("new parser", func(b *testing.B) {
+		b.Run("ValidTimestamp_Valid", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, dateStr := range testDates {
+					t, err = newParser(dateStr)
+				}
+			}
+		})
+		b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				t, err = newParser("invalid-timestamp")
+			}
+		})
+		b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				t, err = newParser(strings.Repeat("a", 1000))
+			}
+		})
 	})
-	b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			ValidTimestamp(strings.Repeat("a", 1000))
-		}
-	})
+
+	_ = t
+	_ = err
 }
 
 type Person struct {
@@ -168,7 +264,7 @@ func TestIsBlank(t *testing.T) {
 		{"NestedOneBlankStringSlice", []any{[]any{[]any{}}}, true},
 		{"NestedOneManyBlankStringSlice1", []any{[]any{[]any{}, []any{}}}, false},
 		{"NestedOneManyBlankStringSlice2", []any{[]any{[]any{}}, []any{}}, false},
-		{"EmptyMap", map[string]any{}, true},
+		{"EmptyMap", map[string]any{}, false},
 		{"NonEmptyMap", map[string]any{"key": 1}, false},
 		{"EmptyStruct", struct{}{}, false},
 		{"StructWithField", struct{ Field string }{"value"}, false},
@@ -228,34 +324,54 @@ func TestExtractMessageID(t *testing.T) {
 func TestExtractReceivedAt(t *testing.T) {
 	tests := []struct {
 		name         string
-		event        map[string]any
+		event        *types.TransformerEvent
 		expectedTime string
 	}{
 		{
 			name: "receivedAt present and valid",
-			event: map[string]any{
-				"receivedAt": "2023-10-19T14:00:00.000Z",
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"receivedAt": "2023-10-19T14:00:00.000Z",
+				},
 			},
 			expectedTime: "2023-10-19T14:00:00.000Z",
 		},
 		{
-			name: "receivedAt missing",
-			event: map[string]any{
-				"otherKey": "value",
+			name: "receivedAt missing in both event and metadata",
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"otherKey": "value",
+				},
 			},
 			expectedTime: "2023-10-20T12:34:56.789Z",
 		},
 		{
+			name: "receivedAt missing in event but present in metadata",
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"otherKey": "value",
+				},
+				Metadata: types.Metadata{
+					ReceivedAt: "2023-10-19T14:00:00.000Z",
+				},
+			},
+			expectedTime: "2023-10-19T14:00:00.000Z",
+		},
+		{
 			name: "receivedAt invalid format",
-			event: map[string]any{
-				"receivedAt": "invalid-format",
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"receivedAt": "invalid-format",
+				},
 			},
 			expectedTime: "2023-10-20T12:34:56.789Z",
 		},
 		{
 			name: "receivedAt is not a string",
-			event: map[string]any{
-				"receivedAt": 12345,
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"receivedAt": 12345,
+				},
 			},
 			expectedTime: "2023-10-20T12:34:56.789Z",
 		},
@@ -263,10 +379,7 @@ func TestExtractReceivedAt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			event := &types.TransformerEvent{
-				Message: tt.event,
-			}
-			require.Equal(t, tt.expectedTime, ExtractReceivedAt(event, func() time.Time {
+			require.Equal(t, tt.expectedTime, ExtractReceivedAt(tt.event, func() time.Time {
 				return time.Date(2023, time.October, 20, 12, 34, 56, 789000000, time.UTC)
 			}))
 		})
