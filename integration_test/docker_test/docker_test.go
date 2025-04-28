@@ -175,12 +175,12 @@ func testCases(t *testing.T) {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.identifies limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
 			eventSql := "select count(*) from dev_integration_test_1.identifies;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "2"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
 		eventSql := "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.identifies;"
@@ -194,12 +194,12 @@ func testCases(t *testing.T) {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.users limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
 			eventSql := "select count(*) from dev_integration_test_1.users;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
 		eventSql = "select context_myuniqueid,context_id,context_ip from dev_integration_test_1.users;"
@@ -213,12 +213,12 @@ func testCases(t *testing.T) {
 			eventSql := "select anonymous_id, user_id from dev_integration_test_1.screens limit 1;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.anonymousID, &myEvent.userID)
 			return myEvent.anonymousID == "anonymousId_1"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 		require.Eventually(t, func() bool {
 			eventSql := "select count(*) from dev_integration_test_1.screens;"
 			_ = db.QueryRow(eventSql).Scan(&myEvent.count)
 			return myEvent.count == "1"
-		}, 2*time.Minute, 10*time.Millisecond)
+		}, 1*time.Minute, 10*time.Millisecond)
 
 		// Verify User Transformation
 		eventSql = "select prop_key,myuniqueid,ip from dev_integration_test_1.screens;"
