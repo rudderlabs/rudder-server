@@ -20,11 +20,10 @@ func (c *ConfigT) processAccountAssociations() {
 	// This combines the account-specific settings with the shared definition settings
 	accountWithDefMap := lo.SliceToMap(c.Accounts, func(acc Account) (string, AccountWithDefinition) {
 		return acc.Id, AccountWithDefinition{
-			Id:                    acc.Id,
-			AccountDefinitionName: acc.AccountDefinitionName,
-			Options:               acc.Options,
-			Secret:                acc.Secret,
-			Config:                accountDefMap[acc.AccountDefinitionName].Config,
+			Id:                acc.Id,
+			Options:           acc.Options,
+			Secret:            acc.Secret,
+			AccountDefinition: accountDefMap[acc.AccountDefinitionName].Config,
 		}
 	})
 
@@ -51,7 +50,7 @@ func (c *ConfigT) setDestinationAccounts(dest *DestinationT, accountMap map[stri
 	// Check and set the regular account if specified in the destination config
 	if accountID, ok := dest.Config["rudderAccountId"].(string); ok {
 		if account, exists := accountMap[accountID]; exists {
-			dest.Account = &account
+			dest.DeliveryAccount = &account
 		}
 	}
 
