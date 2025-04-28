@@ -1,10 +1,12 @@
 package processor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -19,11 +21,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/ro"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -128,6 +132,7 @@ type Handle struct {
 	jobdDBMaxRetries           config.ValueLoader[int]
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
+	utSamplingFileManager      filemanager.FileManager
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -142,43 +147,45 @@ type Handle struct {
 		store        kitsync.Limiter
 	}
 	config struct {
-		isolationMode                   isolation.Mode
-		mainLoopTimeout                 time.Duration
-		enablePipelining                bool
-		pipelineBufferedItems           int
-		subJobSize                      int
-		pipelinesPerPartition           int
-		pingerSleep                     config.ValueLoader[time.Duration]
-		readLoopSleep                   config.ValueLoader[time.Duration]
-		maxLoopSleep                    config.ValueLoader[time.Duration]
-		storeTimeout                    config.ValueLoader[time.Duration]
-		maxEventsToProcess              config.ValueLoader[int]
-		transformBatchSize              config.ValueLoader[int]
-		userTransformBatchSize          config.ValueLoader[int]
-		sourceIdDestinationMap          map[string][]backendconfig.DestinationT
-		sourceIdSourceMap               map[string]backendconfig.SourceT
-		workspaceLibrariesMap           map[string]backendconfig.LibrariesT
-		oneTrustConsentCategoriesMap    map[string][]string
-		connectionConfigMap             map[connection]backendconfig.Connection
-		ketchConsentCategoriesMap       map[string][]string
-		genericConsentManagementMap     SourceConsentMap
-		batchDestinations               []string
-		configSubscriberLock            sync.RWMutex
-		enableDedup                     bool
-		enableEventCount                config.ValueLoader[bool]
-		transformTimesPQLength          int
-		captureEventNameStats           config.ValueLoader[bool]
-		transformerURL                  string
-		GWCustomVal                     string
-		asyncInit                       *misc.AsyncInit
-		eventSchemaV2Enabled            bool
-		archivalEnabled                 config.ValueLoader[bool]
-		eventAuditEnabled               map[string]bool
-		credentialsMap                  map[string][]types.Credential
-		nonEventStreamSources           map[string]bool
-		enableWarehouseTransformations  config.ValueLoader[bool]
-		enableUpdatedEventNameReporting config.ValueLoader[bool]
-		enableConcurrentStore           config.ValueLoader[bool]
+		isolationMode                             isolation.Mode
+		mainLoopTimeout                           time.Duration
+		enablePipelining                          bool
+		pipelineBufferedItems                     int
+		subJobSize                                int
+		pipelinesPerPartition                     int
+		pingerSleep                               config.ValueLoader[time.Duration]
+		readLoopSleep                             config.ValueLoader[time.Duration]
+		maxLoopSleep                              config.ValueLoader[time.Duration]
+		storeTimeout                              config.ValueLoader[time.Duration]
+		maxEventsToProcess                        config.ValueLoader[int]
+		transformBatchSize                        config.ValueLoader[int]
+		userTransformBatchSize                    config.ValueLoader[int]
+		sourceIdDestinationMap                    map[string][]backendconfig.DestinationT
+		sourceIdSourceMap                         map[string]backendconfig.SourceT
+		workspaceLibrariesMap                     map[string]backendconfig.LibrariesT
+		oneTrustConsentCategoriesMap              map[string][]string
+		connectionConfigMap                       map[connection]backendconfig.Connection
+		ketchConsentCategoriesMap                 map[string][]string
+		genericConsentManagementMap               SourceConsentMap
+		batchDestinations                         []string
+		configSubscriberLock                      sync.RWMutex
+		enableDedup                               bool
+		enableEventCount                          config.ValueLoader[bool]
+		transformTimesPQLength                    int
+		captureEventNameStats                     config.ValueLoader[bool]
+		transformerURL                            string
+		GWCustomVal                               string
+		asyncInit                                 *misc.AsyncInit
+		eventSchemaV2Enabled                      bool
+		archivalEnabled                           config.ValueLoader[bool]
+		eventAuditEnabled                         map[string]bool
+		credentialsMap                            map[string][]types.Credential
+		nonEventStreamSources                     map[string]bool
+		enableWarehouseTransformations            config.ValueLoader[bool]
+		enableUpdatedEventNameReporting           config.ValueLoader[bool]
+		enableConcurrentStore                     config.ValueLoader[bool]
+		userTransformationMirroringSanitySampling config.ValueLoader[float64]
+		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -216,6 +223,9 @@ type processorStats struct {
 	statUtransformStageCount   func(partition string) stats.Measurement
 	statDtransformStageCount   func(partition string) stats.Measurement
 	statStoreStageCount        func(partition string) stats.Measurement
+
+	utMirroringEqualResponses     func(partition string) stats.Measurement
+	utMirroringDifferentResponses func(partition string) stats.Measurement
 }
 type DestStatT struct {
 	numEvents               stats.Measurement
@@ -244,6 +254,7 @@ type ParametersT struct {
 	RecordID                interface{} `json:"record_id"`
 	WorkspaceId             string      `json:"workspaceId"`
 	TraceParent             string      `json:"traceparent"`
+	ConnectionID            string      `json:"connection_id"`
 }
 
 type MetricMetadata struct {
@@ -293,12 +304,15 @@ func buildStatTags(sourceID, workspaceID string, destination *backendconfig.Dest
 	}
 }
 
-func (proc *Handle) newUserTransformationStat(sourceID, workspaceID string, destination *backendconfig.DestinationT) *DestStatT {
+func (proc *Handle) newUserTransformationStat(
+	sourceID, workspaceID string, destination *backendconfig.DestinationT, mirroring bool,
+) *DestStatT {
 	tags := buildStatTags(sourceID, workspaceID, destination, UserTransformation)
 
 	tags["transformation_id"] = destination.Transformations[0].ID
 	tags["transformation_version_id"] = destination.Transformations[0].VersionID
 	tags["error"] = "false"
+	tags["mirroring"] = strconv.FormatBool(mirroring)
 
 	numEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_in_count", stats.CountType, tags)
 	numOutputSuccessEvents := proc.statsFactory.NewTaggedStat("proc_transform_stage_out_count", stats.CountType, tags)
@@ -393,7 +407,7 @@ func (proc *Handle) Setup(
 	proc.reporting = reporting
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
-	proc.reportingEnabled = config.GetBoolVar(reportingtypes.DefaultReportingEnabled, "Reporting.enabled")
+	proc.reportingEnabled = proc.conf.GetBoolVar(reportingtypes.DefaultReportingEnabled, "Reporting.enabled")
 	if proc.conf == nil {
 		proc.conf = config.Default
 	}
@@ -420,8 +434,14 @@ func (proc *Handle) Setup(
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 	proc.enrichers = enrichers
-
 	proc.transformerFeaturesService = transformerFeaturesService
+
+	var err error
+	proc.utSamplingFileManager, err = getUTSamplingUploader(proc.conf, proc.logger)
+	if err != nil {
+		proc.logger.Errorn("failed to create ut sampling file manager", obskit.Error(err))
+		proc.utSamplingFileManager = nil
+	}
 
 	if proc.adaptiveLimit == nil {
 		proc.adaptiveLimit = func(limit int64) int64 { return limit }
@@ -537,6 +557,18 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+	proc.stats.utMirroringEqualResponses = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
+			"equal":     "true",
+			"partition": partition,
+		})
+	}
+	proc.stats.utMirroringDifferentResponses = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
+			"equal":     "false",
+			"partition": partition,
+		})
+	}
 
 	proc.warehouseTransformer = wtrans.New(proc.conf, proc.logger, proc.statsFactory)
 
@@ -596,28 +628,28 @@ func (proc *Handle) Start(ctx context.Context) error {
 	// limiters
 	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
-	proc.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "proc_read",
-		config.GetInt("Processor.Limiter.read.limit", 50),
+	proc.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_read",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
-	proc.limiter.preprocess = kitsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
-		config.GetInt("Processor.Limiter.preprocess.limit", 50),
+	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.pretransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_pretransform",
-		config.GetInt("Processor.Limiter.pretransform.limit", 50),
+	proc.limiter.pretransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pretransform",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.utransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_utransform",
-		config.GetInt("Processor.Limiter.utransform.limit", 50),
+	proc.limiter.utransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_utransform",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.utransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.utransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.dtransform = kitsync.NewLimiter(ctx, &limiterGroup, "proc_dtransform",
-		config.GetInt("Processor.Limiter.dtransform.limit", 50),
+	proc.limiter.dtransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_dtransform",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.dtransform.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.dtransform.dynamicPeriod", 1, time.Second)))
-	proc.limiter.store = kitsync.NewLimiter(ctx, &limiterGroup, "proc_store",
-		config.GetInt("Processor.Limiter.store.limit", 50),
+	proc.limiter.store = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_store",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
 	g.Go(func() error {
@@ -712,10 +744,10 @@ func (proc *Handle) loadConfig() {
 	defaultPayloadLimit := 100 * bytesize.MB
 
 	defaultIsolationMode := isolation.ModeSource
-	if config.IsSet("WORKSPACE_NAMESPACE") {
+	if proc.conf.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	proc.config.isolationMode = isolation.Mode(config.GetString("Processor.isolationMode", string(defaultIsolationMode)))
+	proc.config.isolationMode = isolation.Mode(proc.conf.GetString("Processor.isolationMode", string(defaultIsolationMode)))
 	// If isolation mode is not none, we need to reduce the values for some of the config variables to more sensible defaults
 	if proc.config.isolationMode != isolation.ModeNone {
 		defaultSubJobSize = 400
@@ -723,36 +755,39 @@ func (proc *Handle) loadConfig() {
 		defaultPayloadLimit = 20 * bytesize.MB
 	}
 
-	proc.config.enablePipelining = config.GetBoolVar(true, "Processor.enablePipelining")
-	proc.config.pipelineBufferedItems = config.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
-	proc.config.subJobSize = config.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
-	proc.config.pipelinesPerPartition = config.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
+	proc.config.enablePipelining = proc.conf.GetBoolVar(true, "Processor.enablePipelining")
+	proc.config.pipelineBufferedItems = proc.conf.GetIntVar(0, 1, "Processor.pipelineBufferedItems")
+	proc.config.subJobSize = proc.conf.GetIntVar(defaultSubJobSize, 1, "Processor.subJobSize")
+	proc.config.pipelinesPerPartition = proc.conf.GetIntVar(1, 1, "Processor.pipelinesPerPartition")
 	// Enable dedup of incoming events by default
-	proc.config.enableDedup = config.GetBoolVar(false, "Dedup.enableDedup")
-	proc.config.eventSchemaV2Enabled = config.GetBoolVar(false, "EventSchemas2.enabled")
+	proc.config.enableDedup = proc.conf.GetBoolVar(false, "Dedup.enableDedup")
+	proc.config.eventSchemaV2Enabled = proc.conf.GetBoolVar(false, "EventSchemas2.enabled")
 	proc.config.batchDestinations = misc.BatchDestinations()
-	proc.config.transformTimesPQLength = config.GetIntVar(5, 1, "Processor.transformTimesPQLength")
+	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
-	proc.config.GWCustomVal = config.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
 func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEventsToProcess int) {
-	proc.payloadLimit = config.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
-	proc.config.maxLoopSleep = config.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
-	proc.config.storeTimeout = config.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
-	proc.config.pingerSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
-	proc.config.readLoopSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
-	proc.config.transformBatchSize = config.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-	proc.config.userTransformBatchSize = config.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
-	proc.config.enableEventCount = config.GetReloadableBoolVar(true, "Processor.enableEventCount")
-	proc.config.maxEventsToProcess = config.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
-	proc.config.archivalEnabled = config.GetReloadableBoolVar(true, "archival.Enabled")
+	proc.payloadLimit = proc.conf.GetReloadableInt64Var(defaultPayloadLimit, 1, "Processor.payloadLimit")
+	proc.config.maxLoopSleep = proc.conf.GetReloadableDurationVar(10000, time.Millisecond, "Processor.maxLoopSleep", "Processor.maxLoopSleepInMS")
+	proc.config.storeTimeout = proc.conf.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
+	proc.config.pingerSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
+	proc.config.readLoopSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
+	proc.config.transformBatchSize = proc.conf.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
+	proc.config.userTransformBatchSize = proc.conf.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
+	proc.config.enableEventCount = proc.conf.GetReloadableBoolVar(true, "Processor.enableEventCount")
+	proc.config.maxEventsToProcess = proc.conf.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
+	proc.config.archivalEnabled = proc.conf.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
-	proc.config.captureEventNameStats = config.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
-	proc.config.enableWarehouseTransformations = config.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
-	proc.config.enableUpdatedEventNameReporting = config.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
-	proc.config.enableConcurrentStore = config.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
+	proc.config.captureEventNameStats = proc.conf.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
+	proc.config.enableWarehouseTransformations = proc.conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	proc.config.enableUpdatedEventNameReporting = proc.conf.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
+	proc.config.enableConcurrentStore = proc.conf.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
+	// UserTransformation mirroring settings
+	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
+	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 }
 
 type connection struct {
@@ -1417,6 +1452,7 @@ func (proc *Handle) getTransformationMetrics(
 			"stage":              pu,
 			"record_id":          failedEvent.Metadata.RecordID,
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
+			"connection_id":      generateConnectionID(commonMetaData.SourceID, commonMetaData.DestinationID),
 		}
 		if eventContext, castOk := failedEvent.Output["context"].(map[string]interface{}); castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
@@ -1459,6 +1495,10 @@ func (proc *Handle) getTransformationMetrics(
 	// REPORTING - END
 
 	return jobs, metrics, countMap
+}
+
+func generateConnectionID(s1, s2 string) string {
+	return s1 + ":" + s2
 }
 
 func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, sourceId string) {
@@ -2738,7 +2778,7 @@ type userTransformAndFilterOutput struct {
 
 func (proc *Handle) userTransformAndFilter(
 	ctx context.Context,
-	_ string,
+	partition string,
 	srcAndDestKey string,
 	eventList []types.TransformerEvent,
 	trackingPlanEnabledMap map[SourceIDT]bool,
@@ -2832,15 +2872,111 @@ func (proc *Handle) userTransformAndFilter(
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
-		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination)
-		userTransformationStat.numEvents.Count(len(eventList))
-		proc.logger.Debug("Custom Transform input size", len(eventList))
+		noOfEvents := len(eventList)
+		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
+		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
+		var userTransformationMirroringStat *DestStatT
+		userTransformationStat.numEvents.Count(noOfEvents)
+		if utMirroringEnabled {
+			userTransformationMirroringStat = proc.newUserTransformationStat(sourceID, workspaceID, destination, true)
+			userTransformationMirroringStat.numEvents.Count(noOfEvents)
+		}
+		proc.logger.Debug("Custom Transform input size", noOfEvents)
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
+
+			if utMirroringEnabled {
+				go func() {
+					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
+					d := time.Since(startedAt)
+					userTransformationMirroringStat.transformTime.SendTiming(d)
+					userTransformationMirroringStat.numOutputSuccessEvents.Count(len(response.Events))
+					filtered := lo.GroupBy(response.FailedEvents,
+						func(event types.TransformerResponse) bool {
+							return event.StatusCode == reportingtypes.FilterEventCode
+						},
+					)
+					userTransformationMirroringStat.numOutputFailedEvents.Count(len(filtered[false]))
+					userTransformationMirroringStat.numOutputFilteredEvents.Count(len(filtered[true]))
+					if utMirroringSanityChecks != nil {
+						utMirroringSanityChecks <- response
+						close(utMirroringSanityChecks)
+					}
+				}()
+			}
+
 			response = proc.transformerClients.User().Transform(ctx, eventList)
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
+
+			if utMirroringEnabled && utMirroringSanityChecks != nil {
+				go func() {
+					mirroredResponse := <-utMirroringSanityChecks
+					diff, equal := response.Equal(&mirroredResponse)
+					if equal {
+						proc.stats.utMirroringEqualResponses(partition).Increment()
+						return
+					}
+
+					defer proc.stats.utMirroringDifferentResponses(partition).Increment()
+
+					var (
+						tr  *types.TransformerResponse
+						log = proc.logger
+					)
+					if len(mirroredResponse.Events) > 0 {
+						tr = &mirroredResponse.Events[0]
+					} else if len(mirroredResponse.FailedEvents) > 0 {
+						tr = &mirroredResponse.FailedEvents[0]
+					}
+					if tr != nil {
+						log = proc.logger.Withn( // adding more data to help with debugging
+							obskit.WorkspaceID(tr.Metadata.WorkspaceID),
+							obskit.SourceID(tr.Metadata.SourceID),
+							logger.NewStringField("messageId", tr.Metadata.MessageID),
+						)
+					}
+
+					if proc.utSamplingFileManager == nil { // Cannot upload, we should just report the issue with no diff
+						log.Errorn("UserTransform sanity check failed")
+						return
+					}
+
+					// Upload clientEvents using jsonrs.Marshal
+					objNameSuffix := uuid.New().String()
+					clientEventsObjName := objNameSuffix + "-events"
+					clientEventsJSON, err := jsonrs.Marshal(eventList)
+					if err != nil {
+						log.Errorn("UserTransform sanity check failed (cannot encode clientEvents)", obskit.Error(err))
+						return
+					}
+
+					diffObjName := objNameSuffix + "-diff"
+					diffFile, err := proc.utSamplingFileManager.UploadReader(ctx, diffObjName, strings.NewReader(diff))
+					if err != nil {
+						log.Errorn("Error uploading UserTransform sanity check diff file", obskit.Error(err))
+						return
+					}
+
+					clientEventsFile, err := proc.utSamplingFileManager.UploadReader(ctx, clientEventsObjName, bytes.NewReader(clientEventsJSON))
+					if err != nil {
+						log.Errorn("Error uploading UserTransform clientEvents file",
+							obskit.Error(err),
+							logger.NewStringField("diffLocation", diffFile.Location),
+							logger.NewStringField("diffObjectName", diffFile.ObjectName),
+						)
+						return
+					}
+
+					log.Errorn("UserTransform sanity check failed",
+						logger.NewStringField("diffLocation", diffFile.Location),
+						logger.NewStringField("diffObjectName", diffFile.ObjectName),
+						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),
+						logger.NewStringField("clientEventsObjectName", clientEventsFile.ObjectName),
+					)
+				}()
+			}
 
 			var successMetrics []*reportingtypes.PUReportedMetric
 			var successCountMap map[string]int64
@@ -2855,7 +2991,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
 			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 			userTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
+			proc.logger.Debugn("Custom Transform output size", logger.NewField("size", len(eventsToTransform)))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
 			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
@@ -2888,7 +3024,7 @@ func (proc *Handle) userTransformAndFilter(
 			inPU = reportingtypes.USER_TRANSFORMER // for the next step in the pipeline
 		})
 	} else {
-		proc.logger.Debug("No custom transformation")
+		proc.logger.Debugn("No custom transformation")
 		eventsToTransform = eventList
 	}
 
@@ -2911,9 +3047,9 @@ func (proc *Handle) userTransformAndFilter(
 		transformAt = val
 	}
 	// Check for overrides through env
-	transformAtOverrideFound := config.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
+	transformAtOverrideFound := proc.conf.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
 	if transformAtOverrideFound {
-		transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
+		transformAt = proc.conf.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 	}
 	// Filtering events based on the supported message types - START
 	s := time.Now()
@@ -3164,6 +3300,7 @@ func (proc *Handle) destTransform(
 				RecordID:                recordId,
 				WorkspaceId:             workspaceId,
 				TraceParent:             metadata.TraceParent,
+				ConnectionID:            generateConnectionID(sourceID, destID),
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
@@ -3233,6 +3370,35 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 		return rsourcesStats.Publish(ctx, tx.Tx)
 	}
 	return nil
+}
+
+func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response) {
+	mirroringSanityChecksSampling := proc.config.userTransformationMirroringSanitySampling.Load()
+	mirroringFireAndForget := proc.config.userTransformationMirroringFireAndForget.Load()
+
+	if !mirroringFireAndForget && mirroringSanityChecksSampling <= 0 {
+		return false, nil // Mirroring is disabled.
+	}
+	if mirroringFireAndForget && mirroringSanityChecksSampling > 0 {
+		proc.logger.Errorn(
+			"UT mirroring sanity checks and fire&forget are enabled (they are mutually exclusive). Disabling UT mirroring.",
+		)
+		return false, nil
+	}
+
+	if mirroringFireAndForget { // Mirroring is enabled in fire&forget mode and no sanity checks
+		return true, nil
+	}
+
+	// Determine if mirroring should be enabled based on sampling percentage.
+	// Sampling percentage precision can be with two decimals like 12.34%
+	if ok := shouldSample(mirroringSanityChecksSampling); !ok {
+		// Sanity checks were enabled but the random value was less than the sampling percentage.
+		// Disabling mirroring altogether.
+		return false, nil
+	}
+
+	return true, make(chan types.Response, 1)
 }
 
 func ConvertToFilteredTransformerResponse(
@@ -3593,8 +3759,8 @@ func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]m
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
 	dbs := map[string]jobsdb.JobsDB{"rt": proc.routerDB, "batch_rt": proc.batchRouterDB}
-	jobdDBQueryRequestTimeout := config.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
-	jobdDBMaxRetries := config.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
+	jobdDBQueryRequestTimeout := proc.conf.GetDurationVar(600, time.Second, "JobsDB.GetPileUpCounts.QueryRequestTimeout", "JobsDB.QueryRequestTimeout")
+	jobdDBMaxRetries := proc.conf.GetReloadableIntVar(2, 1, "JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries")
 
 	err := misc.RetryWithNotify(ctx,
 		jobdDBQueryRequestTimeout,
@@ -3621,4 +3787,42 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// shouldSample sampling percentage precision can be with two decimals like 12.34%.
+// To sample everything use 100. To sample nothing use 0.
+func shouldSample(samplingPercentage float64) bool {
+	if samplingPercentage == 0 || samplingPercentage == 100 {
+		return samplingPercentage == 100
+	}
+	return float64(rand.Intn(10000))/100 <= samplingPercentage
+}
+
+// getUTSamplingUploader can be completely removed once we get rid of UT sampling
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
+		endpoint         = conf.GetString("UTSampling.Endpoint", "")
+		accessKeyID      = conf.GetStringVar("", "UTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
+		accessKey        = conf.GetStringVar("", "UTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBool("UTSampling.S3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("UTSampling.DisableSsl", false)
+		enableSSE        = conf.GetBoolVar(false, "UTSampling.EnableSse", "AWS_ENABLE_SSE")
+		useGlue          = conf.GetBool("UTSampling.UseGlue", false)
+		region           = conf.GetStringVar("us-east-1", "UTSampling.Region", "AWS_DEFAULT_REGION")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"accessKey":        accessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+		"useGlue":          useGlue,
+		"region":           region,
+	}
+	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
+		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
+	})
 }

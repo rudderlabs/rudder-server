@@ -12,18 +12,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -34,9 +31,11 @@ import (
 type Opt func(*Client)
 
 func WithClient(client transformerclient.Client) Opt {
-	return func(s *Client) {
-		s.client = client
-	}
+	return func(s *Client) { s.client = client }
+}
+
+func ForMirroring() Opt {
+	return func(s *Client) { s.config.forMirroring = true }
 }
 
 func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) *Client {
@@ -44,9 +43,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
-	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
+	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer", conf.GetBoolVar(true, "USER_TRANSFORM_URL_IS_HEADLESS")))
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
@@ -60,26 +57,29 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 		opt(handle)
 	}
 
+	if handle.config.forMirroring {
+		handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_MIRROR_URL", "")
+	}
+
 	return handle
 }
 
 type Client struct {
 	config struct {
 		userTransformationURL      string
+		forMirroring               bool
 		maxRetry                   config.ValueLoader[int]
 		failOnUserTransformTimeout config.ValueLoader[bool]
 		failOnError                config.ValueLoader[bool]
 		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
 		timeoutDuration            time.Duration
 		collectInstanceLevelStats  bool
-		maxConcurrency             int
 		batchSize                  config.ValueLoader[int]
 	}
-	conf             *config.Config
-	log              logger.Logger
-	stat             stats.Stats
-	client           transformerclient.Client
-	guardConcurrency chan struct{}
+	conf   *config.Config
+	log    logger.Logger
+	stat   stats.Stats
+	client transformerclient.Client
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -102,6 +102,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		SourceID:         clientEvents[0].Metadata.SourceID,
 		DestinationID:    clientEvents[0].Destination.ID,
 		TransformationID: transformationID,
+		Mirroring:        u.config.forMirroring,
 	}
 
 	var trackWg sync.WaitGroup
@@ -132,10 +133,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	lo.ForEach(
 		batches,
 		func(batch []types.TransformerEvent, i int) {
-			u.guardConcurrency <- struct{}{}
 			go func() {
 				transformResponse[i] = u.sendBatch(ctx, u.userTransformURL(), labels, batch)
-				<-u.guardConcurrency
 				wg.Done()
 			}()
 		},

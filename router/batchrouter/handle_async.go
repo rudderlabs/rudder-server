@@ -446,7 +446,7 @@ func getOriginalJobParameters(jobs []*jobsdb.JobT) map[int64]stdjson.RawMessage 
 	return originalJobParameters
 }
 
-func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
+func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 	destinationID := batchJobs.Connection.Destination.ID
 	if brt.disableEgress {
 		out := common.AsyncUploadOutput{
@@ -464,7 +464,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 			OriginalJobParameters: getOriginalJobParameters(batchJobs.Jobs),
 			JobsList:              batchJobs.Jobs,
 		})
-		return
+		return nil
 	}
 
 	_, ok := brt.asyncDestinationStruct[destinationID]
@@ -477,7 +477,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 				JobState:   jobsdb.Aborted.State,
 			}
 			brt.updateJobStatus(&failedAsyncJobs, false, invalidManager.Error, false)
-			return
+			return invalidManager.Error
 		}
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 		defer brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
@@ -497,7 +497,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 				OriginalJobParameters: getOriginalJobParameters(batchJobs.Jobs),
 				JobsList:              batchJobs.Jobs,
 			})
-			return
+			return nil
 		}
 	}
 
@@ -514,7 +514,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
+		err = fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error())
+		panic(err)
 	}
 	defer func() { _ = file.Close() }()
 	var overFlow bool
@@ -542,7 +543,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 		brt.asyncDestinationStruct[destinationID].Size = brt.asyncDestinationStruct[destinationID].Size + len([]byte(fileData+"\n"))
 		_, err = file.WriteAt([]byte(fileData+"\n"), int64(writeAtBytes))
 		if err != nil {
-			panic(fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error()))
+			err = fmt.Errorf("BRT: %s: file write failed : %s", brt.destType, err.Error())
+			panic(err)
 		}
 		writeAtBytes += len([]byte(fileData + "\n"))
 		brt.asyncDestinationStruct[destinationID].ImportingJobIDs = append(brt.asyncDestinationStruct[destinationID].ImportingJobIDs, job.JobID)
@@ -569,6 +571,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 				JobsList:              batchJobs.Jobs,
 			},
 		)
+
+		return nil
 	}
 
 	newAttemptNums := getAttemptNumbers(batchJobs.Jobs)
@@ -585,7 +589,10 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) {
 	}
 	if overFlow {
 		brt.asyncDestinationStruct[destinationID].CanUpload = true
+		return nil
 	}
+
+	return nil
 }
 
 func (brt *Handle) createFakeJob(jobID int64, parameters stdjson.RawMessage) *jobsdb.JobT {

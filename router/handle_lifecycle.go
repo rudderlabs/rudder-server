@@ -180,8 +180,8 @@ func (rt *Handle) Setup(
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("Router.Limiter.statsPeriod", 15, time.Second)
-	rt.limiter.pickup = kitsync.NewLimiter(ctx, &limiterGroup, "rt_pickup",
-		getRouterConfigInt("Limiter.pickup.limit", rt.destType, 100),
+	rt.limiter.pickup = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_pickup",
+		getReloadableRouterConfigInt("Limiter.pickup.limit", rt.destType, 100),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.pickup.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -191,8 +191,8 @@ func (rt *Handle) Setup(
 	)
 	rt.limiter.stats.pickup = partition.NewStats()
 
-	rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterGroup, "rt_transform",
-		getRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
+	rt.limiter.transform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_transform",
+		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.transform.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -202,8 +202,8 @@ func (rt *Handle) Setup(
 	)
 	rt.limiter.stats.transform = partition.NewStats()
 
-	rt.limiter.batch = kitsync.NewLimiter(ctx, &limiterGroup, "rt_batch",
-		getRouterConfigInt("Limiter.batch.limit", rt.destType, 200),
+	rt.limiter.batch = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_batch",
+		getReloadableRouterConfigInt("Limiter.batch.limit", rt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.batch.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
@@ -213,8 +213,8 @@ func (rt *Handle) Setup(
 	)
 	rt.limiter.stats.batch = partition.NewStats()
 
-	rt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "rt_process",
-		getRouterConfigInt("Limiter.process.limit", rt.destType, 200),
+	rt.limiter.process = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_process",
+		getReloadableRouterConfigInt("Limiter.process.limit", rt.destType, 1024),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.process.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),

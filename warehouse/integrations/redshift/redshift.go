@@ -438,6 +438,24 @@ func (rs *Redshift) dropStagingTables(ctx context.Context, stagingTableNames []s
 	}
 }
 
+func (rs *Redshift) createStagingTable(ctx context.Context, sourceTableName string) (string, error) {
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		sourceTableName,
+		tableNameLimit,
+	)
+	rs.logger.Debugw("creating staging table")
+	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
+		rs.Namespace,
+		stagingTableName,
+		sourceTableName,
+	)
+	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+		return "", err
+	}
+	return stagingTableName, nil
+}
+
 func (rs *Redshift) loadTable(
 	ctx context.Context,
 	tableName string,
@@ -445,6 +463,7 @@ func (rs *Redshift) loadTable(
 	tableSchemaAfterUpload model.TableSchema,
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
+	shouldMerge := rs.ShouldMerge(tableName)
 	log := rs.logger.With(
 		logfield.SourceID, rs.Warehouse.Source.ID,
 		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
@@ -453,23 +472,25 @@ func (rs *Redshift) loadTable(
 		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
 		logfield.Namespace, rs.Namespace,
 		logfield.TableName, tableName,
-		logfield.ShouldMerge, rs.ShouldMerge(tableName),
+		logfield.ShouldMerge, shouldMerge,
 	)
 	log.Infow("started loading")
 
-	stagingTableName := warehouseutils.StagingTableName(
-		provider,
-		tableName,
-		tableNameLimit,
-	)
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
 
-	log.Debugw("creating staging table")
-	createStagingTableStmt := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q (LIKE %[1]q.%[3]q INCLUDING DEFAULTS);`,
-		rs.Namespace,
-		stagingTableName,
-		tableName,
-	)
-	if _, err := rs.DB.ExecContext(ctx, createStagingTableStmt); err != nil {
+	// Users table still needs to be deduped by partition key.
+	// In case of users table, staging table should be created, so that users table can be deduped by partition key
+	if !shouldMerge && tableName != warehouseutils.UsersTable {
+		err := rs.copyIntoLoadTable(ctx, rs.DB, tableName, tableName, strKeys)
+		if err != nil {
+			return nil, "", fmt.Errorf("copy into load table: %w", err)
+		}
+		return &types.LoadTableStats{}, "", nil
+	}
+
+	stagingTableName, err := rs.createStagingTable(ctx, tableName)
+	if err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
 
@@ -489,9 +510,6 @@ func (rs *Redshift) loadTable(
 		}
 	}()
 
-	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
-	sort.Strings(strKeys)
-
 	log.Infow("loading data into staging table")
 	err = rs.copyIntoLoadTable(
 		ctx, txn, tableName, stagingTableName,
@@ -505,7 +523,7 @@ func (rs *Redshift) loadTable(
 		rowsDeletedResult, rowsInsertedResult sql.Result
 		rowsDeleted, rowsInserted             int64
 	)
-	if rs.ShouldMerge(tableName) {
+	if shouldMerge {
 		log.Infow("deleting from load table")
 		rowsDeletedResult, err = rs.deleteFromLoadTable(
 			ctx, txn, tableName,
@@ -551,9 +569,13 @@ func (rs *Redshift) loadTable(
 	}, stagingTableName, nil
 }
 
+type sqlExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (rs *Redshift) copyIntoLoadTable(
 	ctx context.Context,
-	txn *sqlmiddleware.Tx,
+	sqlExecer sqlExecer,
 	tableName string,
 	stagingTableName string,
 	strKeys []string,
@@ -633,7 +655,7 @@ func (rs *Redshift) copyIntoLoadTable(
 		)
 	}
 
-	if _, err := txn.ExecContext(ctx, copyStmt); err != nil {
+	if _, err := sqlExecer.ExecContext(ctx, copyStmt); err != nil {
 		return fmt.Errorf("running copy command: %w", normalizeError(err))
 	}
 	return nil
@@ -763,6 +785,23 @@ func (rs *Redshift) loadUserTables(ctx context.Context) map[string]error {
 	if err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
+		}
+	}
+
+	if !rs.ShouldMerge(warehouseutils.IdentifiesTable) {
+		identifyStagingTable, err = rs.createStagingTable(ctx, warehouseutils.IdentifiesTable)
+		if err != nil {
+			return map[string]error{
+				warehouseutils.IdentifiesTable: fmt.Errorf("creating staging table: %w", err),
+			}
+		}
+		cols := warehouseutils.GetColumnsFromTableSchema(rs.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
+		sort.Strings(cols)
+		err = rs.copyIntoLoadTable(ctx, rs.DB, warehouseutils.IdentifiesTable, identifyStagingTable, cols)
+		if err != nil {
+			return map[string]error{
+				warehouseutils.IdentifiesTable: fmt.Errorf("copying into load table: %w", err),
+			}
 		}
 	}
 
