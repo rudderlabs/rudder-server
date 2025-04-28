@@ -28,13 +28,13 @@ type LifecycleManager struct {
 	mainCtx                    context.Context
 	currentCancel              context.CancelFunc
 	waitGroup                  interface{ Wait() }
-	gatewayDB                  *jobsdb.Handle
-	routerDB                   *jobsdb.Handle
-	batchRouterDB              *jobsdb.Handle
-	readErrDB                  *jobsdb.Handle
-	writeErrDB                 *jobsdb.Handle
-	esDB                       *jobsdb.Handle
-	arcDB                      *jobsdb.Handle
+	gatewayDB                  jobsdb.JobsDB
+	routerDB                   jobsdb.JobsDB
+	batchRouterDB              jobsdb.JobsDB
+	readErrDB                  jobsdb.JobsDB
+	writeErrDB                 jobsdb.JobsDB
+	esDB                       jobsdb.JobsDB
+	arcDB                      jobsdb.JobsDB
 	clearDB                    *bool
 	ReportingI                 types.Reporting // need not initialize again
 	BackendConfig              backendconfig.BackendConfig
@@ -116,7 +116,7 @@ func (proc *LifecycleManager) Stop() {
 func New(
 	ctx context.Context,
 	clearDb *bool,
-	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB *jobsdb.Handle,
+	gwDb, rtDb, brtDb, errDbForRead, errDBForWrite, esDB, arcDB jobsdb.JobsDB,
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
