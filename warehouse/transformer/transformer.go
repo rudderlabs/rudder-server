@@ -108,18 +108,19 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 
 	for i := range clientEvents {
 		event := clientEvents[i]
-		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+		eventMetadata := event.Metadata
+		eventMetadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
 		g.Go(func() error {
 			r, err := t.processWarehouseMessage(c, &event)
 			if err != nil {
-				results <- transformerResponseFromErr(&event, err)
+				results <- transformerResponseFromErr(&eventMetadata, err)
 				return nil
 			}
 			for _, item := range r {
 				results <- types.TransformerResponse{
 					Output:     item,
-					Metadata:   event.Metadata,
+					Metadata:   eventMetadata,
 					StatusCode: http.StatusOK,
 				}
 			}
@@ -134,13 +135,14 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 }
 
 func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {
-	if err := t.checkValidContext(event); err != nil {
+	wEvent := wtypes.New(event, t.uuidGenerator, t.now)
+	if err := t.checkValidContext(wEvent); err != nil {
 		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
-	return t.handleEvent(event, cache)
+	return t.handleEvent(wEvent, cache)
 }
 
-func (t *Transformer) checkValidContext(event *types.TransformerEvent) error {
+func (t *Transformer) checkValidContext(event *wtypes.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
 		return nil
 	}
@@ -170,20 +172,15 @@ func (t *Transformer) eventContext(tec *transformEventContext) any {
 	return clonedContext
 }
 
-func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
+func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) ([]map[string]any, error) {
 	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
-	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Destination.Config)
+	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Metadata.DestinationConfig)
 	jsonPathsInfo := extractJSONPathInfo(append(intrOpts.jsonPaths, destOpts.jsonPaths...))
 
 	eventType := strings.ToLower(event.Metadata.EventType)
 
-	warehouseEvent := &wtypes.WarehouseTransformerEvent{}
-	warehouseEvent.TransformerEvent = event
-	warehouseEvent.MessageID = utils.ExtractMessageID(event, t.uuidGenerator)
-	warehouseEvent.ReceivedAt = utils.ExtractReceivedAt(event, t.now)
-
 	tec := &transformEventContext{
-		event:         warehouseEvent,
+		event:         event,
 		intrOpts:      &intrOpts,
 		destOpts:      &destOpts,
 		jsonPathsInfo: &jsonPathsInfo,
@@ -213,19 +210,19 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 	}
 }
 
-func transformerResponseFromErr(event *types.TransformerEvent, err error) types.TransformerResponse {
+func transformerResponseFromErr(metadata *types.Metadata, err error) types.TransformerResponse {
 	var te *response.TransformerError
 	if ok := errors.As(err, &te); ok {
 		return types.TransformerResponse{
 			Output:     nil,
-			Metadata:   event.Metadata,
+			Metadata:   *metadata,
 			Error:      te.Error(),
 			StatusCode: te.StatusCode(),
 		}
 	}
 	return types.TransformerResponse{
 		Output:     nil,
-		Metadata:   event.Metadata,
+		Metadata:   *metadata,
 		Error:      response.ErrInternalServer.Error(),
 		StatusCode: response.ErrInternalServer.StatusCode(),
 	}

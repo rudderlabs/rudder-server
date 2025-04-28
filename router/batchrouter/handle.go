@@ -93,7 +93,7 @@ type Handle struct {
 	jobdDBMaxRetries             config.ValueLoader[int]
 	minIdleSleep                 config.ValueLoader[time.Duration]
 	uploadFreq                   config.ValueLoader[time.Duration]
-	mainLoopFreq                 config.ValueLoader[time.Duration]
+	pingFrequency                config.ValueLoader[time.Duration]
 	disableEgress                bool
 	warehouseServiceMaxRetryTime config.ValueLoader[time.Duration]
 	transformerURL               string
@@ -126,12 +126,6 @@ type Handle struct {
 		upload  kitsync.Limiter
 	}
 
-	lastExecTimesMu sync.RWMutex
-	lastExecTimes   map[string]time.Time
-
-	failingDestinationsMu sync.RWMutex
-	failingDestinations   map[string]bool
-
 	batchRequestsMetricMu sync.RWMutex
 	batchRequestsMetric   []batchRequestMetric
 
@@ -159,16 +153,16 @@ func (brt *Handle) mainLoop(ctx context.Context) {
 
 	pool := workerpool.New(ctx, func(partition string) workerpool.Worker { return newWorker(partition, brt.logger, brt) }, brt.logger)
 	defer pool.Shutdown()
-	mainLoopSleep := time.Duration(0)
+	pingFrequency := time.Duration(0)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(mainLoopSleep):
+		case <-time.After(pingFrequency):
 			for _, partition := range brt.activePartitions(ctx) {
 				pool.PingWorker(partition)
 			}
-			mainLoopSleep = brt.mainLoopFreq.Load()
+			pingFrequency = brt.pingFrequency.Load()
 		}
 	}
 }
@@ -209,7 +203,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-	var limitsReached bool
 
 	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
@@ -219,7 +212,6 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		panic(err)
 	}
 	jobs = toProcess.Jobs
-	limitsReached = toProcess.LimitsReached
 
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {
@@ -235,23 +227,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	})
 	for destID, destJobs := range jobsByDesID {
 		if batchDest, ok := destinationsMap[destID]; ok {
-			var processJobs bool
-			brt.lastExecTimesMu.Lock()
-			brt.failingDestinationsMu.RLock()
-			if limitsReached && !brt.failingDestinations[destID] { // if limits are reached and the destination is not failing, process all jobs regardless of their upload frequency
-				processJobs = true
-			} else { // honour upload frequency
-				lastExecTime := brt.lastExecTimes[destID]
-				if lastExecTime.IsZero() || time.Since(lastExecTime) >= brt.uploadFreq.Load() {
-					processJobs = true
-					brt.lastExecTimes[destID] = time.Now()
-				}
-			}
-			brt.failingDestinationsMu.RUnlock()
-			brt.lastExecTimesMu.Unlock()
-			if processJobs {
-				workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
-			}
+			workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 		} else {
 			brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
 		}
@@ -630,9 +606,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		batchReqMetric.batchRequestSuccess = 1
 	}
 	brt.trackRequestMetrics(batchReqMetric)
-	brt.failingDestinationsMu.Lock()
-	brt.failingDestinations[batchJobs.Connection.Destination.ID] = batchReqMetric.batchRequestFailed > 0
-	brt.failingDestinationsMu.Unlock()
+
 	var statusList []*jobsdb.JobStatusT
 
 	if isWarehouse && notifyWarehouseErr {

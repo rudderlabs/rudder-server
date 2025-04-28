@@ -279,6 +279,7 @@ func TestUserTransformer(t *testing.T) {
 								"transformationId": destinationConfig.Transformations[0].ID,
 								"workspaceId":      Metadata.WorkspaceID,
 								"language":         "",
+								"mirroring":        "false",
 
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,
