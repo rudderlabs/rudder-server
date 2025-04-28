@@ -53,7 +53,7 @@ func TestAccountAssociations(t *testing.T) {
 				"generateOAuthToken":      true,
 				"refreshTokenInDataplane": true,
 			},
-		}, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
+		}, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition.Config)
 	})
 
 	t.Run("multiple destinations with same account", func(t *testing.T) {
@@ -96,6 +96,10 @@ func TestAccountAssociations(t *testing.T) {
 
 		for _, dest := range c.Sources[0].Destinations {
 			require.Equal(t, "acc-1", dest.DeliveryAccount.Id)
+			require.Equal(t, AccountDefinition{
+				Name:   "oauth-def",
+				Config: map[string]interface{}{"oauth": true},
+			}, dest.DeliveryAccount.AccountDefinition)
 		}
 	})
 
@@ -132,6 +136,10 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeleteAccount.Id)
+		require.Equal(t, AccountDefinition{
+			Name:   "oauth-def",
+			Config: map[string]interface{}{"oauth": true},
+		}, c.Sources[0].Destinations[0].DeleteAccount.AccountDefinition)
 	})
 
 	t.Run("destination with no account configuration", func(t *testing.T) {

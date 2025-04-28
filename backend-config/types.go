@@ -125,7 +125,7 @@ type AccountWithDefinition struct {
 	Id                string                 `json:"id"`
 	Options           map[string]interface{} `json:"options"`
 	Secret            map[string]interface{} `json:"secret"`
-	AccountDefinition map[string]interface{} `json:"config"`
+	AccountDefinition AccountDefinition      `json:"accountDefinition"`
 }
 
 type Connection struct {

@@ -23,7 +23,7 @@ func (c *ConfigT) processAccountAssociations() {
 			Id:                acc.Id,
 			Options:           acc.Options,
 			Secret:            acc.Secret,
-			AccountDefinition: accountDefMap[acc.AccountDefinitionName].Config,
+			AccountDefinition: accountDefMap[acc.AccountDefinitionName],
 		}
 	})
 
