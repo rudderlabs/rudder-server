@@ -56,5 +56,6 @@ func (arctx *AuthRequestContext) SourceTag() string {
 type StatReporter interface {
 	Report(s stats.Stats)
 	RequestFailed(errMsg string)
+	RequestDropped()
 	RequestSucceeded()
 }

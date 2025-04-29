@@ -238,7 +238,12 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kithttputil.GetRequestIP(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
-		ss.RequestFailed(response.SourceTransformerResponseError)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			ss.RequestDropped()
+		} else {
+			failureReason := getWebhookFailureReason(resp.Err)
+			ss.RequestFailed(failureReason)
+		}
 		ss.Report(webhook.stats)
 		return
 	}
@@ -252,6 +257,15 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(payload)
 	ss.RequestSucceeded()
 	ss.Report(webhook.stats)
+}
+
+func getWebhookFailureReason(err string) string {
+	failureReason := response.SourceTransformerResponseError
+	switch err {
+	case response.RequestBodyTooLarge:
+		failureReason = response.RequestBodyTooLarge
+	}
+	return failureReason
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
