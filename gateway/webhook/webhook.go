@@ -241,7 +241,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode == http.StatusTooManyRequests {
 			ss.RequestDropped()
 		} else {
-			failureReason := getWebhookFailureReason(resp.Err)
+			failureReason := webhook.getWebhookFailureReason(resp.Err)
 			ss.RequestFailed(failureReason)
 		}
 		ss.Report(webhook.stats)
@@ -259,7 +259,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	ss.Report(webhook.stats)
 }
 
-func getWebhookFailureReason(err string) string {
+func (webhook *HandleT) getWebhookFailureReason(err string) string {
 	failureReason := response.SourceTransformerResponseError
 	switch err {
 	case response.RequestBodyTooLarge:
@@ -444,7 +444,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				if errMessage != "" {
 					bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
-					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
+					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, bt.getWebhookFailureReason(errMessage, reason), response.GetErrorStatusCode(errMessage), 1)
 					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
@@ -465,6 +465,20 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 		}
 	}
+}
+
+func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage string, reason string) string {
+	if reason == "enqueueInGateway failed" {
+		switch errMessage {
+		case response.TooManyRequests:
+			return response.TooManyRequests
+		case response.RequestBodyTooLarge:
+			return response.RequestBodyTooLarge
+		default:
+			return reason
+		}
+	}
+	return reason
 }
 
 func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
