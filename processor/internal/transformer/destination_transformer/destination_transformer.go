@@ -21,6 +21,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -80,7 +81,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 	handle.loggedEvents = 0
 	handle.loggedEventsMu = sync.Mutex{}
-	handle.loggedFileName = generateLogFileName()
+
+	var err error
+	handle.samplingFileManager, err = getSamplingUploader(conf, log)
+	if err != nil {
+		log.Errorn("failed to create dt sampling file manager", obskit.Error(err))
+		handle.samplingFileManager = nil
+	}
 
 	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
@@ -116,9 +123,9 @@ type Client struct {
 		mismatchedEvents stats.Counter
 	}
 
-	loggedEventsMu sync.Mutex
-	loggedEvents   int64
-	loggedFileName string
+	loggedEventsMu      sync.Mutex
+	loggedEvents        int64
+	samplingFileManager *filemanager.S3Manager
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -391,7 +398,9 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		legacyTransformerResponse := c.transform(ctx, clientEvents)
 		embeddedTransformerResponse := impl(ctx, clientEvents)
 
-		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
+		go func() {
+			c.CompareAndLog(ctx, embeddedTransformerResponse, legacyTransformerResponse)
+		}()
 
 		return legacyTransformerResponse
 	}
@@ -428,4 +437,33 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 
 	}
 	return jsonrs.Marshal(data)
+}
+
+func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
+		endpoint         = conf.GetString("DTSampling.Endpoint", "")
+		accessKeyID      = conf.GetStringVar("", "DTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
+		accessKey        = conf.GetStringVar("", "DTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBool("DTSampling.S3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("DTSampling.DisableSsl", false)
+		enableSSE        = conf.GetBoolVar(false, "DTSampling.EnableSse", "AWS_ENABLE_SSE")
+		useGlue          = conf.GetBool("DTSampling.UseGlue", false)
+		region           = conf.GetStringVar("us-east-1", "DTSampling.Region", "AWS_DEFAULT_REGION")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"accessKey":        accessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+		"useGlue":          useGlue,
+		"region":           region,
+	}
+
+	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
+		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
+	})
 }
