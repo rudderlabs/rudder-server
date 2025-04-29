@@ -161,7 +161,7 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, sampleError, http.StatusBadRequest)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, config.Default, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
