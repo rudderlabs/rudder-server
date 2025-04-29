@@ -467,7 +467,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	}
 }
 
-func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage string, reason string) string {
+func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage, reason string) string {
 	if reason == "enqueueInGateway failed" {
 		switch errMessage {
 		case response.TooManyRequests:
