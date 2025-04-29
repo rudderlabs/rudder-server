@@ -274,7 +274,6 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		}
 	}
 
-	// TODO: once the latest control-plane changes are in production we can safely remove this
 	var sshConfig *client.SSHConfig
 	if destConfig.UseSSH {
 		privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
