@@ -116,9 +116,11 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		flow:           common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{},
 		account: &backendconfig.AccountWithDefinition{
-			Config: map[string]interface{}{
-				"oauth": map[string]interface{}{
-					"refreshTokenInDataplane": true,
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"oauth": map[string]interface{}{
+						"refreshTokenInDataplane": true,
+					},
 				},
 			},
 		},
@@ -140,10 +142,12 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		flow:           common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{},
 		account: &backendconfig.AccountWithDefinition{
-			Config: map[string]interface{}{
-				"oauth": map[string]interface{}{
-					"refreshTokenInDataplane": false,
-					"generateOAuthToken":      true,
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"oauth": map[string]interface{}{
+						"refreshTokenInDataplane": false,
+						"generateOAuthToken":      true,
+					},
 				},
 			},
 		},

@@ -55,7 +55,7 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
-	Account               *AccountWithDefinition `json:"account,omitempty"`
+	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
 	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
 }
 
@@ -122,11 +122,10 @@ type ConfigT struct {
 }
 
 type AccountWithDefinition struct {
-	Id                    string                 `json:"id"`
-	AccountDefinitionName string                 `json:"accountDefinitionName"`
-	Options               map[string]interface{} `json:"options"`
-	Secret                map[string]interface{} `json:"secret"`
-	Config                map[string]interface{} `json:"config"`
+	Id                string                 `json:"id"`
+	Options           map[string]interface{} `json:"options"`
+	Secret            map[string]interface{} `json:"secret"`
+	AccountDefinition AccountDefinition      `json:"accountDefinition"`
 }
 
 type Connection struct {

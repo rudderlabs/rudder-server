@@ -45,16 +45,15 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].Account.Id)
-		require.Equal(t, "oauth-def", c.Sources[0].Destinations[0].Account.AccountDefinitionName)
-		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].Account.Options)
-		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].Account.Secret)
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.Id)
+		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
+		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
 		require.Equal(t, map[string]interface{}{
 			"OAuth": map[string]interface{}{
 				"generateOAuthToken":      true,
 				"refreshTokenInDataplane": true,
 			},
-		}, c.Sources[0].Destinations[0].Account.Config)
+		}, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition.Config)
 	})
 
 	t.Run("multiple destinations with same account", func(t *testing.T) {
@@ -96,8 +95,11 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		for _, dest := range c.Sources[0].Destinations {
-			require.Equal(t, "acc-1", dest.Account.Id)
-			require.Equal(t, "oauth-def", dest.Account.AccountDefinitionName)
+			require.Equal(t, "acc-1", dest.DeliveryAccount.Id)
+			require.Equal(t, AccountDefinition{
+				Name:   "oauth-def",
+				Config: map[string]interface{}{"oauth": true},
+			}, dest.DeliveryAccount.AccountDefinition)
 		}
 	})
 
@@ -134,7 +136,10 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeleteAccount.Id)
-		require.Equal(t, "oauth-def", c.Sources[0].Destinations[0].DeleteAccount.AccountDefinitionName)
+		require.Equal(t, AccountDefinition{
+			Name:   "oauth-def",
+			Config: map[string]interface{}{"oauth": true},
+		}, c.Sources[0].Destinations[0].DeleteAccount.AccountDefinition)
 	})
 
 	t.Run("destination with no account configuration", func(t *testing.T) {
@@ -166,7 +171,7 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Empty(t, c.Sources[0].Destinations[0].Account)
+		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount)
 		require.Empty(t, c.Sources[0].Destinations[0].DeleteAccount)
 	})
 
@@ -201,7 +206,7 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Empty(t, c.Sources[0].Destinations[0].Account)
+		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount)
 	})
 
 	t.Run("non-existent account definition", func(t *testing.T) {
@@ -235,8 +240,7 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].Account.Id)
-		require.Equal(t, "non-existent-def", c.Sources[0].Destinations[0].Account.AccountDefinitionName)
-		require.Empty(t, c.Sources[0].Destinations[0].Account.Config)
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.Id)
+		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
 	})
 }
