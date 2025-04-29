@@ -44,6 +44,8 @@ const (
 	SourceTransformerInvalidOutputFormatInResponse = "invalid output format in source transformer response"
 	// SourceTransformerInvalidOutputJSON - invalid output json in source transformer response
 	SourceTransformerInvalidOutputJSON = "invalid output json in source transformer response"
+	// SourceTransformerResponseError - error in source transformer response
+	SourceTransformerResponseError = "error in transformer response"
 	// NonIdentifiableRequest - request neither has anonymousId nor userId
 	NonIdentifiableRequest = "request neither has anonymousId nor userId"
 	// ErrorInMarshal - error while marshalling

@@ -238,7 +238,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kithttputil.GetRequestIP(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
-		ss.RequestFailed("error")
+		ss.RequestFailed(response.SourceTransformerResponseError)
 		ss.Report(webhook.stats)
 		return
 	}
