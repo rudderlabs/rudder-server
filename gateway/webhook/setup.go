@@ -60,27 +60,27 @@ func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, conf *config.Config, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
-	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
+	webhook.config.maxWebhookBatchSize = conf.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
-	webhook.config.webhookBatchTimeout = config.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
+	webhook.config.webhookBatchTimeout = conf.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
 	// Multiple source transformers are used to generate rudder events from webhooks
-	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
+	maxTransformerProcess := conf.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
 	// Parse all query params from sources mentioned in this list
-	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
+	webhook.config.sourceListForParsingParams = conf.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
 	// Maximum request size to gateway
-	webhook.config.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
+	webhook.config.maxReqSize = conf.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
-		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
+		conf.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
 			return strings.ToLower(item), struct{}{}
 		},
 	)
 	// enable webhook v2 handler
-	webhook.config.webhookV2HandlerEnabled = config.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
+	webhook.config.webhookV2HandlerEnabled = conf.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
 
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {
@@ -90,11 +90,11 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
+	webhook.netClient.HTTPClient.Timeout = conf.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
 	webhook.netClient.Logger = nil // to avoid debug logs
-	webhook.netClient.RetryWaitMin = config.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
-	webhook.netClient.RetryWaitMax = config.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
-	webhook.netClient.RetryMax = config.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
+	webhook.netClient.RetryWaitMin = conf.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
+	webhook.netClient.RetryWaitMax = conf.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
+	webhook.netClient.RetryMax = conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
