@@ -338,14 +338,10 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, err
 	}
 
-	embedAvroSchemaID := config.GetBool("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+strings.ToUpper(destination.ID), false)
-	if !embedAvroSchemaID {
-		embedAvroSchemaID = destConfig.EmbedAvroSchemaID
-	}
 	return &ProducerManager{
 		p:                         p,
 		timeout:                   o.Timeout,
-		embedAvroSchemaID:         embedAvroSchemaID,
+		embedAvroSchemaID:         destConfig.EmbedAvroSchemaID,
 		codecs:                    codecs,
 		enableTransformerBatching: enableTransformerBatching,
 	}, nil

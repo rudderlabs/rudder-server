@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1216,7 +1217,6 @@ func TestAvroSchemaRegistry(t *testing.T) {
 
 		// Produce message in Avro format with schema 2
 		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, false)
 		p, err := NewProducer(&dest, common.Opts{})
 		require.NoError(t, err)
 		require.NotNil(t, p)
@@ -1298,14 +1298,19 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
+		destConfigCopy := make(map[string]interface{})
+		maps.Copy(destConfigCopy, destConfig)
+		destConfigCopy["embedAvroSchemaID"] = true
+		destCopy := dest
+		destCopy.Config = destConfigCopy
+
 		// Produce message in Avro format with schema 2
 		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
-		p, err := NewProducer(&dest, common.Opts{})
+		p, err := NewProducer(&destCopy, common.Opts{})
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfigCopy)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
