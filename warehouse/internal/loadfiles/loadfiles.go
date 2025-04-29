@@ -277,7 +277,7 @@ func (lf *LoadFileGenerator) getLoadFileIDs(ctx context.Context, job *model.Uplo
 	return loadFiles[0].ID, loadFiles[len(loadFiles)-1].ID, nil
 }
 
-func (lf *LoadFileGenerator) generateBaseRequest(
+func (lf *LoadFileGenerator) prepareBaseJobRequest(
 	job *model.UploadJob,
 	uniqueLoadGenID string,
 	stagingFile *model.StagingFile,
@@ -449,7 +449,7 @@ func (lf *LoadFileGenerator) createUploadJobs(ctx context.Context, job *model.Up
 	for _, chunk := range lo.Chunk(stagingFiles, publishBatchSize) {
 		var messages []stdjson.RawMessage
 		for _, stagingFile := range chunk {
-			baseReq := lf.generateBaseRequest(job, uniqueLoadGenID, stagingFile, destinationRevisionIDMap)
+			baseReq := lf.prepareBaseJobRequest(job, uniqueLoadGenID, stagingFile, destinationRevisionIDMap)
 			rawPayload, err := jsonrs.Marshal(WorkerJobRequest{
 				baseWorkerJobRequest: baseReq,
 				StagingFileID:        stagingFile.ID,
@@ -481,7 +481,7 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128))
 	for _, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
 		for _, group := range fileGroups {
-			baseReq := lf.generateBaseRequest(job, uniqueLoadGenID, group[0], destinationRevisionIDMap)
+			baseReq := lf.prepareBaseJobRequest(job, uniqueLoadGenID, group[0], destinationRevisionIDMap)
 
 			stagingFileInfos := make([]StagingFileInfo, len(group))
 			for i, sf := range group {
@@ -588,42 +588,29 @@ func toLoadFile(output LoadFileUpload, job *model.UploadJob) model.LoadFile {
 	}
 }
 
-type fileWithMaxSize struct {
-	file    *model.StagingFile
-	maxSize int64
+// The fields in this struct are determined by the fields being used in the prepareBaseJobRequest
+type stagingFileGroupKey struct {
+	UseRudderStorage             bool
+	StagingUseRudderStorage      bool
+	DestinationRevisionID        string
+	StagingDestinationRevisionID string
+	TimeWindow                   time.Time
 }
 
 // GroupStagingFiles groups staging files based on their key characteristics
 // and then applies size constraints within each group. The maxSizeMB parameter controls the maximum size of any table within a group.
 func (lf *LoadFileGenerator) GroupStagingFiles(files []*model.StagingFile, maxSizeMB int) [][]*model.StagingFile {
-	// The fields in this struct are determined by the fields being used in the generateBaseRequest
-	type stagingFileGroupKey struct {
-		UseRudderStorage      bool
-		DestinationRevisionID string
-		TimeWindow            time.Time
-	}
-	groups := make(map[stagingFileGroupKey][]*fileWithMaxSize)
-
-	for _, file := range files {
-		key := stagingFileGroupKey{
-			UseRudderStorage:      file.UseRudderStorage,
-			DestinationRevisionID: file.DestinationRevisionID,
-			TimeWindow:            file.TimeWindow,
+	groups := lo.GroupBy(files, func(file *model.StagingFile) stagingFileGroupKey {
+		return stagingFileGroupKey{
+			UseRudderStorage:             file.UseRudderStorage,
+			StagingUseRudderStorage:      file.UseRudderStorage,
+			DestinationRevisionID:        file.DestinationRevisionID,
+			StagingDestinationRevisionID: file.DestinationRevisionID,
+			TimeWindow:                   file.TimeWindow,
 		}
-		maxSize := int64(0)
-		for _, size := range file.BytesPerTable {
-			if size > maxSize {
-				maxSize = size
-			}
-		}
-		groups[key] = append(groups[key], &fileWithMaxSize{
-			file:    file,
-			maxSize: maxSize,
-		})
-	}
+	})
 
 	result := make([][]*model.StagingFile, 0, len(groups))
-
 	// For each group, apply size constraints
 	for _, group := range groups {
 		result = append(result, lf.groupBySize(group, maxSizeMB)...)
@@ -631,18 +618,30 @@ func (lf *LoadFileGenerator) GroupStagingFiles(files []*model.StagingFile, maxSi
 	return result
 }
 
-// splits a group of staging files based on size constraints
-func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int) [][]*model.StagingFile {
+// groupBySize splits a group of staging files based on size constraints
+func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB int) [][]*model.StagingFile {
 	maxSizeBytes := int64(maxSizeMB) * 1024 * 1024 // Convert MB to bytes
-	// Sort by the largest table size in each file
-	slices.SortFunc(files, func(a, b *fileWithMaxSize) int {
-		// Not going with b.maxSize - a.maxSize to avoid int overflow
-		if b.maxSize > a.maxSize {
-			return 1
-		} else if b.maxSize < a.maxSize {
-			return -1
+
+	// Find the table with the maximum total size
+	tableSizes := lo.Reduce(files, func(acc map[string]int64, file *model.StagingFile, _ int) map[string]int64 {
+		for tableName, size := range file.BytesPerTable {
+			acc[tableName] += size
 		}
-		return 0
+		return acc
+	}, make(map[string]int64))
+
+	maxTable, maxTableSize := lo.FindKeyBy(tableSizes, func(tableName string, size int64) bool {
+		return size == lo.MaxBy(lo.Values(tableSizes), func(a, b int64) bool {
+			return a > b
+		})
+	})
+
+	lf.Logger.Infof("maxTable: %s, maxTableSize: %d", maxTable, maxTableSize)
+
+	// Sort by size contribution to largest table in descending order
+	slices.SortFunc(files, func(a, b *model.StagingFile) int {
+		// Assuming that there won't be any overflows
+		return int(b.BytesPerTable[maxTable] - a.BytesPerTable[maxTable])
 	})
 
 	var result [][]*model.StagingFile
@@ -656,7 +655,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 		for i < len(files) {
 			// Check if adding this file would exceed size limit for any table
 			canAdd := true
-			for tableName, size := range files[i].file.BytesPerTable {
+			for tableName, size := range files[i].BytesPerTable {
 				newSize := batchTableSizes[tableName] + size
 				if newSize > maxSizeBytes {
 					canAdd = false
@@ -666,13 +665,12 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 
 			if canAdd {
 				// Add file to batch and update table sizes
-				currentBatch = append(currentBatch, files[i].file)
-				for tableName, size := range files[i].file.BytesPerTable {
+				currentBatch = append(currentBatch, files[i])
+				for tableName, size := range files[i].BytesPerTable {
 					batchTableSizes[tableName] += size
 				}
-				// Remove the file from remaining by moving the last element
-				files[i] = files[len(files)-1]
-				files = files[:len(files)-1]
+				// Remove the file while preserving order
+				files = append(files[:i], files[i+1:]...)
 			} else {
 				i++
 			}
@@ -681,7 +679,7 @@ func (lf *LoadFileGenerator) groupBySize(files []*fileWithMaxSize, maxSizeMB int
 		// If we couldn't add any files to the batch, add the first file anyway
 		// This ensures we make progress even with files larger than maxSizeBytes
 		if len(currentBatch) == 0 {
-			currentBatch = append(currentBatch, files[0].file)
+			currentBatch = append(currentBatch, files[0])
 			files = files[1:]
 		}
 		result = append(result, currentBatch)

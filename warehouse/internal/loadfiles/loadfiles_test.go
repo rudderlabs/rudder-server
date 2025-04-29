@@ -509,7 +509,7 @@ func TestGroupStagingFiles(t *testing.T) {
 				batchSizes: []int{1},
 			},
 			{
-				name: "multiple files over limit",
+				name: "all files over limit",
 				files: []*model.StagingFile{
 					{
 						BytesPerTable: map[string]int64{
@@ -542,22 +542,6 @@ func TestGroupStagingFiles(t *testing.T) {
 				batchSizes: []int{2},
 			},
 			{
-				name: "multiple files over limit",
-				files: []*model.StagingFile{
-					{
-						BytesPerTable: map[string]int64{
-							"table1": 60 * 1024 * 1024, // 60MB
-						},
-					},
-					{
-						BytesPerTable: map[string]int64{
-							"table1": 70 * 1024 * 1024, // 70MB
-						},
-					},
-				},
-				batchSizes: []int{1, 1},
-			},
-			{
 				name: "optimal grouping case",
 				files: []*model.StagingFile{
 					{
@@ -577,6 +561,36 @@ func TestGroupStagingFiles(t *testing.T) {
 					},
 				},
 				batchSizes: []int{1, 2}, // [100MB], [50MB, 50MB]
+			},
+			{
+				name: "sorting logic",
+				files: []*model.StagingFile{
+					{
+						BytesPerTable: map[string]int64{
+							"table1": 20 * 1024 * 1024,
+							"table2": 71 * 1024 * 1024,
+						},
+					},
+					{
+						BytesPerTable: map[string]int64{
+							"table1": 50 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+					{
+						BytesPerTable: map[string]int64{
+							"table1": 70 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+					{
+						BytesPerTable: map[string]int64{
+							"table1": 40 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+				},
+				batchSizes: []int{2, 2},
 			},
 			{
 				name: "multiple tables different sizes",
@@ -622,7 +636,8 @@ func TestGroupStagingFiles(t *testing.T) {
 				t.Parallel()
 
 				lf := loadfiles.LoadFileGenerator{
-					Conf: config.New(),
+					Conf:   config.New(),
+					Logger: logger.NOP,
 				}
 				maxSizeMB := 100
 
@@ -734,7 +749,8 @@ func TestGroupStagingFiles(t *testing.T) {
 				t.Parallel()
 
 				lf := loadfiles.LoadFileGenerator{
-					Conf: config.New(),
+					Conf:   config.New(),
+					Logger: logger.NOP,
 				}
 
 				batches := lf.GroupStagingFiles(tc.files, 100)

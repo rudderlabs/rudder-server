@@ -9,11 +9,11 @@ import (
 )
 
 /*
-BenchmarkGroupBySize/few_tables-12                  8164            147395 ns/op
-BenchmarkGroupBySize/few_tables_big_files-12                  99          12253217 ns/op
-BenchmarkGroupBySize/many_tables_few_files-12               1950            623900 ns/op
-BenchmarkGroupBySize/many_tables_many_files-12                37          30811622 ns/op
-BenchmarkGroupBySize/many_tables_many_many_files-12            1        3283076458 ns/op
+BenchmarkGroupBySize/few_tables-12                  5892            204428 ns/op
+BenchmarkGroupBySize/few_tables_big_files-12                  98          12140589 ns/op
+BenchmarkGroupBySize/many_tables_few_files-12               1558            780902 ns/op
+BenchmarkGroupBySize/many_tables_many_files-12                33          35517297 ns/op
+BenchmarkGroupBySize/many_tables_many_many_files-12            1        3574138959 ns/op
 */
 func BenchmarkGroupBySize(b *testing.B) {
 	lf := &LoadFileGenerator{
