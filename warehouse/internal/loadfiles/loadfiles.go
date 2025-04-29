@@ -672,17 +672,19 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 				// Remove the file while preserving order
 				files = append(files[:i], files[i+1:]...)
 			} else {
+				// If the first file exceeds the size limits, no point in continuing
+				// add this file to the result and break
+				if len(currentBatch) == 0 {
+					result = append(result, []*model.StagingFile{files[0]})
+					files = lo.Drop(files, 1)
+					break
+				}
 				i++
 			}
 		}
-
-		// If we couldn't add any files to the batch, add the first file anyway
-		// This ensures we make progress even with files larger than maxSizeBytes
-		if len(currentBatch) == 0 {
-			currentBatch = append(currentBatch, files[0])
-			files = files[1:]
+		if len(currentBatch) > 0 {
+			result = append(result, currentBatch)
 		}
-		result = append(result, currentBatch)
 	}
 
 	return result

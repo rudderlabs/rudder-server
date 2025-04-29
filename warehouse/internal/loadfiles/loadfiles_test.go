@@ -628,6 +628,26 @@ func TestGroupStagingFiles(t *testing.T) {
 				},
 				batchSizes: []int{2},
 			},
+			{
+				name: "one table exceeds limit",
+				files: []*model.StagingFile{
+					{
+						BytesPerTable: map[string]int64{
+							"table1": 110 * 1024 * 1024,
+							"table2": 3 * 1024 * 1024,
+						},
+					},
+					{
+						BytesPerTable: map[string]int64{
+							"table2": 20 * 1024 * 1024,
+						},
+					},
+				},
+				// Ideally we should have only 1 batch here
+				// but we are not handling this case
+				batchSizes: []int{1, 1},
+				skipSizeCheck: true,
+			},
 		}
 
 		for _, tc := range testCases {
