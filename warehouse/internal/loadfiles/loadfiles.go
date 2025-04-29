@@ -604,8 +604,7 @@ func (lf *LoadFileGenerator) GroupStagingFiles(files []*model.StagingFile, maxSi
 	}
 	groups := make(map[stagingFileGroupKey][]*fileWithMaxSize)
 
-	filesForSizing := make([]*fileWithMaxSize, len(files))
-	for i, file := range files {
+	for _, file := range files {
 		key := stagingFileGroupKey{
 			UseRudderStorage:      file.UseRudderStorage,
 			DestinationRevisionID: file.DestinationRevisionID,
@@ -617,11 +616,10 @@ func (lf *LoadFileGenerator) GroupStagingFiles(files []*model.StagingFile, maxSi
 				maxSize = size
 			}
 		}
-		filesForSizing[i] = &fileWithMaxSize{
+		groups[key] = append(groups[key], &fileWithMaxSize{
 			file:    file,
 			maxSize: maxSize,
-		}
-		groups[key] = append(groups[key], filesForSizing[i])
+		})
 	}
 
 	result := make([][]*model.StagingFile, 0, len(groups))
