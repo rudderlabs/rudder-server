@@ -139,17 +139,8 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_process",
-		getReloadableBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
-		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
-		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
-			return time.After(limiterStatsPeriod)
-		}),
-	)
 	brt.limiter.upload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_upload",
-		getReloadableBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
+		getReloadableBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),

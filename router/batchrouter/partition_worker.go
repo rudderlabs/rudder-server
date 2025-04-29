@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -50,9 +51,14 @@ func NewPartitionWorker(logger logger.Logger, partition string, brt *Handle, cb 
 		brt:     brt,
 		cb:      cb,
 		limiter: kitsync.NewReloadableLimiter(
-			ctx, wg, "batchrouter_partition_worker",
+			ctx, wg, "brt_work",
 			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter."+brt.destType+".partitionWorker.concurrency", "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
+			kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
+			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
+			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
+				return time.After(config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second))
+			}),
 		),
 		delayedJobAdditionTimerFrequency: brt.conf.GetDurationVar(5, time.Second, "BatchRouter."+brt.destType+".partitionWorker.addJobMaxDelaySeconds", "BatchRouter.partitionWorker.addJobMaxDelaySeconds"),
 	}
@@ -63,7 +69,7 @@ func (pw *PartitionWorker) AddJob(job *jobsdb.JobT, sourceID, destID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go pw.monitorDelayedJobAddition(ctx, &wg, stats.Tags{"source_id": sourceID, "destination_id": destID})
+	go pw.monitorDelayedJobAddition(ctx, &wg, stats.Tags{"destType": pw.brt.destType, "source_id": sourceID, "destination_id": destID})
 	pw.channel <- &JobEntry{
 		job:      job,
 		sourceID: sourceID,
@@ -83,7 +89,7 @@ func (pw *PartitionWorker) monitorDelayedJobAddition(ctx context.Context, wg *sy
 	case <-ctx.Done():
 		return
 	case <-initialTimer.C:
-		stats.Default.NewTaggedStat("batchrouter_partition_worker_add_job_delay", stats.TimerType, statTags).SendTiming(time.Since(start))
+		stats.Default.NewTaggedStat("brt_partition_worker_add_job_delay", stats.TimerType, statTags).SendTiming(time.Since(start))
 	}
 }
 
