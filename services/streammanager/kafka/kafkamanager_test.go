@@ -282,8 +282,8 @@ func TestNewProducer(t *testing.T) {
 
 func TestIntegration(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
-		kafkaBatchingEnabled = true
-		t.Cleanup(func() { kafkaBatchingEnabled = false })
+		config.Default.Set("Router.KAFKA.enableBatching", true)
+		t.Cleanup(func() { config.Default.Set("Router.KAFKA.enableBatching", false) })
 		ctrl := gomock.NewController(t)
 		kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
@@ -354,11 +354,11 @@ func TestIntegration(t *testing.T) {
 }
 
 func TestAIOKafka(t *testing.T) {
-	kafkaBatchingEnabled = true
-	kafkaCompression = client.CompressionZstd
+	config.Default.Set("Router.KAFKA.enableBatching", true)
+	config.Default.Set("Router.KAFKA.compression", int(client.CompressionZstd))
 	t.Cleanup(func() {
-		kafkaBatchingEnabled = false
-		kafkaCompression = client.CompressionNone
+		config.Default.Set("Router.KAFKA.enableBatching", false)
+		config.Default.Set("Router.KAFKA.compression", int(client.CompressionNone))
 	})
 	ctrl := gomock.NewController(t)
 	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)

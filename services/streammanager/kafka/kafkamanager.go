@@ -16,6 +16,7 @@ import (
 	"github.com/linkedin/goavro/v2"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	client "github.com/rudderlabs/rudder-go-kit/kafkaclient"
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
@@ -147,11 +148,11 @@ type internalProducer interface {
 }
 
 type ProducerManager struct {
-	p                 internalProducer
-	timeout           time.Duration
-	embedAvroSchemaID bool
-	codecs            map[string]*goavro.Codec
-	enableBatching    bool
+	p                         internalProducer
+	timeout                   time.Duration
+	embedAvroSchemaID         bool
+	codecs                    map[string]*goavro.Codec
+	enableTransformerBatching bool
 }
 
 func (p *ProducerManager) getTimeout() time.Duration {
@@ -187,31 +188,22 @@ type managerStats struct {
 
 const (
 	defaultPublishTimeout = 10 * time.Second
-	defaultBatchTimeout   = 1 * time.Second
-	defaultBatchSize      = 100
 )
 
 var (
 	_ producerManager = &ProducerManager{}
 
 	clientCert, clientKey                []byte
-	kafkaDialTimeout                     = 10 * time.Second
-	kafkaReadTimeout                     = 2 * time.Second
-	kafkaWriteTimeout                    = 2 * time.Second
-	kafkaBatchTimeout                    = defaultBatchTimeout
-	kafkaBatchSize                       = defaultBatchSize
-	kafkaBatchingEnabled                 bool
-	kafkaCompression                     client.Compression
 	allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-
-	kafkaStats managerStats
-	pkgLogger  logger
+	kafkaStats                           managerStats
+	pkgLogger                            logger
 
 	now   = func() time.Time { return time.Now() }                   // skipcq: CRT-A0018
 	since = func(t time.Time) time.Duration { return time.Since(t) } // skipcq: CRT-A0018
 )
 
 func Init() {
+	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 	clientCertFile := config.GetString("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
 	clientKeyFile := config.GetString("KAFKA_SSL_KEY_FILE_PATH", "")
 	if clientCertFile != "" && clientKeyFile != "" {
@@ -223,40 +215,6 @@ func Init() {
 		clientKey, err = os.ReadFile(clientKeyFile)
 		if err != nil {
 			panic(fmt.Errorf("could not read key file: %w", err))
-		}
-	}
-
-	kafkaDialTimeout = config.GetDurationVar(10, time.Second, "Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec")
-	kafkaReadTimeout = config.GetDurationVar(2, time.Second, "Router.kafkaReadTimeout", "Router.kafkaReadTimeoutInSec")
-	kafkaWriteTimeout = config.GetDurationVar(2, time.Second, "Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec")
-	kafkaBatchTimeout = config.GetDurationVar(
-		int64(defaultBatchTimeout)/int64(time.Second), time.Second,
-		"Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec",
-	)
-	kafkaBatchSize = config.GetIntVar(defaultBatchSize, 1, "Router.kafkaBatchSize")
-	kafkaBatchingEnabled = config.GetBoolVar(false, "Router.KAFKA.enableBatching")
-	allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-
-	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
-
-	kafkaCompression = client.CompressionNone
-	if kafkaBatchingEnabled {
-		kafkaCompression = client.CompressionZstd
-
-		pkgLogger.Infof("Kafka batching is enabled with batch size: %d and batch timeout: %s",
-			kafkaBatchSize, kafkaBatchTimeout,
-		)
-	}
-	if kc := config.GetInt("Router.kafkaCompression", -1); kc != -1 {
-		switch client.Compression(kc) {
-		case client.CompressionNone,
-			client.CompressionGzip,
-			client.CompressionSnappy,
-			client.CompressionLz4,
-			client.CompressionZstd:
-			kafkaCompression = client.Compression(kc)
-		default:
-			pkgLogger.Errorf("Invalid Kafka compression codec: %d", kc)
 		}
 	}
 
@@ -333,9 +291,9 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 			PrivateKey: privateKey,
 		}
 	}
-
+	dialTimeout := config.GetDurationVar(10, time.Second, "Router.KAFKA.dialTimeout", "Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec")
 	clientConf := client.Config{
-		DialTimeout: kafkaDialTimeout,
+		DialTimeout: dialTimeout,
 		SSHConfig:   sshConfig,
 	}
 	if destConfig.SslEnabled {
@@ -372,13 +330,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, fmt.Errorf("could not create client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
 
-	p, err := c.NewProducer(newProducerConfig())
+	enableTransformerBatching := config.GetBoolVar(false, "Router.KAFKA.enableBatching")
+	p, err := c.NewProducer(newProducerConfig("KAFKA", enableTransformerBatching))
 	if err != nil {
 		return nil, err
 	}
@@ -388,11 +347,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		embedAvroSchemaID = destConfig.EmbedAvroSchemaID
 	}
 	return &ProducerManager{
-		p:                 p,
-		timeout:           o.Timeout,
-		embedAvroSchemaID: embedAvroSchemaID,
-		codecs:            codecs,
-		enableBatching:    kafkaBatchingEnabled,
+		p:                         p,
+		timeout:                   o.Timeout,
+		embedAvroSchemaID:         embedAvroSchemaID,
+		codecs:                    codecs,
+		enableTransformerBatching: enableTransformerBatching,
 	}, nil
 }
 
@@ -421,29 +380,30 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Azure Event Hubs] invalid configuration: %w", err)
 	}
 
+	dialTimeout := config.GetDurationVar(10, time.Second, "Router.AZURE_EVENT_HUB.dialTimeout", "Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec")
 	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewAzureEventHubs(
 		addresses, destConfig.EventHubsConnectionString, client.Config{
-			DialTimeout: kafkaDialTimeout,
+			DialTimeout: dialTimeout,
 		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot create client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
-
-	p, err := c.NewProducer(newProducerConfig())
+	enableTransformerBatching := config.GetBoolVar(false, "Router.AZURE_EVENT_HUB.enableBatching")
+	p, err := c.NewProducer(newProducerConfig("AZURE_EVENT_HUB", enableTransformerBatching))
 	if err != nil {
 		return nil, err
 	}
 	return &ProducerManager{
 		p: p, timeout: o.Timeout,
-		enableBatching: config.GetBoolVar(false, "Router.AZURE_EVENT_HUB.enableBatching"),
+		enableTransformerBatching: enableTransformerBatching,
 	}, nil
 }
 
@@ -473,29 +433,31 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Confluent Cloud] invalid configuration: %w", err)
 	}
 
+	dialTimeout := config.GetDurationVar(10, time.Second, "Router.CONFLUENT_CLOUD.dialTimeout", "Router.kafkaDialTimeout", "Router.kafkaDialTimeoutInSec")
 	addresses := strings.Split(destConfig.BootstrapServer, ",")
 	c, err := client.NewConfluentCloud(
 		addresses, destConfig.APIKey, destConfig.APISecret, client.Config{
-			DialTimeout: kafkaDialTimeout,
+			DialTimeout: dialTimeout,
 		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot create client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), kafkaDialTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(newProducerConfig())
+	enableTransformerBatching := config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching")
+	p, err := c.NewProducer(newProducerConfig("CONFLUENT_CLOUD", enableTransformerBatching))
 	if err != nil {
 		return nil, err
 	}
 	return &ProducerManager{
 		p: p, timeout: o.Timeout,
-		enableBatching: config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching"),
+		enableTransformerBatching: enableTransformerBatching,
 	}, nil
 }
 
@@ -644,7 +606,7 @@ func (p *ProducerManager) Close() error {
 	start := now()
 	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := p.p.Close(ctx); err != nil {
 		return fmt.Errorf("failed to close producer: %w", err)
@@ -680,9 +642,9 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
+	ctx, cancel := context.WithTimeout(context.Background(), p.getTimeout())
 	defer cancel()
-	if p.enableBatching {
+	if p.enableTransformerBatching {
 		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
 
@@ -783,17 +745,36 @@ func getStatusCodeFromError(err error) int {
 	return 400
 }
 
-func newProducerConfig() client.ProducerConfig {
+func newProducerConfig(destType string, enableTransformerBatching bool) client.ProducerConfig {
+	compression := client.CompressionNone
+	batchTimeout := config.GetDurationVar(100, time.Millisecond, "Router."+destType+".batchTimeout")
+	batchSize := config.GetIntVar(64, 1, "Router."+destType+".batchSize", "Router."+destType+".noOfWorkers", "Router.noOfWorkers")
+	if enableTransformerBatching { // if transformer batching is enabled, we use Zstd compression by default
+		compression = client.CompressionZstd
+		batchTimeout = config.GetDurationVar(1, time.Second, "Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec")
+		batchSize = config.GetIntVar(100, 1, "Router.kafkaBatchSize")
+	}
+	if kc := config.GetIntVar(-1, 1, "Router."+destType+".compression", "Router.kafkaCompression"); kc != -1 {
+		switch client.Compression(kc) {
+		case client.CompressionNone,
+			client.CompressionGzip,
+			client.CompressionSnappy,
+			client.CompressionLz4,
+			client.CompressionZstd:
+			compression = client.Compression(kc)
+		default:
+			pkgLogger.Errorf("Invalid Kafka compression codec: %d", kc)
+		}
+	}
 	pc := client.ProducerConfig{
-		ReadTimeout:  kafkaReadTimeout,
-		WriteTimeout: kafkaWriteTimeout,
-		Compression:  kafkaCompression,
+		ReadTimeout:  config.GetDurationVar(10, time.Second, "Router."+destType+".readTimeout", "Router.kafkaReadTimeout", "Router.kafkaReadTimeoutInSec"),
+		WriteTimeout: config.GetDurationVar(10, time.Second, "Router."+destType+".writeTimeout", "Router.kafkaWriteTimeout", "Router.kafkaWriteTimeoutInSec"),
+		Compression:  compression,
+		BatchTimeout: batchTimeout,
+		BatchSize:    batchSize,
+		BatchBytes:   config.GetInt64Var(1*bytesize.MB, 1, "Router."+destType+".batchBytes"),
 		Logger:       &client.KafkaLogger{Logger: pkgLogger},
 		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
-	}
-	if kafkaBatchingEnabled {
-		pc.BatchTimeout = kafkaBatchTimeout
-		pc.BatchSize = kafkaBatchSize
 	}
 	return pc
 }
