@@ -115,7 +115,7 @@ func (gw *Handle) Setup(
 	// this is used to enrich the event before sending it to the db writer
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
 	// enable webhook v2 handler. enabled by default
-	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
+	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
 
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
