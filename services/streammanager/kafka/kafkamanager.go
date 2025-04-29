@@ -3,7 +3,6 @@ package kafka
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -276,11 +275,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	}
 
 	// TODO: once the latest control-plane changes are in production we can safely remove this
-	sshConfig, err := getSSHConfig(destination.ID, config.Default)
-	if err != nil {
-		return nil, fmt.Errorf("[Kafka] invalid SSH configuration: %w", err)
-	}
-	if sshConfig == nil && destConfig.UseSSH {
+	var sshConfig *client.SSHConfig
+	if destConfig.UseSSH {
 		privateKey, err := getSSHPrivateKey(context.Background(), destination.ID)
 		if err != nil {
 			return nil, fmt.Errorf("[Kafka] invalid SSH private key: %w", err)
@@ -777,41 +773,6 @@ func newProducerConfig(destType string, enableTransformerBatching bool) client.P
 		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
 	}
 	return pc
-}
-
-// @TODO getSSHConfig should come from control plane (i.e. destination config)
-func getSSHConfig(destinationID string, c *config.Config) (*client.SSHConfig, error) {
-	enabled := c.GetString("ROUTER_KAFKA_SSH_ENABLED", "")
-	if enabled == "" {
-		return nil, nil // nolint
-	}
-
-	var found bool
-	for _, id := range strings.Split(enabled, ",") {
-		if id == destinationID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, nil // nolint
-	}
-
-	privateKey := c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", "")
-	if privateKey == "" {
-		return nil, fmt.Errorf("kafka SSH private key is not set")
-	}
-
-	rawPrivateKey, err := base64.StdEncoding.DecodeString(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 private key: %w", err)
-	}
-
-	return &client.SSHConfig{
-		User:       c.GetString("ROUTER_KAFKA_SSH_USER", ""),
-		Host:       c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
-		PrivateKey: string(rawPrivateKey),
-	}, nil
 }
 
 func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error) {
