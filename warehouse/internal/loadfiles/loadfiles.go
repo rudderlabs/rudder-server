@@ -618,30 +618,36 @@ func (lf *LoadFileGenerator) GroupStagingFiles(files []*model.StagingFile, maxSi
 	return result
 }
 
+type tableSizeResult struct {
+	sizes map[string]int64
+	name  string
+	size  int64
+}
+
 // groupBySize splits a group of staging files based on size constraints
 func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB int) [][]*model.StagingFile {
 	maxSizeBytes := int64(maxSizeMB) * 1024 * 1024 // Convert MB to bytes
 
 	// Find the table with the maximum total size
-	tableSizes := lo.Reduce(files, func(acc map[string]int64, file *model.StagingFile, _ int) map[string]int64 {
+	maxTable := lo.Reduce(files, func(acc tableSizeResult, file *model.StagingFile, _ int) tableSizeResult {
 		for tableName, size := range file.BytesPerTable {
-			acc[tableName] += size
+			acc.sizes[tableName] += size
+			if acc.sizes[tableName] > acc.size {
+				acc.name = tableName
+				acc.size = acc.sizes[tableName]
+			}
 		}
 		return acc
-	}, make(map[string]int64))
-
-	maxTable, maxTableSize := lo.FindKeyBy(tableSizes, func(tableName string, size int64) bool {
-		return size == lo.MaxBy(lo.Values(tableSizes), func(a, b int64) bool {
-			return a > b
-		})
+	}, tableSizeResult{
+		sizes: make(map[string]int64),
 	})
 
-	lf.Logger.Infof("maxTable: %s, maxTableSize: %d", maxTable, maxTableSize)
+	lf.Logger.Infof("maxTable: %s, maxTableSize: %d", maxTable.name, maxTable.size)
 
-	// Sort by size contribution to largest table in descending order
+	// Sorting ensures that minimum batches are created
 	slices.SortFunc(files, func(a, b *model.StagingFile) int {
 		// Assuming that there won't be any overflows
-		return int(b.BytesPerTable[maxTable] - a.BytesPerTable[maxTable])
+		return int(b.BytesPerTable[maxTable.name] - a.BytesPerTable[maxTable.name])
 	})
 
 	var result [][]*model.StagingFile
@@ -653,14 +659,14 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 		batchTableSizes := make(map[string]int64)
 
 		// Try to add files to the current batch
-		for i := 0; i < len(files); i++ {
-			if processed[files[i].ID] {
+		for _, file := range files {
+			if processed[file.ID] {
 				continue
 			}
 
 			// Check if adding this file would exceed size limit for any table
 			canAdd := true
-			for tableName, size := range files[i].BytesPerTable {
+			for tableName, size := range file.BytesPerTable {
 				newSize := batchTableSizes[tableName] + size
 				if newSize > maxSizeBytes {
 					canAdd = false
@@ -670,22 +676,23 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 
 			if canAdd {
 				// Add file to batch and update table sizes
-				currentBatch = append(currentBatch, files[i])
-				for tableName, size := range files[i].BytesPerTable {
+				currentBatch = append(currentBatch, file)
+				for tableName, size := range file.BytesPerTable {
 					batchTableSizes[tableName] += size
 				}
-				processed[files[i].ID] = true
+				processed[file.ID] = true
 			} else {
 				// If this is the first file in this iteration and it exceeds limits,
 				// add it to its own batch
 				if len(currentBatch) == 0 {
-					result = append(result, []*model.StagingFile{files[i]})
-					processed[files[i].ID] = true
+					result = append(result, []*model.StagingFile{file})
+					processed[file.ID] = true
 					break
 				}
 			}
 		}
-
+		// This condition will be false if a file was already added to the batch because it exceeded the size limit
+		// In that case, it should not be added again to result
 		if len(currentBatch) > 0 {
 			result = append(result, currentBatch)
 		}
