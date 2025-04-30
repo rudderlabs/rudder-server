@@ -5,7 +5,6 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -33,7 +32,7 @@ func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	return authType == string(oauth.OAuth) && isScopeSupported, nil
+	return authType == string(common.OAuth) && isScopeSupported, nil
 }
 
 func (d *DestinationInfo) IsOAuthSupportedForFlow(flow string) (bool, error) {

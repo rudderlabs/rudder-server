@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -306,7 +305,6 @@ func runAllInit() {
 	kafka.Init()
 	customdestinationmanager.Init()
 	alert.Init()
-	oauth.Init()
 }
 
 func (r *Runner) versionInfo() map[string]interface{} {
