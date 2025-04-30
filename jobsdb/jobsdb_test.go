@@ -1362,19 +1362,20 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	activeWorkspaces, err := jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err := jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 1)
 	require.ElementsMatch(t, []string{"ws-1"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal)
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 1)
 	require.ElementsMatch(t, []string{"ws-1"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal+"_other")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
-	require.Len(t, activeWorkspaces, 0)
+	// customVal filter deprecated
+	require.Len(t, activeWorkspaces, 1)
 
 	// triggerAddNewDS to trigger jobsDB to add new DS
 	triggerAddNewDS <- time.Now()
@@ -1391,19 +1392,20 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal)
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal+"_other")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
-	require.Len(t, activeWorkspaces, 0)
+	// customVal filter deprecated
+	require.Len(t, activeWorkspaces, 2)
 
 	triggerAddNewDS <- time.Now()
 	require.Eventually(
@@ -1430,7 +1432,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 3)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2", "ws-3"}, activeWorkspaces)

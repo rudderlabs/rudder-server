@@ -57,7 +57,7 @@ type workspaceStrategy struct {
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
 func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetActiveWorkspaces(ctx, ws.customVal)
+	return db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID)
 }
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
