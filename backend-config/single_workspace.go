@@ -118,6 +118,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 		return conf, err
 	}
 	sourcesJSON.ApplyReplaySources()
+	sourcesJSON.processAccountAssociations()
 	workspaceID := sourcesJSON.WorkspaceID
 
 	wc.workspaceIDOnce.Do(func() {
@@ -152,6 +153,7 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		wc.logger.Infon("Read workspace config from JSON file")
 		wc.workspaceID = workspaceID
 	})
+	configJSON.processAccountAssociations()
 	conf[workspaceID] = configJSON
 	return conf, nil
 }

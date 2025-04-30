@@ -31,7 +31,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	mssql "github.com/denisenkom/go-mssqldb"
+	mssql "github.com/microsoft/go-mssqldb"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

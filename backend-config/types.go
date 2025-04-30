@@ -55,6 +55,8 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
+	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
+	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
 }
 
 type SourceT struct {
@@ -84,17 +86,46 @@ func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
 }
 
+type Account struct {
+	Id                    string                 `json:"id"`
+	AccountDefinitionName string                 `json:"accountDefinitionName"`
+	Options               map[string]interface{} `json:"options"`
+	Secret                map[string]interface{} `json:"secret"`
+}
+
+type OAuth struct {
+	GenerateOAuthToken      bool `json:"generateOAuthToken"`
+	RefreshTokenInDataplane bool `json:"refreshTokenInDataplane"`
+}
+
+type Config struct {
+	OAuth OAuth `json:"oauth"`
+}
+
+type AccountDefinition struct {
+	Name   string                 `json:"name"`
+	Config map[string]interface{} `json:"config"`
+}
 type ConfigT struct {
-	EnableMetrics   bool                         `json:"enableMetrics"`
-	WorkspaceID     string                       `json:"workspaceId"`
-	Sources         []SourceT                    `json:"sources"`
-	EventReplays    map[string]EventReplayConfig `json:"eventReplays"`
-	Libraries       LibrariesT                   `json:"libraries"`
-	ConnectionFlags ConnectionFlags              `json:"flags"`
-	Settings        Settings                     `json:"settings"`
-	UpdatedAt       time.Time                    `json:"updatedAt"`
-	Credentials     map[string]Credential        `json:"credentials"`
-	Connections     map[string]Connection        `json:"connections"`
+	EnableMetrics      bool                         `json:"enableMetrics"`
+	WorkspaceID        string                       `json:"workspaceId"`
+	Sources            []SourceT                    `json:"sources"`
+	EventReplays       map[string]EventReplayConfig `json:"eventReplays"`
+	Libraries          LibrariesT                   `json:"libraries"`
+	ConnectionFlags    ConnectionFlags              `json:"flags"`
+	Settings           Settings                     `json:"settings"`
+	UpdatedAt          time.Time                    `json:"updatedAt"`
+	Credentials        map[string]Credential        `json:"credentials"`
+	Connections        map[string]Connection        `json:"connections"`
+	Accounts           []Account                    `json:"accounts"`
+	AccountDefinitions []AccountDefinition          `json:"accountDefinitions"`
+}
+
+type AccountWithDefinition struct {
+	Id                string                 `json:"id"`
+	Options           map[string]interface{} `json:"options"`
+	Secret            map[string]interface{} `json:"secret"`
+	AccountDefinition AccountDefinition      `json:"accountDefinition"`
 }
 
 type Connection struct {

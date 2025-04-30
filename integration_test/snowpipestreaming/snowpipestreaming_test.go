@@ -1418,7 +1418,7 @@ func runRudderServer(
 	config.Set("DB.name", postgresContainer.Database)
 	config.Set("DB.password", postgresContainer.Password)
 	config.Set("SnowpipeStreaming.Client.URL", snowpipeClientsURL)
-	config.Set("BatchRouter.SNOWPIPE_STREAMING.mainLoopFreq", "1s")                     // default 30s
+	config.Set("BatchRouter.SNOWPIPE_STREAMING.pingFrequency", "1s")                    // default 30s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.uploadFreq", "1s")                       // default 30s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.minIdleSleep", "1s")                     // default 2s
 	config.Set("BatchRouter.SNOWPIPE_STREAMING.maxEventsInABatch", 10000)               // default 10000

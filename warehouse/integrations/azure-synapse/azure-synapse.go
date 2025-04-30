@@ -18,7 +18,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	mssql "github.com/denisenkom/go-mssqldb"
+	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -221,25 +221,48 @@ func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string
 		tableNameLimit,
 	)
 
+	cols := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
 	varcharCols, err := as.getStringColumnsWithVariableLength(ctx, tableName)
 	if err != nil {
 		return "", fmt.Errorf("getting varchar columns info: %w", err)
 	}
 
-	columnDefs := lo.MapToSlice(columnMap, func(name, dataType string) string {
+	columnDefs := lo.Map(cols, func(name string, _ int) string {
 		if dataType, ok := varcharCols[name]; ok {
-			return fmt.Sprintf(`"%s" %s(max)`, name, dataType)
+			targetType := dataType
+			// use varchar for char and nvarchar for nchar
+			// this is because char and nchar have a max length of 8000 and 4000 respectively.
+			// row size limit is 8060 in Azure Synapse. To fix this, we use varchar and nvarchar with max length
+			switch dataType {
+			case "char":
+				targetType = "varchar"
+			case "nchar":
+				targetType = "nvarchar"
+			}
+			return fmt.Sprintf(`CAST('' AS %[2]s(max)) as %[1]s`, name, targetType)
 		}
-		return fmt.Sprintf(`"%s" %s`, name, rudderDataTypesMapToAzureSynapse[dataType])
+		return name
 	})
 
+	// The use of prepared statements for creating temporary tables is not suitable in this context.
+	// Temporary tables in SQL Server have a limited scope and are automatically purged after the transaction commits.
+	// Therefore, creating normal tables is chosen as an alternative.
+	//
+	// For more information on this behavior:
+	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
+	// - Refer to Microsoft's documentation on temporary tables at
+	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
 	createStagingTableStmt := fmt.Sprintf(`
-		CREATE TABLE %[1]s.%[2]s (
-			%[3]s
-		);`,
+		SELECT TOP 0 %[3]s
+			INTO
+		%[1]s.%[2]s
+			FROM
+		%[1]s.%[4]s
+		`,
 		as.namespace,
 		stagingTableName,
 		strings.Join(columnDefs, ", "),
+		tableName,
 	)
 
 	if _, err := as.db.ExecContext(ctx, createStagingTableStmt); err != nil {
@@ -275,6 +298,7 @@ func (as *AzureSynapse) loadTable(
 	}()
 
 	tableSchemaInWarehouse := as.uploader.GetTableSchemaInWarehouse(tableName)
+	log.Debugw("creating staging table")
 	stagingTableName, err := as.createStagingTable(ctx, tableName, tableSchemaInWarehouse)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
@@ -318,7 +342,7 @@ func (as *AzureSynapse) loadTable(
 		}
 		if err = txn.Commit(); err != nil {
 			return nil, "", fmt.Errorf("committing transaction: %w", err)
-		}	
+		}
 	}
 
 	log.Infow("deleting from load table")
@@ -1143,6 +1167,7 @@ type azureCredential struct {
 	identity string
 	secret   string
 }
+
 // returns azureCredential with identity and secret
 // refer https://learn.microsoft.com/en-us/sql/t-sql/statements/copy-into-transact-sql?view=azure-sqldw-latest#credential-identity---secret--
 // azure blob storage supports only Shared Access Signature and Storage Account Keys

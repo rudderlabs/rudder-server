@@ -148,7 +148,8 @@ func TestUTMirroring(t *testing.T) {
 			"source_category": "",
 			"record_id": null,
 			"workspaceId": "",
-			"traceparent": ""
+			"traceparent": "",
+			"connection_id": "source-from-transformer:destination-from-transformer"
 		}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
 	}
 

@@ -3,7 +3,6 @@
 package transformerclient
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
-
-	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
 type ClientConfig struct {
@@ -26,10 +23,9 @@ type ClientConfig struct {
 
 	ClientTimeout time.Duration //	600*time.Second
 	ClientTTL     time.Duration //	10*time.Second
-
-	ClientType string // stdlib(default), recycled, httplb
-
-	PickerType string // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
+	ClientType    string        // stdlib(default), httplb
+	PickerType    string        // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
+	Recycle       bool          // false
 }
 
 type Client interface {
@@ -72,22 +68,24 @@ func NewClient(config *ClientConfig) Client {
 	}
 
 	switch config.ClientType {
-	case "stdlib":
-		return client
-	case "recycled":
-		return sysUtils.NewRecycledHTTPClient(func() *http.Client {
-			return client
-		}, clientTTL)
 	case "httplb":
-		return httplb.NewClient(
-			httplb.WithRootContext(context.TODO()),
+		tr := &httplbtransport{
+			MaxConnsPerHost:     transport.MaxConnsPerHost,
+			MaxIdleConnsPerHost: transport.MaxIdleConnsPerHost,
+		}
+		options := []httplb.ClientOption{
 			httplb.WithPicker(getPicker(config.PickerType)),
 			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
 			httplb.WithRequestTimeout(client.Timeout),
-			httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout),
-			httplb.WithIdleTransportTimeout(2*transport.IdleConnTimeout),
 			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
-		)
+			httplb.WithTransport("http", tr),
+			httplb.WithTransport("https", tr),
+		}
+		if config.Recycle {
+			options = append(options, httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout))
+		}
+
+		return httplb.NewClient(options...)
 	default:
 		return client
 	}
@@ -110,10 +108,27 @@ func getPicker(pickerType string) func(prev picker.Picker, allConns conn.Conns) 
 	}
 }
 
-type HTTPLBTransport struct {
+type httplbtransport struct {
+	MaxConnsPerHost     int
+	MaxIdleConnsPerHost int
 	*http.Transport
 }
 
-func (t *HTTPLBTransport) NewRoundTripper(scheme, target string, config httplb.TransportConfig) httplb.RoundTripperResult {
-	return httplb.RoundTripperResult{RoundTripper: t.Transport, Close: t.CloseIdleConnections}
+func (s httplbtransport) NewRoundTripper(_, _ string, opts httplb.TransportConfig) httplb.RoundTripperResult {
+	transport := &http.Transport{
+		Proxy:                  opts.ProxyFunc,
+		GetProxyConnectHeader:  opts.ProxyConnectHeadersFunc,
+		DialContext:            opts.DialFunc,
+		ForceAttemptHTTP2:      true,
+		MaxConnsPerHost:        s.MaxConnsPerHost,
+		MaxIdleConns:           s.MaxIdleConnsPerHost,
+		MaxIdleConnsPerHost:    s.MaxIdleConnsPerHost,
+		IdleConnTimeout:        opts.IdleConnTimeout,
+		TLSHandshakeTimeout:    opts.TLSHandshakeTimeout,
+		TLSClientConfig:        opts.TLSClientConfig,
+		MaxResponseHeaderBytes: opts.MaxResponseHeaderBytes,
+		ExpectContinueTimeout:  1 * time.Second,
+		DisableCompression:     opts.DisableCompression,
+	}
+	return httplb.RoundTripperResult{RoundTripper: transport, Close: transport.CloseIdleConnections}
 }

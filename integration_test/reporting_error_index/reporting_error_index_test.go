@@ -749,7 +749,7 @@ func runRudderServer(
 	config.Set("Reporting.errorIndexReporting.SleepDuration", "1s")
 	config.Set("Reporting.errorIndexReporting.minWorkerSleep", "1s")
 	config.Set("Reporting.errorIndexReporting.uploadFrequency", "1s")
-	config.Set("BatchRouter.mainLoopFreq", "1s")
+	config.Set("BatchRouter.pingFrequency", "1s")
 	config.Set("BatchRouter.uploadFreq", "1s")
 	config.Set("Gateway.webPort", strconv.Itoa(port))
 	config.Set("RUDDER_TMPDIR", os.TempDir())

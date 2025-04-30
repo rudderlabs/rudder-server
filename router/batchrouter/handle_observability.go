@@ -25,32 +25,32 @@ func (brt *Handle) collectMetrics(ctx context.Context) {
 	}
 
 	for {
-		brt.batchRequestsMetricMu.RLock()
-		var diagnosisProperties map[string]interface{}
-		success := 0
-		failed := 0
-		for _, batchReqMetric := range brt.batchRequestsMetric {
-			success = success + batchReqMetric.batchRequestSuccess
-			failed = failed + batchReqMetric.batchRequestFailed
-		}
-		if len(brt.batchRequestsMetric) > 0 {
-			diagnosisProperties = map[string]interface{}{
-				brt.destType: map[string]interface{}{
-					diagnostics.BatchRouterSuccess: success,
-					diagnostics.BatchRouterFailed:  failed,
-				},
-			}
-
-			brt.Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
-		}
-
-		brt.batchRequestsMetric = nil
-		brt.batchRequestsMetricMu.RUnlock()
-
 		select {
 		case <-ctx.Done():
 			return
+
 		case <-brt.diagnosisTicker.C:
+			brt.batchRequestsMetricMu.RLock()
+			var diagnosisProperties map[string]interface{}
+			success := 0
+			failed := 0
+			for _, batchReqMetric := range brt.batchRequestsMetric {
+				success = success + batchReqMetric.batchRequestSuccess
+				failed = failed + batchReqMetric.batchRequestFailed
+			}
+			if len(brt.batchRequestsMetric) > 0 {
+				diagnosisProperties = map[string]interface{}{
+					brt.destType: map[string]interface{}{
+						diagnostics.BatchRouterSuccess: success,
+						diagnostics.BatchRouterFailed:  failed,
+					},
+				}
+
+				brt.Diagnostics.Track(diagnostics.BatchRouterEvents, diagnosisProperties)
+			}
+
+			brt.batchRequestsMetric = nil
+			brt.batchRequestsMetricMu.RUnlock()
 		}
 	}
 }
