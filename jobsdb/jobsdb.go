@@ -41,7 +41,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -471,14 +470,13 @@ type Handle struct {
 	logger               logger.Logger
 	stats                stats.Stats
 
-	datasetList                   []dataSetT
-	datasetRangeList              []dataSetRangeT
-	dsRangeFuncMap                map[string]func() (dsRangeMinMax, error)
-	distinctValuesCache           *distinctValuesCache
-	distinctParameterSingleFlight *singleflight.Group
-	dsListLock                    *lock.Locker
-	dsMigrationLock               *lock.Locker
-	noResultsCache                *cache.NoResultsCache[ParameterFilterT]
+	datasetList         []dataSetT
+	datasetRangeList    []dataSetRangeT
+	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
+	distinctValuesCache *distinctValuesCache
+	dsListLock          *lock.Locker
+	dsMigrationLock     *lock.Locker
+	noResultsCache      *cache.NoResultsCache[ParameterFilterT]
 
 	// table count stats
 	statTableCount        stats.Measurement
@@ -781,7 +779,6 @@ func (jd *Handle) init() {
 		jd.logger = logger.NewLogger().Child("jobsdb").Child(jd.tablePrefix)
 	}
 	jd.dsRangeFuncMap = make(map[string]func() (dsRangeMinMax, error))
-	jd.distinctParameterSingleFlight = new(singleflight.Group)
 	jd.distinctValuesCache = NewDistinctValuesCache()
 
 	if jd.config == nil {
@@ -1983,43 +1980,22 @@ func (jd *Handle) getDistinctValuesPerDataset(
 }
 
 func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName) ([]string, error) {
-	res, err, shared := jd.distinctParameterSingleFlight.Do(parameter.string(), func() (interface{}, error) {
-		if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-			return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
-		}
-		defer jd.dsMigrationLock.RUnlock()
-		if !jd.dsListLock.RTryLockWithCtx(ctx) {
-			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
-		}
-		dsList := jd.getDSList()
-		jd.logger.Info(dsList)
-		jd.dsListLock.RUnlock()
-		values, err := jd.distinctValuesCache.GetDistinctValues(
-			parameter.string(),
-			lo.Map(dsList, func(ds dataSetT, _ int) string { return ds.JobTable }),
-			func(datasets []string) (map[string][]string, error) {
-				return jd.getDistinctValuesPerDataset(datasets, parameter)
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-		return values, nil
-	})
-	if shared {
-		jd.stats.NewTaggedStat("jobsdb_get_distinct_parameter_values_shared", stats.CountType, stats.Tags{
-			"parameter":   parameter.string(),
-			"tablePrefix": jd.tablePrefix,
-		}).Increment()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
-	if err != nil {
-		return nil, err
+	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 	}
-	val, ok := res.([]string)
-	if !ok {
-		return nil, fmt.Errorf("type assertion failed")
-	}
-	return val, nil
+	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
+	return jd.distinctValuesCache.GetDistinctValues(
+		parameter.string(),
+		lo.Map(dsList, func(ds dataSetT, _ int) string { return ds.JobTable }),
+		func(datasets []string) (map[string][]string, error) {
+			return jd.getDistinctValuesPerDataset(datasets, parameter)
+		},
+	)
 }
 
 func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {

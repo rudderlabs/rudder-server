@@ -36,14 +36,14 @@ type cachingDpvJobsDB struct {
 	JobsDB
 }
 
-func (c *cachingDpvJobsDB) GetDistinctParameterValues(ctx context.Context, parameterName string) (values []string, err error) {
+func (c *cachingDpvJobsDB) GetDistinctParameterValues(ctx context.Context, parameter ParameterName) (values []string, err error) {
 	// only one goroutine can access the cache for a specific parameter at a time
-	c.parameterLock.Lock(parameterName)
-	defer c.parameterLock.Unlock(parameterName)
+	c.parameterLock.Lock(parameter.string())
+	defer c.parameterLock.Unlock(parameter.string())
 
 	// read the cache
 	c.cacheMu.RLock()
-	if cachedEntry, ok := c.cache[parameterName]; ok && time.Since(cachedEntry.B) < c.ttl.Load() {
+	if cachedEntry, ok := c.cache[parameter.string()]; ok && time.Since(cachedEntry.B) < c.ttl.Load() {
 		c.cacheMu.RUnlock()
 		return cachedEntry.A, nil
 	}
@@ -51,13 +51,13 @@ func (c *cachingDpvJobsDB) GetDistinctParameterValues(ctx context.Context, param
 
 	// if not in cache or expired, fetch from DB
 	// and update the cache
-	values, err = c.JobsDB.GetDistinctParameterValues(ctx, parameterName)
+	values, err = c.JobsDB.GetDistinctParameterValues(ctx, parameter)
 	if err != nil {
 		return nil, err
 	}
 	// update the cache with the new values
 	c.cacheMu.Lock()
-	c.cache[parameterName] = lo.Tuple2[[]string, time.Time]{A: values, B: time.Now()}
+	c.cache[parameter.string()] = lo.Tuple2[[]string, time.Time]{A: values, B: time.Now()}
 	c.cacheMu.Unlock()
 	return values, nil
 }

@@ -17,10 +17,12 @@ type cpvMockJobsdb struct {
 	JobsDB
 }
 
-func (j *cpvMockJobsdb) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
+func (j *cpvMockJobsdb) GetDistinctParameterValues(ctx context.Context, parameter ParameterName) ([]string, error) {
 	j.calls++
 	return []string{"value1", "value2"}, nil
 }
+
+var testParameter parameterName = "test_parameter"
 
 func TestCachingDistinctParameterValuesJobsdb(t *testing.T) {
 	t.Run("single goroutine", func(t *testing.T) {
@@ -34,20 +36,20 @@ func TestCachingDistinctParameterValuesJobsdb(t *testing.T) {
 		ctx := context.Background()
 
 		// First call should fetch from the mock JobsDB
-		values, err := cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter")
+		values, err := cachingJobsdb.GetDistinctParameterValues(ctx, testParameter)
 		require.NoError(t, err)
 		require.Equal(t, 1, jobsdb.calls)
 		require.Equal(t, []string{"value1", "value2"}, values)
 
 		// Second call should hit the cache
-		values, err = cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter")
+		values, err = cachingJobsdb.GetDistinctParameterValues(ctx, testParameter)
 		require.NoError(t, err)
 		require.Equal(t, 1, jobsdb.calls)
 		require.Equal(t, []string{"value1", "value2"}, values)
 
 		time.Sleep(100 * time.Millisecond)
 
-		values, err = cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter")
+		values, err = cachingJobsdb.GetDistinctParameterValues(ctx, testParameter)
 		require.NoError(t, err)
 		require.Equal(t, 2, jobsdb.calls)
 		require.Equal(t, []string{"value1", "value2"}, values)
@@ -67,21 +69,21 @@ func TestCachingDistinctParameterValuesJobsdb(t *testing.T) {
 		for i := range 10 {
 			go func(i int) {
 				defer wg.Done()
-				values, err := cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter_"+strconv.Itoa(i))
+				values, err := cachingJobsdb.GetDistinctParameterValues(ctx, parameterName("test_parameter_"+strconv.Itoa(i)))
 				require.NoError(t, err)
 				require.Equal(t, []string{"value1", "value2"}, values)
 				time.Sleep(100 * time.Millisecond)
-				values, err = cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter_"+strconv.Itoa(i))
+				values, err = cachingJobsdb.GetDistinctParameterValues(ctx, parameterName("test_parameter_"+strconv.Itoa(i)))
 				require.NoError(t, err)
 				require.Equal(t, []string{"value1", "value2"}, values)
 			}(i)
 			go func(i int) {
 				defer wg.Done()
-				values, err := cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter_"+strconv.Itoa(i))
+				values, err := cachingJobsdb.GetDistinctParameterValues(ctx, parameterName("test_parameter_"+strconv.Itoa(i)))
 				require.NoError(t, err)
 				require.Equal(t, []string{"value1", "value2"}, values)
 				time.Sleep(100 * time.Millisecond)
-				values, err = cachingJobsdb.GetDistinctParameterValues(ctx, "test_parameter_"+strconv.Itoa(i))
+				values, err = cachingJobsdb.GetDistinctParameterValues(ctx, parameterName("test_parameter_"+strconv.Itoa(i)))
 				require.NoError(t, err)
 				require.Equal(t, []string{"value1", "value2"}, values)
 			}(i)
