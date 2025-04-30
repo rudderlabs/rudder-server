@@ -661,18 +661,10 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 		return true, false, recordsLeft, nil
 	}
 
-	isSmallDS := float64(totalCount) < jd.conf.migration.jobMinRowsMigrateThres.Load()*float64(jd.conf.MaxDSSize.Load())
+	needsPair = float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
 
-	if float64(delCount)/float64(totalCount) > jd.conf.migration.jobDoneMigrateThres.Load() {
-		return true, isSmallDS, recordsLeft, nil
-	}
-
-	if isSmallDS {
-		return true, true, recordsLeft, nil
-	}
-
-	if float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThres.Load()*float64(jd.conf.MaxDSSize.Load()) {
-		return true, true, recordsLeft, nil
+	if needsPair || float64(delCount)/float64(totalCount) >= jd.conf.migration.jobDoneMigrateThres.Load() {
+		return true, needsPair, recordsLeft, nil
 	}
 
 	return false, false, recordsLeft, nil

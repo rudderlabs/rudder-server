@@ -42,10 +42,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "TrackingPlanValidation"))
+	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "TrackingPlanValidation", conf.GetBoolVar(true, "DEST_TRANSFORM_URL_IS_HEADLESS")))
 	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	handle.config.maxConcurrency = conf.GetInt("Processor.maxConcurrency", 200)
-	handle.guardConcurrency = make(chan struct{}, handle.config.maxConcurrency)
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.TrackingPlanValidation.maxRetry", "Processor.maxRetry")
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.TrackingPlanValidation.failOnError", "Processor.Transformer.failOnError")
@@ -64,16 +62,14 @@ type Client struct {
 		destTransformationURL   string
 		maxRetry                config.ValueLoader[int]
 		failOnError             config.ValueLoader[bool]
-		maxConcurrency          int
 		maxRetryBackoffInterval config.ValueLoader[time.Duration]
 		timeoutDuration         time.Duration
 		batchSize               config.ValueLoader[int]
 	}
-	conf             *config.Config
-	log              logger.Logger
-	stat             stats.Stats
-	guardConcurrency chan struct{}
-	client           transformerclient.Client
+	conf   *config.Config
+	log    logger.Logger
+	stat   stats.Stats
+	client transformerclient.Client
 }
 
 func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -119,10 +115,8 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 	lo.ForEach(
 		batches,
 		func(batch []types.TransformerEvent, i int) {
-			t.guardConcurrency <- struct{}{}
 			go func() {
 				transformResponse[i] = t.sendBatch(ctx, t.trackingPlanValidationURL(), labels, batch)
-				<-t.guardConcurrency
 				wg.Done()
 			}()
 		},
@@ -154,9 +148,11 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 	}
 }
 
-func (t *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) []types.TransformerResponse {
-	t.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
-	// Call remote transformation
+func (t *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, clientEvents []types.TransformerEvent) []types.TransformerResponse {
+	t.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
+	data := lo.Map(clientEvents, func(clientEvent types.TransformerEvent, _ int) types.TrackingPlanValidationEvent {
+		return *clientEvent.ToTrackingPlanValidationEvent()
+	})
 	var (
 		rawJSON []byte
 		err     error
@@ -198,9 +194,9 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		endlessBackoff,
 		func(err error, time time.Duration) {
 			var transformationID, transformationVersionID string
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-				transformationVersionID = data[0].Destination.Transformations[0].VersionID
+			if len(clientEvents[0].Destination.Transformations) > 0 {
+				transformationID = clientEvents[0].Destination.Transformations[0].ID
+				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
 			}
 			t.log.Errorn("JS HTTP connection error",
 				obskit.Error(err),

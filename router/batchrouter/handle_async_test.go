@@ -59,7 +59,6 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.destinationsMap = make(map[string]*routerutils.DestinationWithSources)
 	batchRouter.uploadIntervalMap = make(map[string]time.Duration)
 	batchRouter.asyncDestinationStruct = make(map[string]*common.AsyncDestinationStruct)
-	batchRouter.failingDestinations = make(map[string]bool)
 	batchRouter.setupReloadableVars()
 	batchRouter.logger = logger.NOP
 	batchRouter.conf = config.Default
@@ -82,7 +81,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 	config.Set("BatchRouter.isolationMode", "none")
 	config.Set("BatchRouter.asyncUploadWorkerTimeout", "10ms")
 	config.Set("BatchRouter.pollStatusLoopSleep", "10ms")
-	config.Set("BatchRouter.mainLoopFreq", "10ms")
+	config.Set("BatchRouter.pingFrequency", "10ms")
 	config.Set("BatchRouter.maxEventsInABatch", 1)
 	config.Set("BatchRouter.maxPayloadSizeInBytes", 1*bytesize.KB)
 	config.Set("Router.jobRetention", "175200h")
@@ -782,7 +781,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 				}).Return(nil)
 			mockErrJobsDB.EXPECT().Store(gomock.Any(), []*jobsdb.JobT{abortedJob}).Return(nil).AnyTimes()
 
-			batchRouter.sendJobsToStorage(BatchedJobs{
+			err := batchRouter.sendJobsToStorage(BatchedJobs{
 				Jobs: []*jobsdb.JobT{
 					job,
 				},
@@ -791,6 +790,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Destination: destination,
 				},
 			})
+			require.Error(t, err)
 		})
 	})
 }

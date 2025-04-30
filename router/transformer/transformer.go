@@ -71,9 +71,8 @@ type handle struct {
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
-	forceCompactionEnabled bool // option to force usage of compaction for testing
-	compactionEnabled      config.ValueLoader[bool]
-	compactionSupported    bool
+	compactionEnabled   config.ValueLoader[bool]
+	compactionSupported bool
 }
 
 type ProxyRequestMetadata struct {
@@ -601,7 +600,6 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
-	trans.forceCompactionEnabled = config.GetBoolVar(false, "Router.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
 	trans.compactionEnabled = config.GetReloadableBoolVar(false, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 	if featuresService != nil {
 		go func() {
@@ -622,6 +620,7 @@ func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
 	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
 	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = !config.GetBoolVar(true, "DEST_TRANSFORM_URL_IS_HEADLESS") || config.GetBoolVar(false, "Transformer.Client.DestinationTransformer.recycle", "Transformer.Client.recycle")
 	return transformerClientConfig
 }
 
@@ -773,7 +772,7 @@ func getEndpointFromURL(urlStr string) string {
 }
 
 func (trans *handle) compactRequestPayloads() bool {
-	return (trans.compactionSupported && trans.compactionEnabled.Load()) || trans.forceCompactionEnabled
+	return (trans.compactionSupported && trans.compactionEnabled.Load())
 }
 
 func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {

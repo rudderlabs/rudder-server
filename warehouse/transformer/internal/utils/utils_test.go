@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -179,6 +180,95 @@ func TestIsBlank(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, IsBlank(tc.input))
+		})
+	}
+}
+
+func TestExtractMessageID(t *testing.T) {
+	tests := []struct {
+		name       string
+		event      map[string]any
+		expectedID string
+	}{
+		{
+			name: "messageId present",
+			event: map[string]any{
+				"messageId": "custom-message-id",
+			},
+			expectedID: "custom-message-id",
+		},
+		{
+			name: "messageId missing",
+			event: map[string]any{
+				"otherKey": "value",
+			},
+			expectedID: "auto-custom-message-id",
+		},
+		{
+			name: "messageId blank",
+			event: map[string]any{
+				"messageId": "",
+			},
+			expectedID: "auto-custom-message-id",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := &types.TransformerEvent{
+				Message: tt.event,
+			}
+			require.Equal(t, tt.expectedID, ExtractMessageID(event, func() string {
+				return "custom-message-id"
+			}))
+		})
+	}
+}
+
+func TestExtractReceivedAt(t *testing.T) {
+	tests := []struct {
+		name         string
+		event        map[string]any
+		expectedTime string
+	}{
+		{
+			name: "receivedAt present and valid",
+			event: map[string]any{
+				"receivedAt": "2023-10-19T14:00:00.000Z",
+			},
+			expectedTime: "2023-10-19T14:00:00.000Z",
+		},
+		{
+			name: "receivedAt missing",
+			event: map[string]any{
+				"otherKey": "value",
+			},
+			expectedTime: "2023-10-20T12:34:56.789Z",
+		},
+		{
+			name: "receivedAt invalid format",
+			event: map[string]any{
+				"receivedAt": "invalid-format",
+			},
+			expectedTime: "2023-10-20T12:34:56.789Z",
+		},
+		{
+			name: "receivedAt is not a string",
+			event: map[string]any{
+				"receivedAt": 12345,
+			},
+			expectedTime: "2023-10-20T12:34:56.789Z",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := &types.TransformerEvent{
+				Message: tt.event,
+			}
+			require.Equal(t, tt.expectedTime, ExtractReceivedAt(event, func() time.Time {
+				return time.Date(2023, time.October, 20, 12, 34, 56, 789000000, time.UTC)
+			}))
 		})
 	}
 }

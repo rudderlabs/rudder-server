@@ -131,7 +131,7 @@ func (c *testContext) Setup() {
 			}()
 			return ch
 		})
-	c.jobQueryBatchSize = 100000
+	c.jobQueryBatchSize = 20000
 	c.mockConfigPrefix = sampleConfigPrefix
 	c.mockFileObjects = sampleFileObjects
 }
@@ -302,8 +302,8 @@ var _ = Describe("BatchRouter", func() {
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
+			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -409,19 +409,13 @@ var _ = Describe("BatchRouter", func() {
 				},
 			).AnyTimes()
 
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Executing.State, `{}`, 4)
-				}).Return(nil)
-
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt1.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": "%s", "Error": "BRT: Batch destination source not found in config for sourceID: %s"}`, attempt2.Format(misc.RFC3339Milli), SourceIDEnabled+"random"), 4)
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
+					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
 				}).Return(nil)
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 				func(ctx context.Context, _ []*jobsdb.JobT) error {
@@ -432,8 +426,8 @@ var _ = Describe("BatchRouter", func() {
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-			batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-			batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+			batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
+			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -472,7 +466,7 @@ func TestPostToWarehouse(t *testing.T) {
 			responseBody: "OK",
 			responseCode: http.StatusOK,
 
-			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z","BytesPerTable": {"tracks": 200}}`,
 		},
 		{
 			name: "should fail to post to warehouse",
@@ -526,6 +520,9 @@ func TestPostToWarehouse(t *testing.T) {
 			err := job.pingWarehouse(&batchJobs, UploadResult{
 				TotalEvents: 1,
 				TotalBytes:  200,
+				BytesPerTable: map[string]int64{
+					"tracks": 200,
+				},
 			})
 			if input.expectedError != nil {
 				require.Equal(t, fmt.Sprintf(input.expectedError.Error(), ts.URL), err.Error())
@@ -620,11 +617,11 @@ func TestBatchRouter(t *testing.T) {
 					"table": "tracks"
 				}
 			}`),
-			Parameters: jsonb.RawMessage([]byte(fmt.Sprintf(`{
+			Parameters: []byte(fmt.Sprintf(`{
 				"source_id": %[1]q,
 				"destination_id": %[2]q,
 				"receivedAt": %[3]q
-			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)))),
+			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339))),
 			CustomVal: s3Dest.DestinationDefinition.Name,
 			CreatedAt: time.Now(),
 		})
@@ -649,8 +646,8 @@ func TestBatchRouter(t *testing.T) {
 	)
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
-	batchrouter.uploadFreq = config.SingleValueLoader(time.Microsecond)
-	batchrouter.mainLoopFreq = config.SingleValueLoader(time.Microsecond)
+	batchrouter.uploadFreq = config.SingleValueLoader(5 * time.Millisecond)
+	batchrouter.pingFrequency = config.SingleValueLoader(time.Second)
 
 	err = routerDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
@@ -665,7 +662,7 @@ func TestBatchRouter(t *testing.T) {
 			return false
 		}
 		return len(minioContents) == len(bcs)
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 2*time.Minute, 200*time.Millisecond)
 
 	minioContents, err := minioResource.Contents(context.Background(), "")
 	require.NoError(t, err)

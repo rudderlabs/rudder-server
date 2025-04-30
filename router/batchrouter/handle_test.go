@@ -5,9 +5,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/filemanager/mock_filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
@@ -427,6 +435,151 @@ func TestGenerateSchemaMap(t *testing.T) {
 
 			// Verify results against expected
 			require.Equal(t, tc.expected, result, "generateSchemaMap failed for case: %s", tc.name)
+		})
+	}
+}
+
+type testCase struct {
+	name               string
+	jobs               []*jobsdb.JobT
+	expectedTableBytes map[string]int64
+	expectedTotalBytes int
+	isWarehouse        bool
+}
+
+func TestBytesPerTable(t *testing.T) {
+	newHandle := func(isWarehouse bool) *Handle {
+		mockCtrl := gomock.NewController(t)
+		mockFileManager := mock_filemanager.NewMockFileManager(mockCtrl)
+		mockFileManagerFactory := func(settings *filemanager.Settings) (filemanager.FileManager, error) { return mockFileManager, nil }
+		mockFileManager.EXPECT().Prefix().Return("mockPrefix")
+		mockFileObjects := []*filemanager.FileInfo{}
+		mockFileManager.EXPECT().ListFilesWithPrefix(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.MockListSession(mockFileObjects, nil))
+		mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any()).Return(filemanager.UploadedFile{Location: "local", ObjectName: "file"}, nil)
+		jobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+		if !isWarehouse {
+			jobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1), nil)
+		}
+		return &Handle{
+			logger:             logger.NewLogger().Child("batchrouter"),
+			fileManagerFactory: mockFileManagerFactory,
+			datePrefixOverride: config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride"),
+			customDatePrefix:   config.GetReloadableStringVar("", "BatchRouter.customDatePrefix"),
+			dateFormatProvider: &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
+			conf:               config.New(),
+			now:                timeutil.Now,
+			jobsDB:             jobsDB,
+		}
+	}
+
+	tests := []testCase{
+		{
+			name: "single table warehouse upload",
+			jobs: []*jobsdb.JobT{
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users",
+						},
+					}`),
+				},
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users",
+						},
+					}`),
+				},
+			},
+			expectedTableBytes: map[string]int64{
+				"users": 126,
+			},
+			expectedTotalBytes: 126,
+			isWarehouse:        true,
+		},
+		{
+			name: "multiple tables warehouse upload",
+			jobs: []*jobsdb.JobT{
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users1",
+						},
+					}`),
+				},
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users2",
+						},
+					}`),
+				},
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users1",
+						},
+					}`),
+				},
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users3",
+						},
+					}`),
+				},
+				{
+					EventPayload: []byte(`{}`),
+				},
+			},
+			expectedTableBytes: map[string]int64{
+				"users1": 128,
+				"users2": 64,
+				"users3": 64,
+				"":       3,
+			},
+			expectedTotalBytes: 259,
+			isWarehouse:        true,
+		},
+		{
+			name: "non-warehouse upload",
+			jobs: []*jobsdb.JobT{
+				{
+					EventPayload: []byte(`{
+						"metadata": {
+							"table": "users",
+						},
+					}`),
+				},
+			},
+			expectedTotalBytes: 63,
+			isWarehouse:        false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			batchedJobs := &BatchedJobs{
+				Jobs: tc.jobs,
+				Connection: &Connection{
+					Source: backendconfig.SourceT{
+						ID: "test-source",
+					},
+					Destination: backendconfig.DestinationT{
+						ID: "test-destination",
+					},
+				},
+			}
+			handle := newHandle(tc.isWarehouse)
+			result := handle.upload("S3", batchedJobs, tc.isWarehouse)
+
+			// Verify results
+			require.Equal(t, tc.expectedTotalBytes, result.TotalBytes, "total bytes mismatch")
+			if tc.isWarehouse {
+				require.Equal(t, tc.expectedTableBytes, result.BytesPerTable, "bytes per table mismatch")
+			} else {
+				require.Len(t, result.BytesPerTable, 0)
+			}
 		})
 	}
 }

@@ -541,8 +541,7 @@ type Handle struct {
 			vacuumFullStatusTableThreshold             config.ValueLoader[int64]
 			vacuumAnalyzeStatusTableThreshold          config.ValueLoader[int64]
 			jobDoneMigrateThres, jobStatusMigrateThres config.ValueLoader[float64]
-			jobMinRowsMigrateThres                     config.ValueLoader[float64]
-			jobMinRowsLeftMigrateThres                 config.ValueLoader[float64]
+			jobMinRowsLeftMigrateThreshold             config.ValueLoader[float64]
 			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
 			migrateDSTimeout                           config.ValueLoader[time.Duration]
 		}
@@ -948,14 +947,10 @@ func (jd *Handle) loadConfig() {
 	jd.conf.migration.jobDoneMigrateThres = jd.config.GetReloadableFloat64Var(0.8, jd.configKeys("jobDoneMigrateThreshold")...)
 	// jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
 	jd.conf.migration.jobStatusMigrateThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
-	// jobMinRowsMigrateThres: A DS with a low number of total rows should be eligible for migration if the number of total rows are
-	// less than jobMinRowsMigrateThres percent of maxDSSize (e.g. if jobMinRowsMigrateThres is 0.2
-	// then DSs that have less than 20% of maxDSSize total rows are eligible for migration)
-	jd.conf.migration.jobMinRowsMigrateThres = jd.config.GetReloadableFloat64Var(0.2, jd.configKeys("jobMinRowsMigrateThreshold")...)
-	// jobMinRowsMigrateThres: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
-	// less than jobMinRowsLeftMigrateThres percent of maxDSSize (e.g. if jobMinRowsLeftMigrateThres is 0.5
+	// jobMinRowsLeftMigrateThreshold: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
+	// less than jobMinRowsLeftMigrateThreshold percent of maxDSSize (e.g. if jobMinRowsLeftMigrateThreshold is 0.5
 	// then DSs that have less than 50% of maxDSSize pending rows are eligible for migration)
-	jd.conf.migration.jobMinRowsLeftMigrateThres = jd.config.GetReloadableFloat64Var(0.4, jd.configKeys("jobMinRowsLeftMigrateThres")...)
+	jd.conf.migration.jobMinRowsLeftMigrateThreshold = jd.config.GetReloadableFloat64Var(0.4, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
 	// maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	jd.conf.migration.maxMigrateOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateOnce")...)
 	// maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
