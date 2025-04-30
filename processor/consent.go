@@ -2,6 +2,7 @@ package processor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/samber/lo"
 
@@ -12,10 +13,10 @@ import (
 )
 
 type ConsentManagementInfo struct {
-	DeniedConsentIDs   []string    `json:"deniedConsentIds"`
-	AllowedConsentIDs  interface{} `json:"allowedConsentIds"` // Not used currently but added for future use
-	Provider           string      `json:"provider"`
-	ResolutionStrategy string      `json:"resolutionStrategy"`
+	AllowedConsentIDs  []string `json:"allowedConsentIds"`
+	DeniedConsentIDs   []string `json:"deniedConsentIds"`
+	Provider           string   `json:"provider"`
+	ResolutionStrategy string   `json:"resolutionStrategy"`
 }
 
 type GenericConsentManagementProviderData struct {
@@ -47,14 +48,14 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 		proc.logger.Errorw("failed to get consent management info", "error", err.Error())
 	}
 
-	if len(consentManagementInfo.DeniedConsentIDs) == 0 {
+	// If the event does not have any consents, do not filter any destinations
+	if len(consentManagementInfo.AllowedConsentIDs) == 0 && len(consentManagementInfo.DeniedConsentIDs) == 0 {
 		return destinations
 	}
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// Generic consent management
 		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
-
 			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
 
 			// For custom provider, the resolution strategy is to be picked from the destination config
@@ -62,13 +63,23 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 				finalResolutionStrategy = cmpData.ResolutionStrategy
 			}
 
+			// TODO: Remove "or" and "and" support once all the SDK clients stop sending it.
+			// Currently, it is added for backward compatibility.
 			switch finalResolutionStrategy {
-			// The user must consent to at least one of the configured consents in the destination
-			case "or":
+			case "any", "or":
+				if len(consentManagementInfo.AllowedConsentIDs) > 0 {
+					// The user must consent to at least one of the configured consents in the destination
+					return lo.Some(consentManagementInfo.AllowedConsentIDs, cmpData.Consents) || len(cmpData.Consents) == 0
+				}
+				// All of the configured consents should not be in denied
 				return !lo.Every(consentManagementInfo.DeniedConsentIDs, cmpData.Consents)
 
-			// The user must consent to all of the configured consents in the destination
-			default: // "and"
+			default: // "all" / "and"
+				if len(consentManagementInfo.AllowedConsentIDs) > 0 {
+					// The user must consent to all of the configured consents in the destination
+					return lo.Every(consentManagementInfo.AllowedConsentIDs, cmpData.Consents)
+				}
+				// None of the configured consents should be in denied
 				return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
 			}
 		}
@@ -185,10 +196,14 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentP
 		consentsConfig := providerConfig.Consents
 
 		if len(consentsConfig) > 0 && providerConfig.Provider != "" {
-			consentIDs := lo.FilterMap(
-				consentsConfig,
-				func(consentsObj GenericConsentsConfig, _ int) (string, bool) {
-					return consentsObj.Consent, consentsObj.Consent != ""
+			consentIDs := lo.Map(consentsConfig, func(consentsObj GenericConsentsConfig, _ int) string {
+				return strings.TrimSpace(consentsObj.Consent)
+			})
+
+			consentIDs = lo.FilterMap(
+				consentIDs,
+				func(consentID string, _ int) (string, bool) {
+					return consentID, consentID != ""
 				},
 			)
 
@@ -217,10 +232,20 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			return consentManagementInfo, fmt.Errorf("error unmarshalling consentManagementInfo: %v", unmErr)
 		}
 
+		// Ideally, the clean up and filter is not needed for standard providers
+		// but useful for custom providers where users send this data directly
+		// to the SDKs.
+		cleanupPredicate := func(consent string, _ int) (string, bool) {
+			return strings.TrimSpace(consent), consent != ""
+		}
+
+		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, cleanupPredicate)
+		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, cleanupPredicate)
+
 		filterPredicate := func(consent string, _ int) (string, bool) {
 			return consent, consent != ""
 		}
-
+		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, filterPredicate)
 		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, filterPredicate)
 	}
 
