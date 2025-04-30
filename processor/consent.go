@@ -2,6 +2,7 @@ package processor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/samber/lo"
@@ -261,7 +262,9 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			consentManagementInfo.AllowedConsentIDs = val
 		case map[string]interface{}:
 			// Use keys from the map (legacy OneTrust format)
+			// Also, sort the keys
 			consentManagementInfo.AllowedConsentIDs = lo.Keys(val)
+			sort.Strings(consentManagementInfo.AllowedConsentIDs)
 		default:
 			consentManagementInfo.AllowedConsentIDs = []string{}
 		}
