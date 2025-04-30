@@ -221,8 +221,7 @@ func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string
 		tableNameLimit,
 	)
 
-	columnMap := as.uploader.GetTableSchemaInWarehouse(tableName)
-	cols := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
+	cols := warehouseutils.SortColumnKeysFromColumnMap(as.uploader.GetTableSchemaInWarehouse(tableName))
 
 	varcharCols, err := as.getStringColumnsWithVariableLength(ctx, tableName)
 	if err != nil {
