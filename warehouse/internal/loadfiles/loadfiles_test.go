@@ -645,7 +645,7 @@ func TestGroupStagingFiles(t *testing.T) {
 				},
 				// Ideally we should have only 1 batch here
 				// but we are not handling this case
-				batchSizes: []int{1, 1},
+				batchSizes:    []int{1, 1},
 				skipSizeCheck: true,
 			},
 		}
