@@ -233,9 +233,10 @@ func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string
 			// use varchar for char and nvarchar for nchar
 			// this is because char and nchar have a max length of 8000 and 4000 respectively.
 			// row size limit is 8060 in Azure Synapse. To fix this, we use varchar and nvarchar with max length
-			if dataType == "char" {
+			switch dataType {
+			case "char":
 				targetType = "varchar"
-			} else if dataType == "nchar" {
+			case "nchar":
 				targetType = "nvarchar"
 			}
 			return fmt.Sprintf(`CAST('' AS %[2]s(max)) as %[1]s`, name, targetType)
