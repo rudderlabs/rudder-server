@@ -645,14 +645,19 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 	})
 
 	var result [][]*model.StagingFile
-	for len(files) > 0 {
+	processed := make(map[int64]bool, len(files))
+
+	for len(processed) < len(files) {
 		// Start a new batch
 		var currentBatch []*model.StagingFile
 		batchTableSizes := make(map[string]int64)
 
 		// Try to add files to the current batch
-		i := 0
-		for i < len(files) {
+		for i := 0; i < len(files); i++ {
+			if processed[files[i].ID] {
+				continue
+			}
+
 			// Check if adding this file would exceed size limit for any table
 			canAdd := true
 			for tableName, size := range files[i].BytesPerTable {
@@ -669,19 +674,18 @@ func (lf *LoadFileGenerator) groupBySize(files []*model.StagingFile, maxSizeMB i
 				for tableName, size := range files[i].BytesPerTable {
 					batchTableSizes[tableName] += size
 				}
-				// Remove the file while preserving order
-				files = append(files[:i], files[i+1:]...)
+				processed[files[i].ID] = true
 			} else {
-				// If the first file exceeds the size limits, no point in continuing
-				// add this file to the result and break
+				// If this is the first file in this iteration and it exceeds limits,
+				// add it to its own batch
 				if len(currentBatch) == 0 {
-					result = append(result, []*model.StagingFile{files[0]})
-					files = lo.Drop(files, 1)
+					result = append(result, []*model.StagingFile{files[i]})
+					processed[files[i].ID] = true
 					break
 				}
-				i++
 			}
 		}
+
 		if len(currentBatch) > 0 {
 			result = append(result, currentBatch)
 		}

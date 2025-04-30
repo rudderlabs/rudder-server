@@ -501,6 +501,7 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "single file under limit",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 50 * 1024 * 1024, // 50MB
 						},
@@ -512,11 +513,13 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "all files over limit",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 150 * 1024 * 1024, // 150MB
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 150 * 1024 * 1024, // 150MB
 						},
@@ -529,11 +532,13 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "multiple files under limit",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 30 * 1024 * 1024, // 30MB
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 40 * 1024 * 1024, // 40MB
 						},
@@ -545,16 +550,19 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "optimal grouping case",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 50 * 1024 * 1024, // 50MB
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 100 * 1024 * 1024, // 100MB
 						},
 					},
 					{
+						ID: 3,
 						BytesPerTable: map[string]int64{
 							"table1": 50 * 1024 * 1024, // 50MB
 						},
@@ -566,24 +574,28 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "sorting logic",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 20 * 1024 * 1024,
 							"table2": 71 * 1024 * 1024,
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 50 * 1024 * 1024,
 							"table2": 1 * 1024 * 1024,
 						},
 					},
 					{
+						ID: 3,
 						BytesPerTable: map[string]int64{
 							"table1": 70 * 1024 * 1024,
 							"table2": 1 * 1024 * 1024,
 						},
 					},
 					{
+						ID: 4,
 						BytesPerTable: map[string]int64{
 							"table1": 40 * 1024 * 1024,
 							"table2": 1 * 1024 * 1024,
@@ -596,12 +608,14 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "multiple tables different sizes",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 60 * 1024 * 1024, // 60MB
 							"table2": 30 * 1024 * 1024, // 30MB
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 5 * 1024 * 1024,  // 5MB
 							"table2": 90 * 1024 * 1024, // 90MB
@@ -614,12 +628,14 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "multiple tables under limit",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 40 * 1024 * 1024, // 40MB
 							"table2": 30 * 1024 * 1024, // 30MB
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table1": 30 * 1024 * 1024, // 30MB
 							"table2": 20 * 1024 * 1024, // 20MB
@@ -632,12 +648,14 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "one table exceeds limit",
 				files: []*model.StagingFile{
 					{
+						ID: 1,
 						BytesPerTable: map[string]int64{
 							"table1": 110 * 1024 * 1024,
 							"table2": 3 * 1024 * 1024,
 						},
 					},
 					{
+						ID: 2,
 						BytesPerTable: map[string]int64{
 							"table2": 20 * 1024 * 1024,
 						},
@@ -699,12 +717,15 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "group by UseRudderStorage",
 				files: []*model.StagingFile{
 					{
+						ID:               1,
 						UseRudderStorage: true,
 					},
 					{
+						ID:               2,
 						UseRudderStorage: false,
 					},
 					{
+						ID:               3,
 						UseRudderStorage: true,
 					},
 				},
@@ -714,12 +735,15 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "group by DestinationRevisionID",
 				files: []*model.StagingFile{
 					{
+						ID:                    1,
 						DestinationRevisionID: "rev1",
 					},
 					{
+						ID:                    2,
 						DestinationRevisionID: "rev2",
 					},
 					{
+						ID:                    3,
 						DestinationRevisionID: "rev1",
 					},
 				},
@@ -729,12 +753,15 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "group by TimeWindow",
 				files: []*model.StagingFile{
 					{
+						ID:         1,
 						TimeWindow: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 					},
 					{
+						ID:         2,
 						TimeWindow: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 					},
 					{
+						ID:         3,
 						TimeWindow: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 					},
 				},
@@ -744,16 +771,19 @@ func TestGroupStagingFiles(t *testing.T) {
 				name: "mixed keys",
 				files: []*model.StagingFile{
 					{
+						ID:                    1,
 						UseRudderStorage:      true,
 						DestinationRevisionID: "rev1",
 						TimeWindow:            time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 					},
 					{
+						ID:                    2,
 						UseRudderStorage:      true,
 						DestinationRevisionID: "rev1",
 						TimeWindow:            time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
 					},
 					{
+						ID:                    3,
 						UseRudderStorage:      false,
 						DestinationRevisionID: "rev2",
 						TimeWindow:            time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
