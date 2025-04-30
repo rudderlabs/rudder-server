@@ -828,7 +828,6 @@ func TestGroupStagingFiles(t *testing.T) {
 }
 
 func TestV2CreateLoadFiles(t *testing.T) {
-	t.Parallel()
 	notifier := &mockNotifier{
 		t:      t,
 		tables: []string{"track", "identify"},
