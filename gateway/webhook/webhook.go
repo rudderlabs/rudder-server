@@ -450,10 +450,11 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
-				if resp.Err == "" {
-					resp.Err = response.SourceTransformerNonSuccessResponse
+				failureReason := resp.Err
+				if failureReason == "" {
+					failureReason = response.SourceTransformerNonSuccessResponse
 				}
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
 				bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
 				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, response.SourceTransformerNonSuccessResponse, resp.StatusCode, 1)
 			}
