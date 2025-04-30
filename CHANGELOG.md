@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.1](https://github.com/rudderlabs/rudder-server/compare/v1.48.0...v1.48.1) (2025-04-30)
+
+
+### Bug Fixes
+
+* **jobsdb:** completed datasets don't get deleted without a pair ([#5793](https://github.com/rudderlabs/rudder-server/issues/5793)) ([a0041e6](https://github.com/rudderlabs/rudder-server/commit/a0041e683046476cc955552454547033cf05dc01))
+
 ## [1.48.0](https://github.com/rudderlabs/rudder-server/compare/v1.47.0...v1.48.0) (2025-04-28)
 
 
