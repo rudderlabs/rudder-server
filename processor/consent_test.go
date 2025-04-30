@@ -2517,7 +2517,7 @@ func TestGetConsentManagementInfo(t *testing.T) {
 							"consent category 2",
 						},
 						"deniedConsentIds": []string{
-							"consent category 3",
+							"   consent category 3   ",
 							"",
 							"consent category 4",
 							"",
@@ -2552,9 +2552,9 @@ func TestGetConsentManagementInfo(t *testing.T) {
 				"context": map[string]interface{}{
 					"consentManagement": map[string]interface{}{
 						"deniedConsentIds": []string{
-							"consent category 3",
-							"",
-							"consent category 4",
+							"consent category 3 ",
+							"   ",
+							" consent category 4",
 							"",
 						},
 					},
@@ -2563,6 +2563,43 @@ func TestGetConsentManagementInfo(t *testing.T) {
 			expected: ConsentManagementInfo{
 				Provider:          "",
 				AllowedConsentIDs: []string{},
+				DeniedConsentIDs: []string{
+					"consent category 3",
+					"consent category 4",
+				},
+				ResolutionStrategy: "",
+			},
+		},
+		{
+			description: "should return consent management info when consent management data is sent from older SDKs with allowed consent IDs as an object",
+			input: types.SingularEventT{
+				"anonymousId": "123",
+				"type":        "track",
+				"event":       "test",
+				"properties": map[string]interface{}{
+					"category": "test",
+				},
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"allowedConsentIds": map[string]interface{}{
+							"C0": "consent category 1",
+							"C1": "consent category 2",
+						},
+						"deniedConsentIds": []string{
+							"consent category 3 ",
+							"   ",
+							" consent category 4",
+							"",
+						},
+					},
+				},
+			},
+			expected: ConsentManagementInfo{
+				Provider: "",
+				AllowedConsentIDs: []string{
+					"C0",
+					"C1",
+				},
 				DeniedConsentIDs: []string{
 					"consent category 3",
 					"consent category 4",

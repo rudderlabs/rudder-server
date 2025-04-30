@@ -3653,7 +3653,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all except D13
+			).To(Equal(6)) // all except D6, D13, and D14
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(

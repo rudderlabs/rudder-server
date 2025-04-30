@@ -13,10 +13,17 @@ import (
 )
 
 type ConsentManagementInfo struct {
-	AllowedConsentIDs  []string `json:"allowedConsentIds"`
-	DeniedConsentIDs   []string `json:"deniedConsentIds"`
-	Provider           string   `json:"provider"`
-	ResolutionStrategy string   `json:"resolutionStrategy"`
+	AllowedConsentIDs  []string
+	DeniedConsentIDs   []string
+	Provider           string
+	ResolutionStrategy string
+}
+
+type EventConsentManagementInfo struct {
+	AllowedConsentIDs  interface{} `json:"allowedConsentIds"`
+	DeniedConsentIDs   []string    `json:"deniedConsentIds"`
+	Provider           string      `json:"provider"`
+	ResolutionStrategy string      `json:"resolutionStrategy"`
 }
 
 type GenericConsentManagementProviderData struct {
@@ -220,6 +227,7 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentP
 }
 
 func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
+	consentManagementInfoFromEvent := EventConsentManagementInfo{}
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
 		consentManagementObjBytes, mErr := jsonrs.Marshal(consentManagement)
@@ -227,21 +235,48 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			return consentManagementInfo, fmt.Errorf("error marshalling consentManagement: %v", mErr)
 		}
 
-		unmErr := jsonrs.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
+		unmErr := jsonrs.Unmarshal(consentManagementObjBytes, &consentManagementInfoFromEvent)
 		if unmErr != nil {
 			return consentManagementInfo, fmt.Errorf("error unmarshalling consentManagementInfo: %v", unmErr)
+		}
+
+		consentManagementInfo.DeniedConsentIDs = consentManagementInfoFromEvent.DeniedConsentIDs
+		consentManagementInfo.Provider = consentManagementInfoFromEvent.Provider
+		consentManagementInfo.ResolutionStrategy = consentManagementInfoFromEvent.ResolutionStrategy
+
+		// This is to support really old version of the JS SDK v3 that sent this data as an object
+		// for OneTrust provider.
+		// Handle AllowedConsentIDs based on its type (array or map)
+		switch val := consentManagementInfoFromEvent.AllowedConsentIDs.(type) {
+		case []interface{}:
+			// Convert []interface{} to []string
+			consentManagementInfo.AllowedConsentIDs = make([]string, 0, len(val))
+			for _, v := range val {
+				if strVal, ok := v.(string); ok {
+					consentManagementInfo.AllowedConsentIDs = append(consentManagementInfo.AllowedConsentIDs, strVal)
+				}
+			}
+		case []string:
+			// Already a string array
+			consentManagementInfo.AllowedConsentIDs = val
+		case map[string]interface{}:
+			// Use keys from the map (legacy OneTrust format)
+			consentManagementInfo.AllowedConsentIDs = lo.Keys(val)
+		default:
+			consentManagementInfo.AllowedConsentIDs = []string{}
 		}
 
 		// Ideally, the clean up and filter is not needed for standard providers
 		// but useful for custom providers where users send this data directly
 		// to the SDKs.
-		cleanupPredicate := func(consent string, _ int) (string, bool) {
-			return strings.TrimSpace(consent), consent != ""
+		sanitizePredicate := func(consent string, _ int) string {
+			return strings.TrimSpace(consent)
 		}
 
-		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, cleanupPredicate)
-		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, cleanupPredicate)
+		consentManagementInfo.AllowedConsentIDs = lo.Map(consentManagementInfo.AllowedConsentIDs, sanitizePredicate)
+		consentManagementInfo.DeniedConsentIDs = lo.Map(consentManagementInfo.DeniedConsentIDs, sanitizePredicate)
 
+		// Filter out empty values
 		filterPredicate := func(consent string, _ int) (string, bool) {
 			return consent, consent != ""
 		}
