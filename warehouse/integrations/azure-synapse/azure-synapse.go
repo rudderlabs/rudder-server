@@ -214,14 +214,16 @@ func (*AzureSynapse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, 
 	return
 }
 
-func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string, columnMap model.TableSchema) (string, error) {
+func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string) (string, error) {
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
 		tableName,
 		tableNameLimit,
 	)
 
+	columnMap := as.uploader.GetTableSchemaInWarehouse(tableName)
 	cols := warehouseutils.SortColumnKeysFromColumnMap(columnMap)
+
 	varcharCols, err := as.getStringColumnsWithVariableLength(ctx, tableName)
 	if err != nil {
 		return "", fmt.Errorf("getting varchar columns info: %w", err)
@@ -229,7 +231,7 @@ func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string
 
 	columnDefs := lo.Map(cols, func(name string, _ int) string {
 		if dataType, ok := varcharCols[name]; ok {
-			targetType := dataType
+			var targetType string
 			// use varchar for char and nvarchar for nchar
 			// this is because char and nchar have a max length of 8000 and 4000 respectively.
 			// row size limit is 8060 in Azure Synapse. To fix this, we use varchar and nvarchar with max length
@@ -238,8 +240,10 @@ func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string
 				targetType = "varchar"
 			case "nchar":
 				targetType = "nvarchar"
+			default:
+				targetType = string(dataType)
 			}
-			return fmt.Sprintf(`CAST('' AS %[2]s(max)) as %[1]s`, name, targetType)
+			return fmt.Sprintf(`CAST('' AS %[1]s(max)) as %[2]s`, targetType, name)
 		}
 		return name
 	})
@@ -297,9 +301,8 @@ func (as *AzureSynapse) loadTable(
 		misc.RemoveFilePaths(fileNames...)
 	}()
 
-	tableSchemaInWarehouse := as.uploader.GetTableSchemaInWarehouse(tableName)
 	log.Debugw("creating staging table")
-	stagingTableName, err := as.createStagingTable(ctx, tableName, tableSchemaInWarehouse)
+	stagingTableName, err := as.createStagingTable(ctx, tableName)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
