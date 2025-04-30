@@ -1959,10 +1959,6 @@ func (jd *Handle) getDistinctValuesPerDataset(
 	dsList []string,
 	param ParameterName,
 ) (map[string][]string, error) {
-	if len(dsList) == 0 {
-		return nil, nil
-	}
-
 	var queries []string
 	for _, ds := range dsList {
 		queries = append(queries, fmt.Sprintf(parametersWithoutCustomval, param.string(), ds))
@@ -2001,6 +1997,7 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter Para
 			return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 		}
 		dsList := jd.getDSList()
+		jd.logger.Info(dsList)
 		jd.dsListLock.RUnlock()
 		values, err := jd.distinctValuesCache.GetDistinctValues(
 			parameter.string(),

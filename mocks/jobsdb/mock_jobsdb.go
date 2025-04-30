@@ -85,21 +85,6 @@ func (mr *MockJobsDBMockRecorder) GetAborted(ctx, params any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAborted", reflect.TypeOf((*MockJobsDB)(nil).GetAborted), ctx, params)
 }
 
-// GetActiveWorkspaces mocks base method.
-func (m *MockJobsDB) GetActiveWorkspaces(ctx context.Context, customVal string) ([]string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetActiveWorkspaces", ctx, customVal)
-	ret0, _ := ret[0].([]string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetActiveWorkspaces indicates an expected call of GetActiveWorkspaces.
-func (mr *MockJobsDBMockRecorder) GetActiveWorkspaces(ctx, customVal any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveWorkspaces", reflect.TypeOf((*MockJobsDB)(nil).GetActiveWorkspaces), ctx, customVal)
-}
-
 // GetDistinctParameterValues mocks base method.
 func (m *MockJobsDB) GetDistinctParameterValues(ctx context.Context, parameter jobsdb.ParameterName) ([]string, error) {
 	m.ctrl.T.Helper()
