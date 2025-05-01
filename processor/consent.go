@@ -262,7 +262,8 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			consentManagementInfo.AllowedConsentIDs = val
 		case map[string]interface{}:
 			// Use keys from the map (legacy OneTrust format)
-			// Also, sort the keys
+			// Also, sort the keys as the unmarshalling of map is not deterministic of the order of keys
+			// and it can cause flaky tests.
 			consentManagementInfo.AllowedConsentIDs = lo.Keys(val)
 			sort.Strings(consentManagementInfo.AllowedConsentIDs)
 		default:
