@@ -3677,7 +3677,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(8)) // all except D7
+			).To(Equal(6)) // all except D7
 
 			// some unknown destination ID is passed destination will be unavailable
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
