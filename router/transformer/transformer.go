@@ -618,9 +618,10 @@ func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
-	transformerClientConfig.Recycle = !config.GetBoolVar(true, "DEST_TRANSFORM_URL_IS_HEADLESS") || config.GetBoolVar(false, "Transformer.Client.DestinationTransformer.recycle", "Transformer.Client.recycle")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(1, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(5, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = config.GetBoolVar(false, "Transformer.Client.DestinationTransformer.recycle", "Transformer.Client.recycle")
+	transformerClientConfig.RecycleTTL = config.GetDurationVar(60, time.Second, "Transformer.Client.DestinationTransformer.recycleTTL", "Transformer.Client.recycleTTL")
 	return transformerClientConfig
 }
 
