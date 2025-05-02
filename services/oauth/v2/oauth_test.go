@@ -359,6 +359,33 @@ var _ = Describe("Oauth", func() {
 			Expect(response).To(Equal(expectedResponse))
 			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
 		})
+
+		It("fetch token function call when cache is empty and cpApiCall returns empty secret", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{}`)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			var expectedResponse *v2.AuthResponse
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("empty secret received from CP")))
+		})
 	})
 
 	Describe("Test RefreshToken function", func() {

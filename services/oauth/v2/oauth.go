@@ -429,6 +429,15 @@ func (h *OAuthHandler) fetchAccountInfoFromCp(refTokenParams *RefreshTokenParams
 		}
 		return http.StatusInternalServerError, authResponse, fmt.Errorf("error occurred while fetching/refreshing account info from CP: %s", refErrMsg)
 	}
+
+	if accountSecret.Secret == nil {
+		errMsg := errors.New("empty secret received from CP")
+		statsHandler.Increment("request", stats.Tags{
+			"errorMessage":  errMsg.Error(),
+			"isCallToCpApi": "true",
+		})
+		return http.StatusInternalServerError, nil, errMsg
+	}
 	statsHandler.Increment("request", stats.Tags{
 		"errorMessage":  "",
 		"isCallToCpApi": "true",
