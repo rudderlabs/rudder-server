@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.2](https://github.com/rudderlabs/rudder-server/compare/v1.48.1...v1.48.2) (2025-05-02)
+
+
+### Bug Fixes
+
+* transformer client recycle ttl bound to connection idle timeout ([#5800](https://github.com/rudderlabs/rudder-server/issues/5800)) ([83597c4](https://github.com/rudderlabs/rudder-server/commit/83597c4e4bd79e03429da9beb96f6f6e9cf5ea0d))
+
 ## [1.48.1](https://github.com/rudderlabs/rudder-server/compare/v1.48.0...v1.48.1) (2025-04-30)
 
 
