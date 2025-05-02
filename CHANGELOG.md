@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.3](https://github.com/rudderlabs/rudder-server/compare/v1.48.2...v1.48.3) (2025-05-02)
+
+
+### Bug Fixes
+
+* add check for nil secret on oauthv2 ([#5807](https://github.com/rudderlabs/rudder-server/issues/5807)) ([9f82e4d](https://github.com/rudderlabs/rudder-server/commit/9f82e4d31f0f3b4aecc1907d9df1714caf4ef2ea))
+
 ## [1.48.2](https://github.com/rudderlabs/rudder-server/compare/v1.48.1...v1.48.2) (2025-05-02)
 
 
