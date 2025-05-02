@@ -9,13 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
-	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
@@ -24,13 +19,16 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/kafka"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -79,9 +77,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
 	handle.stats.mismatchedEvents = handle.stat.NewStat("embedded_destination_transform_mismatched_events", stats.CountType)
 
-	handle.loggedEvents = 0
-	handle.loggedEventsMu = sync.Mutex{}
-
 	var err error
 	handle.samplingFileManager, err = getSamplingUploader(conf, log)
 	if err != nil {
@@ -123,8 +118,7 @@ type Client struct {
 		mismatchedEvents stats.Counter
 	}
 
-	loggedEventsMu      sync.Mutex
-	loggedEvents        int64
+	loggedEvents        atomic.Int64
 	samplingFileManager *filemanager.S3Manager
 }
 

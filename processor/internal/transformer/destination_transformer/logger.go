@@ -26,10 +26,7 @@ func (c *Client) CompareAndLog(
 		return
 	}
 
-	c.loggedEventsMu.Lock()
-	defer c.loggedEventsMu.Unlock()
-
-	if c.loggedEvents >= int64(c.config.maxLoggedEvents.Load()) {
+	if c.loggedEvents.Load() >= int64(c.config.maxLoggedEvents.Load()) {
 		return
 	}
 
@@ -58,7 +55,8 @@ func (c *Client) CompareAndLog(
 		logger.NewStringField("location", file.Location),
 		logger.NewStringField("objectName", file.ObjectName),
 	)
-	c.loggedEvents += int64(len(differingResponse))
+
+	c.loggedEvents.And(int64(len(differingResponse)))
 }
 
 func (c *Client) differingEvents(
