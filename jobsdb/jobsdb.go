@@ -296,7 +296,7 @@ type JobsDB interface {
 	// grouped by workspaceId and destination type
 	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
-	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id") values inside the jobs tables
+	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables
 	GetDistinctParameterValues(ctx context.Context, parameter ParameterName) (values []string, err error)
 
 	/* Admin */
