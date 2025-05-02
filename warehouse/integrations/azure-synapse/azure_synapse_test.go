@@ -3,6 +3,8 @@ package azuresynapse_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -38,10 +40,36 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+type testCredentials struct {
+	Host     string `json:"host"`
+	Database string `json:"database"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Port     int    `json:"port"`
+	SSLMode  string `json:"sslMode"`
+}
+
+func getAzureSynapseCredentials() (testCredentials, error) {
+	var credentials testCredentials
+	credString := os.Getenv("AZURE_SYNAPSE_TEST_CREDENTIALS")
+	if len(credString) == 0 {
+		return credentials, errors.New("AZURE_SYNAPSE_TEST_CREDENTIALS env var not set")
+	}
+	err := json.Unmarshal([]byte(credString), &credentials)
+	return credentials, fmt.Errorf("unmarshalling credentials: %w", err)
+}
+
 func TestIntegration(t *testing.T) {
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
+
+	if os.Getenv("AZURE_SYNAPSE_TEST_CREDENTIALS") == "" {
+		t.Skip("Skipping tests. Add 'AZURE_SYNAPSE_TEST_CREDENTIALS' env var to run test.")
+	}
+
+	creds, err := getAzureSynapseCredentials()
+	require.NoError(t, err)
 
 	misc.Init()
 	validations.Init()
@@ -49,10 +77,12 @@ func TestIntegration(t *testing.T) {
 
 	destType := whutils.AzureSynapse
 
-	host := "localhost"
-	database := "master"
-	user := "SA"
-	password := "reallyStrongPwd123"
+	host := creds.Host
+	database := creds.Database
+	user := creds.User
+	password := creds.Password
+	port := creds.Port
+
 	bucketName := "testbucket"
 	container := "warehouse-integration-test"
 	accessKeyID := "MYACCESSKEY"
@@ -63,12 +93,11 @@ func TestIntegration(t *testing.T) {
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.jobsdb.yml", "../testdata/docker-compose.minio.yml", "../testdata/docker-compose.transformer.yml"}))
 		c.Start(context.Background())
 
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
-		azureSynapsePort := c.Port("azure_synapse", 1433)
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
@@ -140,7 +169,7 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("database", database).
 					WithConfigOption("user", user).
 					WithConfigOption("password", password).
-					WithConfigOption("port", strconv.Itoa(azureSynapsePort)).
+					WithConfigOption("port", port).
 					WithConfigOption("sslMode", "disable").
 					WithConfigOption("namespace", namespace).
 					WithConfigOption("bucketProvider", whutils.MINIO).
@@ -172,8 +201,8 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-					user, password, host, azureSynapsePort, database,
+				db := pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%s?TrustServerCertificate=true&database=%s&encrypt=disable",
+					user, password, host, port, database,
 				))
 
 				sqlClient := &client.Client{
