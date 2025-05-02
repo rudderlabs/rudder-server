@@ -79,7 +79,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		whSchema.SourceID,
 	)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return id, fmt.Errorf("updating related schemas: %w", err)
 	}
 
@@ -112,7 +112,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		whSchema.ExpiresAt,
 	).Scan(&id)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return id, fmt.Errorf("inserting schema: %w", err)
 	}
 
