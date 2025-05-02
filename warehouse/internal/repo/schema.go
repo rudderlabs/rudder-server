@@ -53,9 +53,14 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
+	tx, err := sh.db.BeginTx(ctx, nil)
+	if err != nil {
+		return id, fmt.Errorf("beginning transaction: %w", err)
+	}
+
 	// update all schemas with the same destination_id and namespace but different source_id
 	// this is to ensure all the connections for a destination have the same schema copy
-	_, err = sh.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		UPDATE `+whSchemaTableName+`
 		SET
 			schema = $1,
@@ -74,11 +79,12 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		whSchema.SourceID,
 	)
 	if err != nil {
+		tx.Rollback()
 		return id, fmt.Errorf("updating related schemas: %w", err)
 	}
 
 	// Then, insert/update the new schema using the unique constraint
-	err = sh.db.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO `+whSchemaTableName+` (
           source_id, namespace, destination_id,
 		  destination_type, schema, created_at,
@@ -106,7 +112,13 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		whSchema.ExpiresAt,
 	).Scan(&id)
 	if err != nil {
+		tx.Rollback()
 		return id, fmt.Errorf("inserting schema: %w", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return id, fmt.Errorf("committing transaction: %w", err)
 	}
 
 	return id, nil
