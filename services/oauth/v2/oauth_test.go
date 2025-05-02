@@ -370,7 +370,61 @@ var _ = Describe("Oauth", func() {
 
 			ctrl := gomock.NewController(GinkgoT())
 			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{}`)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret":{}}`)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			var expectedResponse *v2.AuthResponse
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("empty secret received from CP")))
+		})
+
+		It("fetch token function call when cache is empty and cpApiCall returns empty string", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret":""}`)
+			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil)
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+			statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+			Expect(statusCode).To(Equal(http.StatusInternalServerError))
+			var expectedResponse *v2.AuthResponse
+			Expect(response).To(Equal(expectedResponse))
+			Expect(err).To(MatchError(fmt.Errorf("empty secret received from CP")))
+		})
+
+		It("fetch token function call when cache is empty and cpApiCall returns nil secret", func() {
+			fetchTokenParams := &v2.RefreshTokenParams{
+				AccountID:   "123",
+				WorkspaceID: "456",
+				DestDefName: "testDest",
+				Destination: Destination,
+			}
+
+			ctrl := gomock.NewController(GinkgoT())
+			mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"secret": null}`)
 			mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
 			mockTokenProvider.EXPECT().Identity().Return(nil)
 			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
