@@ -53,36 +53,67 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	err = sh.db.QueryRowContext(ctx, `
-		INSERT INTO `+whSchemaTableName+` (
-          source_id, namespace, destination_id,
-		  destination_type, schema, created_at,
-		  updated_at, expires_at
+	err = (*repo)(sh).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		// update all schemas with the same destination_id and namespace but different source_id
+		// this is to ensure all the connections for a destination have the same schema copy
+		_, err = tx.ExecContext(ctx, `
+			UPDATE `+whSchemaTableName+`
+			SET
+				schema = $1,
+				updated_at = $2,
+				expires_at = $3
+			WHERE
+				destination_id = $4 AND
+				namespace = $5 AND
+				source_id != $6;
+		`,
+			schemaPayload,
+			now.UTC(),
+			whSchema.ExpiresAt,
+			whSchema.DestinationID,
+			whSchema.Namespace,
+			whSchema.SourceID,
 		)
-		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (
-			source_id, destination_id, namespace
-		  ) DO
-		UPDATE
-		SET
-		  schema = $5,
-		  updated_at = $7,
-		  expires_at = $8 RETURNING id;
-`,
-		whSchema.SourceID,
-		whSchema.Namespace,
-		whSchema.DestinationID,
-		whSchema.DestinationType,
-		schemaPayload,
-		now.UTC(),
-		now.UTC(),
-		whSchema.ExpiresAt,
-	).Scan(&id)
-	if err != nil {
-		return id, fmt.Errorf("inserting schema: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("updating related schemas: %w", err)
+		}
 
-	return id, nil
+		// Then, insert/update the new schema using the unique constraint
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO `+whSchemaTableName+` (
+			  source_id, namespace, destination_id,
+			  destination_type, schema, created_at,
+			  updated_at, expires_at
+			)
+			VALUES
+			  ($1, $2, $3, $4, $5, $6, $7, $8) 
+			ON CONFLICT (
+				source_id, destination_id, namespace
+			) DO
+			UPDATE
+			SET
+			  schema = $5,
+			  updated_at = $7,
+			  expires_at = $8 
+			RETURNING id;
+		`,
+			whSchema.SourceID,
+			whSchema.Namespace,
+			whSchema.DestinationID,
+			whSchema.DestinationType,
+			schemaPayload,
+			now.UTC(),
+			now.UTC(),
+			whSchema.ExpiresAt,
+		).Scan(&id)
+		if err != nil {
+			return fmt.Errorf("inserting schema: %w", err)
+		}
+
+		return nil
+	})
+
+	return id, err
 }
 
 func (sh *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error) {
