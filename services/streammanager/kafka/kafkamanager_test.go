@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -282,8 +283,8 @@ func TestNewProducer(t *testing.T) {
 
 func TestIntegration(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
-		kafkaBatchingEnabled = true
-		t.Cleanup(func() { kafkaBatchingEnabled = false })
+		config.Default.Set("Router.KAFKA.enableBatching", true)
+		t.Cleanup(func() { config.Default.Set("Router.KAFKA.enableBatching", false) })
 		ctrl := gomock.NewController(t)
 		kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
@@ -354,11 +355,11 @@ func TestIntegration(t *testing.T) {
 }
 
 func TestAIOKafka(t *testing.T) {
-	kafkaBatchingEnabled = true
-	kafkaCompression = client.CompressionZstd
+	config.Default.Set("Router.KAFKA.enableBatching", true)
+	config.Default.Set("Router.KAFKA.compression", int(client.CompressionZstd))
 	t.Cleanup(func() {
-		kafkaBatchingEnabled = false
-		kafkaCompression = client.CompressionNone
+		config.Default.Set("Router.KAFKA.enableBatching", false)
+		config.Default.Set("Router.KAFKA.compression", int(client.CompressionNone))
 	})
 	ctrl := gomock.NewController(t)
 	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
@@ -1138,56 +1139,6 @@ func TestPublish(t *testing.T) {
 	})
 }
 
-func TestSSHConfig(t *testing.T) {
-	t.Run("not enabled", func(t *testing.T) {
-		c := config.New()
-		conf, err := getSSHConfig("some id", c)
-		require.NoError(t, err)
-		require.Nil(t, conf)
-	})
-
-	t.Run("enabled for another destination", func(t *testing.T) {
-		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest1,dest3")
-		conf, err := getSSHConfig("dest2", c)
-		require.NoError(t, err)
-		require.Nil(t, conf)
-	})
-
-	t.Run("no private key", func(t *testing.T) {
-		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest2,dest1,dest5")
-		conf, err := getSSHConfig("dest1", c)
-		require.ErrorContains(t, err, "kafka SSH private key is not set")
-		require.Nil(t, conf)
-	})
-
-	t.Run("no base64 private key", func(t *testing.T) {
-		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest3,dest1,dest7")
-		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "not base64 encoded")
-		conf, err := getSSHConfig("dest1", c)
-		require.ErrorContains(t, err, "failed to decode base64 private key")
-		require.Nil(t, conf)
-	})
-
-	t.Run("ok", func(t *testing.T) {
-		c := config.New()
-		c.Set("ROUTER_KAFKA_SSH_ENABLED", "dest0,dest1,dest6")
-		c.Set("ROUTER_KAFKA_SSH_PRIVATE_KEY", "a2V5IGNvbnRlbnQ=")
-		c.Set("ROUTER_KAFKA_SSH_USER", "some-user")
-		c.Set("ROUTER_KAFKA_SSH_HOST", "1.2.3.4:22")
-		c.Set("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", "true")
-		conf, err := getSSHConfig("dest1", c)
-		require.NoError(t, err)
-		require.Equal(t, &client.SSHConfig{
-			User:       "some-user",
-			Host:       "1.2.3.4:22",
-			PrivateKey: "key content",
-		}, conf)
-	})
-}
-
 func TestAvroSchemaRegistry(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -1266,7 +1217,6 @@ func TestAvroSchemaRegistry(t *testing.T) {
 
 		// Produce message in Avro format with schema 2
 		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, false)
 		p, err := NewProducer(&dest, common.Opts{})
 		require.NoError(t, err)
 		require.NotNil(t, p)
@@ -1348,14 +1298,19 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
+		destConfigCopy := make(map[string]interface{})
+		maps.Copy(destConfigCopy, destConfig)
+		destConfigCopy["embedAvroSchemaID"] = true
+		destCopy := dest
+		destCopy.Config = destConfigCopy
+
 		// Produce message in Avro format with schema 2
 		t.Log("Creating Kafka producer")
-		config.Set("ROUTER_KAFKA_EMBED_AVRO_SCHEMA_ID_"+destinationID, true)
-		p, err := NewProducer(&dest, common.Opts{})
+		p, err := NewProducer(&destCopy, common.Opts{})
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfigCopy)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
