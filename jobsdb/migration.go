@@ -661,9 +661,9 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 		return true, false, recordsLeft, nil
 	}
 
-	needsPair = float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
+	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
 
-	if needsPair || float64(delCount)/float64(totalCount) >= jd.conf.migration.jobDoneMigrateThres.Load() {
+	if needsPair || recordsLeft == 0 || float64(delCount)/float64(totalCount) >= jd.conf.migration.jobDoneMigrateThres.Load() {
 		return true, needsPair, recordsLeft, nil
 	}
 
