@@ -33,13 +33,17 @@ func (c *Client) CompareAndLog(
 	c.stats.comparisonTime.RecordDuration()()
 
 	differingResponse, sampleDiff := c.differingEvents(embeddedResponse, legacyResponse)
-	if len(differingResponse) == 0 && sampleDiff == "" {
+	noOfDifferences := int64(len(differingResponse))
+	if noOfDifferences == 0 && sampleDiff == "" {
 		return
 	}
+
+	c.loggedEvents.Add(noOfDifferences)
 
 	objName := path.Join("embedded-dt-samples", config.GetKubeNamespace(), uuid.New().String())
 	differingResponseJSON, err := jsonrs.Marshal(differingResponse)
 	if err != nil {
+		c.loggedEvents.Add(-noOfDifferences)
 		c.log.Errorn("DestinationTransformer sanity check failed (cannot encode differingResponse)", obskit.Error(err))
 		return
 	}
@@ -47,6 +51,7 @@ func (c *Client) CompareAndLog(
 	// upload sample diff and differing response to s3
 	file, err := c.samplingFileManager.UploadReader(ctx, objName, bytes.NewReader(append([]byte(sampleDiff), differingResponseJSON...)))
 	if err != nil {
+		c.loggedEvents.Add(-noOfDifferences)
 		c.log.Errorn("Error uploading DestinationTransformer sanity check diff file", obskit.Error(err))
 		return
 	}
@@ -55,7 +60,6 @@ func (c *Client) CompareAndLog(
 		logger.NewStringField("location", file.Location),
 		logger.NewStringField("objectName", file.ObjectName),
 	)
-	c.loggedEvents.Add(int64(len(differingResponse)))
 }
 
 func (c *Client) differingEvents(
