@@ -2939,7 +2939,7 @@ func (proc *Handle) userTransformAndFilter(
 					}
 
 					if proc.utSamplingFileManager == nil { // Cannot upload, we should just report the issue with no diff
-						log.Errorn("UserTransform sanity check failed")
+						log.Warnn("UserTransform sanity check failed")
 						return
 					}
 

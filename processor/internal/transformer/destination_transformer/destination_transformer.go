@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -79,9 +80,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
 	handle.stats.mismatchedEvents = handle.stat.NewStat("embedded_destination_transform_mismatched_events", stats.CountType)
 
-	handle.loggedEvents = 0
-	handle.loggedEventsMu = sync.Mutex{}
-
 	var err error
 	handle.samplingFileManager, err = getSamplingUploader(conf, log)
 	if err != nil {
@@ -123,8 +121,7 @@ type Client struct {
 		mismatchedEvents stats.Counter
 	}
 
-	loggedEventsMu      sync.Mutex
-	loggedEvents        int64
+	loggedEvents        atomic.Int64
 	samplingFileManager *filemanager.S3Manager
 }
 
