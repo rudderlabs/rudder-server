@@ -110,7 +110,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 					case <-ctx.Done():
 						return nil, ctx.Err()
 					case <-transformerFeaturesService.Wait():
-						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion()), nil
+						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion(), conf), nil
 					}
 				},
 			}

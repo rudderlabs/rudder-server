@@ -16,7 +16,7 @@ import (
 
 func TestV1Adapter(t *testing.T) {
 	t.Run("should return the right url", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, nil)
 		testSrcType := "testSrcType"
 		testSrcTypeLower := "testsrctype"
 
@@ -26,7 +26,7 @@ func TestV1Adapter(t *testing.T) {
 	})
 
 	t.Run("should return the right adapter version", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, nil)
 		adapterVersion := v1Adapter.getAdapterVersion()
 		require.Equal(t, adapterVersion, transformer.V1)
 	})
@@ -40,7 +40,7 @@ func TestV1Adapter(t *testing.T) {
 			Destinations: []backendconfig.DestinationT{{ID: "testDestId"}},
 		}
 
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, nil)
 
 		retBody, err := v1Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{
 			Source: mockSrc,
@@ -75,7 +75,7 @@ func TestV1Adapter(t *testing.T) {
 
 func TestV2Adapter(t *testing.T) {
 	t.Run("should return the right url", func(t *testing.T) {
-		v2Adapter := newSourceTransformAdapter(transformer.V2)
+		v2Adapter := newSourceTransformAdapter(transformer.V2, nil)
 		testSrcType := "testSrcType"
 		testSrcTypeLower := "testsrctype"
 
@@ -85,7 +85,7 @@ func TestV2Adapter(t *testing.T) {
 	})
 
 	t.Run("should return the right adapter version", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V2)
+		v1Adapter := newSourceTransformAdapter(transformer.V2, nil)
 		adapterVersion := v1Adapter.getAdapterVersion()
 		require.Equal(t, adapterVersion, transformer.V2)
 	})
@@ -118,7 +118,7 @@ func TestV2Adapter(t *testing.T) {
 			}{ID: testSrcId},
 		}
 
-		v2Adapter := newSourceTransformAdapter(transformer.V2)
+		v2Adapter := newSourceTransformAdapter(transformer.V2, nil)
 
 		retBody, err := v2Adapter.getTransformerEvent(arCtx, testBody)
 		require.Nil(t, err)
