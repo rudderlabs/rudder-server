@@ -342,9 +342,6 @@ func (as *AzureSynapse) loadTable(
 		if err != nil {
 			return nil, "", fmt.Errorf("loading data into staging table: %w", err)
 		}
-		if err = txn.Commit(); err != nil {
-			return nil, "", fmt.Errorf("committing transaction: %w", err)
-		}
 	}
 
 	log.Infow("deleting from load table")

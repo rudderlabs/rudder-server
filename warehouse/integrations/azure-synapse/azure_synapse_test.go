@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -46,7 +47,7 @@ type testCredentials struct {
 	User     string `json:"user"`
 	Password string `json:"password"`
 	Port     int    `json:"port"`
-	SSLMode  string `json:"sslMode"`
+	SSLMode  bool   `json:"sslMode"`
 }
 
 func getAzureSynapseCredentials() (testCredentials, error) {
@@ -56,7 +57,10 @@ func getAzureSynapseCredentials() (testCredentials, error) {
 		return credentials, errors.New("AZURE_SYNAPSE_TEST_CREDENTIALS env var not set")
 	}
 	err := json.Unmarshal([]byte(credString), &credentials)
-	return credentials, fmt.Errorf("unmarshalling credentials: %w", err)
+	if err != nil {
+		return credentials, fmt.Errorf("unmarshalling credentials: %w", err)
+	}
+	return credentials, nil
 }
 
 func TestIntegration(t *testing.T) {
@@ -80,8 +84,9 @@ func TestIntegration(t *testing.T) {
 	host := creds.Host
 	database := creds.Database
 	user := creds.User
-	password := creds.Password
+	password := url.QueryEscape(creds.Password)
 	port := creds.Port
+	encrypt := creds.SSLMode
 
 	bucketName := "testbucket"
 	container := "warehouse-integration-test"
@@ -168,9 +173,9 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("host", host).
 					WithConfigOption("database", database).
 					WithConfigOption("user", user).
-					WithConfigOption("password", password).
-					WithConfigOption("port", port).
-					WithConfigOption("sslMode", "disable").
+					WithConfigOption("password", creds.Password).
+					WithConfigOption("port", strconv.Itoa(port)).
+					WithConfigOption("sslMode", fmt.Sprintf("%t", encrypt)).
 					WithConfigOption("namespace", namespace).
 					WithConfigOption("bucketProvider", whutils.MINIO).
 					WithConfigOption("bucketName", bucketName).
@@ -201,8 +206,8 @@ func TestIntegration(t *testing.T) {
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				db := pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%s?TrustServerCertificate=true&database=%s&encrypt=disable",
-					user, password, host, port, database,
+				db := pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s&encrypt=%t&TrustServerCertificate=true",
+					user, password, host, port, database, encrypt,
 				))
 
 				sqlClient := &client.Client{
@@ -270,14 +275,13 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Validations", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
-		azureSynapsePort := c.Port("azure_synapse", 1433)
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 
-		_ = pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-			user, password, host, azureSynapsePort, database,
+		_ = pingAzureSynapse(t, context.Background(), fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=%t",
+			user, password, host, port, database, encrypt,
 		))
 
 		namespace := whth.RandSchema(destType)
@@ -288,9 +292,9 @@ func TestIntegration(t *testing.T) {
 				"host":             host,
 				"database":         database,
 				"user":             user,
-				"password":         password,
-				"port":             strconv.Itoa(azureSynapsePort),
-				"sslMode":          "disable",
+				"password":         creds.Password,
+				"port":             strconv.Itoa(port),
+				"sslMode":          fmt.Sprintf("%t", encrypt),
 				"namespace":        namespace,
 				"bucketProvider":   whutils.MINIO,
 				"bucketName":       bucketName,
@@ -315,10 +319,9 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("Load Table", func(t *testing.T) {
-		c := testcompose.New(t, compose.FilePaths([]string{"testdata/docker-compose.yml", "../testdata/docker-compose.minio.yml"}))
+		c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.minio.yml"}))
 		c.Start(context.Background())
 
-		azureSynapsePort := c.Port("azure_synapse", 1433)
 		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 
 		ctx := context.Background()
@@ -361,9 +364,9 @@ func TestIntegration(t *testing.T) {
 					"host":             host,
 					"database":         database,
 					"user":             user,
-					"password":         password,
-					"port":             strconv.Itoa(azureSynapsePort),
-					"sslMode":          "disable",
+					"password":         creds.Password,
+					"port":             strconv.Itoa(port),
+					"sslMode":          fmt.Sprintf("%t", encrypt),
 					"namespace":        "",
 					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
@@ -396,8 +399,8 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		db := pingAzureSynapse(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-			user, password, host, azureSynapsePort, database,
+		db := pingAzureSynapse(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=%t",
+			user, password, host, port, database, encrypt,
 		))
 
 		t.Run("schema does not exists", func(t *testing.T) {
@@ -962,8 +965,8 @@ func TestIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		db := pingAzureSynapse(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=disable",
-			user, password, host, azureSynapsePort, database,
+		db := pingAzureSynapse(t, ctx, fmt.Sprintf("sqlserver://%s:%s@%s:%d?TrustServerCertificate=true&database=%s&encrypt=%t",
+			user, password, host, azureSynapsePort, database, encrypt,
 		))
 
 		t.Run("schema does not exists", func(t *testing.T) {
