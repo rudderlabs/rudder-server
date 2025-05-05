@@ -2969,7 +2969,7 @@ func (proc *Handle) userTransformAndFilter(
 						return
 					}
 
-					log.Errorn("UserTransform sanity check failed",
+					log.Warnn("UserTransform sanity check failed",
 						logger.NewStringField("diffLocation", diffFile.Location),
 						logger.NewStringField("diffObjectName", diffFile.ObjectName),
 						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),

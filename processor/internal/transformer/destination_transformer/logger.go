@@ -51,7 +51,7 @@ func (c *Client) CompareAndLog(
 		return
 	}
 
-	c.log.Errorn("DestinationTransformer sanity check failed",
+	c.log.Warnn("DestinationTransformer sanity check failed",
 		logger.NewStringField("location", file.Location),
 		logger.NewStringField("objectName", file.ObjectName),
 	)
