@@ -9,6 +9,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type isOAuthResult struct {
@@ -110,7 +111,8 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		expected: isOAuthResult{
 			isOAuth: false,
 		},
-	}, {
+	},
+	{
 		description:    "success scenario for a oauth destination where account is present",
 		flow:           common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{},
@@ -147,6 +149,26 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		},
 		expected: isOAuthResult{
 			isOAuth: false,
+		},
+	},
+	{
+		description:    "failure scenario for a oauth destination where account is present and account config is wrong",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"refreshToken": false,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+			err: &misc.MapLookupError{
+				SearchKey: "refreshOAuthToken",
+				Err:       fmt.Errorf("key: refreshOAuthToken not found"),
+				Level:     0,
+			},
 		},
 	},
 }
