@@ -137,13 +137,32 @@ func (rt *Handle) Setup(
 	rt.backendConfigInitialized = make(chan bool)
 
 	isolationMode := isolationMode(destType, config)
+	partitionFilter := func(mode isolation.Mode) func(string) bool {
+		switch mode {
+		case isolation.ModeDestination:
+			return func(destinationID string) bool {
+				rt.destinationsMapMu.RLock()
+				defer rt.destinationsMapMu.RUnlock()
+				_, ok := rt.destinationsMap[destinationID]
+				return ok
+			}
+		case isolation.ModeWorkspace:
+			return func(workspaceID string) bool {
+				rt.destinationsMapMu.RLock()
+				defer rt.destinationsMapMu.RUnlock()
+				for _, destWithSources := range rt.destinationsMap {
+					if destWithSources.Destination.WorkspaceID == workspaceID {
+						return true
+					}
+				}
+				return false
+			}
+		default:
+			return func(s string) bool { return true }
+		}
+	}
 	var err error
-	if rt.isolationStrategy, err = isolation.GetStrategy(isolationMode, rt.destType, func(destinationID string) bool {
-		rt.destinationsMapMu.RLock()
-		defer rt.destinationsMapMu.RUnlock()
-		_, ok := rt.destinationsMap[destinationID]
-		return ok
-	}); err != nil {
+	if rt.isolationStrategy, err = isolation.GetStrategy(isolationMode, rt.destType, partitionFilter(isolationMode)); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 

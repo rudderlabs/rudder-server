@@ -18,14 +18,14 @@ const (
 )
 
 // GetStrategy returns the strategy for the given isolation mode. An error is returned if the mode is invalid
-func GetStrategy(mode Mode, customVal string, destinationFilter func(destinationID string) bool) (Strategy, error) {
+func GetStrategy(mode Mode, customVal string, partitionFilter func(partition string) bool) (Strategy, error) {
 	switch mode {
 	case ModeNone:
 		return noneStrategy{}, nil
 	case ModeWorkspace:
-		return workspaceStrategy{customVal: customVal}, nil
+		return workspaceStrategy{workspaceFilter: partitionFilter}, nil
 	case ModeDestination:
-		return destinationStrategy{destinationFilter: destinationFilter}, nil
+		return destinationStrategy{destinationFilter: partitionFilter}, nil
 	default:
 		return noneStrategy{}, errors.New("unsupported isolation mode")
 	}
@@ -52,12 +52,18 @@ func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParams) {
 
 // workspaceStrategy implements isolation at workspace level
 type workspaceStrategy struct {
-	customVal string
+	workspaceFilter func(workspaceID string) bool
 }
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
 func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID)
+	unfiltered, err := db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return lo.Filter(unfiltered, func(workspaceID string, _ int) bool {
+		return ws.workspaceFilter(workspaceID)
+	}), nil
 }
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
