@@ -117,9 +117,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		account: &backendconfig.AccountWithDefinition{
 			AccountDefinition: backendconfig.AccountDefinition{
 				Config: map[string]interface{}{
-					"oauth": map[string]interface{}{
-						"refreshTokenInDataplane": true,
-					},
+					"refreshOAuthToken": true,
 				},
 			},
 		},
@@ -143,10 +141,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		account: &backendconfig.AccountWithDefinition{
 			AccountDefinition: backendconfig.AccountDefinition{
 				Config: map[string]interface{}{
-					"oauth": map[string]interface{}{
-						"refreshTokenInDataplane": false,
-						"generateOAuthToken":      true,
-					},
+					"refreshOAuthToken": false,
 				},
 			},
 		},

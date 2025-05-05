@@ -22,7 +22,7 @@ type DestinationInfo struct {
 
 func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
 	if d.Account != nil {
-		authValue, err := misc.NestedMapLookup(d.Account.AccountDefinition.Config, "oauth", "refreshTokenInDataplane")
+		authValue, err := misc.NestedMapLookup(d.Account.AccountDefinition.Config, "refreshOAuthToken")
 		if err != nil {
 			return false, err
 		}
