@@ -26,6 +26,7 @@ type ClientConfig struct {
 	ClientType    string        // stdlib(default), httplb
 	PickerType    string        // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
 	Recycle       bool          // false
+	RecycleTTL    time.Duration // 60s
 }
 
 type Client interface {
@@ -66,6 +67,10 @@ func NewClient(config *ClientConfig) Client {
 	if config.ClientTTL != 0 {
 		clientTTL = config.ClientTTL
 	}
+	recycleTTL := 60 * time.Second
+	if config.RecycleTTL != 0 {
+		recycleTTL = config.RecycleTTL
+	}
 
 	switch config.ClientType {
 	case "httplb":
@@ -82,7 +87,7 @@ func NewClient(config *ClientConfig) Client {
 			httplb.WithTransport("https", tr),
 		}
 		if config.Recycle {
-			options = append(options, httplb.WithRoundTripperMaxLifetime(transport.IdleConnTimeout))
+			options = append(options, httplb.WithRoundTripperMaxLifetime(recycleTTL))
 		}
 
 		return httplb.NewClient(options...)
