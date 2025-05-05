@@ -26,29 +26,29 @@ type distinctValuesCache struct {
 // already cached, it returns the cached values. If not, it loads the values from the given load
 // function and caches them. The last dataset is never cached, so it is always loaded from the
 // load function. The load function is called with the missing datasets and the last dataset.
-func (dpc *distinctValuesCache) GetDistinctValues(key string, datasets []string, load func(datasets []string) (map[string][]string, error)) ([]string, error) {
+func (dvc *distinctValuesCache) GetDistinctValues(key string, datasets []string, load func(datasets []string) (map[string][]string, error)) ([]string, error) {
 	// First check if we are missing any datasets from the cache.
 	// If we are, we need to load them along with the last dataset
 	// The last dataset is never cached, so we need to load it every time
-	dpc.cacheMu.RLock()
-	missing := dpc.missing(key, datasets[:len(datasets)-1])
-	dpc.cacheMu.RUnlock()
+	dvc.cacheMu.RLock()
+	missing := dvc.missing(key, datasets[:len(datasets)-1])
+	dvc.cacheMu.RUnlock()
 
 	// If we are missing any datasets, we need to lock the key, so that
 	// we don't load the same datasets multiple times for the same key.
 	// This lock needs to be retained until the datasets are loaded into the cache.
 	if len(missing) > 0 {
-		dpc.klock.Lock(key)
+		dvc.klock.Lock(key)
 		// Check again if we are missing any datasets, to deal with race conditions
-		dpc.cacheMu.Lock()
-		missing = dpc.missing(key, datasets[:len(datasets)-1])
-		if _, ok := dpc.cache[key]; !ok {
-			dpc.cache[key] = make(map[string][]string)
+		dvc.cacheMu.Lock()
+		missing = dvc.missing(key, datasets[:len(datasets)-1])
+		if _, ok := dvc.cache[key]; !ok {
+			dvc.cache[key] = make(map[string][]string)
 		}
-		dpc.cacheMu.Unlock()
+		dvc.cacheMu.Unlock()
 		if len(missing) == 0 {
 			// If we are not missing any datasets, we need to unlock the key
-			dpc.klock.Unlock(key)
+			dvc.klock.Unlock(key)
 		}
 	}
 
@@ -59,25 +59,25 @@ func (dpc *distinctValuesCache) GetDistinctValues(key string, datasets []string,
 	}
 	// if we were missing any datasets, we need to add them to the cache and unlock the key
 	if len(missing) > 0 {
-		dpc.cacheMu.Lock()
+		dvc.cacheMu.Lock()
 		for _, ds := range missing {
-			dpc.cache[key][ds] = results[ds]
+			dvc.cache[key][ds] = results[ds]
 		}
-		dpc.cacheMu.Unlock()
-		dpc.klock.Unlock(key)
+		dvc.cacheMu.Unlock()
+		dvc.klock.Unlock(key)
 	}
 
 	// Now we need to get values for all the datasets requested so that we can calculate
 	// the distinct values.
 	// We already have some values in the results map (last dataset & missing), so we only need to fill in
 	// the rest of the datasets from the cache.
-	dpc.cacheMu.RLock()
+	dvc.cacheMu.RLock()
 	for _, ds := range datasets {
 		if _, ok := results[ds]; !ok {
-			results[ds] = dpc.cache[key][ds]
+			results[ds] = dvc.cache[key][ds]
 		}
 	}
-	dpc.cacheMu.RUnlock()
+	dvc.cacheMu.RUnlock()
 
 	// Calculating distinct values is easy, we just need to
 	// iterate over all the datasets and add them to a map
@@ -92,17 +92,17 @@ func (dpc *distinctValuesCache) GetDistinctValues(key string, datasets []string,
 }
 
 // RemoveDataset removes the dataset from the cache for all keys.
-func (dpc *distinctValuesCache) RemoveDataset(dataset string) {
-	dpc.cacheMu.Lock()
-	defer dpc.cacheMu.Unlock()
-	for key := range dpc.cache {
-		delete(dpc.cache[key], dataset)
+func (dvc *distinctValuesCache) RemoveDataset(dataset string) {
+	dvc.cacheMu.Lock()
+	defer dvc.cacheMu.Unlock()
+	for key := range dvc.cache {
+		delete(dvc.cache[key], dataset)
 	}
 }
 
-func (dpc *distinctValuesCache) missing(key string, datasets []string) []string {
+func (dvc *distinctValuesCache) missing(key string, datasets []string) []string {
 	var missing []string
-	dscache, ok := dpc.cache[key]
+	dscache, ok := dvc.cache[key]
 	if !ok {
 		return datasets
 	}

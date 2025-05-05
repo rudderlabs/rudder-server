@@ -1919,7 +1919,14 @@ FROM pending GROUP BY workspace_id, custom_val`
 	return g.Wait()
 }
 
-var parametersWithoutCustomval string = `SELECT '%[2]s', * FROM (
+func (jd *Handle) getDistinctValuesPerDataset(
+	ctx context.Context,
+	dsList []string,
+	param ParameterName,
+) (map[string][]string, error) {
+	var queries []string
+	for _, ds := range dsList {
+		queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
 	WITH RECURSIVE t AS (
 		(SELECT %[1]s as parameter FROM %[2]q ORDER BY %[1]s LIMIT 1)
 		UNION ALL
@@ -1931,32 +1938,10 @@ var parametersWithoutCustomval string = `SELECT '%[2]s', * FROM (
 			)s
 		)
 	)
-SELECT * FROM t) a`
-
-// var parametersWithCustomVal string = `SELECT '%[2]s', * FROM (
-// 	WITH RECURSIVE t AS (
-// 		(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = '%[3]s' ORDER BY %[1]s LIMIT 1)
-// 		UNION ALL
-// 		(
-// 			SELECT s.* FROM t, LATERAL(
-// 				SELECT %[1]s as parameter FROM %[2]q f
-// 				WHERE custom_val = '%[3]s' AND f.%[1]s > t.parameter
-// 				ORDER BY %[1]s LIMIT 1
-// 			)s
-// 		)
-// 	)
-// SELECT * FROM t) a`
-
-func (jd *Handle) getDistinctValuesPerDataset(
-	dsList []string,
-	param ParameterName,
-) (map[string][]string, error) {
-	var queries []string
-	for _, ds := range dsList {
-		queries = append(queries, fmt.Sprintf(parametersWithoutCustomval, param.string(), ds))
+SELECT * FROM t) a`, param.string(), ds))
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.Query(query)
+	rows, err := jd.dbHandle.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", param.string(), err)
 	}
@@ -1993,7 +1978,7 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter Para
 		parameter.string(),
 		lo.Map(dsList, func(ds dataSetT, _ int) string { return ds.JobTable }),
 		func(datasets []string) (map[string][]string, error) {
-			return jd.getDistinctValuesPerDataset(datasets, parameter)
+			return jd.getDistinctValuesPerDataset(ctx, datasets, parameter)
 		},
 	)
 }
