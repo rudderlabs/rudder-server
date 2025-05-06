@@ -238,7 +238,7 @@ func (t *Transformer) extractCommonProps(tec *transformEventContext) (map[string
 	}
 
 	eventName, _ = commonData[eventColName].(string)
-	if utils.IsBlank(eventName) {
+	if utils.IsEmptyString(eventName) {
 		return nil, nil, response.ErrExtractEventNameEmpty
 	}
 	return commonData, commonMetadata, nil
@@ -358,7 +358,7 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 
 func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
 	userID := misc.MapLookup(tec.event.Message, "userId")
-	if utils.IsBlank(userID) {
+	if utils.IsEmptyString(userID) {
 		return nil, nil
 	}
 	if shouldSkipUsersTable(tec) {

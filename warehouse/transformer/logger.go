@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -70,6 +71,12 @@ func (t *Transformer) sampleDiff(eventsToTransform []types.TransformerEvent, pRe
 	for i := range pResponse.Events {
 		diff := cmp.Diff(wResponse.Events[i], pResponse.Events[i])
 		if len(diff) == 0 {
+			continue
+		}
+
+		// JS converts new Date('0001-01-01 00:00').toISOString() to 2001-01-01T00:00:00.000Z
+		// https://www.programiz.com/online-compiler/4SqZcIH5k6Yli
+		if strings.Contains(diff, "\"0001-01-01T00:00:00.000Z\"") {
 			continue
 		}
 		if differedEventsCount == 0 {

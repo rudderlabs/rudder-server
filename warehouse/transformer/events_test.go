@@ -1019,6 +1019,32 @@ func TestEvents(t *testing.T) {
 					},
 				},
 			},
+			{
+				name:         "identify (Snowflake)",
+				eventPayload: `{"type":"identify","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("identify", "SNOWFLAKE"),
+				destination: getDestination("SNOWFLAKE", map[string]any{
+					"allowUsersContextTraits": true,
+				}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: identifyDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("identify", "SNOWFLAKE"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: userDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("identify", "SNOWFLAKE"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
 
 			{
 				name:         "alias (Postgres)",
@@ -1131,6 +1157,23 @@ func TestEvents(t *testing.T) {
 					},
 				},
 			},
+			{
+				name:         "alias (Snowflake)",
+				eventPayload: `{"type":"alias","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","previousId":"previousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("alias", "SNOWFLAKE"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: aliasDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("alias", "SNOWFLAKE"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
 
 			{
 				name:         "extract (Postgres)",
@@ -1230,6 +1273,23 @@ func TestEvents(t *testing.T) {
 								SetDataField("event", "users").
 								SetTableName("_users"),
 							Metadata:   getMetadata("extract", "POSTGRES"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "extract (Snowflake)",
+				eventPayload: `{"type":"extract","recordId":"recordID","messageId":"messageId","event":"event","receivedAt":"2021-09-01T00:00:00.000Z","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("extract", "SNOWFLAKE"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: extractDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("extract", "SNOWFLAKE"),
 							StatusCode: http.StatusOK,
 						},
 					},
@@ -1347,6 +1407,23 @@ func TestEvents(t *testing.T) {
 					},
 				},
 			},
+			{
+				name:         "page (Snowflake)",
+				eventPayload: `{"type":"page","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Home","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("page", "SNOWFLAKE"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: pageDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("page", "SNOWFLAKE"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
 
 			{
 				name:         "screen (Postgres)",
@@ -1454,6 +1531,23 @@ func TestEvents(t *testing.T) {
 						{
 							Output:     screenMergeDefaultOutput(),
 							Metadata:   getMetadata("screen", "BQ"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "screen (Snowflake)",
+				eventPayload: `{"type":"screen","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","properties":{"name":"Main","title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("screen", "SNOWFLAKE"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: screenDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("screen", "SNOWFLAKE"),
 							StatusCode: http.StatusOK,
 						},
 					},
@@ -1567,6 +1661,23 @@ func TestEvents(t *testing.T) {
 						{
 							Output:     groupMergeDefaultOutput(),
 							Metadata:   getMetadata("group", "BQ"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "group (Snowflake)",
+				eventPayload: `{"type":"group","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","groupId":"groupId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","request_ip":"5.6.7.8","traits":{"title":"Home | RudderStack","url":"https://www.rudderstack.com"},"context":{"traits":{"email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getMetadata("group", "SNOWFLAKE"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: groupDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getMetadata("group", "SNOWFLAKE"),
 							StatusCode: http.StatusOK,
 						},
 					},
@@ -1855,6 +1966,127 @@ func TestEvents(t *testing.T) {
 				},
 			},
 			{
+				name:         "track (POSTGRES) jsonPaths (escape characters for &, <, and >)",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"city":"Palo Alto <p>Ampersand: &;</p> Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("POSTGRES", "webhook"),
+				destination: getDestination("POSTGRES", map[string]any{
+					"jsonPaths": "location",
+				}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output:     trackDefaultOutput(),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("location", "{\"city\":\"Palo Alto <p>Ampersand: &;</p> Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+								SetColumnField("location", "json"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "track (POSTGRES) jsonPaths (nested object level limits to 3 when source category is cloud with escape characters for &, <, and >)",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2,"location":{"coordinates":{"geo":{"description":"Palo Alto <p>Ampersand: &;</p> Palo Alto","altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}}},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("POSTGRES", "cloud"),
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								SetDataField("context_traits_location_coordinates_geo", `{"accuracy":5,"altitude":30.5,"description":"Palo Alto <p>Ampersand: &;</p> Palo Alto","details":{"accuracyUnits":"meters","altitudeUnits":"meters"}}`).
+								SetColumnField("context_traits_location_coordinates_geo", "string"),
+							Metadata:   getTrackMetadata("POSTGRES", "cloud"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("context_traits_location_coordinates_geo", `{"accuracy":5,"altitude":30.5,"description":"Palo Alto <p>Ampersand: &;</p> Palo Alto","details":{"accuracyUnits":"meters","altitudeUnits":"meters"}}`).
+								SetColumnField("context_traits_location_coordinates_geo", "string"),
+							Metadata:   getTrackMetadata("POSTGRES", "cloud"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "track (POSTGRES) store rudder event with escape characters for &, <, and >",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. <p>Ampersand: &;</p>. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("POSTGRES", "webhook"),
+				destination: getDestination("POSTGRES", map[string]any{
+					"storeFullEvent": true,
+				}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								SetDataField("rudder_event", "{\"type\":\"track\",\"anonymousId\":\"anonymousId\",\"channel\":\"web\",\"context\":{\"destinationId\":\"destinationID\",\"destinationType\":\"POSTGRES\",\"ip\":\"1.2.3.4\",\"sourceId\":\"sourceID\",\"sourceType\":\"sourceType\",\"traits\":{\"email\":\"rhedricks@example.com\",\"logins\":2,\"name\":\"Richard Hendricks\"}},\"event\":\"event\",\"messageId\":\"messageId\",\"originalTimestamp\":\"2021-09-01T00:00:00.000Z\",\"properties\":{\"product_id\":\"9578257311\",\"review_id\":\"86ac1cd43\"},\"receivedAt\":\"2021-09-01T00:00:00.000Z\",\"request_ip\":\"5.6.7.8\",\"sentAt\":\"2021-09-01T00:00:00.000Z\",\"timestamp\":\"2021-09-01T00:00:00.000Z\",\"userId\":\"userId\",\"userProperties\":{\"rating\":3,\"review_body\":\"OK for the price. <p>Ampersand: &;</p>. It works but the material feels flimsy.\"}}").
+								SetColumnField("rudder_event", "json"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("review_body", "OK for the price. <p>Ampersand: &;</p>. It works but the material feels flimsy."),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "track (POSTGRES) rules (anonymousId) being an object",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId": { "anonymousId": "anon-1234567890abcdef" },"userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("POSTGRES", "webhook"),
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								RemoveDataFields("anonymous_id").
+								RemoveColumnFields("anonymous_id"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								RemoveDataFields("anonymous_id").
+								RemoveColumnFields("anonymous_id"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "track (POSTGRES) rules (anonymousId) being an array",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId": [ "anon-1234567890abcdef" ],"userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("POSTGRES", "webhook"),
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								RemoveDataFields("anonymous_id").
+								RemoveColumnFields("anonymous_id"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								RemoveDataFields("anonymous_id").
+								RemoveColumnFields("anonymous_id"),
+							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
 				name:         "track (POSTGRES) jsonPaths (legacy destOpts for properties)",
 				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"city":"Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 				metadata:     getTrackMetadata("POSTGRES", "webhook"),
@@ -2041,6 +2273,30 @@ func TestEvents(t *testing.T) {
 						{
 							Output:     trackMergeDefaultOutput(),
 							Metadata:   getTrackMetadata("BQ", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name:         "track (Snowflake)",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("SNOWFLAKE", "webhook"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake(),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
 							StatusCode: http.StatusOK,
 						},
 					},

@@ -44,7 +44,7 @@ func New(
 	wEvent.Metadata.DestinationID = event.Metadata.DestinationID
 	wEvent.Metadata.DestinationType = event.Metadata.DestinationType
 	wEvent.Metadata.SourceCategory = event.Metadata.SourceCategory
-	wEvent.Metadata.EventType = event.Metadata.EventType
+	wEvent.Metadata.EventType = utils.ToString(event.Message["type"])
 	wEvent.Metadata.RecordID = event.Metadata.RecordID
 	wEvent.Metadata.DestinationConfig = map[string]any{}
 	for _, key := range destConfigFields {

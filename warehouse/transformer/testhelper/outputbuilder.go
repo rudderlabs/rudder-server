@@ -1,5 +1,11 @@
 package testhelper
 
+import (
+	"strings"
+
+	"github.com/samber/lo"
+)
+
 type OutputBuilder map[string]any
 
 func (ob OutputBuilder) SetDataField(key string, value any) OutputBuilder {
@@ -62,6 +68,30 @@ func (ob OutputBuilder) AddRandomEntries(count int, predicate func(index int) (d
 		dataKey, dataValue, columnKey, columnValue := predicate(i)
 		ob.SetDataField(dataKey, dataValue)
 		ob.SetColumnField(columnKey, columnValue)
+	}
+	return ob
+}
+
+func (ob OutputBuilder) BuildForSnowflake() OutputBuilder {
+	dataMap, ok := ob["data"].(map[string]any)
+	if ok {
+		ob["data"] = lo.MapEntries(dataMap, func(key string, value any) (string, any) {
+			return strings.ToUpper(key), value
+		})
+	}
+	metadataMap, ok := ob["metadata"].(map[string]any)
+	if ok {
+		columnsMap, ok := metadataMap["columns"].(map[string]any)
+		if ok {
+			metadataMap["columns"] = lo.MapEntries(columnsMap, func(key string, value any) (string, any) {
+				return strings.ToUpper(key), value
+			})
+		}
+
+		tableName, ok := metadataMap["table"].(string)
+		if ok {
+			metadataMap["table"] = strings.ToUpper(tableName)
+		}
 	}
 	return ob
 }

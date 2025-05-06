@@ -32,7 +32,7 @@ func setDataAndMetadataFromInput(
 	}
 	for _, key := range tec.sorter(lo.Keys(inputMap)) {
 		val := inputMap[key]
-		if utils.IsBlank(val) {
+		if utils.IsEmptyString(val) {
 			continue
 		}
 		if isValidJSONPath(tec, key, pi) {
@@ -175,7 +175,7 @@ func setDataAndMetadataFromRules(
 		if err != nil {
 			return fmt.Errorf("applying functional rule: %w", err)
 		}
-		if utils.IsBlank(colVal) || utils.IsObject(colVal) {
+		if utils.IsEmptyString(colVal) || utils.IsObject(colVal) || utils.IsArray(colVal) {
 			continue
 		}
 

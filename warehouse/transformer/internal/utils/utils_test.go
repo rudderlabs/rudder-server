@@ -1,16 +1,16 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/araddon/dateparse"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -80,9 +80,9 @@ func TestValidTimestamp(t *testing.T) {
 		{name: "Malicious string input should return false", timestamp: "%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216%u002e%u002e%u2216Windows%u2216win%u002ein", expected: false},
 		{name: "Date time ISO 8601", timestamp: "2025-04-02T01:09:03", expected: true},
 		{name: "Date time Millis timezone", timestamp: "2025-04-02 01:09:03.000+0530", expected: true},
-		{name: "Date time Micros Colon timezone", timestamp: "2025-02-22 03:46:41.714247+00:00", expected: true},
-		{name: "Date time ISO millis timezone", timestamp: "2025-04-13T11:24:48.000+1000", expected: true},
-		{name: "Date time Colon timezone", timestamp: "2025-04-18 02:00:00+00:00", expected: true},
+		{name: "Date time Micros Colon timezone", timestamp: "2025-04-02 01:09:03.714247+00:00", expected: true},
+		{name: "Date time ISO millis timezone", timestamp: "2025-04-02T01:09:03.000+1000", expected: true},
+		{name: "Date time Colon timezone", timestamp: "2025-04-02 01:09:03+00:00", expected: true},
 	}
 
 	for _, tc := range testCases {
@@ -94,20 +94,32 @@ func TestValidTimestamp(t *testing.T) {
 
 // BenchmarkValidTimestamp
 // BenchmarkValidTimestamp/old_parser
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Valid
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Valid-12         	   77277	     16020 ns/op
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid-12       	 1314688	       903.8 ns/op
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid_Big_String
-// BenchmarkValidTimestamp/old_parser/ValidTimestamp_Invalid_Big_String-12         	  294691	      4207 ns/op
+// BenchmarkValidTimestamp/old_parser-12         	    6999	    163017 ns/op
 // BenchmarkValidTimestamp/new_parser
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Valid
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Valid-12                      	  310105	      3711 ns/op
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid-12                    	 4276358	       278.7 ns/op
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid_Big_String
-// BenchmarkValidTimestamp/new_parser/ValidTimestamp_Invalid_Big_String-12         	  162741	      7419 ns/op
+// BenchmarkValidTimestamp/new_parser-12         	   89427	     13392 ns/op
 func BenchmarkValidTimestamp(b *testing.B) {
+	timeFormats := []string{
+		time.RFC3339Nano,
+		time.DateOnly,
+		misc.RFC3339Milli,
+		time.RFC3339,
+		time.RFC1123Z,
+		time.RFC1123,
+		time.RFC822Z,
+		time.RFC822,
+		time.UnixDate,
+		time.DateTime,
+		time.RubyDate,
+		time.ANSIC,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05.000-0700",
+	}
+
 	testDates := []string{
 		"2012/03/19 10:11:59",
 		"2012/03/19 10:11:59.3186369",
@@ -123,88 +135,45 @@ func BenchmarkValidTimestamp(b *testing.B) {
 		"2014-04-26 05:24:37 PM",
 		"2014-04-26",
 	}
-	timeFormats := []string{
-		// ISO 8601ish formats
-		time.RFC3339Nano,
-		time.RFC3339,
-
-		// Unusual formats, prefer formats with timezones
-		time.RFC1123Z,
-		time.RFC1123,
-		time.RFC822Z,
-		time.RFC822,
-		time.UnixDate,
-		time.RubyDate,
-		time.ANSIC,
-
-		// Hilariously, Go doesn't have a const for it's own time layout.
-		// See: https://code.google.com/p/go/issues/detail?id=6587
-		"2006-01-02 15:04:05.999999999 -0700 MST",
-
-		// No timezone information
-		"2006-01-02T15:04:05.999999999",
-		"2006-01-02T15:04:05",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05",
+	for i := 0; i < 100; i++ {
+		testDates = append(testDates, strings.Repeat("a", 1000))
+	}
+	for i := 0; i < 100; i++ {
+		testDates = append(testDates, uuid.NewString())
 	}
 
-	oldParser := func(input string) (time.Time, error) {
+	oldValidTimestamp := func(input string) bool {
+		if len(input) > validTimestampFormatsMaxLength {
+			return false
+		}
+		var t time.Time
+		var err error
+
 		for _, format := range timeFormats {
-			t, err := time.Parse(format, input)
+			t, err = time.Parse(format, input)
 			if err == nil {
-				return t, nil
+				break
 			}
 		}
-		return time.Time{}, errors.New("invalid timestamp")
+		return !t.IsZero() && !t.Before(minTimeInMs) && !t.After(maxTimeInMs)
 	}
-	newParser := func(input string) (time.Time, error) {
-		return dateparse.ParseAny(input)
-	}
-
-	var t time.Time
-	var err error
 
 	b.Run("old parser", func(b *testing.B) {
-		b.Run("ValidTimestamp_Valid", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				for _, dateStr := range testDates {
-					t, err = oldParser(dateStr)
-				}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			for _, dateStr := range testDates {
+				oldValidTimestamp(dateStr)
 			}
-		})
-		b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				t, err = oldParser("invalid-timestamp")
-			}
-		})
-		b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				t, err = oldParser(strings.Repeat("a", 1000))
-			}
-		})
+		}
 	})
 	b.Run("new parser", func(b *testing.B) {
-		b.Run("ValidTimestamp_Valid", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				for _, dateStr := range testDates {
-					t, err = newParser(dateStr)
-				}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			for _, dateStr := range testDates {
+				ValidTimestamp(dateStr)
 			}
-		})
-		b.Run("ValidTimestamp_Invalid", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				t, err = newParser("invalid-timestamp")
-			}
-		})
-		b.Run("ValidTimestamp_Invalid Big String", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				t, err = newParser(strings.Repeat("a", 1000))
-			}
-		})
+		}
 	})
-
-	_ = t
-	_ = err
 }
 
 type Person struct {
@@ -258,7 +227,9 @@ func TestIsBlank(t *testing.T) {
 		{"BoolFalse", false, false},
 		{"BoolTrue", true, false},
 		{"EmptySlice", []any{}, true},
+		{"OneBlankNilSlice", []any{nil}, false},
 		{"NonEmptySlice", []any{1, 2, 3}, false},
+		{"OneBlankMapSlice", []any{map[string]any{}}, false},
 		{"OneBlankStringSlice", []any{""}, true},
 		{"ManyBlankStringSlice", []any{"", "", "", ""}, false},
 		{"NestedOneBlankStringSlice", []any{[]any{[]any{}}}, true},
@@ -275,7 +246,7 @@ func TestIsBlank(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.expected, IsBlank(tc.input))
+			require.Equal(t, tc.expected, IsEmptyString(tc.input))
 		})
 	}
 }
@@ -375,6 +346,18 @@ func TestExtractReceivedAt(t *testing.T) {
 			},
 			expectedTime: "2023-10-20T12:34:56.789Z",
 		},
+		{
+			name: "receivedAt is not a string but present in metadata",
+			event: &types.TransformerEvent{
+				Message: map[string]any{
+					"receivedAt": 12345,
+				},
+				Metadata: types.Metadata{
+					ReceivedAt: "2023-10-19T14:00:00.000Z",
+				},
+			},
+			expectedTime: "2023-10-19T14:00:00.000Z",
+		},
 	}
 
 	for _, tt := range tests {
@@ -382,6 +365,61 @@ func TestExtractReceivedAt(t *testing.T) {
 			require.Equal(t, tt.expectedTime, ExtractReceivedAt(tt.event, func() time.Time {
 				return time.Date(2023, time.October, 20, 12, 34, 56, 789000000, time.UTC)
 			}))
+		})
+	}
+}
+
+func TestMarshalJSON(t *testing.T) {
+	type testCase struct {
+		name     string
+		input    any
+		wantJSON string
+	}
+
+	type S struct {
+		A string `json:"a"`
+		B string `json:"b"`
+	}
+
+	cases := []testCase{
+		{
+			name:     "simple map",
+			input:    map[string]any{"foo": "<bar>", "baz": 123},
+			wantJSON: `{"baz":123,"foo":"<bar>"}`,
+		},
+		{
+			name:     "struct with special chars",
+			input:    S{A: "<hello>", B: "&world;"},
+			wantJSON: `{"a":"<hello>","b":"&world;"}`,
+		},
+		{
+			name:     "slice",
+			input:    []any{"<", ">", "&"},
+			wantJSON: `["<",">","&"]`,
+		},
+		{
+			name:     "nil",
+			input:    nil,
+			wantJSON: "null",
+		},
+		{
+			name:     "number",
+			input:    42,
+			wantJSON: "42",
+		},
+		{
+			name:     "boolean",
+			input:    true,
+			wantJSON: "true",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := MarshalJSON(tc.input)
+			require.NoError(t, err)
+			require.NotNil(t, out)
+			require.Equal(t, tc.wantJSON, string(out))
 		})
 	}
 }

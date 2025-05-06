@@ -28,6 +28,7 @@ var (
 	ErrContextNotMap                = NewTransformerError("context is not a map", http.StatusInternalServerError)
 	ErrExtractEventNameEmpty        = NewTransformerError("cannot create event table with empty event name, event name is missing in the payload", http.StatusInternalServerError)
 	ErrRecordIDObject               = ErrRecordIDEmpty
+	ErrRecordIDArray                = ErrRecordIDEmpty
 )
 
 func NewTransformerError(message string, statusCode int) *TransformerError {

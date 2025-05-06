@@ -88,6 +88,11 @@ func IsObject(val any) bool {
 	return ok
 }
 
+func IsArray(val any) bool {
+	_, ok := val.([]any)
+	return ok
+}
+
 func IsIdentityEnabled(destType string) bool {
 	_, ok := identityEnabledWarehouses[destType]
 	return ok
@@ -160,10 +165,21 @@ func ToString(value interface{}) string {
 	}
 }
 
-// IsBlank checks if the given value is considered "blank."
+// IsEmptyString checks if the given value is considered "blank."
 // - A value is considered blank if its string representation is an empty string.
 // - The function first converts the value to its string representation using ToString and checks if its length is zero.
-func IsBlank(value interface{}) bool {
+//
+// Corresponding lodash implementation: https://playcode.io/2371369
+//
+//	const isBlank = (value) => {
+//	 try {
+//	   return _.isEmpty(_.toString(value));
+//	 } catch (e) {
+//	   console.error(`Error in isBlank: ${e.message}`);
+//	   return false;
+//	 }
+//	};
+func IsEmptyString(value interface{}) bool {
 	if value == nil {
 		return true
 	}
@@ -179,13 +195,10 @@ func IsBlank(value interface{}) bool {
 			return true
 		}
 		if len(v) == 1 {
-			if _, isMap := v[0].(map[string]any); isMap {
-				return false
-			}
 			if v[0] == nil {
 				return false
 			}
-			return IsBlank(v[0])
+			return IsEmptyString(v[0])
 		}
 		return false
 	case []types.ValidationError:
@@ -202,7 +215,7 @@ func IsJSONPathSupportedAsPartOfConfig(destType string) bool {
 
 func ExtractMessageID(event *types.TransformerEvent, uuidGenerator func() string) any {
 	messageID, exists := event.Message["messageId"]
-	if !exists || IsBlank(messageID) {
+	if !exists || IsEmptyString(messageID) {
 		return "auto-" + uuidGenerator()
 	}
 	return messageID
@@ -210,7 +223,7 @@ func ExtractMessageID(event *types.TransformerEvent, uuidGenerator func() string
 
 func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) string {
 	receivedAt, exists := event.Message["receivedAt"]
-	if !exists || IsBlank(receivedAt) {
+	if !exists || IsEmptyString(receivedAt) {
 		if len(event.Metadata.ReceivedAt) > 0 {
 			return event.Metadata.ReceivedAt
 		}
@@ -227,6 +240,8 @@ func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) stri
 	return strReceivedAt
 }
 
+// MarshalJSON marshals the input to JSON. It escapes HTML characters (e.g. &, <, and > from \u0026, \u003c, and \u003e) by default.
+// It also trims the output to avoid trailing spaces.
 func MarshalJSON(input any) ([]byte, error) {
 	var buf bytes.Buffer
 
