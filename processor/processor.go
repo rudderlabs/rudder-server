@@ -2874,6 +2874,7 @@ func (proc *Handle) userTransformAndFilter(
 	if transformationEnabled {
 		noOfEvents := len(eventList)
 		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
+		proc.logger.Infon("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
 		var userTransformationMirroringStat *DestStatT
 		userTransformationStat.numEvents.Count(noOfEvents)
