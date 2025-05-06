@@ -74,7 +74,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
 
-	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Processor.DestinationTransformer.maxLoggedEvents")
+	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.maxLoggedEvents")
 
 	handle.stats.comparisonTime = handle.stat.NewStat("embedded_destination_transform_comparison_time", stats.TimerType)
 	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
