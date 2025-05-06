@@ -24,6 +24,7 @@ type slaveNotifier interface {
 	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) <-chan *notifier.ClaimJob
 	RunMaintenance(ctx context.Context) error
 	UpdateClaim(ctx context.Context, job *notifier.ClaimJob, response *notifier.ClaimJobResponse)
+	RefreshClaim(ctx context.Context, jobId int64) error
 }
 
 type Slave struct {
