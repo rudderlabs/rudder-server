@@ -119,6 +119,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	}
 	sourcesJSON.ApplyReplaySources()
 	sourcesJSON.processAccountAssociations()
+	sourcesJSON.processDynamicConfig()
 	workspaceID := sourcesJSON.WorkspaceID
 
 	wc.workspaceIDOnce.Do(func() {
@@ -154,6 +155,7 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		wc.workspaceID = workspaceID
 	})
 	configJSON.processAccountAssociations()
+	configJSON.processDynamicConfig()
 	conf[workspaceID] = configJSON
 	return conf, nil
 }

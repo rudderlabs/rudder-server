@@ -79,6 +79,77 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 	})
 }
 
+// TestDynamicConfigInSingleWorkspace tests that the HasDynamicConfig field is properly set
+// when loading the configuration from the API in a single workspace setup.
+func TestDynamicConfigInSingleWorkspace(t *testing.T) {
+	initBackendConfig()
+
+	// Create a mock server that returns a configuration with a destination that has dynamic config
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return a valid configuration with a destination that has dynamic config
+		config := ConfigT{
+			Sources: []SourceT{
+				{
+					ID: "source-1",
+					Destinations: []DestinationT{
+						{
+							ID:   "dest-1",
+							Name: "Destination with dynamic config",
+							Config: map[string]interface{}{
+								"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
+							},
+						},
+						{
+							ID:   "dest-2",
+							Name: "Destination without dynamic config",
+							Config: map[string]interface{}{
+								"apiKey": "static-api-key",
+							},
+						},
+					},
+				},
+			},
+			WorkspaceID: "workspace-1",
+		}
+
+		// Write the configuration as JSON
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		js, _ := jsonrs.Marshal(config)
+		_, _ = w.Write(js)
+	}))
+	t.Cleanup(srv.Close)
+
+	parsedSrvURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	// Create a single workspace config with the mock server URL
+	wc := &singleWorkspaceConfig{
+		token:            "testToken",
+		configBackendURL: parsedSrvURL,
+	}
+	require.NoError(t, wc.SetUp())
+
+	// Get the configuration from the API
+	configs, err := wc.getFromAPI(context.Background())
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+
+	// Get the workspace configuration
+	config, ok := configs["workspace-1"]
+	require.True(t, ok)
+
+	// Verify that the HasDynamicConfig field is properly set for each destination
+	require.Len(t, config.Sources, 1)
+	require.Len(t, config.Sources[0].Destinations, 2)
+
+	// Destination with dynamic config should have HasDynamicConfig=true
+	require.True(t, config.Sources[0].Destinations[0].HasDynamicConfig, "Destination with dynamic config should have HasDynamicConfig=true")
+
+	// Destination without dynamic config should have HasDynamicConfig=false
+	require.False(t, config.Sources[0].Destinations[1].HasDynamicConfig, "Destination without dynamic config should have HasDynamicConfig=false")
+}
+
 func TestSingleWorkspaceGetFromFile(t *testing.T) {
 	initBackendConfig()
 
@@ -153,5 +224,62 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		conf, err := wc.getFromFile()
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
+	})
+
+	t.Run("file with dynamic config", func(t *testing.T) {
+		data := []byte(`{
+			"workspaceID": "workspace-1",
+			"sources": [
+				{
+					"id": "source-1",
+					"destinations": [
+						{
+							"id": "dest-1",
+							"name": "Destination with dynamic config",
+							"config": {
+								"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}"
+							}
+						},
+						{
+							"id": "dest-2",
+							"name": "Destination without dynamic config",
+							"config": {
+								"apiKey": "static-api-key"
+							}
+						}
+					]
+				}
+			]
+		}`)
+		tmpFile, err := os.CreateTemp("./testdata", "testSingleWorkspaceGetFromFile3")
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
+		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
+
+		err = os.WriteFile(tmpFile.Name(), data, 0o600)
+		require.NoError(t, err)
+
+		wc := &singleWorkspaceConfig{
+			token:          "testToken",
+			configJSONPath: tmpFile.Name(),
+		}
+		require.NoError(t, wc.SetUp())
+		conf, err := wc.getFromFile()
+		require.NoError(t, err)
+		require.Len(t, conf, 1)
+
+		// Get the workspace configuration
+		config, ok := conf["workspace-1"]
+		require.True(t, ok)
+
+		// Verify that the HasDynamicConfig field is properly set for each destination
+		require.Len(t, config.Sources, 1)
+		require.Len(t, config.Sources[0].Destinations, 2)
+
+		// Destination with dynamic config should have HasDynamicConfig=true
+		require.True(t, config.Sources[0].Destinations[0].HasDynamicConfig, "Destination with dynamic config should have HasDynamicConfig=true")
+
+		// Destination without dynamic config should have HasDynamicConfig=false
+		require.False(t, config.Sources[0].Destinations[1].HasDynamicConfig, "Destination without dynamic config should have HasDynamicConfig=false")
 	})
 }

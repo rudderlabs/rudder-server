@@ -57,6 +57,7 @@ type DestinationT struct {
 	RevisionID            string
 	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
 	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
+	HasDynamicConfig      bool                   `json:"hasDynamicConfig,omitempty"`
 }
 
 type SourceT struct {
