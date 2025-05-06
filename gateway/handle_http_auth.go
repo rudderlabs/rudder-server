@@ -246,7 +246,6 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 	arctx.SourceDetails.WorkspaceID = s.WorkspaceID
 	arctx.SourceDetails.WriteKey = s.WriteKey
 	arctx.SourceDetails.Config = s.Config
-	arctx.SourceDetails.Transient = s.Transient
 	if arctx.SourceCategory == "" {
 		arctx.SourceCategory = eventStreamSourceCategory
 	}

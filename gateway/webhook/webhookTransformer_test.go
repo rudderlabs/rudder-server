@@ -60,7 +60,6 @@ func TestV1Adapter(t *testing.T) {
 				WorkspaceID string
 				WriteKey    string
 				Config      map[string]interface{}
-				Transient   bool
 			}{ID: testSrcId},
 		}, testBody)
 		require.Nil(t, err)
@@ -116,7 +115,6 @@ func TestV2Adapter(t *testing.T) {
 				WorkspaceID string
 				WriteKey    string
 				Config      map[string]interface{}
-				Transient   bool
 			}{ID: testSrcId},
 		}
 

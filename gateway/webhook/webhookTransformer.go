@@ -57,7 +57,6 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 			Enabled:          source.Enabled,
 			WorkspaceID:      source.WorkspaceID,
 			WriteKey:         source.WriteKey,
-			Transient:        source.Transient,
 		},
 	}
 
@@ -97,7 +96,6 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 			Enabled:          source.Enabled,
 			WorkspaceID:      source.WorkspaceID,
 			WriteKey:         source.WriteKey,
-			Transient:        source.Transient,
 		},
 	}
 

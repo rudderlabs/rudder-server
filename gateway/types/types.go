@@ -45,7 +45,6 @@ type AuthRequestContext struct {
 		WorkspaceID string
 		WriteKey    string
 		Config      map[string]interface{}
-		Transient   bool
 	}
 }
 
