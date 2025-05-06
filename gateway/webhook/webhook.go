@@ -241,7 +241,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode == http.StatusTooManyRequests {
 			ss.RequestDropped()
 		} else {
-			failureReason := webhook.getWebhookFailureReason(resp.Err)
+			failureReason := getWebhookFailureReason(resp.Err, resp.StatusCode)
 			ss.RequestFailed(failureReason)
 		}
 		ss.Report(webhook.stats)
@@ -259,13 +259,17 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	ss.Report(webhook.stats)
 }
 
-func (webhook *HandleT) getWebhookFailureReason(err string) string {
-	failureReason := response.SourceTransformerResponseError
-	switch err {
-	case response.RequestBodyTooLarge:
-		failureReason = response.RequestBodyTooLarge
+func getWebhookFailureReason(err string, statusCode int) string {
+	switch {
+	case err == response.RequestBodyTooLarge:
+		return response.RequestBodyTooLarge
+	case statusCode != 0:
+		return response.SourceTransformerNonSuccessResponse
+	case err != "":
+		return response.SourceTransformerResponseError
+	default:
+		return response.SourceTransformerResponseError
 	}
-	return failureReason
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
@@ -456,7 +460,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
 				bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
-				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, response.SourceTransformerNonSuccessResponse, resp.StatusCode, 1)
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
 			}
 
 			webRequest.done <- resp
