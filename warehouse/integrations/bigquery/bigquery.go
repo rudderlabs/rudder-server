@@ -297,10 +297,23 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 		}
 	}
 
+	// Build SELECT clause based on partitionFilter to include _PARTITIONTIME if it exists
+	partitionTimeField := ""
+	if partitionFilter == "_PARTITIONTIME" {
+		partitionTimeField = ", _PARTITIONTIME"
+	}
+
+	selectClause := fmt.Sprintf(
+		"SELECT *%s, ROW_NUMBER() OVER (PARTITION BY %s%s) AS __row_number",
+		partitionTimeField,
+		partitionKey,
+		viewOrderByStmt,
+	)
+
 	// assuming it has field named id upon which dedup is done in view
 	// the following view takes the last two months into consideration i.e. 60 * 60 * 24 * 60 * 1000000
 	viewQuery := `SELECT * EXCEPT (__row_number) FROM (
-			SELECT *, ROW_NUMBER() OVER (PARTITION BY ` + partitionKey + viewOrderByStmt + `) AS __row_number
+			` + selectClause + `
 			FROM ` + "`" + bq.projectID + "." + bq.namespace + "." + tableName + "`" + `
 			WHERE
 				` + partitionFilter + ` BETWEEN TIMESTAMP_TRUNC(
