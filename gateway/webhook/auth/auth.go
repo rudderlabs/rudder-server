@@ -27,12 +27,6 @@ func NewWebhookAuth(
 func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var arctx *gwtypes.AuthRequestContext
-		var errorMessage string
-		defer func() {
-			if errorMessage != "" {
-				wa.onFailure(w, r, errorMessage)
-			}
-		}()
 
 		var writeKey string
 		if writeKeys, found := r.URL.Query()["writeKey"]; found && writeKeys[0] != "" {
@@ -41,20 +35,20 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 			writeKey, _, _ = r.BasicAuth()
 		}
 		if writeKey == "" {
-			errorMessage = response.NoWriteKeyInQueryParams
+			wa.onFailure(w, r, response.NoWriteKeyInQueryParams)
 			return
 		}
 		arctx, err := wa.authReqCtxForWriteKey(writeKey)
 		if err != nil {
-			errorMessage = response.ErrAuthenticatingWebhookRequest
+			wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest)
 			return
 		}
 		if arctx == nil || arctx.SourceCategory != "webhook" {
-			errorMessage = response.InvalidWriteKey
+			wa.onFailure(w, r, response.InvalidWriteKey)
 			return
 		}
 		if !arctx.SourceEnabled {
-			errorMessage = response.SourceDisabled
+			wa.onFailure(w, r, response.SourceDisabled)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))

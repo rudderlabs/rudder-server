@@ -42,7 +42,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		{
 			name: "invalid write key",
 			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
-				http.Error(w, response.InvalidWriteKey, http.StatusUnauthorized)
+				http.Error(w, errorMessage, http.StatusUnauthorized)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 				return nil, nil
@@ -54,7 +54,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		{
 			name: "empty write key",
 			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
-				http.Error(w, response.NoWriteKeyInQueryParams, http.StatusUnauthorized)
+				http.Error(w, errorMessage, http.StatusUnauthorized)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 				return nil, errors.New("write key is empty")
@@ -66,7 +66,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		{
 			name: "disabled source",
 			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
-				http.Error(w, response.SourceDisabled, http.StatusForbidden)
+				http.Error(w, errorMessage, http.StatusForbidden)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 				return &gwtypes.AuthRequestContext{
@@ -88,12 +88,12 @@ func TestNewWebhookAuth(t *testing.T) {
 			},
 			writeKey:                "error-auth-key",
 			expectedResponseCode:    http.StatusInternalServerError,
-			expectedResponseMessage: "error getting auth context\n",
+			expectedResponseMessage: fmt.Sprintf("%s\n", response.ErrAuthenticatingWebhookRequest),
 		},
 		{
 			name: "source category not webhook",
 			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
-				http.Error(w, response.InvalidWriteKey, http.StatusBadRequest)
+				http.Error(w, errorMessage, http.StatusBadRequest)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
 				return &gwtypes.AuthRequestContext{
