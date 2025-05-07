@@ -123,8 +123,6 @@ func (brt *Handle) Setup(
 	brt.connectionWHNamespaceMap = map[string]string{}
 	brt.encounteredMergeRuleMap = map[string]map[string]bool{}
 	brt.uploadIntervalMap = map[string]time.Duration{}
-	brt.lastExecTimes = map[string]time.Time{}
-	brt.failingDestinations = map[string]bool{}
 	brt.dateFormatProvider = &storageDateFormatProvider{dateFormatsCache: make(map[string]string)}
 	diagnosisTickerTime := config.GetDurationVar(600, time.Second, "Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS")
 	brt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
@@ -132,8 +130,8 @@ func (brt *Handle) Setup(
 
 	var limiterGroup sync.WaitGroup
 	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
-	brt.limiter.read = kitsync.NewLimiter(ctx, &limiterGroup, "brt_read",
-		getBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
+	brt.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_read",
+		getReloadableBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -141,17 +139,8 @@ func (brt *Handle) Setup(
 			return time.After(limiterStatsPeriod)
 		}),
 	)
-	brt.limiter.process = kitsync.NewLimiter(ctx, &limiterGroup, "brt_process",
-		getBatchRouterConfigInt("Limiter.process.limit", brt.destType, 20),
-		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
-		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
-		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
-			return time.After(limiterStatsPeriod)
-		}),
-	)
-	brt.limiter.upload = kitsync.NewLimiter(ctx, &limiterGroup, "brt_upload",
-		getBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 50),
+	brt.limiter.upload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_upload",
+		getReloadableBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 200),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
@@ -161,8 +150,16 @@ func (brt *Handle) Setup(
 	)
 
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
-
 	brt.crashRecover()
+
+	if asynccommon.IsAsyncDestination(brt.destType) {
+		brt.startAsyncDestinationManager()
+	}
+
+	brt.backgroundGroup.Go(crash.Wrapper(func() error {
+		brt.backendConfigSubscriber()
+		return nil
+	}))
 
 	// periodically publish a zero counter for ensuring that stuck processing pipeline alert
 	// can always detect a stuck batch router
@@ -191,15 +188,6 @@ func (brt *Handle) Setup(
 		brt.collectMetrics(brt.backgroundCtx)
 		return nil
 	}))
-
-	if asynccommon.IsAsyncDestination(destType) {
-		brt.startAsyncDestinationManager()
-	}
-
-	brt.backgroundGroup.Go(crash.Wrapper(func() error {
-		brt.backendConfigSubscriber()
-		return nil
-	}))
 }
 
 func (brt *Handle) setupReloadableVars() {
@@ -209,7 +197,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.asyncUploadWorkerTimeout = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".asyncUploadWorkerTimeout", "BatchRouter.asyncUploadWorkerTimeout")
 	brt.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "BatchRouter."+brt.destType+".retryTimeWindow", "BatchRouter."+brt.destType+".retryTimeWindowInMins", "BatchRouter.retryTimeWindow", "BatchRouter.retryTimeWindowInMins")
 	brt.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "BatchRouter.RSources."+brt.destType+".retryTimeWindow", "BatchRouter.RSources."+brt.destType+".retryTimeWindowInMins", "BatchRouter.RSources.retryTimeWindow", "BatchRouter.RSources.retryTimeWindowInMins")
-	brt.jobQueryBatchSize = config.GetReloadableIntVar(100000, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
+	brt.jobQueryBatchSize = config.GetReloadableIntVar(20000, 1, "BatchRouter."+brt.destType+".jobQueryBatchSize", "BatchRouter.jobQueryBatchSize")
 	brt.pollStatusLoopSleep = config.GetReloadableDurationVar(10, time.Second, "BatchRouter."+brt.destType+".pollStatusLoopSleep", "BatchRouter.pollStatusLoopSleep")
 	brt.payloadLimit = config.GetReloadableInt64Var(1*bytesize.GB, 1, "BatchRouter."+brt.destType+".PayloadLimit", "BatchRouter.PayloadLimit")
 	brt.jobsDBCommandTimeout = config.GetReloadableDurationVar(600, time.Second, "JobsDB.BatchRouter.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
@@ -217,7 +205,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.BatchRouter.MaxRetries", "JobsDB.MaxRetries")
 	brt.minIdleSleep = config.GetReloadableDurationVar(2, time.Second, "BatchRouter."+brt.destType+".minIdleSleep", "BatchRouter.minIdleSleep")
 	brt.uploadFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".uploadFreqInS", "BatchRouter."+brt.destType+".uploadFreq", "BatchRouter.uploadFreqInS", "BatchRouter.uploadFreq")
-	brt.mainLoopFreq = config.GetReloadableDurationVar(30, time.Second, "BatchRouter."+brt.destType+".mainLoopFreq", "BatchRouter.mainLoopFreq")
+	brt.pingFrequency = config.GetReloadableDurationVar(1, time.Second, "BatchRouter."+brt.destType+".pingFrequency", "BatchRouter.pingFrequency")
 	brt.schemaGenerationWorkers = config.GetReloadableIntVar(2, 1, "BatchRouter."+brt.destType+".schemaGenerationWorkers", "BatchRouter.schemaGenerationWorkers")
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
@@ -262,8 +250,12 @@ func (brt *Handle) Start() {
 
 // Shutdown stops the batch router
 func (brt *Handle) Shutdown() {
+	// Signal all goroutines to stop via context cancellation
+	brt.logger.Info("Initiating batch router shutdown")
 	brt.backgroundCancel()
+	// Wait for all background goroutines to complete
 	_ = brt.backgroundWait()
+	brt.logger.Info("Batch router shutdown complete")
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
@@ -399,7 +391,9 @@ func (brt *Handle) backendConfigSubscriber() {
 						if destination.DestinationDefinition.Name == brt.destType && destination.Enabled {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
-								uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								if asynccommon.IsAsyncDestination(brt.destType) {
+									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
+								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
 							brt.refreshDestination(destination)

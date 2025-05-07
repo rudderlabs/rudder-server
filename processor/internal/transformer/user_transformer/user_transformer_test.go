@@ -181,7 +181,6 @@ func TestUserTransformer(t *testing.T) {
 				for _, tt := range tc {
 					statsStore, err := memstats.New()
 					require.NoError(t, err)
-					conf.Set("Processor.maxConcurrency", 200)
 					conf.Set("Processor.Transformer.failOnUserTransformTimeout", true)
 					conf.Set("Processor.Transformer.failOnError", true)
 					conf.Set("Processor.Transformer.maxRetryBackoffInterval", 1*time.Second)
@@ -280,6 +279,7 @@ func TestUserTransformer(t *testing.T) {
 								"transformationId": destinationConfig.Transformations[0].ID,
 								"workspaceId":      Metadata.WorkspaceID,
 								"language":         "",
+								"mirroring":        "false",
 
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,

@@ -370,7 +370,7 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				FailedEvents: []types.TransformerResponse{
 					{
-						Error:      "no topic set for this event",
+						Error:      "No topic set for this event",
 						Metadata:   types.Metadata{},
 						StatusCode: http.StatusBadRequest,
 						StatTags:   destinationStatTags,
@@ -416,7 +416,7 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				FailedEvents: []types.TransformerResponse{
 					{
-						Error:      "no topic set for this event",
+						Error:      "No topic set for this event",
 						Metadata:   types.Metadata{},
 						StatusCode: http.StatusBadRequest,
 						StatTags:   destinationStatTags,

@@ -584,7 +584,7 @@ func TestJobsDB(t *testing.T) {
 		}
 		prefix := strings.ToLower(rand.String(5))
 		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
-		c.Set("JobsDB.jobMinRowsMigrateThreshold", 0.6)
+		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", 0.41)
 		err := jobDB.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
 		defer jobDB.TearDown()
@@ -622,7 +622,7 @@ func TestJobsDB(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// process some jobs
+		// process first 15 jobs
 		for _, job := range jobsResult.Jobs[:15] {
 			status := JobStatusT{
 				JobID:         job.JobID,
@@ -642,20 +642,36 @@ func TestJobsDB(t *testing.T) {
 
 		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable) // 5 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)   // 20 jobs
 
-		trigger() // jobs_1_1 will remain as is even though it is now a small table (5 < 10*0.6)
+		// process 1 more job
+		for _, job := range jobsResult.Jobs[15:16] {
+			status := JobStatusT{
+				JobID:         job.JobID,
+				JobState:      "succeeded",
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "202",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+				Parameters:    []byte(`{}`),
+			}
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			require.NoError(t, err)
+		}
+
+		trigger() // jobs_1_1 will remain as is even though it is now a small table 4/10 = 0.4 < 0.41
 		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable) // 4 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)   // 20 jobs
 
 		// process some jobs
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
@@ -664,7 +680,7 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []ParameterFilterT{},
 		})
 		require.NoError(t, err)
-		for _, job := range jobsResult.Jobs[5:20] {
+		for _, job := range jobsResult.Jobs[4:20] { // process 16 jobs from jobs_2
 			status := JobStatusT{
 				JobID:         job.JobID,
 				JobState:      Succeeded.State,
@@ -682,10 +698,10 @@ func TestJobsDB(t *testing.T) {
 		trigger() // both jobs_1_1 and jobs_2 would be migrated to jobs_2_1
 		dsList = getDSList()
 		require.Lenf(t, dsList, 4, "dsList length is not 4, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable)
-		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)
-		require.Equal(t, prefix+"_jobs_4", dsList[2].JobTable)
-		require.Equal(t, prefix+"_jobs_5", dsList[3].JobTable)
+		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable) // 8 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[2].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[3].JobTable)   // 20 jobs
 	})
 
 	t.Run(`migrates only moves non-terminal jobs to a new DS`, func(t *testing.T) {
@@ -1154,8 +1170,8 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		t.Run(tCase.payloadColumnType, func(t *testing.T) {
 			_ = startPostgres(t)
 			conf := config.New()
-			conf.Set("JobsDB.payloadColumnType", tCase.payloadColumnType)
 			jobDB := Handle{config: conf}
+			jobDB.conf.payloadColumnType = payloadColumnType(tCase.payloadColumnType)
 			err := jobDB.Setup(ReadWrite, true, tCase.payloadColumnType+"_"+strings.ToLower(rand.String(5)))
 			require.NoError(t, err, tCase.payloadColumnType)
 			eventPayload := []byte(`{"batch":[{"anonymousId":"anon_id","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`)

@@ -79,19 +79,19 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscri
 	eir.concurrency = conf.GetReloadableIntVar(10, 1, "Reporting.errorIndexReporting.concurrency")
 
 	eir.limiterGroup = sync.WaitGroup{}
-	eir.limiter.fetch = kitsync.NewLimiter(
+	eir.limiter.fetch = kitsync.NewReloadableLimiter(
 		eir.ctx, &eir.limiterGroup, "erridx_fetch",
-		eir.concurrency.Load(),
+		eir.concurrency,
 		eir.statsFactory,
 	)
-	eir.limiter.upload = kitsync.NewLimiter(
+	eir.limiter.upload = kitsync.NewReloadableLimiter(
 		eir.ctx, &eir.limiterGroup, "erridx_upload",
-		eir.concurrency.Load(),
+		eir.concurrency,
 		eir.statsFactory,
 	)
-	eir.limiter.update = kitsync.NewLimiter(
+	eir.limiter.update = kitsync.NewReloadableLimiter(
 		eir.ctx, &eir.limiterGroup, "erridx_update",
-		eir.concurrency.Load(),
+		eir.concurrency,
 		eir.statsFactory,
 	)
 	g.Go(func() error {
@@ -200,11 +200,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 		jobsdb.WithDSLimit(eir.conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")),
 		jobsdb.WithConfig(eir.conf),
 		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)),
-		jobsdb.WithJobMaxAge(
-			func() time.Duration {
-				return eir.conf.GetDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")
-			},
-		),
+		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")),
 	)
 	if err := errIndexDB.Start(); err != nil {
 		panic(fmt.Errorf("failed to start error index db: %w", err))

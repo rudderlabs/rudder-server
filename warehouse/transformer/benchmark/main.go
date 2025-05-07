@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -58,15 +59,15 @@ func run(ctx context.Context) error {
 	logFactory := logger.Default
 	l := logFactory.NewLogger().Child("warehouse-transformer-benchmark").Child(mode)
 
-	clientEvents := make([]types.TransformerEvent, eventsInBatch)
-	for i := 0; i < len(clientEvents); i++ {
-		var transformerEvent types.TransformerEvent
-		err := jsonrs.Unmarshal([]byte(sampleEvent), &transformerEvent)
-		if err != nil {
-			return fmt.Errorf("could not unmarshal sample client event: %w", err)
-		}
-		clientEvents[i] = transformerEvent
+	var te types.TransformerEvent
+	err := jsonrs.Unmarshal([]byte(sampleEvent), &te)
+	if err != nil {
+		return fmt.Errorf("could not unmarshal sample client event: %w", err)
 	}
+
+	clientEvents := lo.RepeatBy(eventsInBatch, func(int) types.TransformerEvent {
+		return te
+	})
 
 	t, err := selectTransformer(mode, conf, l)
 	if err != nil {

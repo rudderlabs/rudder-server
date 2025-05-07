@@ -64,6 +64,7 @@ func TestCreateLoadFiles(t *testing.T) {
 		Notifier:  notifier,
 		StageRepo: stageRepo,
 		LoadRepo:  loadRepo,
+		Conf:      config.New(),
 
 		ControlPlaneClient: controlPlane,
 	}
@@ -102,7 +103,7 @@ func TestCreateLoadFiles(t *testing.T) {
 	require.Len(t, stageRepo.store, len(stagingFiles))
 
 	for _, stagingFile := range stagingFiles {
-		loadFiles, err := loadRepo.GetByStagingFiles(ctx, []int64{stagingFile.ID})
+		loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
 		require.Equal(t, 2, len(loadFiles))
 		require.NoError(t, err)
 
@@ -191,6 +192,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Notifier:  notifer,
 			StageRepo: stageRepo,
 			LoadRepo:  loadRepo,
+			Conf:      config.New(),
 
 			ControlPlaneClient: controlPlane,
 		}
@@ -233,6 +235,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Notifier:  notifer,
 			StageRepo: stageRepo,
 			LoadRepo:  loadRepo,
+			Conf:      config.New(),
 
 			ControlPlaneClient: controlPlane,
 		}
@@ -249,7 +252,7 @@ func TestCreateLoadFiles_Failure(t *testing.T) {
 			Upload:       upload,
 			StagingFiles: stagingFiles,
 		})
-		require.EqualError(t, err, "no load files generated. Sample error: staging file location is empty")
+		require.EqualError(t, err, "no load files generated")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
 	})
@@ -271,6 +274,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		Notifier:  notifer,
 		StageRepo: stageRepo,
 		LoadRepo:  loadRepo,
+		Conf:      config.New(),
 
 		ControlPlaneClient: controlPlane,
 	}
@@ -330,7 +334,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
 
-	loadFiles, err := loadRepo.GetByStagingFiles(ctx, []int64{stagingFile.ID})
+	loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
 	require.Equal(t, 2, len(loadFiles))
 	require.NoError(t, err)
 
@@ -357,7 +361,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		stagingFile.DestinationRevisionID = "invalid_revision_id"
 
 		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-		require.EqualError(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
+		require.ErrorContains(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
 	})
@@ -478,4 +482,546 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			require.Equal(t, lf.GetLoadFilePrefix(timeWindow, tc.warehouse), tc.expected)
 		})
 	}
+}
+
+func TestGroupStagingFiles(t *testing.T) {
+	t.Run("size based grouping", func(t *testing.T) {
+		testCases := []struct {
+			name          string
+			files         []*model.StagingFile
+			batchSizes    []int
+			skipSizeCheck bool
+		}{
+			{
+				name:       "empty files",
+				files:      []*model.StagingFile{},
+				batchSizes: []int{},
+			},
+			{
+				name: "single file under limit",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 50 * 1024 * 1024, // 50MB
+						},
+					},
+				},
+				batchSizes: []int{1},
+			},
+			{
+				name: "all files over limit",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 150 * 1024 * 1024, // 150MB
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 150 * 1024 * 1024, // 150MB
+						},
+					},
+				},
+				batchSizes:    []int{1, 1},
+				skipSizeCheck: true,
+			},
+			{
+				name: "multiple files under limit",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 30 * 1024 * 1024, // 30MB
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 40 * 1024 * 1024, // 40MB
+						},
+					},
+				},
+				batchSizes: []int{2},
+			},
+			{
+				name: "optimal grouping case",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 50 * 1024 * 1024, // 50MB
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 100 * 1024 * 1024, // 100MB
+						},
+					},
+					{
+						ID: 3,
+						BytesPerTable: map[string]int64{
+							"table1": 50 * 1024 * 1024, // 50MB
+						},
+					},
+				},
+				batchSizes: []int{1, 2}, // [100MB], [50MB, 50MB]
+			},
+			{
+				name: "sorting logic",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 20 * 1024 * 1024,
+							"table2": 71 * 1024 * 1024,
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 50 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+					{
+						ID: 3,
+						BytesPerTable: map[string]int64{
+							"table1": 70 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+					{
+						ID: 4,
+						BytesPerTable: map[string]int64{
+							"table1": 40 * 1024 * 1024,
+							"table2": 1 * 1024 * 1024,
+						},
+					},
+				},
+				batchSizes: []int{2, 2},
+			},
+			{
+				name: "multiple tables different sizes",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 60 * 1024 * 1024, // 60MB
+							"table2": 30 * 1024 * 1024, // 30MB
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 5 * 1024 * 1024,  // 5MB
+							"table2": 90 * 1024 * 1024, // 90MB
+						},
+					},
+				},
+				batchSizes: []int{1, 1}, // Split due to table2 exceeding limit when combined
+			},
+			{
+				name: "multiple tables under limit",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 40 * 1024 * 1024, // 40MB
+							"table2": 30 * 1024 * 1024, // 30MB
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table1": 30 * 1024 * 1024, // 30MB
+							"table2": 20 * 1024 * 1024, // 20MB
+						},
+					},
+				},
+				batchSizes: []int{2},
+			},
+			{
+				name: "one table exceeds limit",
+				files: []*model.StagingFile{
+					{
+						ID: 1,
+						BytesPerTable: map[string]int64{
+							"table1": 110 * 1024 * 1024,
+							"table2": 3 * 1024 * 1024,
+						},
+					},
+					{
+						ID: 2,
+						BytesPerTable: map[string]int64{
+							"table2": 20 * 1024 * 1024,
+						},
+					},
+				},
+				// Ideally we should have only 1 batch here
+				// but we are not handling this case
+				batchSizes:    []int{1, 1},
+				skipSizeCheck: true,
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				lf := loadfiles.LoadFileGenerator{
+					Conf:   config.New(),
+					Logger: logger.NOP,
+				}
+				maxSizeMB := 100
+
+				batches := lf.GroupStagingFiles(tc.files, maxSizeMB)
+				require.Equal(t, len(tc.batchSizes), len(batches), "number of batches mismatch")
+
+				actualBatchSizes := make([]int, len(batches))
+				for i, batch := range batches {
+					actualBatchSizes[i] = len(batch)
+				}
+				require.ElementsMatch(t, tc.batchSizes, actualBatchSizes, "batch sizes mismatch")
+
+				if !tc.skipSizeCheck {
+					// Verify that no table in any batch exceeds the size limit
+					maxSizeBytes := int64(maxSizeMB * 1024 * 1024) // 100MB
+					for _, batch := range batches {
+						tableSizes := make(map[string]int64)
+						for _, file := range batch {
+							for table, size := range file.BytesPerTable {
+								tableSizes[table] += size
+							}
+						}
+						for _, size := range tableSizes {
+							require.LessOrEqual(t, size, maxSizeBytes, "table size exceeds limit in a batch")
+						}
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("key based grouping", func(t *testing.T) {
+		testCases := []struct {
+			name       string
+			files      []*model.StagingFile
+			batchSizes []int
+		}{
+			{
+				name: "group by UseRudderStorage",
+				files: []*model.StagingFile{
+					{
+						ID:               1,
+						UseRudderStorage: true,
+					},
+					{
+						ID:               2,
+						UseRudderStorage: false,
+					},
+					{
+						ID:               3,
+						UseRudderStorage: true,
+					},
+				},
+				batchSizes: []int{2, 1},
+			},
+			{
+				name: "group by DestinationRevisionID",
+				files: []*model.StagingFile{
+					{
+						ID:                    1,
+						DestinationRevisionID: "rev1",
+					},
+					{
+						ID:                    2,
+						DestinationRevisionID: "rev2",
+					},
+					{
+						ID:                    3,
+						DestinationRevisionID: "rev1",
+					},
+				},
+				batchSizes: []int{2, 1},
+			},
+			{
+				name: "group by TimeWindow",
+				files: []*model.StagingFile{
+					{
+						ID:         1,
+						TimeWindow: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					},
+					{
+						ID:         2,
+						TimeWindow: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+					},
+					{
+						ID:         3,
+						TimeWindow: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					},
+				},
+				batchSizes: []int{2, 1},
+			},
+			{
+				name: "mixed keys",
+				files: []*model.StagingFile{
+					{
+						ID:                    1,
+						UseRudderStorage:      true,
+						DestinationRevisionID: "rev1",
+						TimeWindow:            time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					},
+					{
+						ID:                    2,
+						UseRudderStorage:      true,
+						DestinationRevisionID: "rev1",
+						TimeWindow:            time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+					},
+					{
+						ID:                    3,
+						UseRudderStorage:      false,
+						DestinationRevisionID: "rev2",
+						TimeWindow:            time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					},
+				},
+				batchSizes: []int{1, 1, 1},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				lf := loadfiles.LoadFileGenerator{
+					Conf:   config.New(),
+					Logger: logger.NOP,
+				}
+
+				batches := lf.GroupStagingFiles(tc.files, 100)
+				require.Equal(t, len(tc.batchSizes), len(batches), "number of batches mismatch")
+
+				// Get actual batch sizes
+				actualBatchSizes := make([]int, len(batches))
+				for i, batch := range batches {
+					actualBatchSizes[i] = len(batch)
+				}
+				require.ElementsMatch(t, tc.batchSizes, actualBatchSizes, "batch sizes mismatch")
+
+				// Verify that files in each batch have the same grouping attributes
+				for _, batch := range batches {
+					firstFile := batch[0]
+					for _, file := range batch[1:] {
+						require.Equal(t, firstFile.UseRudderStorage, file.UseRudderStorage, "UseRudderStorage mismatch in batch")
+						require.Equal(t, firstFile.DestinationRevisionID, file.DestinationRevisionID, "DestinationRevisionID mismatch in batch")
+						require.Equal(t, firstFile.TimeWindow, file.TimeWindow, "TimeWindow mismatch in batch")
+					}
+				}
+			})
+		}
+	})
+}
+
+func TestV2CreateLoadFiles(t *testing.T) {
+	notifier := &mockNotifier{
+		t:      t,
+		tables: []string{"track", "identify"},
+	}
+	stageRepo := &mockStageFilesRepo{}
+	loadRepo := &mockLoadFilesRepo{}
+	controlPlane := &mockControlPlaneClient{}
+
+	lf := loadfiles.LoadFileGenerator{
+		Logger:    logger.NOP,
+		Notifier:  notifier,
+		StageRepo: stageRepo,
+		LoadRepo:  loadRepo,
+		Conf:      config.New(),
+
+		ControlPlaneClient: controlPlane,
+	}
+
+	// Enable feature flag
+	lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+	ctx := context.Background()
+
+	stagingFiles := getStagingFiles()
+	for _, file := range stagingFiles {
+		file.BytesPerTable = map[string]int64{
+			"track":    100,
+			"identify": 200,
+		}
+	}
+
+	job := model.UploadJob{
+		Warehouse: model.Warehouse{
+			WorkspaceID: "",
+			Source:      backendconfig.SourceT{},
+			Destination: backendconfig.DestinationT{
+				ID:         "destination_id",
+				RevisionID: "revision_id",
+			},
+			Namespace:  "",
+			Type:       warehouseutils.SNOWFLAKE,
+			Identifier: "",
+		},
+		Upload: model.Upload{
+			DestinationID:    "destination_id",
+			DestinationType:  "RS",
+			SourceID:         "source_id",
+			UseRudderStorage: true,
+		},
+		StagingFiles: stagingFiles,
+	}
+
+	t.Run("all files with BytesPerTable", func(t *testing.T) {
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), startID)
+		require.Equal(t, int64(2), endID)
+
+		require.Len(t, loadRepo.store, len(notifier.tables))
+		require.Len(t, stageRepo.store, len(stagingFiles))
+	})
+
+	t.Run("mixed staging files", func(t *testing.T) {
+		// Remove BytesPerTable from some files to force mixed v1/v2 jobs
+		for i := 0; i < len(stagingFiles)/2; i++ {
+			stagingFiles[i].BytesPerTable = nil
+		}
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
+		require.NoError(t, err)
+		require.Equal(t, int64(3), startID)
+		require.Equal(t, int64(14), endID)
+
+		v1LoadFiles := (len(stagingFiles) * len(notifier.tables)) / 2
+		v2LoadFiles := len(notifier.tables)
+		require.Len(t, loadRepo.store, v1LoadFiles+v2LoadFiles)
+		require.Len(t, stageRepo.store, len(stagingFiles))
+	})
+}
+
+func TestV2CreateLoadFiles_Failure(t *testing.T) {
+	t.Parallel()
+
+	tables := []string{"track", "identify"}
+
+	warehouse := model.Warehouse{
+		WorkspaceID: "",
+		Source:      backendconfig.SourceT{},
+		Destination: backendconfig.DestinationT{
+			ID:         "destination_id",
+			RevisionID: "revision_id",
+		},
+		Namespace:  "",
+		Type:       warehouseutils.SNOWFLAKE,
+		Identifier: "",
+	}
+
+	upload := model.Upload{
+		DestinationID:    "destination_id",
+		DestinationType:  "RS",
+		SourceID:         "source_id",
+		UseRudderStorage: true,
+	}
+
+	ctx := context.Background()
+
+	t.Run("worker partial failure", func(t *testing.T) {
+		t.Skip("enable the test once partial failure is implemented/handled as part of processing upload_v2 job")
+		notifier := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifier,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+			Conf:      config.New(),
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		// Enable feature flag
+		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+		stagingFiles := getStagingFiles()
+		for _, file := range stagingFiles {
+			file.BytesPerTable = map[string]int64{
+				"track":    100,
+				"identify": 200,
+			}
+		}
+
+		stagingFiles[0].Location = "abort"
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), startID)
+
+		require.Len(t,
+			loadRepo.store,
+			len(tables)*(len(stagingFiles)-1),
+		)
+
+		require.Equal(t, loadRepo.store[0].ID, startID)
+		require.Equal(t, loadRepo.store[len(loadRepo.store)-1].ID, endID)
+	})
+
+	t.Run("worker failures for all", func(t *testing.T) {
+		notifier := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifier,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+			Conf:      config.New(),
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		// Enable feature flag
+		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
+
+		stagingFiles := getStagingFiles()
+		for _, file := range stagingFiles {
+			file.BytesPerTable = map[string]int64{
+				"track":    100,
+				"identify": 200,
+			}
+			file.Location = "abort"
+		}
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.EqualError(t, err, "no load files generated")
+		require.Zero(t, startID)
+		require.Zero(t, endID)
+	})
 }

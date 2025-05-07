@@ -14,6 +14,11 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const (
+	DateTimeISO8601  = "2006-01-02T15:04:05"
+	DateTimeMillisTZ = "2006-01-02 15:04:05.000-0700"
+)
+
 var (
 	rudderCreatedTables                      = sliceToMap([]string{"tracks", "pages", "screens", "aliases", "groups", "accounts"})
 	rudderIsolatedTables                     = sliceToMap([]string{"users", "identifies"})
@@ -41,6 +46,8 @@ var (
 		time.RFC3339,
 		misc.RFC3339Milli,
 		time.DateTime,
+		DateTimeISO8601,
+		DateTimeMillisTZ,
 		time.DateOnly,
 		time.RFC3339Nano,
 	}
@@ -176,7 +183,13 @@ func IsBlank(value interface{}) bool {
 	case map[string]any:
 		return len(v) == 0
 	case []any:
-		return len(v) == 0
+		if len(v) == 0 {
+			return true
+		}
+		if len(v) == 1 {
+			return IsBlank(v[0])
+		}
+		return false
 	case []types.ValidationError:
 		return len(v) == 0
 	default:
@@ -187,4 +200,25 @@ func IsBlank(value interface{}) bool {
 func IsJSONPathSupportedAsPartOfConfig(destType string) bool {
 	_, ok := destinationSupportJSONPathAsPartOfConfig[destType]
 	return ok
+}
+
+func ExtractMessageID(event *types.TransformerEvent, uuidGenerator func() string) any {
+	messageID, exists := event.Message["messageId"]
+	if !exists || IsBlank(messageID) {
+		return "auto-" + uuidGenerator()
+	}
+	return messageID
+}
+
+func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) string {
+	receivedAt, exists := event.Message["receivedAt"]
+	if !exists || IsBlank(receivedAt) {
+		return now().Format(misc.RFC3339Milli)
+	}
+
+	strReceivedAt, isString := receivedAt.(string)
+	if !isString || !ValidTimestamp(strReceivedAt) {
+		return now().Format(misc.RFC3339Milli)
+	}
+	return strReceivedAt
 }

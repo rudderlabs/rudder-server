@@ -35,8 +35,10 @@ func TransformerClientConfig(conf *config.Config, configPrefix string) *transfor
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, fmt.Sprintf("Transformer.Client.%s.disableKeepAlives", configPrefix), "Transformer.Client.disableKeepAlives")
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPConnections", configPrefix), "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(10, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPIdleConnections", configPrefix), "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(30, time.Second, fmt.Sprintf("Transformer.Client.%s.maxIdleConnDuration", configPrefix), "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(1, 1, fmt.Sprintf("Transformer.Client.%s.maxHTTPIdleConnections", configPrefix), "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(5, time.Second, fmt.Sprintf("Transformer.Client.%s.maxIdleConnDuration", configPrefix), "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = conf.GetBoolVar(false, fmt.Sprintf("Transformer.Client.%s.recycle", configPrefix), "Transformer.Client.recycle")
+	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, fmt.Sprintf("Transformer.Client.%s.recycleTTL", configPrefix), "Transformer.Client.recycleTTL")
 	return transformerClientConfig
 }
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -15,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -44,6 +46,10 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 		now:            timeutil.Now,
 		uuidGenerator:  uuid.NewString,
 		loggedFileName: generateLogFileName(),
+		sorter: func(x []string) []string {
+			sort.Strings(x)
+			return x
+		},
 	}
 
 	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
@@ -102,18 +108,19 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 
 	for i := range clientEvents {
 		event := clientEvents[i]
-		event.Metadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
+		eventMetadata := event.Metadata
+		eventMetadata.SourceDefinitionType = "" // TODO: Currently, it's getting ignored during JSON marshalling Remove this once we start using it.
 
 		g.Go(func() error {
 			r, err := t.processWarehouseMessage(c, &event)
 			if err != nil {
-				results <- transformerResponseFromErr(&event, err)
+				results <- transformerResponseFromErr(&eventMetadata, err)
 				return nil
 			}
 			for _, item := range r {
 				results <- types.TransformerResponse{
 					Output:     item,
-					Metadata:   event.Metadata,
+					Metadata:   eventMetadata,
 					StatusCode: http.StatusOK,
 				}
 			}
@@ -128,71 +135,46 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 }
 
 func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {
-	if err := t.enhanceContextWithSourceDestInfo(event); err != nil {
-		return nil, fmt.Errorf("enhancing context with source and destination info: %w", err)
+	wEvent := wtypes.New(event, t.uuidGenerator, t.now)
+	if err := t.checkValidContext(wEvent); err != nil {
+		return nil, fmt.Errorf("checking valid context: %w", err)
 	}
-	t.addMandatoryFields(event)
-	return t.handleEvent(event, cache)
+	return t.handleEvent(wEvent, cache)
 }
 
-func (t *Transformer) enhanceContextWithSourceDestInfo(event *types.TransformerEvent) error {
+func (t *Transformer) checkValidContext(event *wtypes.TransformerEvent) error {
 	if !t.config.populateSrcDestInfoInContext.Load() {
 		return nil
 	}
-
-	messageContext, ok := event.Message["context"]
-	if !ok || messageContext == nil {
-		messageContext = map[string]any{}
+	contextVal, exists := event.Message["context"]
+	if !exists || contextVal == nil {
+		return nil
 	}
-	messageContextMap, ok := messageContext.(map[string]any)
-	if !ok {
+	if !utils.IsObject(contextVal) {
 		return response.ErrContextNotMap
 	}
-	messageContextMap["sourceId"] = event.Metadata.SourceID
-	messageContextMap["sourceType"] = event.Metadata.SourceType
-	messageContextMap["destinationId"] = event.Metadata.DestinationID
-	messageContextMap["destinationType"] = event.Metadata.DestinationType
-
-	event.Message["context"] = messageContextMap
 	return nil
 }
 
-func (t *Transformer) addMandatoryFields(event *types.TransformerEvent) {
-	t.ensureMessageID(event)
-	t.ensureReceivedAt(event)
+func (t *Transformer) eventContext(tec *transformEventContext) any {
+	contextVal, exists := tec.event.Message["context"]
+	if !t.config.populateSrcDestInfoInContext.Load() {
+		return contextVal
+	}
+	if !exists || contextVal == nil {
+		contextVal = map[string]interface{}{}
+	}
+	clonedContext := maps.Clone(contextVal.(map[string]any))
+	clonedContext["sourceId"] = tec.event.Metadata.SourceID
+	clonedContext["sourceType"] = tec.event.Metadata.SourceType
+	clonedContext["destinationId"] = tec.event.Metadata.DestinationID
+	clonedContext["destinationType"] = tec.event.Metadata.DestinationType
+	return clonedContext
 }
 
-func (t *Transformer) ensureMessageID(event *types.TransformerEvent) {
-	messageID, exists := event.Message["messageId"]
-	if !exists || utils.IsBlank(messageID) {
-		event.Metadata.MessageID = "auto-" + t.uuidGenerator()
-		event.Message["messageId"] = event.Metadata.MessageID
-	}
-}
-
-func (t *Transformer) ensureReceivedAt(event *types.TransformerEvent) {
-	receivedAt, exists := event.Message["receivedAt"]
-	if !exists || utils.IsBlank(receivedAt) {
-		t.setDefaultReceivedAt(event)
-		return
-	}
-
-	strReceivedAt, isString := receivedAt.(string)
-	if !isString || !utils.ValidTimestamp(strReceivedAt) {
-		t.setDefaultReceivedAt(event)
-	}
-}
-
-func (t *Transformer) setDefaultReceivedAt(event *types.TransformerEvent) {
-	if !utils.ValidTimestamp(event.Metadata.ReceivedAt) {
-		event.Metadata.ReceivedAt = t.now().Format(misc.RFC3339Milli)
-	}
-	event.Message["receivedAt"] = event.Metadata.ReceivedAt
-}
-
-func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) ([]map[string]any, error) {
+func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) ([]map[string]any, error) {
 	intrOpts := extractIntrOpts(event.Metadata.DestinationType, event.Message)
-	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Destination.Config)
+	destOpts := extractDestOpts(event.Metadata.DestinationType, event.Metadata.DestinationConfig)
 	jsonPathsInfo := extractJSONPathInfo(append(intrOpts.jsonPaths, destOpts.jsonPaths...))
 
 	eventType := strings.ToLower(event.Metadata.EventType)
@@ -203,6 +185,7 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 		destOpts:      &destOpts,
 		jsonPathsInfo: &jsonPathsInfo,
 		cache:         cache,
+		sorter:        t.sorter,
 	}
 
 	switch eventType {
@@ -227,19 +210,19 @@ func (t *Transformer) handleEvent(event *types.TransformerEvent, cache *cache) (
 	}
 }
 
-func transformerResponseFromErr(event *types.TransformerEvent, err error) types.TransformerResponse {
+func transformerResponseFromErr(metadata *types.Metadata, err error) types.TransformerResponse {
 	var te *response.TransformerError
 	if ok := errors.As(err, &te); ok {
 		return types.TransformerResponse{
 			Output:     nil,
-			Metadata:   event.Metadata,
+			Metadata:   *metadata,
 			Error:      te.Error(),
 			StatusCode: te.StatusCode(),
 		}
 	}
 	return types.TransformerResponse{
 		Output:     nil,
-		Metadata:   event.Metadata,
+		Metadata:   *metadata,
 		Error:      response.ErrInternalServer.Error(),
 		StatusCode: response.ErrInternalServer.StatusCode(),
 	}

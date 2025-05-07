@@ -71,9 +71,8 @@ type handle struct {
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
-	forceCompactionEnabled bool // option to force usage of compaction for testing
-	compactionEnabled      config.ValueLoader[bool]
-	compactionSupported    bool
+	compactionEnabled   config.ValueLoader[bool]
+	compactionSupported bool
 }
 
 type ProxyRequestMetadata struct {
@@ -175,7 +174,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 	rawJSON, err := trans.getRequestPayload(transformMessageCopy, compactRequestPayloads)
 	if err != nil {
-		trans.logger.Errorf("problematic input for marshalling: %#v", transformMessage)
+		trans.logger.Errorw("problematic input for marshalling", "error", err)
 		panic(err)
 	}
 
@@ -305,8 +304,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			panic(fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
-		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
-
 		switch transformType {
 		case BATCH:
 			integrations.CollectIntgTransformErrorStats(respData)
@@ -357,8 +354,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		if invalidResponseReason != "" {
-
-			trans.logger.Error(invalidResponseError)
 			stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
 				"destType": transformMessage.DestType,
 				"reason":   invalidResponseReason,
@@ -517,7 +512,6 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 			}
 		}
 	**/
-	trans.logger.Debugf("ProxyResponseData: %s\n", string(respData))
 	respData = []byte(gjson.GetBytes(respData, "output").Raw)
 	integrations.CollectDestErrorStats(respData)
 
@@ -588,7 +582,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:             locker,
-		Augmenter:          extensions.RouterBodyAugmenter,
+		Augmenter:          extensions.RouterHeaderAugmenter,
 		ExpirationTimeDiff: (trans.expirationTimeDiff).Load(),
 		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
 	}
@@ -606,7 +600,6 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
-	trans.forceCompactionEnabled = config.GetBoolVar(false, "Router.DestinationTransformer.forceCompactionEnabled", "Transformer.forceCompactionEnabled")
 	trans.compactionEnabled = config.GetReloadableBoolVar(false, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 	if featuresService != nil {
 		go func() {
@@ -625,8 +618,10 @@ func (trans *handle) transformerClientConfig() *transformerclient.ClientConfig {
 	}
 	transformerClientConfig.TransportConfig.DisableKeepAlives = config.GetBoolVar(true, "Transformer.Client.disableKeepAlives")
 	transformerClientConfig.TransportConfig.MaxConnsPerHost = config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = config.GetIntVar(1, 1, "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = config.GetDurationVar(5, time.Second, "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = config.GetBoolVar(false, "Transformer.Client.DestinationTransformer.recycle", "Transformer.Client.recycle")
+	transformerClientConfig.RecycleTTL = config.GetDurationVar(60, time.Second, "Transformer.Client.DestinationTransformer.recycleTTL", "Transformer.Client.recycleTTL")
 	return transformerClientConfig
 }
 
@@ -639,7 +634,6 @@ type httpProxyResponse struct {
 func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyReqParams *ProxyRequestParams, payload []byte) httpProxyResponse {
 	var respData []byte
 	destName := proxyReqParams.DestName
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request payload - %[2]s`, destName, string(payload))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
 		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, err.Error())
@@ -702,7 +696,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	// error handling if body is missing
 	if resp.Body == nil {
 		errStr := "empty response body"
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusInternalServerError, string(respData))
+		trans.logger.Errorn(`[TransformerProxy] empty response body`, logger.NewIntField("statusCode", http.StatusInternalServerError))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
@@ -714,16 +708,13 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	defer func() { httputil.CloseResponse(resp) }()
 	// error handling while reading from resp.Body
 	if err != nil {
-		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusBadRequest, string(respData))
+		trans.logger.Errorn(`[TransformerProxy] Failure`, logger.NewIntField("statusCode", http.StatusBadRequest), logger.NewErrorField(err))
 		return httpProxyResponse{
 			respData:   []byte{}, // sending this as it is not getting sent at all
 			statusCode: http.StatusInternalServerError,
 			err:        err,
 		}
 	}
-
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request response - %[2]s`, destName, string(respData))
 
 	return httpProxyResponse{
 		respData:   respData,
@@ -782,7 +773,7 @@ func getEndpointFromURL(urlStr string) string {
 }
 
 func (trans *handle) compactRequestPayloads() bool {
-	return (trans.compactionSupported && trans.compactionEnabled.Load()) || trans.forceCompactionEnabled
+	return (trans.compactionSupported && trans.compactionEnabled.Load())
 }
 
 func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {

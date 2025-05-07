@@ -162,24 +162,15 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		conf:                 f.conf,
 		logger:               log,
 		statsFactory:         f.statsFactory,
-		tableUploadsRepo:     repo.NewTableUploads(f.db),
+		tableUploadsRepo:     repo.NewTableUploads(f.db, f.conf),
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
-		loadFilesRepo:        repo.NewLoadFiles(f.db),
+		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
 		whSchemaRepo:         repo.NewWHSchemas(f.db),
-		schemaHandle: schema.New(
-			f.db,
-			dto.Warehouse,
-			f.conf,
-			f.logger.Child("warehouse"),
-			f.statsFactory,
-			whManager,
-		),
-
-		upload:         dto.Upload,
-		warehouse:      dto.Warehouse,
-		stagingFiles:   dto.StagingFiles,
-		stagingFileIDs: repo.StagingFileIDs(dto.StagingFiles),
+		upload:               dto.Upload,
+		warehouse:            dto.Warehouse,
+		stagingFiles:         dto.StagingFiles,
+		stagingFileIDs:       repo.StagingFileIDs(dto.StagingFiles),
 
 		pendingTableUploadsRepo: repo.NewUploads(f.db),
 		pendingTableUploads:     []model.PendingTableUpload{},
@@ -302,6 +293,21 @@ func (job *UploadJob) run() (err error) {
 	}
 	defer whManager.Cleanup(job.ctx)
 
+	job.schemaHandle, err = schema.New(
+		job.ctx,
+		job.warehouse,
+		job.conf,
+		job.logger.Child("warehouse"),
+		job.statsFactory,
+		whManager,
+		repo.NewWHSchemas(job.db),
+		repo.NewStagingFiles(job.db),
+	)
+	if err != nil {
+		_, _ = job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
+
 	var (
 		newStatus       string
 		nextUploadState *state
@@ -414,7 +420,7 @@ func (job *UploadJob) run() (err error) {
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == model.ExportedData {
-			_ = job.loadFilesRepo.DeleteByStagingFiles(job.ctx, job.stagingFileIDs)
+			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID, job.stagingFileIDs)
 			break
 		}
 
@@ -447,7 +453,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
 	}
-	loadingFiles, err := job.loadFilesRepo.GetByStagingFiles(job.ctx, job.stagingFileIDs)
+	loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
 	if err != nil {
 		return fmt.Errorf("fetching loading files: %w", err)
 	}

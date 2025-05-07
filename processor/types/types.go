@@ -1,12 +1,18 @@
 package types
 
 import (
+	"bytes"
+	"fmt"
+	"reflect"
+	"strconv"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -55,6 +61,13 @@ type UserTransformerEvent struct {
 	} `json:"destination"`
 	Libraries   []backendconfig.LibraryT `json:"libraries,omitempty"`
 	Credentials []Credential             `json:"credentials,omitempty"`
+}
+
+// TrackingPlanValidationEvent is the event sent to the trackingplan transformer,
+// whose fields are a subset of the [TransformerEvent]
+type TrackingPlanValidationEvent struct {
+	Message  SingularEventT `json:"message"`
+	Metadata Metadata       `json:"metadata"`
 }
 
 // CompactedTransformerEvent is similar to a [TransformerEvent] but without the connection and destination fields
@@ -113,6 +126,15 @@ func (e *TransformerEvent) ToUserTransformerEvent() *UserTransformerEvent {
 		})
 	}
 	return ute
+}
+
+// ToTrackingPlanValidationEvent only keeps the message and metadata fields from the event
+// before sending it to the trackingplan validator thereby reducing the payload size
+func (e *TransformerEvent) ToTrackingPlanValidationEvent() *TrackingPlanValidationEvent {
+	return &TrackingPlanValidationEvent{
+		Message:  e.Message,
+		Metadata: e.Metadata,
+	}
 }
 
 type Credential struct {
@@ -189,6 +211,32 @@ type Response struct {
 	FailedEvents []TransformerResponse
 }
 
+// Equal compares two Response structs and returns true if they are equal
+// regardless of the order of elements in the Events and FailedEvents slices
+func (r *Response) Equal(v *Response) (string, bool) {
+	if len(r.Events) != len(v.Events) {
+		return fmt.Sprintf("Expected Events length %d, got %d", len(r.Events), len(v.Events)), false
+	}
+
+	if len(r.FailedEvents) != len(v.FailedEvents) {
+		return fmt.Sprintf("Expected FailedEvents length %d, got %d", len(r.FailedEvents), len(v.FailedEvents)), false
+	}
+
+	extraA, extraB := diffLists(r.Events, v.Events)
+	if len(extraA) > 0 || len(extraB) > 0 {
+		diff := formatListDiff(r.Events, v.Events, extraA, extraB)
+		return diff, false
+	}
+
+	extraA, extraB = diffLists(r.FailedEvents, v.FailedEvents)
+	if len(extraA) > 0 || len(extraB) > 0 {
+		diff := formatListDiff(r.FailedEvents, v.FailedEvents, extraA, extraB)
+		return diff, false
+	}
+
+	return "", true
+}
+
 type EventParams struct {
 	SourceJobRunId  string `json:"source_job_run_id"`
 	SourceId        string `json:"source_id"`
@@ -207,6 +255,7 @@ type TransformerMetricLabels struct {
 	SourceID         string // source identifier
 	DestinationID    string // destination identifier
 	TransformationID string // transformation identifier
+	Mirroring        bool
 }
 
 // ToStatsTag converts transformerMetricLabels to stats.Tags and includes legacy tags for backwards compatibility
@@ -221,6 +270,7 @@ func (t TransformerMetricLabels) ToStatsTag() stats.Tags {
 		"destinationId":    t.DestinationID,
 		"sourceId":         t.SourceID,
 		"transformationId": t.TransformationID,
+		"mirroring":        strconv.FormatBool(t.Mirroring),
 
 		// Legacy tags: to be removed
 		"dest_type": t.DestinationType,
@@ -242,5 +292,72 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 		obskit.DestinationID(t.DestinationID),
 		obskit.SourceID(t.SourceID),
 		logger.NewStringField("transformationId", t.TransformationID),
+		logger.NewBoolField("mirroring", t.Mirroring),
 	}
+}
+
+func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
+	aValue := reflect.ValueOf(listA)
+	bValue := reflect.ValueOf(listB)
+
+	aLen := aValue.Len()
+	bLen := bValue.Len()
+
+	// Mark indexes in bValue that we already used
+	visited := make([]bool, bLen)
+	for i := 0; i < aLen; i++ {
+		element := aValue.Index(i).Interface()
+		found := false
+		for j := 0; j < bLen; j++ {
+			if visited[j] {
+				continue
+			}
+			if assert.ObjectsAreEqual(bValue.Index(j).Interface(), element) {
+				visited[j] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			extraA = append(extraA, element)
+		}
+	}
+
+	for j := 0; j < bLen; j++ {
+		if visited[j] {
+			continue
+		}
+		extraB = append(extraB, bValue.Index(j).Interface())
+	}
+
+	return
+}
+
+var spewConfig = spew.ConfigState{
+	Indent:                  " ",
+	DisablePointerAddresses: true,
+	DisableCapacities:       true,
+	SortKeys:                true,
+	DisableMethods:          true,
+	MaxDepth:                10,
+}
+
+func formatListDiff(listA, listB interface{}, extraA, extraB []interface{}) string {
+	var msg bytes.Buffer
+
+	msg.WriteString("elements differ")
+	if len(extraA) > 0 {
+		msg.WriteString("\n\nextra elements in list A:\n")
+		msg.WriteString(spewConfig.Sdump(extraA))
+	}
+	if len(extraB) > 0 {
+		msg.WriteString("\n\nextra elements in list B:\n")
+		msg.WriteString(spewConfig.Sdump(extraB))
+	}
+	msg.WriteString("\n\nlistA:\n")
+	msg.WriteString(spewConfig.Sdump(listA))
+	msg.WriteString("\n\nlistB:\n")
+	msg.WriteString(spewConfig.Sdump(listB))
+
+	return msg.String()
 }

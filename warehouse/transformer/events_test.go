@@ -3,12 +3,13 @@ package transformer
 import (
 	"context"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -2061,7 +2062,7 @@ func TestEvents(t *testing.T) {
 				configOverride: map[string]any{
 					"Warehouse.enableIDResolution": true,
 				},
-				eventPayload: `{"type":"merge","messageId":"messageId","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
+				eventPayload: `{"type":"merge","messageId":"messageId","receivedAt":"2021-09-01T00:00:00.000Z","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 				metadata:     getMetadata("merge", "BQ"),
 				destination:  getDestination("BQ", map[string]any{}),
 				expectedResponse: types.Response{
@@ -2231,7 +2232,7 @@ func TestEvents(t *testing.T) {
 				configOverride: map[string]any{
 					"Warehouse.enableIDResolution": true,
 				},
-				eventPayload: `{"type":"merge","messageId":"messageId","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
+				eventPayload: `{"type":"merge","messageId":"messageId","receivedAt":"2021-09-01T00:00:00.000Z","mergeProperties":[{"type":"email","value":"alex@example.com"},{"type":"mobile","value":"+1-202-555-0146"}]}`,
 				metadata:     getMetadata("merge", "SNOWFLAKE"),
 				destination:  getDestination("SNOWFLAKE", map[string]any{}),
 				expectedResponse: types.Response{
@@ -2446,8 +2447,8 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
@@ -2459,8 +2460,8 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
@@ -2472,9 +2473,35 @@ func TestEvents(t *testing.T) {
 				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
 					require.Equal(t, "auto-"+uid, misc.MapLookup(resp.Output, "data", "id"))
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "data", "received_at"))
-					require.Equal(t, "auto-"+uid, resp.Metadata.MessageID)
-					require.Equal(t, now.Format(misc.RFC3339Milli), resp.Metadata.ReceivedAt)
+					require.Empty(t, resp.Metadata.MessageID)
+					require.Empty(t, resp.Metadata.ReceivedAt)
 					require.Equal(t, now.Format(misc.RFC3339Milli), misc.MapLookup(resp.Output, "metadata", "receivedAt"))
+				},
+			},
+			{
+				name:         "messageId different in event and metadata",
+				eventPayload: `{"type":"track","messageId":"messageId-event","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES", MessageID: "messageId-metadata", ReceivedAt: "2021-09-01T00:00:00.000Z"},
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+					require.Equal(t, "messageId-event", misc.MapLookup(resp.Output, "data", "id"))
+					require.Equal(t, "2021-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "data", "received_at"))
+					require.Equal(t, "messageId-metadata", resp.Metadata.MessageID)
+					require.Equal(t, "2021-09-01T00:00:00.000Z", resp.Metadata.ReceivedAt)
+					require.Equal(t, "2021-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "metadata", "receivedAt"))
+				},
+			},
+			{
+				name:         "receivedAt different in event and metadata",
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2022-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     types.Metadata{EventType: "track", DestinationType: "POSTGRES", MessageID: "messageId", ReceivedAt: "2023-09-01T00:00:00.000Z"},
+				destination:  getDestination("POSTGRES", map[string]any{}),
+				verifyResponse: func(t *testing.T, resp types.TransformerResponse) {
+					require.Equal(t, "messageId", misc.MapLookup(resp.Output, "data", "id"))
+					require.Equal(t, "2022-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "data", "received_at"))
+					require.Equal(t, "messageId", resp.Metadata.MessageID)
+					require.Equal(t, "2023-09-01T00:00:00.000Z", resp.Metadata.ReceivedAt)
+					require.Equal(t, "2022-09-01T00:00:00.000Z", misc.MapLookup(resp.Output, "metadata", "receivedAt"))
 				},
 			},
 		}
@@ -2578,5 +2605,67 @@ func TestEvents(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("Multiple fields for the same key", func(t *testing.T) {
+		message := map[string]any{
+			"context": map[string]any{
+				"abC":  "1",
+				"ab_C": "2",
+				"ab_c": "3",
+			},
+			"messageId":         "messageId",
+			"originalTimestamp": "2021-09-01T00:00:00.000Z",
+			"receivedAt":        "2021-09-01T00:00:00.000Z",
+			"sentAt":            "2021-09-01T00:00:00.000Z",
+			"timestamp":         "2021-09-01T00:00:00.000Z",
+			"type":              "identify",
+		}
+		c := setupConfig(transformerResource, map[string]any{})
+
+		ctx := context.Background()
+		events := []types.TransformerEvent{{
+			Message:     message,
+			Metadata:    getMetadata("identify", "POSTGRES"),
+			Destination: getDestination("POSTGRES", map[string]any{}),
+		}}
+
+		t.Run("Reverse", func(t *testing.T) {
+			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
+			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+			warehouseTransformer.sorter = func(i []string) []string {
+				sort.Strings(i)
+				slices.Reverse(i)
+				return i
+			}
+
+			pResponse := processorTransformer.Destination().Transform(ctx, events)
+			wResponse := warehouseTransformer.Transform(ctx, events)
+
+			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+			require.Nil(t, pResponse.FailedEvents)
+			require.Nil(t, wResponse.FailedEvents)
+			for i := range pResponse.Events {
+				require.Equal(t, "3", misc.MapLookup(pResponse.Events[i].Output, "data", "context_ab_c"))
+				require.Equal(t, "1", misc.MapLookup(wResponse.Events[i].Output, "data", "context_ab_c"))
+				delete(pResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				delete(wResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			}
+		})
+		t.Run("Sorted", func(t *testing.T) {
+			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
+			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+
+			pResponse := processorTransformer.Destination().Transform(ctx, events)
+			wResponse := warehouseTransformer.Transform(ctx, events)
+
+			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
+			require.Nil(t, pResponse.FailedEvents)
+			require.Nil(t, wResponse.FailedEvents)
+			for i := range pResponse.Events {
+				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			}
+		})
 	})
 }

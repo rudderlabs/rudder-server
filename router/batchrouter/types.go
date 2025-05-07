@@ -44,6 +44,7 @@ type UploadResult struct {
 	LastEventAt      string
 	TotalEvents      int
 	TotalBytes       int
+	BytesPerTable    map[string]int64
 	UseRudderStorage bool
 }
 

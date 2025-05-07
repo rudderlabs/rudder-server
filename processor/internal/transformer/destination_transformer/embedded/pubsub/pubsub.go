@@ -110,7 +110,9 @@ func getTopic(event types.TransformerEvent, topicMap map[string]string) (string,
 		return topic, nil
 	}
 
-	return "", fmt.Errorf("no topic set for this event")
+	// Capital "No" needed for mirroring/comparison; re-enable lint after mirroring ends.
+	//nolint:staticcheck
+	return "", fmt.Errorf("No topic set for this event")
 }
 
 func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[string][]string) []string {

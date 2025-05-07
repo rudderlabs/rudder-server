@@ -8,13 +8,14 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
+	wtypes "github.com/rudderlabs/rudder-server/warehouse/transformer/internal/types"
 )
 
 type (
 	Transformer struct {
 		now           func() time.Time
 		uuidGenerator func() string
+		sorter        func([]string) []string
 
 		logger       logger.Logger
 		statsFactory stats.Stats
@@ -65,11 +66,12 @@ type (
 	}
 
 	transformEventContext struct {
-		event         *types.TransformerEvent
+		event         *wtypes.TransformerEvent
 		intrOpts      *intrOptions
 		destOpts      *destOptions
 		jsonPathsInfo *jsonPathInfo
 		cache         *cache
+		sorter        func([]string) []string
 	}
 
 	intrOptions struct {
