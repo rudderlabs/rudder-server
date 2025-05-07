@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/rudderlabs/rudder-server/gateway/validator"
 
 	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
@@ -159,7 +161,9 @@ func (gw *Handle) Setup(
 
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
-	gw.webhookAuthMiddleware = auth.NewWebhookAuth(gw.handleHttpError, gw.authRequestContextForWriteKey)
+	gw.webhookAuthMiddleware = auth.NewWebhookAuth(gw.handleHttpError, func(writeKey string) (*gwtypes.AuthRequestContext, error) {
+		return gw.authRequestContextForWriteKey(writeKey), nil
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)

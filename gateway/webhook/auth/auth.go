@@ -11,12 +11,12 @@ import (
 
 type WebhookAuth struct {
 	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string)
-	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext
+	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error)
 }
 
 func NewWebhookAuth(
 	onFailure func(w http.ResponseWriter, r *http.Request, errorMessage string),
-	authReqCtxForWriteKey func(writeKey string) *gwtypes.AuthRequestContext,
+	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error),
 ) *WebhookAuth {
 	return &WebhookAuth{
 		onFailure:             onFailure,
@@ -44,7 +44,11 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 			errorMessage = response.NoWriteKeyInQueryParams
 			return
 		}
-		arctx = wa.authReqCtxForWriteKey(writeKey)
+		arctx, err := wa.authReqCtxForWriteKey(writeKey)
+		if err != nil {
+			errorMessage = response.ErrAuthenticatingWebhookRequest
+			return
+		}
 		if arctx == nil || arctx.SourceCategory != "webhook" {
 			errorMessage = response.InvalidWriteKey
 			return
