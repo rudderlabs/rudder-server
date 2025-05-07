@@ -1,48 +1,65 @@
 package destination_transformer
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"path"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-go-kit/stringify"
-
+	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func (c *Client) CompareAndLog(
+	ctx context.Context,
 	embeddedResponse, legacyResponse types.Response,
 ) {
-	c.loggedEventsMu.Lock()
-	defer c.loggedEventsMu.Unlock()
-
-	if c.loggedEvents >= int64(c.config.maxLoggedEvents.Load()) {
+	if c.samplingFileManager == nil { // Cannot upload, we should just report the issue with no diff
+		c.log.Warnn("DestinationTransformer sanity check failed")
 		return
 	}
 
-	c.stats.comparisonTime.RecordDuration()()
+	if c.loggedEvents.Load() >= int64(c.config.maxLoggedEvents.Load()) {
+		return
+	}
+
+	defer c.stats.comparisonTime.RecordDuration()()
 
 	differingResponse, sampleDiff := c.differingEvents(embeddedResponse, legacyResponse)
-	if len(differingResponse) == 0 && sampleDiff == "" {
-		c.log.Infof("Embedded and legacy responses are matches")
+	noOfDifferences := int64(len(differingResponse))
+	if noOfDifferences == 0 && sampleDiff == "" {
 		return
 	}
 
-	logEntries := lo.Map(differingResponse, func(item types.TransformerResponse, index int) string {
-		return stringify.Any(item)
-	})
-	if err := c.write(append([]string{sampleDiff}, logEntries...)); err != nil {
-		c.log.Warnn("Error logging events", obskit.Error(err))
+	c.loggedEvents.Add(noOfDifferences)
+
+	objName := path.Join("embedded-dt-samples", config.GetKubeNamespace(), uuid.New().String())
+	differingResponseJSON, err := jsonrs.Marshal(differingResponse)
+	if err != nil {
+		c.loggedEvents.Add(-noOfDifferences)
+		c.log.Errorn("DestinationTransformer sanity check failed (cannot encode differingResponse)", obskit.Error(err))
 		return
 	}
 
-	c.log.Infof("Successfully logged events: %d", len(logEntries))
-	c.loggedEvents += int64(len(logEntries))
+	// upload sample diff and differing response to s3
+	file, err := c.samplingFileManager.UploadReader(ctx, objName, bytes.NewReader(append([]byte(sampleDiff), differingResponseJSON...)))
+	if err != nil {
+		c.loggedEvents.Add(-noOfDifferences)
+		c.log.Errorn("Error uploading DestinationTransformer sanity check diff file", obskit.Error(err))
+		return
+	}
+
+	c.log.Warnn("DestinationTransformer sanity check failed",
+		logger.NewStringField("location", file.Location),
+		logger.NewStringField("objectName", file.ObjectName),
+	)
 }
 
 func (c *Client) differingEvents(
@@ -94,23 +111,4 @@ func (c *Client) differingEvents(
 	c.stats.matchedEvents.Count(len(legacyResponse.Events) + len(legacyResponse.FailedEvents) - differedEventsCount)
 	c.stats.mismatchedEvents.Count(differedEventsCount)
 	return differedSampleEvents, sampleDiff
-}
-
-func (c *Client) write(data []string) error {
-	writer, err := misc.CreateGZ(c.loggedFileName)
-	if err != nil {
-		return fmt.Errorf("creating buffered writer: %w", err)
-	}
-	defer func() { _ = writer.Close() }()
-
-	for _, entry := range data {
-		if _, err := writer.Write([]byte(entry + "\n")); err != nil {
-			return fmt.Errorf("writing log entry: %w", err)
-		}
-	}
-	return nil
-}
-
-func generateLogFileName() string {
-	return fmt.Sprintf("destination_transformations_debug_%s.log.gz", uuid.NewString())
 }
