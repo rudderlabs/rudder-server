@@ -164,21 +164,9 @@ func (t *Transformer) trackEventsResponse(tec *transformEventContext, transforme
 }
 
 func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]any, error) {
-	data := make(map[string]any)
-	metadata := make(map[string]string)
-
-	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), data, metadata, &prefixInfo{
-		completePrefix: "extract_context_",
-		completeLevel:  2,
-		prefix:         "context_",
-	}); err != nil {
-		return nil, fmt.Errorf("extract: setting data and column types from input: %w", err)
-	}
-	if err := setDataAndMetadataFromInput(tec, tec.event.Message["properties"], data, metadata, &prefixInfo{
-		completePrefix: "extract_properties_",
-		completeLevel:  2,
-	}); err != nil {
-		return nil, fmt.Errorf("extract: setting data and column types from input: %w", err)
+	commonData, commonMetadata, err := t.extractCommonProps(tec)
+	if err != nil {
+		return nil, fmt.Errorf("identifies: common properties: %w", err)
 	}
 
 	eventColName, err := safeColumnNameCached(tec, "event")
@@ -186,20 +174,21 @@ func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]an
 		return nil, fmt.Errorf("extract: safe column name: %w", err)
 	}
 
-	eventName, _ := tec.event.Message[eventColName].(string)
-	transformedEventName := transformTableNameCached(tec, eventName)
-	if utils.IsBlank(transformedEventName) {
-		return nil, response.ErrExtractEventNameEmpty
+	extractData := make(map[string]any)
+	extractMetadata := make(map[string]string)
+
+	if err := setDataAndMetadataFromInput(tec, tec.event.Message["properties"], extractData, extractMetadata, &prefixInfo{
+		completePrefix: "extract_properties_",
+		completeLevel:  2,
+	}); err != nil {
+		return nil, fmt.Errorf("extract: setting data and column types from input: %w", err)
 	}
 
-	data[eventColName] = transformedEventName
-	metadata[eventColName] = model.StringDataType
+	data := lo.Assign(extractData, commonData)
+	metadata := lo.Assign(extractMetadata, commonMetadata)
 
-	if err = setDataAndMetadataFromRules(tec, data, metadata, rules.ExtractRules); err != nil {
-		return nil, fmt.Errorf("extract: setting data and column types from rules: %w", err)
-	}
-
-	columnName := transformColumnNameCached(tec, transformedEventName)
+	eventName, _ := data[eventColName].(string)
+	columnName := transformColumnNameCached(tec, eventName)
 	tableName, err := safeTableNameCached(tec, columnName)
 	if err != nil {
 		return nil, fmt.Errorf("extract: safe table name: %w", err)
@@ -221,6 +210,38 @@ func (t *Transformer) extractEvents(tec *transformEventContext) ([]map[string]an
 		"userId": "",
 	}
 	return []map[string]any{extractOutput}, nil
+}
+
+func (t *Transformer) extractCommonProps(tec *transformEventContext) (map[string]any, map[string]string, error) {
+	commonData := make(map[string]any)
+	commonMetadata := make(map[string]string)
+
+	if err := setDataAndMetadataFromInput(tec, t.eventContext(tec), commonData, commonMetadata, &prefixInfo{
+		completePrefix: "extract_context_",
+		completeLevel:  2,
+		prefix:         "context_",
+	}); err != nil {
+		return nil, nil, fmt.Errorf("extract: setting data and column types from input: %w", err)
+	}
+
+	eventColName, err := safeColumnNameCached(tec, "event")
+	if err != nil {
+		return nil, nil, fmt.Errorf("extract: safe column name: %w", err)
+	}
+
+	eventName, _ := tec.event.Message[eventColName].(string)
+	commonData[eventColName] = transformTableNameCached(tec, eventName)
+	commonMetadata[eventColName] = model.StringDataType
+
+	if err = setDataAndMetadataFromRules(tec, commonData, commonMetadata, rules.ExtractRules); err != nil {
+		return nil, nil, fmt.Errorf("extract: setting data and column types from rules: %w", err)
+	}
+
+	eventName, _ = commonData[eventColName].(string)
+	if utils.IsEmptyString(eventName) {
+		return nil, nil, response.ErrExtractEventNameEmpty
+	}
+	return commonData, commonMetadata, nil
 }
 
 func excludeRudderCreatedTableNames(name string, skipReservedKeywordsEscaping bool) string {
@@ -337,7 +358,7 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 
 func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
 	userID := misc.MapLookup(tec.event.Message, "userId")
-	if utils.IsBlank(userID) {
+	if utils.IsEmptyString(userID) {
 		return nil, nil
 	}
 	if shouldSkipUsersTable(tec) {

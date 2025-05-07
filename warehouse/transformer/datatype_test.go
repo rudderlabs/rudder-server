@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -21,6 +22,10 @@ func TestDataType(t *testing.T) {
 		}
 		anyMap[strconv.Itoa(i)] = i
 	}
+
+	japaneseProductsJSON := `[{"name_ar":"フルーツックスジュー","name_en":"Furūtsu Mikkusu Jūsu","name_ja":"フルーツミックスジュース","price_incl_vat":7,"quantity":3,"sku":"874593120"},{"name_ar":"チョコレートクロワッサン","name_en":"Chokorēto Kurowassan","name_ja":"チョコトクロワッサン","price_incl_vat":6,"quantity":2,"sku":"990127384"},{"name_ar":"天然水ボトル","name_en":"Tennensui Botoru","name_ja":"天然水ボトル","price_incl_vat":3,"quantity":1,"sku":"663748210"},{"name_ar":"ベーカリーとお菓子","name_en":"Bēkarī to Okashi","name_ja":"ベーカリーとお菓子","price_incl_vat":5,"quantity":4,"sku":"478120935"}]`
+	require.Greater(t, len(japaneseProductsJSON), redshiftStringLimit)
+	require.Less(t, utf8.RuneCountInString(japaneseProductsJSON), redshiftStringLimit)
 
 	testCases := []struct {
 		name, destType, key string
@@ -61,6 +66,7 @@ func TestDataType(t *testing.T) {
 		{"Redshift Text Type", whutils.RS, "someKey", strings.Repeat("a", 600), false, "text"},
 		{"Redshift String Type (nil)", whutils.RS, "someKey", nil, false, "string"},
 		{"Redshift String Type (shortValue)", whutils.RS, "someKey", "shortValue", false, "string"},
+		{"Redshift String Type (Japanese Products JSON)", whutils.RS, "someKey", japaneseProductsJSON, false, "string"},
 
 		{"Empty String Value", whutils.CLICKHOUSE, "someKey", "", false, "string"},
 	}
