@@ -26,11 +26,13 @@ import (
 
 type Gateway interface {
 	RequestMetricsTracker
-	WebhookHandler
+	WebhookRequestProcessor
 }
 
-type WebhookHandler interface {
-	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
+type WebhookRequestProcessor interface {
+	// ProcessTransformedWebhookRequest processes the transformed webhook request and save it to the gw jobsDB
+	ProcessTransformedWebhookRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
+	// SaveWebhookFailures saves the webhook failures to the procErr jobsDB
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
@@ -40,11 +42,6 @@ type StatReporterCreator func(authContext *gwtypes.AuthRequestContext, requestTy
 // RequestMetricsTracker is used to track webhook request metrics on a request basis for OSS customers
 type RequestMetricsTracker interface {
 	TrackRequestMetrics(errorMessage string)
-}
-
-type WebHookI interface {
-	RequestHandler(w http.ResponseWriter, r *http.Request)
-	Register(name string)
 }
 
 type TransformerFeaturesService interface {

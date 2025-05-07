@@ -344,7 +344,7 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,
 	}
-	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
+	mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
@@ -390,7 +390,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,
 	}
-	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
+	mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))

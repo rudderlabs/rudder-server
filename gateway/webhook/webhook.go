@@ -49,10 +49,13 @@ type batchWebhookT struct {
 	sourceType   string
 }
 
-//go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook Webhook
-type Webhook interface {
+//go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook WebhookRequestHandler
+type WebhookRequestHandler interface {
+	// RequestHandler handles the incoming webhook request
 	RequestHandler(w http.ResponseWriter, r *http.Request)
+	// Register registers a new webhook source type and starts a goroutine to process requests for that source type
 	Register(name string)
+	// Shutdown shuts down the webhook handler, closing all channels and waiting for goroutines to finish
 	Shutdown() error
 }
 
@@ -498,7 +501,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 	if err != nil {
 		return err.Error()
 	}
-	return webhook.gwHandle.ProcessWebRequest(&req.writer, req.request, "batch", payload, req.authContext)
+	return webhook.gwHandle.ProcessTransformedWebhookRequest(&req.writer, req.request, "batch", payload, req.authContext)
 }
 
 func (webhook *HandleT) Register(name string) {
@@ -598,7 +601,7 @@ func (webhook *HandleT) printStats(ctx context.Context) {
 		if lastRecvCount != webhook.recvCount.Load() || lastAckCount != webhook.ackCount.Load() {
 			lastRecvCount = webhook.recvCount.Load()
 			lastAckCount = webhook.ackCount.Load()
-			webhook.logger.Debug("Webhook Recv/Ack ", webhook.recvCount.Load(), webhook.ackCount.Load())
+			webhook.logger.Debug("WebhookRequestHandler Recv/Ack ", webhook.recvCount.Load(), webhook.ackCount.Load())
 		}
 
 		select {

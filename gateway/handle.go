@@ -87,7 +87,7 @@ type Handle struct {
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	irh                          RequestHandler
 	rrh                          RequestHandler
-	webhook                      webhook.Webhook
+	webhook                      webhook.WebhookRequestHandler
 	whProxy                      http.Handler
 	suppressUserHandler          types.UserSuppression
 	backgroundCancel             context.CancelFunc

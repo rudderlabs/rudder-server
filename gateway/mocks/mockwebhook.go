@@ -42,18 +42,18 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
 }
 
-// ProcessWebRequest mocks base method.
-func (m *MockGateway) ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *types.AuthRequestContext) string {
+// ProcessTransformedWebhookRequest mocks base method.
+func (m *MockGateway) ProcessTransformedWebhookRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *types.AuthRequestContext) string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ProcessWebRequest", writer, req, reqType, requestPayload, arctx)
+	ret := m.ctrl.Call(m, "ProcessTransformedWebhookRequest", writer, req, reqType, requestPayload, arctx)
 	ret0, _ := ret[0].(string)
 	return ret0
 }
 
-// ProcessWebRequest indicates an expected call of ProcessWebRequest.
-func (mr *MockGatewayMockRecorder) ProcessWebRequest(writer, req, reqType, requestPayload, arctx any) *gomock.Call {
+// ProcessTransformedWebhookRequest indicates an expected call of ProcessTransformedWebhookRequest.
+func (mr *MockGatewayMockRecorder) ProcessTransformedWebhookRequest(writer, req, reqType, requestPayload, arctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessWebRequest", reflect.TypeOf((*MockGateway)(nil).ProcessWebRequest), writer, req, reqType, requestPayload, arctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessTransformedWebhookRequest", reflect.TypeOf((*MockGateway)(nil).ProcessTransformedWebhookRequest), writer, req, reqType, requestPayload, arctx)
 }
 
 // SaveWebhookFailures mocks base method.

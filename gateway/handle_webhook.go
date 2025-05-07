@@ -20,8 +20,8 @@ func (gw *Handle) webhookHandler() http.HandlerFunc {
 	return gw.callType("webhook", gw.webhookAuth(gw.webhook.RequestHandler))
 }
 
-// ProcessWebRequest is an interface wrapper for webhook
-func (gw *Handle) ProcessWebRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, arctx *gwtypes.AuthRequestContext) string {
+// ProcessTransformedWebhookRequest is an interface wrapper for webhook
+func (gw *Handle) ProcessTransformedWebhookRequest(w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, arctx *gwtypes.AuthRequestContext) string {
 	return gw.rrh.ProcessRequest(w, r, reqType, payload, arctx)
 }
 
