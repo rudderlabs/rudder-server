@@ -30,7 +30,7 @@ func (c *Client) CompareAndLog(
 		return
 	}
 
-	c.stats.comparisonTime.RecordDuration()()
+	defer c.stats.comparisonTime.RecordDuration()()
 
 	differingResponse, sampleDiff := c.differingEvents(embeddedResponse, legacyResponse)
 	noOfDifferences := int64(len(differingResponse))
