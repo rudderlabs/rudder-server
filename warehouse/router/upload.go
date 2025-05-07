@@ -831,7 +831,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 	}
 	sqlStatement := job.getLoadFilesMetadataQuery(tableFilterSQL, limitSQL)
 
-	job.logger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
+	job.logger.Debugn("Fetching loadFileLocations", logger.NewStringField("sqlStatement", sqlStatement))
 	rows, err := job.db.QueryContext(ctx, sqlStatement)
 	if err != nil {
 		return nil, fmt.Errorf("query: %s\nfailed with Error : %w", sqlStatement, err)

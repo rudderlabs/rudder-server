@@ -295,11 +295,11 @@ func (jr *jobRun) downloadStagingFile(ctx context.Context, stagingFileInfo stagi
 			return fmt.Errorf("downloading staging file: %w", err)
 		}
 
-		jr.logger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, identifier: %s",
-			stagingFileInfo.ID,
-			jr.job.DestinationRevisionID,
-			jr.job.StagingDestinationRevisionID,
-			jr.identifier,
+		jr.logger.Infon("[WH]: Starting processing staging file with revision config",
+			logger.NewField("stagingFileID", stagingFileInfo.ID),
+			logger.NewField("destinationRevisionID", jr.job.DestinationRevisionID),
+			logger.NewField("stagingDestinationRevisionID", jr.job.StagingDestinationRevisionID),
+			logger.NewField("identifier", jr.identifier),
 		)
 
 		if err := doTask(jr.job.StagingDestinationConfig, jr.job.StagingUseRudderStorage); err != nil {

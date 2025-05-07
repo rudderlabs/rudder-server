@@ -114,7 +114,10 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 	for {
 		select {
 		case <-ctx.Done():
-			w.log.Infof("Slave worker-%d-%s is shutting down", w.workerIdx, slaveID)
+			w.log.Infon("Slave worker is shutting down",
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
+			)
 			return
 		case claimedJob, ok := <-notificationChan:
 			if !ok {
@@ -122,11 +125,11 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			}
 			w.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			w.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
-				claimedJob.Job.ID,
-				w.workerIdx,
-				slaveID,
-				claimedJob.Job.Type,
+			w.log.Debugn("Successfully claimed job by slave worker",
+				logger.NewField("jobId", claimedJob.Job.ID),
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
+				logger.NewField("jobType", claimedJob.Job.Type),
 			)
 
 			switch claimedJob.Job.Type {
@@ -136,10 +139,10 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				w.processClaimedUploadJob(ctx, claimedJob)
 			}
 
-			w.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
-				claimedJob.Job.ID,
-				w.workerIdx,
-				slaveID,
+			w.log.Infon("Successfully processed job",
+				logger.NewField("jobId", claimedJob.Job.ID),
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
 			)
 
 			workerIdleTimeStart = time.Now()
@@ -173,7 +176,9 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 			return
 		}
 		job.BatchID = claimedJob.Job.BatchID
-		w.log.Infof(`Starting processing staging-files from claim:%v`, claimedJob.Job.ID)
+		w.log.Infon("Starting processing staging-files from claim",
+			logger.NewField("jobId", claimedJob.Job.ID),
+		)
 		job.Output, err = w.processMultiStagingFiles(ctx, &job)
 		if err != nil {
 			handleErr(err, claimedJob)
@@ -187,7 +192,10 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 			return
 		}
 		job.BatchID = claimedJob.Job.BatchID
-		w.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
+		w.log.Infon("Starting processing staging-file from claim",
+			logger.NewField("stagingFileID", job.StagingFileID),
+			logger.NewField("jobId", claimedJob.Job.ID),
+		)
 		job.Output, err = w.processStagingFile(ctx, &job)
 		if err != nil {
 			handleErr(err, claimedJob)
@@ -414,7 +422,10 @@ func (w *worker) processSingleStagingFile(
 		jr.incrementEventCount(tableName)
 	}
 
-	jr.logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, stagingFile.Location)
+	jr.logger.Debugn("Process bytes from downloaded staging file",
+		logger.NewField("bytes", lineBytesCounter),
+		logger.NewField("location", stagingFile.Location),
+	)
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
 
@@ -426,10 +437,10 @@ func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]upload
 
 	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
 
-	w.log.Debugf("Starting processing staging file: %v at %s for %s",
-		job.StagingFileID,
-		job.StagingFileLocation,
-		jr.identifier,
+	w.log.Debugn("Starting processing staging file",
+		logger.NewField("stagingFileID", job.StagingFileID),
+		logger.NewField("stagingFileLocation", job.StagingFileLocation),
+		logger.NewField("identifier", jr.identifier),
 	)
 
 	defer func() {
@@ -478,7 +489,9 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 
 	for _, stagingFile := range job.StagingFiles {
 		g.Go(func() error {
-			w.log.Infof(`Processing staging-file:%v for upload_v2 job`, stagingFile.ID)
+			w.log.Infon("Processing staging-file for upload_v2 job",
+				logger.NewField("stagingFileID", stagingFile.ID),
+			)
 			if err := w.processSingleStagingFile(gCtx, jr, &job.basePayload, stagingFile); err != nil {
 				return fmt.Errorf("processing staging file %d: %w", stagingFile.ID, err)
 			}

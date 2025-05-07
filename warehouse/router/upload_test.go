@@ -777,24 +777,8 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 				upload:         model.Upload{},
 				stagingFileIDs: []int64{1, 2, 3},
 				logger:         logger.NOP,
-				config: struct {
-					refreshPartitionBatchSize           int
-					retryTimeWindow                     time.Duration
-					minRetryAttempts                    int
-					disableAlter                        bool
-					minUploadBackoff                    time.Duration
-					maxUploadBackoff                    time.Duration
-					alwaysRegenerateAllLoadFiles        bool
-					reportingEnabled                    bool
-					maxParallelLoadsWorkspaceIDs        map[string]interface{}
-					columnsBatchSize                    int
-					longRunningUploadStatThresholdInMin time.Duration
-					skipPreviouslyFailedTables          bool
-					queryLoadFilesWithUploadID          config.ValueLoader[bool]
-				}{
-					queryLoadFilesWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
-				},
 			}
+			job.config.queryLoadFilesWithUploadID = conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 			var stagingFileId int64
 			stagingFileId, job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
@@ -817,7 +801,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 	}
 }
 
-func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
+func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
 	t.Helper()
 	stagingFilesRepo := repo.NewStagingFiles(db)
 	stagingFile := model.StagingFileWithSchema{
