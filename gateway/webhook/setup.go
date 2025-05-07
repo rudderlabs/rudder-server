@@ -31,9 +31,11 @@ type Gateway interface {
 
 type WebhookHandler interface {
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
-	NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
+
+// StatReporterCreator is a function type that creates StatReporter instances
+type StatReporterCreator func(authContext *gwtypes.AuthRequestContext, requestType string) gwtypes.StatReporter
 
 // RequestMetricsTracker is used to track webhook request metrics on a request basis for OSS customers
 type RequestMetricsTracker interface {
@@ -60,7 +62,7 @@ func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, conf *config.Config, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, conf *config.Config, statReporterCreator StatReporterCreator, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
 	webhook.config.maxWebhookBatchSize = conf.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
@@ -98,6 +100,8 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
+
+	webhook.statReporterCreator = statReporterCreator
 
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {

@@ -21,7 +21,7 @@ func (gw *Handle) NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType strin
 	}
 }
 
-func (gw *Handle) NewSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter {
+func newSourceStatReporter(arctx *gwtypes.AuthRequestContext, reqType string) gwtypes.StatReporter {
 	return &gwstats.SourceStat{
 		Source:      arctx.SourceTag(),
 		SourceID:    arctx.SourceID,

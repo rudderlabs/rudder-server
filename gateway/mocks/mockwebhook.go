@@ -42,20 +42,6 @@ func (m *MockGateway) EXPECT() *MockGatewayMockRecorder {
 	return m.recorder
 }
 
-// NewSourceStatReporter mocks base method.
-func (m *MockGateway) NewSourceStatReporter(arctx *types.AuthRequestContext, reqType string) types.StatReporter {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "NewSourceStatReporter", arctx, reqType)
-	ret0, _ := ret[0].(types.StatReporter)
-	return ret0
-}
-
-// NewSourceStatReporter indicates an expected call of NewSourceStatReporter.
-func (mr *MockGatewayMockRecorder) NewSourceStatReporter(arctx, reqType any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStatReporter", reflect.TypeOf((*MockGateway)(nil).NewSourceStatReporter), arctx, reqType)
-}
-
 // ProcessWebRequest mocks base method.
 func (m *MockGateway) ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *types.AuthRequestContext) string {
 	m.ctrl.T.Helper()

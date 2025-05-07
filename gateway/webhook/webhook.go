@@ -79,6 +79,7 @@ type HandleT struct {
 		forwardGetRequestForSrcMap map[string]struct{}
 		webhookV2HandlerEnabled    bool
 	}
+	statReporterCreator StatReporterCreator
 }
 
 type webhookSourceStatT struct {
@@ -134,7 +135,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotParseForm")
 			stat.Report(webhook.stats)
 
@@ -150,7 +151,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotParseMultiform")
 			stat.Report(webhook.stats)
 
@@ -172,7 +173,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = jsonrs.Marshal(multipartForm)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -187,7 +188,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if len(postFrom) != 0 {
 		jsonByte, err = jsonrs.Marshal(postFrom)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -229,7 +230,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	webhook.ackCount.Add(1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
-	ss := webhook.gwHandle.NewSourceStatReporter(arctx, reqType)
+	ss := webhook.statReporterCreator(arctx, reqType)
 
 	if resp.Err != "" {
 		code := http.StatusBadRequest
