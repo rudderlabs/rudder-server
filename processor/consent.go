@@ -62,19 +62,20 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 		return destinations
 	}
 
+	finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
+
+	// Emit a stat when the source sent resolution strategy is "or" or "and" in the event payload
+	// For custom provider, the resolution strategy is to be picked from the destination config
+	// Config backend still serves the value in the older format for backward compatibility
+	// Once we realize no SDKs are sending the data in this format, we have to update the config backend
+	// and also remove this stat.
+	if finalResolutionStrategy == "or" || finalResolutionStrategy == "and" {
+		proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"source_id": sourceID, "resolution_strategy": finalResolutionStrategy}).Count(1)
+	}
+
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// Generic consent management
 		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
-			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
-
-			// Emit a stat when the source sent resolution strategy is "or" or "and" in the event payload
-			// For custom provider, the resolution strategy is to be picked from the destination config
-			// Config backend still serves the value in the older format for backward compatibility
-			// Once we realize no SDKs are sending the data in this format, we have to update the config backend
-			// and also remove this stat.
-			if finalResolutionStrategy == "or" || finalResolutionStrategy == "and" {
-				proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"source_id": sourceID, "resolution_strategy": finalResolutionStrategy}).Count(1)
-			}
 
 			// For custom provider, the resolution strategy is to be picked from the destination config
 			if consentManagementInfo.Provider == "custom" {
