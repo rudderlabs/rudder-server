@@ -109,8 +109,8 @@ type ConfigT struct {
 	UpdatedAt          time.Time                    `json:"updatedAt"`
 	Credentials        map[string]Credential        `json:"credentials"`
 	Connections        map[string]Connection        `json:"connections"`
-	Accounts           []Account                    `json:"accounts"`
-	AccountDefinitions []AccountDefinition          `json:"accountDefinitions"`
+	Accounts           map[string]Account           `json:"accounts"`
+	AccountDefinitions map[string]AccountDefinition `json:"accountDefinitions"`
 }
 
 type AccountWithDefinition struct {
