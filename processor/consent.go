@@ -7,6 +7,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -65,6 +66,15 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 		// Generic consent management
 		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
+
+			// Emit a stat when the source sent resolution strategy is "or" or "and" in the event payload
+			// For custom provider, the resolution strategy is to be picked from the destination config
+			// Config backend still serves the value in the older format for backward compatibility
+			// Once we realize no SDKs are sending the data in this format, we have to update the config backend
+			// and also remove this stat.
+			if finalResolutionStrategy == "or" || finalResolutionStrategy == "and" {
+				proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"sourceId": sourceID}).Count(1)
+			}
 
 			// For custom provider, the resolution strategy is to be picked from the destination config
 			if consentManagementInfo.Provider == "custom" {
