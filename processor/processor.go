@@ -2874,7 +2874,7 @@ func (proc *Handle) userTransformAndFilter(
 	if transformationEnabled {
 		noOfEvents := len(eventList)
 		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
-		proc.logger.Infon("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
+		proc.logger.Debugn("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
 		var userTransformationMirroringStat *DestStatT
 		userTransformationStat.numEvents.Count(noOfEvents)
@@ -2912,7 +2912,26 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationStat.transformTime.SendTiming(d)
 
 			if utMirroringEnabled && utMirroringSanityChecks != nil {
-				go func() {
+				// Let's create a copy of the response because it may be subject to changes later (see getTransformerEvents).
+				// We want to block while creating a copy to avoid a race condition.
+				// This shouldn't have a big impact on processor latency unless the sanity sampling is a very high percentage.
+				responseCopy, err := jsonrs.Marshal(response)
+				if err != nil {
+					proc.logger.Warnn("Cannot create copy of transformer response", obskit.Error(err))
+				}
+
+				go func(responseCopy []byte) {
+					if len(responseCopy) == 0 {
+						return
+					}
+
+					var response types.Response
+					err := jsonrs.Unmarshal(responseCopy, &response)
+					if err != nil {
+						proc.logger.Warnn("Cannot unmarshal transformer response", obskit.Error(err))
+						return
+					}
+
 					mirroredResponse := <-utMirroringSanityChecks
 					diff, equal := response.Equal(&mirroredResponse)
 					if equal {
@@ -2976,7 +2995,7 @@ func (proc *Handle) userTransformAndFilter(
 						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),
 						logger.NewStringField("clientEventsObjectName", clientEventsFile.ObjectName),
 					)
-				}()
+				}(responseCopy)
 			}
 
 			var successMetrics []*reportingtypes.PUReportedMetric
