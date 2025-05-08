@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -2345,6 +2346,7 @@ func TestFilterDestinations(t *testing.T) {
 			proc.config.ketchConsentCategoriesMap = make(map[string][]string)
 			proc.config.genericConsentManagementMap = make(SourceConsentMap)
 			proc.logger = logger.NewLogger().Child("processor")
+			proc.statsFactory = stats.Default
 
 			for _, connection := range tc.connectionInfo {
 				proc.config.genericConsentManagementMap[SourceID(connection.sourceId)] = make(DestConsentMap)
