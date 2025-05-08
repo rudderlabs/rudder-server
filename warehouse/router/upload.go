@@ -61,6 +61,28 @@ type UploadJobFactory struct {
 	encodingFactory      *encoding.Factory
 }
 
+func NewUploadJobFactory(
+	reporting types.Reporting,
+	db *sqlquerywrapper.DB,
+	destinationValidator validations.DestinationValidator,
+	loadFile *loadfiles.LoadFileGenerator,
+	conf *config.Config,
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	encodingFactory *encoding.Factory,
+) *UploadJobFactory {
+	return &UploadJobFactory{
+		reporting:            reporting,
+		db:                   db,
+		destinationValidator: destinationValidator,
+		loadFile:             loadFile,
+		conf:                 conf,
+		logger:               logger,
+		statsFactory:         statsFactory,
+		encodingFactory:      encodingFactory,
+	}
+}
+
 type UploadJob struct {
 	ctx                  context.Context
 	db                   *sqlquerywrapper.DB
@@ -247,7 +269,7 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 	return ch
 }
 
-func (job *UploadJob) run() (err error) {
+func (job *UploadJob) Run() (err error) {
 	start := job.now()
 	ch := job.trackLongRunningUpload()
 	defer func() {

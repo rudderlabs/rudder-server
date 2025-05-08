@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"golang.org/x/sync/errgroup"
 
@@ -31,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	whpayload "github.com/rudderlabs/rudder-server/warehouse/internal/payload"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -106,6 +110,7 @@ type Router struct {
 		warehouseSyncFreqIgnore           config.ValueLoader[bool]
 		cronTrackerRetries                config.ValueLoader[int64]
 		uploadBufferTimeInMin             config.ValueLoader[time.Duration]
+		enableSlaveUpload                 config.ValueLoader[bool]
 	}
 
 	stats struct {
@@ -271,13 +276,60 @@ func (r *Router) initWorker() chan *UploadJob {
 			for uploadJob := range workerChan {
 				r.incrementActiveWorkers()
 
-				err := uploadJob.run()
-				if err != nil {
-					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+v", err)
+				if r.config.enableSlaveUpload.Load() {
+					// Create payload with complete job data
+					payload := &whpayload.UploadJobPayload{
+						Upload:       uploadJob.upload,
+						Warehouse:    uploadJob.warehouse,
+						StagingFiles: uploadJob.stagingFiles,
+					}
+
+					// Marshal payload
+					payloadBytes, err := jsonrs.Marshal(payload)
+					if err != nil {
+						r.logger.Errorf("[WH] Failed to marshal upload job payload: %+v", err)
+						r.decrementActiveWorkers()
+						continue
+					}
+
+					publishCh, err := r.notifier.Publish(context.Background(), &notifier.PublishRequest{
+						Payloads: []stdjson.RawMessage{
+							payloadBytes,
+						},
+						JobType: notifier.JobTypeUpload,
+					})
+					if err != nil {
+						r.logger.Errorf("[WH] Failed to publish upload job: %+v", err)
+						r.decrementActiveWorkers()
+						continue
+					}
+
+					// Wait for publish response
+					response := <-publishCh
+					if response.Err != nil {
+						r.logger.Errorf("[WH] Error in publish response: %+v", response.Err)
+						r.decrementActiveWorkers()
+						continue
+					}
+
+					// Check if any jobs failed
+					for _, job := range response.Jobs {
+						if job.Error != nil {
+							r.logger.Errorf("[WH] Job failed: %+v", job.Error)
+							r.decrementActiveWorkers()
+							continue
+						}
+					}
+
+					r.logger.Debugf("[WH] Published upload job payload for upload ID: %d", uploadJob.upload.ID)
+				} else {
+					err := uploadJob.Run()
+					if err != nil {
+						r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+v", err)
+					}
 				}
 
 				r.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
-
 				r.decrementActiveWorkers()
 			}
 			return nil
@@ -391,7 +443,6 @@ loop:
 
 		for _, uploadJob := range uploadJobsToProcess {
 			workerName := r.workerIdentifier(uploadJob.warehouse)
-
 			r.workerChannelMapLock.RLock()
 			r.workerChannelMap[workerName] <- uploadJob
 			r.workerChannelMapLock.RUnlock()

@@ -38,6 +38,7 @@ const (
 	JobTypeUpload   JobType = "upload"
 	JobTypeUploadV2 JobType = "upload_v2"
 	JobTypeAsync    JobType = "async_job"
+	JobTypeUploadSM JobType = "upload_sm"
 )
 
 type JobStatus string
