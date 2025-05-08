@@ -46,7 +46,6 @@ type RequestMetricsTracker interface {
 
 type TransformerFeaturesService interface {
 	SourceTransformerVersion() string
-	Wait() chan struct{}
 }
 
 func newWebhookStats(stat stats.Stats) *webhookStatsT {
@@ -107,12 +106,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 				webhook: webhook,
 				stats:   newWebhookStats(stat),
 				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
-					select {
-					case <-ctx.Done():
-						return nil, ctx.Err()
-					case <-transformerFeaturesService.Wait():
-						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion(), conf), nil
-					}
+					return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion(), conf), nil
 				},
 			}
 			for _, opt := range opts {

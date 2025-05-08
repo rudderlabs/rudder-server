@@ -82,19 +82,20 @@ type Handle struct {
 
 	// state initialised during Setup
 
-	diagnosisTicker              *time.Ticker
-	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
-	irh                          RequestHandler
-	rrh                          RequestHandler
-	webhook                      webhook.WebhookRequestHandler
-	whProxy                      http.Handler
-	suppressUserHandler          types.UserSuppression
-	backgroundCancel             context.CancelFunc
-	backgroundWait               func() error
-	userWebRequestWorkers        []*userWebRequestWorkerT
-	backendConfigInitialisedChan chan struct{}
-	now                          func() time.Time
+	diagnosisTicker                *time.Ticker
+	userWorkerBatchRequestQ        chan *userWorkerBatchRequestT
+	batchUserWorkerBatchRequestQ   chan *batchUserWorkerBatchRequestT
+	irh                            RequestHandler
+	rrh                            RequestHandler
+	webhook                        webhook.WebhookRequestHandler
+	whProxy                        http.Handler
+	suppressUserHandler            types.UserSuppression
+	backgroundCancel               context.CancelFunc
+	backgroundWait                 func() error
+	userWebRequestWorkers          []*userWebRequestWorkerT
+	backendConfigInitialisedChan   chan struct{}
+	transformerFeaturesInitialised chan struct{}
+	now                            func() time.Time
 
 	// other state
 

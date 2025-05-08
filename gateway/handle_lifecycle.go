@@ -171,6 +171,7 @@ func (gw *Handle) Setup(
 	gw.backgroundWait = g.Wait
 	gw.initUserWebRequestWorkers()
 	gw.backendConfigInitialisedChan = make(chan struct{})
+	gw.transformerFeaturesInitialised = transformerFeaturesService.Wait()
 
 	g.Go(crash.Wrapper(func() error {
 		gw.backendConfigSubscriber(ctx)
@@ -400,8 +401,23 @@ StartWebHandler starts all gateway web handlers, listening on gateway port.
 Supports CORS from all origins. This function will block.
 */
 func (gw *Handle) StartWebHandler(ctx context.Context) error {
-	gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
-	<-gw.backendConfigInitialisedChan
+	g, _ := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
+		<-gw.backendConfigInitialisedChan
+		gw.logger.Infof("backendConfig initialised")
+		return nil
+	})
+	g.Go(func() error {
+		gw.logger.Infof("WebHandler waiting for transformer feature before starting on %d", gw.conf.webPort)
+		<-gw.transformerFeaturesInitialised
+		gw.logger.Infof("transformer feature initialised")
+		return nil
+	})
+	err := g.Wait()
+	if err != nil {
+		return err
+	}
 	gw.logger.Infof("WebHandler Starting on %d", gw.conf.webPort)
 	component := "gateway"
 	srvMux := chi.NewRouter()
