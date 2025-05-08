@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -21,6 +24,7 @@ import (
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/utils"
 	"github.com/rudderlabs/rudder-server/processor/types"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -38,17 +42,40 @@ var _ = struct {
 	Property string
 }(types.ValidationError{})
 
-func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *Transformer {
+type Opts func(t *Transformer)
+
+func WithNow(now func() time.Time) Opts {
+	return func(t *Transformer) {
+		t.now = now
+	}
+}
+
+func WithUUIDGenerator(uuidGenerator func() string) Opts {
+	return func(t *Transformer) {
+		t.uuidGenerator = uuidGenerator
+	}
+}
+
+func WithSorter(sorter func([]string) []string) Opts {
+	return func(t *Transformer) {
+		t.sorter = sorter
+	}
+}
+
+func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, opts ...Opts) *Transformer {
 	t := &Transformer{
-		logger:         logger.Child("warehouse-transformer"),
-		statsFactory:   statsFactory,
-		now:            timeutil.Now,
-		uuidGenerator:  uuid.NewString,
-		loggedFileName: generateLogFileName(),
+		conf:          conf,
+		logger:        logger.Child("warehouse-transformer"),
+		statsFactory:  statsFactory,
+		now:           timeutil.Now,
+		uuidGenerator: uuid.NewString,
 		sorter: func(x []string) []string {
 			sort.Strings(x)
 			return x
 		},
+	}
+	for _, opt := range opts {
+		opt(t)
 	}
 
 	t.stats.matchedEvents = t.statsFactory.NewStat("warehouse_dest_transform_matched_events", stats.HistogramType)
@@ -58,8 +85,15 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats) *T
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
-	t.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Warehouse.maxLoggedEvents")
+	t.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Warehouse.Transformer.Sampling.maxLoggedEvents")
 	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
+	t.config.instanceID = conf.GetString("INSTANCE_ID", "1")
+
+	var err error
+	t.loggedSamplesUploader, err = getSamplingUploader(t.conf, t.logger)
+	if err != nil {
+		t.logger.Errorn("Failed to create wt sampling file manager", obskit.Error(err))
+	}
 	return t
 }
 

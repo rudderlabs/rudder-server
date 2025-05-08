@@ -1,10 +1,14 @@
 package warehouse
 
 import (
+	"context"
+	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -17,6 +21,7 @@ type (
 		uuidGenerator func() string
 		sorter        func([]string) []string
 
+		conf         *config.Config
 		logger       logger.Logger
 		statsFactory stats.Stats
 
@@ -31,12 +36,13 @@ type (
 			maxColumnsInEvent            config.ValueLoader[int]
 			maxLoggedEvents              config.ValueLoader[int]
 			concurrentTransformations    config.ValueLoader[int]
+			instanceID                   string
 		}
 
-		loggedEvents   int64
-		loggedEventsMu sync.Mutex
-
-		loggedFileName string
+		loggedSamples         atomic.Int64
+		loggedSamplesUploader interface {
+			UploadReader(ctx context.Context, objName string, rdr io.Reader) (filemanager.UploadedFile, error)
+		}
 	}
 
 	cache struct {
