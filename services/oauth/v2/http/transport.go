@@ -132,7 +132,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	return httpResponseCreator(statusCode, []byte(err.Error()))
 }
 
-func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, error) {
+func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
 		t.log.Errorn("[postRoundTrip] reading response body",
@@ -142,7 +142,8 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 			logger.NewStringField("flow", string(t.flow)),
 			logger.NewErrorField(err),
 		)
-		return nil, fmt.Errorf("reading response body post roundTrip: %w", err)
+		// Create a new response with a 500 status code
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[postRoundTrip]Error reading response body: %v", err)))
 	}
 	interceptorResp := oauth.OAuthInterceptorResponse{}
 	// internal function
@@ -164,7 +165,12 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 			logger.NewStringField("flow", string(t.flow)),
 			logger.NewErrorField(errors.New(string(respData))),
 		)
-		return nil, fmt.Errorf("getting auth error category post roundTrip: %s", string(respData))
+		// Instead of returning an error, set a 500 status code in the interceptor response
+		// This will make the error retryable instead of causing a panic
+		interceptorResp.StatusCode = http.StatusInternalServerError
+		interceptorResp.Response = "[postRoundTrip]Error processing response: " + string(respData)
+		applyInterceptorRespToHttpResp()
+		return rts.res
 	}
 
 	switch authErrorCategory {
@@ -178,7 +184,11 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
 				obskit.DestinationType(rts.destination.DefinitionName),
 				logger.NewStringField("flow", string(t.flow)))
-			return nil, fmt.Errorf("getting secret from context post roundTrip")
+			// Instead of returning an error, set a 500 status code in the interceptor response
+			interceptorResp.StatusCode = http.StatusInternalServerError
+			interceptorResp.Response = "[postRoundTrip]Error getting secret from context"
+			applyInterceptorRespToHttpResp()
+			return rts.res
 		}
 		rts.refreshTokenParams.Secret = oldSecret
 		rts.refreshTokenParams.Destination = rts.destination
@@ -205,7 +215,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 			// rts.res.Body = errorInRefToken
 			interceptorResp.Response = authResponse.ErrorMessage
 			applyInterceptorRespToHttpResp()
-			return rts.res, nil
+			return rts.res
 		}
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
@@ -220,7 +230,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) (*http.Response, err
 	}
 	applyInterceptorRespToHttpResp()
 	// when error is not nil, the response sent will be ignored(downstream)
-	return rts.res, nil
+	return rts.res
 }
 
 func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) {
@@ -294,11 +304,18 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	roundTripStartTime := time.Now()
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {
-		return res, fmt.Errorf("transport round trip: %w", err)
+		t.log.Errorn("[RoundTrip] transport round trip",
+			obskit.DestinationID(rts.destination.ID),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DefinitionName),
+			logger.NewStringField("flow", string(t.flow)),
+			logger.NewErrorField(err))
+		// Return a 500 error response instead of propagating the error
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("Transport round trip error: %v", err))), nil
 	}
 	t.fireTimerStats("oauth_v2_http_roundtrip_latency", tags, roundTripStartTime)
 	rts.res = res
 	postRoundTripStartTime := time.Now()
 	defer t.fireTimerStats("oauth_v2_http_post_roundtrip_latency", tags, postRoundTripStartTime)
-	return t.postRoundTrip(rts)
+	return t.postRoundTrip(rts), nil
 }
