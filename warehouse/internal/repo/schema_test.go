@@ -178,4 +178,49 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expiryTime, updatedSchema.ExpiresAt)
 	})
+
+	t.Run("Insert schema propagation to all connections with same destination_id and namespace", func(t *testing.T) {
+		// Create first connection schema
+		firstConnectionSchema := schema
+		firstID, err := r.Insert(ctx, &firstConnectionSchema)
+		require.NoError(t, err)
+		firstConnectionSchema.ID = firstID
+
+		// Create second connection schema with same destination_id and namespace
+		secondConnectionSchema := firstConnectionSchema
+		secondConnectionSchema.SourceID = "other_source_id"
+		secondConnectionSchema.ID = 0 // Reset ID for new insert
+		secondID, err := r.Insert(ctx, &secondConnectionSchema)
+		require.NoError(t, err)
+		secondConnectionSchema.ID = secondID
+
+		// Verify both connections have the same initial schema
+		firstRetrieved, err := r.GetForNamespace(ctx, firstConnectionSchema.SourceID, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
+		require.NoError(t, err)
+		require.Equal(t, firstConnectionSchema.Schema, firstRetrieved.Schema)
+
+		secondRetrieved, err := r.GetForNamespace(ctx, secondConnectionSchema.SourceID, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
+		require.NoError(t, err)
+		require.Equal(t, firstConnectionSchema.Schema, secondRetrieved.Schema)
+
+		// Update the first connection with new schema data
+		updatedSchema := firstConnectionSchema
+		updatedSchema.Schema = model.Schema{
+			"new_table": {
+				"new_column": "string",
+			},
+		}
+		updatedSchema.ID = 0 // Reset ID for new insert
+		_, err = r.Insert(ctx, &updatedSchema)
+		require.NoError(t, err)
+
+		// Verify both connections are updated with the new schema
+		firstRetrieved, err = r.GetForNamespace(ctx, firstConnectionSchema.SourceID, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
+		require.NoError(t, err)
+		require.Equal(t, updatedSchema.Schema, firstRetrieved.Schema)
+
+		secondRetrieved, err = r.GetForNamespace(ctx, secondConnectionSchema.SourceID, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
+		require.NoError(t, err)
+		require.Equal(t, updatedSchema.Schema, secondRetrieved.Schema)
+	})
 }

@@ -82,10 +82,6 @@ var stringColumns = lo.Keys(lo.PickBy(azureSynapseDataTypesMapToRudder, func(_, 
 	return value == "string"
 }))
 
-var azureSynapseColsWithVariableLength = lo.Keys(lo.PickBy(azureSynapseDataTypesMapToRudder, func(key, _ string) bool {
-	return key == "varchar" || key == "nvarchar" || key == "char" || key == "nchar"
-}))
-
 type AzureSynapse struct {
 	db                 *sqlmw.DB
 	namespace          string
@@ -214,67 +210,6 @@ func (*AzureSynapse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, 
 	return
 }
 
-func (as *AzureSynapse) createStagingTable(ctx context.Context, tableName string) (string, error) {
-	stagingTableName := warehouseutils.StagingTableName(
-		provider,
-		tableName,
-		tableNameLimit,
-	)
-
-	cols := warehouseutils.SortColumnKeysFromColumnMap(as.uploader.GetTableSchemaInWarehouse(tableName))
-
-	varcharCols, err := as.getStringColumnsWithVariableLength(ctx, tableName)
-	if err != nil {
-		return "", fmt.Errorf("getting varchar columns info: %w", err)
-	}
-
-	columnDefs := lo.Map(cols, func(name string, _ int) string {
-		if dataType, ok := varcharCols[name]; ok {
-			var targetType string
-			// use varchar for char and nvarchar for nchar
-			// this is because char and nchar have a max length of 8000 and 4000 respectively.
-			// row size limit is 8060 in Azure Synapse. To fix this, we use varchar and nvarchar with max length
-			switch dataType {
-			case "char":
-				targetType = "varchar"
-			case "nchar":
-				targetType = "nvarchar"
-			default:
-				targetType = string(dataType)
-			}
-			return fmt.Sprintf(`CAST('' AS %[1]s(max)) as %[2]s`, targetType, name)
-		}
-		return name
-	})
-
-	// The use of prepared statements for creating temporary tables is not suitable in this context.
-	// Temporary tables in SQL Server have a limited scope and are automatically purged after the transaction commits.
-	// Therefore, creating normal tables is chosen as an alternative.
-	//
-	// For more information on this behavior:
-	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
-	// - Refer to Microsoft's documentation on temporary tables at
-	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
-	createStagingTableStmt := fmt.Sprintf(`
-		SELECT TOP 0 %[3]s
-			INTO
-		%[1]s.%[2]s
-			FROM
-		%[1]s.%[4]s
-		`,
-		as.namespace,
-		stagingTableName,
-		strings.Join(columnDefs, ", "),
-		tableName,
-	)
-
-	if _, err := as.db.ExecContext(ctx, createStagingTableStmt); err != nil {
-		return "", fmt.Errorf("creating staging table: %w", err)
-	}
-
-	return stagingTableName, nil
-}
-
 func (as *AzureSynapse) loadTable(
 	ctx context.Context,
 	tableName string,
@@ -300,10 +235,32 @@ func (as *AzureSynapse) loadTable(
 		misc.RemoveFilePaths(fileNames...)
 	}()
 
+	stagingTableName := warehouseutils.StagingTableName(
+		provider,
+		tableName,
+		tableNameLimit,
+	)
+
+	// The use of prepared statements for creating temporary tables is not suitable in this context.
+	// Temporary tables in SQL Server have a limited scope and are automatically purged after the transaction commits.
+	// Therefore, creating normal tables is chosen as an alternative.
+	//
+	// For more information on this behavior:
+	// - See the discussion at https://github.com/denisenkom/go-mssqldb/issues/149 regarding prepared statements.
+	// - Refer to Microsoft's documentation on temporary tables at
+	//   https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN.
 	log.Debugw("creating staging table")
-	stagingTableName, err := as.createStagingTable(ctx, tableName)
-	if err != nil {
-		return nil, "", fmt.Errorf("creating staging table: %w", err)
+	createStagingTableStmt := fmt.Sprintf(`
+		SELECT
+		  TOP 0 * INTO %[1]s.%[2]s
+		FROM
+		  %[1]s.%[3]s;`,
+		as.namespace,
+		stagingTableName,
+		tableName,
+	)
+	if _, err = as.db.ExecContext(ctx, createStagingTableStmt); err != nil {
+		return nil, "", fmt.Errorf("creating temporary table: %w", err)
 	}
 
 	if !skipTempTableDelete {
@@ -393,46 +350,6 @@ func (as *AzureSynapse) loadTable(
 		RowsInserted: rowsInserted - rowsDeleted,
 		RowsUpdated:  rowsDeleted,
 	}, stagingTableName, nil
-}
-
-// dataType is the columnn data type in Azure Synapse
-type dataType string
-
-// getStringColumnsWithVariableLength returns the column name and data type for all columns that are of type varchar, nvarchar, char, or nchar
-func (as *AzureSynapse) getStringColumnsWithVariableLength(ctx context.Context, tableName string) (map[string]dataType, error) {
-	dataTypes := "'" + strings.Join(azureSynapseColsWithVariableLength, "', '") + "'"
-	query := fmt.Sprintf(`
-		SELECT column_name, DATA_TYPE
-		FROM INFORMATION_SCHEMA.COLUMNS
-		WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @tableName AND DATA_TYPE IN (%s);
-	`,
-		dataTypes,
-	)
-
-	rows, err := as.db.QueryContext(ctx, query,
-		sql.Named("schema", as.namespace),
-		sql.Named("tableName", tableName),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("querying string columns: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	stringColumns := make(map[string]dataType)
-	for rows.Next() {
-		var (
-			columnName string
-			dataType   dataType
-		)
-		if err := rows.Scan(&columnName, &dataType); err != nil {
-			return nil, fmt.Errorf("scanning string columns: %w", err)
-		}
-		stringColumns[columnName] = dataType
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating string columns: %w", err)
-	}
-	return stringColumns, nil
 }
 
 // getVarcharLengthMap retrieves the maximum allowed length for varchar columns in a given table.

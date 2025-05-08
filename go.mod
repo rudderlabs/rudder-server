@@ -60,6 +60,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/json-iterator/go v1.1.12
 	github.com/k3a/html2text v1.2.1
+	github.com/klauspost/compress v1.18.0
 	github.com/lib/pq v1.10.9
 	github.com/linkedin/goavro/v2 v2.13.1
 	github.com/marcboeker/go-duckdb v1.8.5
@@ -81,7 +82,7 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.49.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.5.5
-	github.com/rudderlabs/rudder-transformer/go v0.0.0-20240910055720-f77d2ab4125a
+	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449
 	github.com/rudderlabs/sonnet v1.0.2
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.20.0
@@ -248,7 +249,6 @@ require (
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.4](https://github.com/rudderlabs/rudder-server/compare/v1.48.3...v1.48.4) (2025-05-05)
+
+
+### Bug Fixes
+
+* warehouse cached schema mismatch ([#5805](https://github.com/rudderlabs/rudder-server/issues/5805)) ([1d3abfd](https://github.com/rudderlabs/rudder-server/commit/1d3abfd961c12bc4a31c97f96b67f049d4a9cdde))
+
 ## [1.48.3](https://github.com/rudderlabs/rudder-server/compare/v1.48.2...v1.48.3) (2025-05-02)
 
 
