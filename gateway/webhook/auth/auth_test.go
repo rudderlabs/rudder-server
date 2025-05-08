@@ -45,7 +45,7 @@ func TestNewWebhookAuth(t *testing.T) {
 				http.Error(w, errorMessage, http.StatusUnauthorized)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
-				return nil, nil
+				return nil, ErrSourceNotFound
 			},
 			writeKey:                "invalid-key",
 			expectedResponseCode:    http.StatusUnauthorized,

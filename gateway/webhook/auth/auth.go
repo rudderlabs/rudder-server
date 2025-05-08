@@ -2,12 +2,15 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
+
+var ErrSourceNotFound = errors.New("source not found")
 
 type WebhookAuth struct {
 	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string)
@@ -40,10 +43,14 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 		}
 		arctx, err := wa.authReqCtxForWriteKey(writeKey)
 		if err != nil {
+			if errors.Is(err, ErrSourceNotFound) {
+				wa.onFailure(w, r, response.InvalidWriteKey)
+				return
+			}
 			wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest)
 			return
 		}
-		if arctx == nil || arctx.SourceCategory != "webhook" {
+		if arctx.SourceCategory != "webhook" {
 			wa.onFailure(w, r, response.InvalidWriteKey)
 			return
 		}

@@ -162,7 +162,11 @@ func (gw *Handle) Setup(
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
 	gw.webhookAuthMiddleware = auth.NewWebhookAuth(gw.handleHttpError, func(writeKey string) (*gwtypes.AuthRequestContext, error) {
-		return gw.authRequestContextForWriteKey(writeKey), nil
+		authCtx := gw.authRequestContextForWriteKey(writeKey)
+		if authCtx == nil {
+			return nil, auth.ErrSourceNotFound
+		}
+		return authCtx, nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

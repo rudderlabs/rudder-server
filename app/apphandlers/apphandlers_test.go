@@ -13,13 +13,14 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
+	"golang.org/x/sync/errgroup"
+
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -137,10 +138,8 @@ func TestAppHandlerStartSequence(t *testing.T) {
 
 			trServer := transformertest.NewBuilder().
 				WithFeaturesHandler(func(w http.ResponseWriter, r *http.Request) {
-					select {
-					case <-featuresChan:
-						_, _ = w.Write([]byte(mockTransformerResp))
-					}
+					<-featuresChan
+					_, _ = w.Write([]byte(mockTransformerResp))
 				}).
 				Build()
 			defer trServer.Close()
