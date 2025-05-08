@@ -7,7 +7,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/rules"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/stringlikeobject"
 	"github.com/rudderlabs/rudder-server/warehouse/transformer/internal/utils"
@@ -33,7 +32,7 @@ func setDataAndMetadataFromInput(
 	}
 	for _, key := range tec.sorter(lo.Keys(inputMap)) {
 		val := inputMap[key]
-		if utils.IsBlank(val) {
+		if utils.IsEmptyString(val) {
 			continue
 		}
 		if isValidJSONPath(tec, key, pi) {
@@ -114,7 +113,7 @@ func handleValidJSONPath(
 	data map[string]any, metadata map[string]string,
 	pi *prefixInfo,
 ) error {
-	valJSON, err := jsonrs.Marshal(val)
+	valJSON, err := utils.MarshalJSON(val)
 	if err != nil {
 		return fmt.Errorf("marshalling value: %w", err)
 	}
@@ -148,7 +147,7 @@ func processNonNestedObject(
 ) error {
 	finalValue := val
 	if tec.event.Metadata.SourceCategory == "cloud" && pi.level >= 3 && utils.IsObject(val) {
-		jsonData, err := jsonrs.Marshal(val)
+		jsonData, err := utils.MarshalJSON(val)
 		if err != nil {
 			return fmt.Errorf("marshalling value: %w", err)
 		}
@@ -176,7 +175,7 @@ func setDataAndMetadataFromRules(
 		if err != nil {
 			return fmt.Errorf("applying functional rule: %w", err)
 		}
-		if utils.IsBlank(colVal) || utils.IsObject(colVal) {
+		if utils.IsEmptyString(colVal) || utils.IsObject(colVal) || utils.IsArray(colVal) {
 			continue
 		}
 
@@ -201,7 +200,7 @@ func (t *Transformer) storeRudderEvent(
 		return fmt.Errorf("safe column name: %w", err)
 	}
 
-	eventJSON, err := jsonrs.Marshal(tec.event.Message)
+	eventJSON, err := utils.MarshalJSON(tec.event.Message)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
 	}

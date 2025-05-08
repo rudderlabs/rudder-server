@@ -1,6 +1,8 @@
 package transformer
 
 import (
+	"unicode/utf8"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
@@ -81,11 +83,11 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 func shouldUseTextForRedshift(data any) bool {
 	switch v := data.(type) {
 	case []any, []types.ValidationError, map[string]any:
-		if jsonVal, _ := jsonrs.Marshal(v); len(jsonVal) > redshiftStringLimit {
+		if jsonVal, _ := jsonrs.Marshal(v); utf8.RuneCount(jsonVal) > redshiftStringLimit {
 			return true
 		}
 	case string:
-		if len(v) > redshiftStringLimit {
+		if utf8.RuneCountInString(v) > redshiftStringLimit {
 			return true
 		}
 	}

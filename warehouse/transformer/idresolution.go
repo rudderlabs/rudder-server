@@ -108,7 +108,7 @@ func mergePropsForMergeEventType(message types.SingularEventT) (*mergeRule, *mer
 	mergeProperties1Type := misc.MapLookup(mergePropertiesMap1, "type")
 	mergeProperties1Value := misc.MapLookup(mergePropertiesMap1, "value")
 
-	if utils.IsBlank(mergeProperties0Type) || utils.IsBlank(mergeProperties0Value) || utils.IsBlank(mergeProperties1Type) || utils.IsBlank(mergeProperties1Value) {
+	if utils.IsEmptyString(mergeProperties0Type) || utils.IsEmptyString(mergeProperties0Value) || utils.IsEmptyString(mergeProperties1Type) || utils.IsEmptyString(mergeProperties1Value) {
 		return nil, nil, response.ErrMergePropertyEmpty
 	}
 
@@ -131,7 +131,7 @@ func mergePropsForDefaultEventType(message types.SingularEventT) (*mergeRule, *m
 	userID := misc.MapLookup(message, "userId")
 
 	var mergeProp1, mergeProp2 *mergeRule
-	if utils.IsBlank(anonymousID) {
+	if utils.IsEmptyString(anonymousID) {
 		mergeProp1 = &mergeRule{Type: "user_id", Value: userID}
 	} else {
 		mergeProp1 = &mergeRule{Type: "anonymous_id", Value: anonymousID}
@@ -165,5 +165,5 @@ func mergeRuleColumns(tec *transformEventContext) (*mergeRulesColumns, error) {
 }
 
 func isMergePropEmpty(mergeProp *mergeRule) bool {
-	return mergeProp == nil || utils.IsBlank(mergeProp.Type) || utils.IsBlank(mergeProp.Value)
+	return mergeProp == nil || utils.IsEmptyString(mergeProp.Type) || utils.IsEmptyString(mergeProp.Value)
 }

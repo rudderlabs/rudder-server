@@ -45,6 +45,7 @@ func TestExtractRecordID(t *testing.T) {
 		{name: "recordId is empty", metadata: wtypes.Metadata{RecordID: ""}, expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
 		{name: "recordId is not empty", metadata: wtypes.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
 		{name: "recordId is an object", metadata: wtypes.Metadata{RecordID: map[string]any{"key": "value"}}, expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
+		{name: "recordId is an array", metadata: wtypes.Metadata{RecordID: []any{"value"}}, expectedRecordID: nil, expectedError: response.ErrRecordIDArray},
 		{name: "recordId is a string", metadata: wtypes.Metadata{RecordID: "123"}, expectedRecordID: "123", expectedError: nil},
 		{name: "recordId is a number", metadata: wtypes.Metadata{RecordID: 123}, expectedRecordID: 123, expectedError: nil},
 	}
@@ -72,6 +73,7 @@ func TestExtractCloudRecordID(t *testing.T) {
 		{name: "recordId is nil", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
 		{name: "recordId is empty", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: ""}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDEmpty},
 		{name: "recordId is an object", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: map[string]any{"key": "value"}}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDObject},
+		{name: "recordId is an array", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: []any{"value"}}, fallbackValue: "fallback", expectedRecordID: nil, expectedError: response.ErrRecordIDArray},
 		{name: "recordId is a string", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: "123"}, fallbackValue: "fallback", expectedRecordID: "123", expectedError: nil},
 		{name: "recordId is a number", message: types.SingularEventT{"context": map[string]any{"sources": map[string]any{"version": "1.0"}}}, metadata: wtypes.Metadata{RecordID: 123}, fallbackValue: "fallback", expectedRecordID: 123, expectedError: nil},
 	}

@@ -645,7 +645,7 @@ func sanitizePayload(input string) (string, error) {
 
 	// Checking for valid datetime formats in the payload
 	// JS converts new Date('0001-01-01 00:00').toISOString() to 2001-01-01T00:00:00.000Z
-	// https://www.programiz.com/online-compiler/1P7KHTw0ClE9R
+	// https://www.programiz.com/online-compiler/4SqZcIH5k6Yli
 	dateTimes := reDateTime.FindAllString(sanitized, -1)
 	for _, dateTime := range dateTimes {
 		_, err := dateparse.ParseAny(dateTime, dateparse.PreferMonthFirst(true), dateparse.RetryAmbiguousDateWithSwap(true))

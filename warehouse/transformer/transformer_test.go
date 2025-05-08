@@ -211,7 +211,7 @@ func TestTransformer(t *testing.T) {
 		expectedResponse types.Response
 	}{
 		{
-			name:         "Unknown event",
+			name:         "Unknown event type",
 			eventPayload: `{"type":"unknown"}`,
 			metadata:     getMetadata("unknown", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
@@ -220,6 +220,36 @@ func TestTransformer(t *testing.T) {
 					{
 						Error:      "Unknown event type: \"unknown\"",
 						Metadata:   getMetadata("unknown", "POSTGRES"),
+						StatusCode: http.StatusBadRequest,
+					},
+				},
+			},
+		},
+		{
+			name:         "Undefined event type",
+			eventPayload: `{}`,
+			metadata:     getMetadata("", "POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
+					{
+						Error:      "No event type: \"\"",
+						Metadata:   getMetadata("", "POSTGRES"),
+						StatusCode: http.StatusBadRequest,
+					},
+				},
+			},
+		},
+		{
+			name:         "Undefined event type but present in metadata",
+			eventPayload: `{}`,
+			metadata:     getMetadata("track", "POSTGRES"),
+			destination:  getDestination("POSTGRES", map[string]any{}),
+			expectedResponse: types.Response{
+				FailedEvents: []types.TransformerResponse{
+					{
+						Error:      "No event type: \"\"",
+						Metadata:   getMetadata("track", "POSTGRES"),
 						StatusCode: http.StatusBadRequest,
 					},
 				},
