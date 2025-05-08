@@ -220,13 +220,12 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		authContext: arctx,
 	}
 	if webhook.config.webhookV2HandlerEnabled {
-		webhook.enqueue(sourceDefName, &req)
-	} else {
-		webhook.requestQMu.RLock()
-		requestQ := webhook.requestQ[sourceDefName]
-		requestQ <- &req
-		webhook.requestQMu.RUnlock()
+		webhook.Register(sourceDefName)
 	}
+	webhook.requestQMu.RLock()
+	requestQ := webhook.requestQ[sourceDefName]
+	requestQ <- &req
+	webhook.requestQMu.RUnlock()
 
 	// Wait for batcher process to be done
 	resp := <-done
@@ -505,6 +504,13 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 }
 
 func (webhook *HandleT) Register(name string) {
+	webhook.requestQMu.RLock()
+	_, ok := webhook.requestQ[name]
+	if ok {
+		return
+	}
+	webhook.requestQMu.RUnlock()
+
 	webhook.requestQMu.Lock()
 	defer webhook.requestQMu.Unlock()
 	if _, ok := webhook.requestQ[name]; !ok {
