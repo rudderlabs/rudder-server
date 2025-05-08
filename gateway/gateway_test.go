@@ -164,7 +164,7 @@ type testContext struct {
 	mockBackendConfig  *mocksBackendConfig.MockBackendConfig
 	mockRateLimiter    *mockGateway.MockThrottler
 	mockApp            *mocksApp.MockApp
-	mockWebhook        *mockGateway.MockWebhook
+	mockWebhook        *mockGateway.MockWebhookRequestHandler
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
@@ -192,7 +192,7 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mockGateway.NewMockThrottler(c.mockCtrl)
-	c.mockWebhook = mockGateway.NewMockWebhook(c.mockCtrl)
+	c.mockWebhook = mockGateway.NewMockWebhookRequestHandler(c.mockCtrl)
 	c.mockWebhook.EXPECT().Shutdown().AnyTimes()
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
