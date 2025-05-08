@@ -164,12 +164,6 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			// Clear active job ID after processing
 			w.activeJobId = 0
 
-			w.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
-				claimedJob.Job.ID,
-				w.workerIdx,
-				slaveID,
-			)
-
 			workerIdleTimeStart = time.Now()
 		}
 	}
