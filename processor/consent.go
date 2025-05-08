@@ -73,7 +73,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 			// Once we realize no SDKs are sending the data in this format, we have to update the config backend
 			// and also remove this stat.
 			if finalResolutionStrategy == "or" || finalResolutionStrategy == "and" {
-				proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"sourceId": sourceID}).Count(1)
+				proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"source_id": sourceID, "resolution_strategy": finalResolutionStrategy}).Count(1)
 			}
 
 			// For custom provider, the resolution strategy is to be picked from the destination config
