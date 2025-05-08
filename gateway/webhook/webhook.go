@@ -507,6 +507,7 @@ func (webhook *HandleT) Register(name string) {
 	webhook.requestQMu.RLock()
 	_, ok := webhook.requestQ[name]
 	if ok {
+		webhook.requestQMu.RUnlock()
 		return
 	}
 	webhook.requestQMu.RUnlock()
