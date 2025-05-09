@@ -745,14 +745,18 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	[]jobWithStat, error,
 ) {
 	type params struct {
-		MessageID       string `json:"message_id"`
-		SourceID        string `json:"source_id"`
-		SourceJobRunID  string `json:"source_job_run_id"`
-		SourceTaskRunID string `json:"source_task_run_id"`
-		UserID          string `json:"user_id"`
-		TraceParent     string `json:"traceparent"`
-		DestinationID   string `json:"destination_id,omitempty"`
-		SourceCategory  string `json:"source_category"`
+		MessageID           string `json:"message_id"`
+		SourceID            string `json:"source_id"`
+		SourceJobRunID      string `json:"source_job_run_id"`
+		SourceTaskRunID     string `json:"source_task_run_id"`
+		UserID              string `json:"user_id"`
+		TraceParent         string `json:"traceparent"`
+		DestinationID       string `json:"destination_id,omitempty"`
+		SourceCategory      string `json:"source_category"`
+		IsBot               bool   `json:"is_bot,omitempty"`
+		BotName             string `json:"bot_name,omitempty"`
+		BotURL              string `json:"bot_url,omitempty"`
+		BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -926,14 +930,18 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}).Since(msg.Properties.ReceivedAt)
 
 		jobsDBParams := params{
-			MessageID:       messageID,
-			SourceID:        msg.Properties.SourceID,
-			SourceJobRunID:  msg.Properties.SourceJobRunID,
-			SourceTaskRunID: msg.Properties.SourceTaskRunID,
-			UserID:          msg.Properties.UserID,
-			TraceParent:     msg.Properties.TraceID,
-			DestinationID:   msg.Properties.DestinationID,
-			SourceCategory:  msg.Properties.SourceType,
+			MessageID:           messageID,
+			SourceID:            msg.Properties.SourceID,
+			SourceJobRunID:      msg.Properties.SourceJobRunID,
+			SourceTaskRunID:     msg.Properties.SourceTaskRunID,
+			UserID:              msg.Properties.UserID,
+			TraceParent:         msg.Properties.TraceID,
+			DestinationID:       msg.Properties.DestinationID,
+			SourceCategory:      msg.Properties.SourceType,
+			IsBot:               msg.Properties.IsBot,
+			BotName:             msg.Properties.BotName,
+			BotURL:              msg.Properties.BotURL,
+			BotIsInvalidBrowser: msg.Properties.BotIsInvalidBrowser,
 		}
 
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
